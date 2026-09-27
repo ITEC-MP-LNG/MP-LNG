@@ -88,6 +88,36 @@ export default function MainPage() {
   const normalizedRole = String(currentUser?.role || '').trim().toUpperCase();
   const isAdmin = normalizedRole === 'ADMIN';
 
+  // 모바일 뒤로가기 방지 및 종료 알림 처리
+  useEffect(() => {
+    let lastBackPressTime = 0;
+
+    window.history.pushState(null, '', window.location.href);
+
+    const handlePopState = (event: PopStateEvent) => {
+      event.preventDefault();
+      const currentTime = new Date().getTime();
+
+      // 2초 안에 뒤로가기를 한 번 더 누르거나 확인을 누를 경우 종료 처리
+      if (currentTime - lastBackPressTime < 2000) {
+        window.history.back();
+      } else {
+        lastBackPressTime = currentTime;
+        const confirmExit = window.confirm('앱을 종료하시겠습니까?');
+        if (confirmExit) {
+          window.history.back();
+        } else {
+          window.history.pushState(null, '', window.location.href);
+        }
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+    };
+  }, []);
+
   useEffect(() => {
     const initAuthAndData = async () => {
       try {
@@ -279,7 +309,7 @@ export default function MainPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] flex flex-col pb-16 md:pb-0 font-sans">
+    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] flex flex-col pb-20 md:pb-0 font-sans">
       
       {/* 1. Header */}
       <header className="bg-white border-b border-[#E2E5E9] sticky top-0 z-30 shadow-2xs">
@@ -413,8 +443,8 @@ export default function MainPage() {
         </main>
       </div>
 
-      {/* 3. Mobile Bottom Nav */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E5E9] z-40 px-1 py-1 flex justify-around items-center shadow-lg">
+      {/* 3. Mobile Bottom Nav (높이 및 여백 한 단계 상향 조정) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E5E9] z-40 px-2 py-2 flex justify-around items-center shadow-lg">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = mainTab === item.id;
@@ -422,12 +452,12 @@ export default function MainPage() {
             <button
               key={item.id}
               onClick={() => setMainTab(item.id as any)}
-              className={`flex flex-col items-center justify-center py-1.5 px-2 rounded-lg transition ${
+              className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition ${
                 isActive ? 'text-[#243B5A] font-bold' : 'text-[#64748B] font-medium'
               }`}
             >
-              <Icon className={`h-4 w-4 mb-0.5 ${isActive ? 'text-[#243B5A]' : 'text-[#64748B]'}`} />
-              <span className="text-[10px]">{item.label}</span>
+              <Icon className={`h-5 w-5 mb-1 ${isActive ? 'text-[#243B5A]' : 'text-[#64748B]'}`} />
+              <span className="text-[11px] leading-tight">{item.label}</span>
             </button>
           );
         })}
