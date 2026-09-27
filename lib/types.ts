@@ -25,7 +25,7 @@ export interface Task {
 
 export interface InventoryItem {
   id: string;
-  type: '고정' | '소모성';
+  type: '고정' | '소모성' | 'CABIN';
   code: string;
   name: string;
   category: string;
