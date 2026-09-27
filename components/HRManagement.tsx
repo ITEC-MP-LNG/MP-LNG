@@ -8,7 +8,9 @@ import {
   Background, 
   useNodesState, 
   useEdgesState,
-  addEdge
+  addEdge,
+  type Node,
+  type Edge
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from '@dagrejs/dagre';
@@ -211,8 +213,8 @@ export default function HRManagement({
     birthDate: '' 
   });
 
-  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState([]);
-  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState([]);
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<Node>([]);
+const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   const onConnect = useCallback(
     (params: any) => setFlowEdges((eds) => addEdge({ ...params, type: 'smoothstep', style: { stroke: '#4f46e5', strokeWidth: 2 } }, eds)),
