@@ -156,11 +156,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
         setMyAssignedTasks(targetTasks);
 
-        // 팝업 알림 로직: 오늘 하루 보지 않기가 설정되어 있더라도 미완료 업무가 존재하면 일단 모달을 띄우거나 조건 완화 가능
         const hideUntilDate = localStorage.getItem('cabin_alert_hide_until');
         const todayStr = formatDateToYYYYMMDD(new Date());
         
-        // 테스트 및 즉시 확인을 위해 조건 충족 시 무조건 띄우도록 설정 (원하시면 hideUntilDate 체크 부활 가능)
         if (targetTasks.length > 0) {
           setIsAlertOpen(true);
         }
@@ -240,7 +238,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     try {
       await supabase.from('tasks').update({ status: nextStatus }).eq('id', task.id);
-      // 상태 변경 후 미완료 목록 갱신
       fetchTasks();
     } catch (err) {
       console.error('상태 변경 실패:', err);
@@ -428,7 +425,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <span>미완료 알림 ({myAssignedTasks.length})</span>
             </button>
 
-            {/* 탭 순서: [일일 업무 -> 주간 업무 -> CABIN] */}
             <div className="bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] flex space-x-1">
               <button
                 onClick={() => setTaskTab('DAILY')}
@@ -571,39 +567,42 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
 
             {weeklyViewMode === 'GRID' ? (
-              <div className="grid grid-cols-7 gap-2 min-w-[900px] overflow-x-auto">
-                {weekDays.map((day) => {
-                  const dayTasks = filteredTasks.filter((t) => t.start_date === day.dateStr);
-                  return (
-                    <div key={day.dateStr} className={`rounded-xl border p-2.5 min-h-[420px] flex flex-col ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
-                      <div className="flex items-center justify-between pb-2 mb-2 border-b">
-                        <span className="font-bold text-xs">{day.label} <span className="text-[10px] text-[#64748B] font-mono">{day.displayDate}</span></span>
-                        {isAdmin && (
-                          <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="p-0.5 text-[#243B5A] hover:bg-slate-200 rounded">
-                            <Plus className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
+              /* [요청 2번 반영] 투명한 가로 스크롤바 적용 (webkit-scrollbar 투명화) */
+              <div className="overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:bg-slate-300/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
+                <div className="grid grid-cols-7 gap-2 min-w-[900px]">
+                  {weekDays.map((day) => {
+                    const dayTasks = filteredTasks.filter((t) => t.start_date === day.dateStr);
+                    return (
+                      <div key={day.dateStr} className={`rounded-xl border p-2.5 min-h-[420px] flex flex-col ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b">
+                          <span className="font-bold text-xs">{day.label} <span className="text-[10px] text-[#64748B] font-mono">{day.displayDate}</span></span>
+                          {isAdmin && (
+                            <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="p-0.5 text-[#243B5A] hover:bg-slate-200 rounded">
+                              <Plus className="h-3.5 w-3.5" />
+                            </button>
+                          )}
+                        </div>
 
-                      <div className="space-y-2 flex-1 overflow-y-auto">
-                        {dayTasks.map((t) => (
-                          <div
-                            key={t.id}
-                            onClick={() => setSelectedTaskForSheet(t)}
-                            className="bg-white border rounded-lg p-2 text-xs space-y-1 shadow-2xs cursor-pointer hover:border-[#243B5A]"
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="text-[10px] text-[#2563EB] font-mono">{t.time_slot || '시간미정'}</span>
-                              {renderStatusBadge(t)}
+                        <div className="space-y-2 flex-1 overflow-y-auto">
+                          {dayTasks.map((t) => (
+                            <div
+                              key={t.id}
+                              onClick={() => setSelectedTaskForSheet(t)}
+                              className="bg-white border rounded-lg p-2 text-xs space-y-1 shadow-2xs cursor-pointer hover:border-[#243B5A]"
+                            >
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-[#2563EB] font-mono">{t.time_slot || '시간미정'}</span>
+                                {renderStatusBadge(t)}
+                              </div>
+                              <div className="font-bold text-[#1F2937] leading-tight line-clamp-2">{t.title}</div>
+                              <div className="text-[10px] text-[#64748B] truncate">{t.assigned_names?.join(', ') || '미지정'}</div>
                             </div>
-                            <div className="font-bold text-[#1F2937] leading-tight line-clamp-2">{t.title}</div>
-                            <div className="text-[10px] text-[#64748B] truncate">{t.assigned_names?.join(', ') || '미지정'}</div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <div className="space-y-3">
