@@ -365,14 +365,6 @@ export default function MainPage() {
           {mainTab === 'TASKS' && (
             <WorkManagement
               currentUser={currentUser}
-              isAdmin={isAdmin}
-              tasks={tasks}
-              setTasks={setTasks}
-              loadingTasks={loadingTasks}
-              myPendingTasks={myPendingTasks}
-              showNoticeModal={showNoticeModal}
-              setShowNoticeModal={setShowNoticeModal}
-              fetchTasks={() => fetchTasks(currentUser)}
             />
           )}
 
