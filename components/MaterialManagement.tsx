@@ -22,8 +22,8 @@ import {
   ChevronLeft,
   Settings
 } from 'lucide-react';
-import { supabase, AppUser } from '@/lib/supabase';
-import { InventoryItem, InventoryLog } from '@/lib/types';
+import { supabase } from '@/lib/supabase';
+import { AppUser, InventoryItem, InventoryLog } from '@/lib/types';
 
 interface MaterialManagementProps {
   currentUser: AppUser;
@@ -142,7 +142,7 @@ export default function MaterialManagement({
     setCalibrationAlertItems(upcomingCalibrations);
   }, [inventoryList]);
 
-  const parseCalDates = (subEquipment: string | null) => {
+  const parseCalDates = (subEquipment: string | null | undefined) => {
     if (!subEquipment) return { calDate: '', nextCalDate: '' };
     const parts = subEquipment.split('|').map(s => s.trim());
     if (parts.length >= 2) {
