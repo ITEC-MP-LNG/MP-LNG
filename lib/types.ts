@@ -1,4 +1,9 @@
-import { AppUser } from '@/lib/supabase';
+export interface AppUser {
+  id: string;
+  name: string;
+  email: string;
+  role: 'USER' | 'WORK_ADMIN' | 'SUPER_ADMIN' | 'TOP_ADMIN';
+}
 
 export const AVAILABLE_WORKERS = [
   { id: 'user1', name: '홍길동', role: 'USER' },
