@@ -15,8 +15,15 @@ import {
   Anchor
 } from 'lucide-react';
 
-import { supabase, AppUser } from '@/lib/supabase';
-import { Task, InventoryItem, InventoryLog, Education, EducationRecord } from '@/lib/types';
+import { supabase } from '@/lib/supabase';
+import {
+  AppUser,
+  Task,
+  InventoryItem,
+  InventoryLog,
+  Education,
+  EducationRecord
+} from '@/lib/types';
 
 import WorkManagement from '@/components/WorkManagement';
 import MaterialManagement from '@/components/MaterialManagement';
