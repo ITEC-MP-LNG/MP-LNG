@@ -57,6 +57,7 @@ export interface Education {
   time_slot: string;
   location: string;
   description?: string;
+  assigned_workers?: string[];
 }
 
 export interface EducationRecord {
