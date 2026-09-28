@@ -295,13 +295,12 @@ export default function MainPage() {
     router.push('/login');
   };
 
-  const confirmExitApp = () => {
+  // 모달 확인 시 세션 및 로컬스토리지 정리 후 로그인 페이지로 이동
+  const confirmExitApp = async () => {
     setShowExitModal(false);
-    if (window.history.length > 1) {
-      window.history.go(-2);
-    } else {
-      window.close();
-    }
+    await supabase.auth.signOut();
+    localStorage.removeItem('currentUser');
+    localStorage.removeItem('login_timestamp');
     router.push('/login');
   };
 
@@ -379,7 +378,7 @@ export default function MainPage() {
       <div className="flex-1 max-w-full w-full mx-auto flex">
         <aside className="hidden md:block w-56 bg-white border-r border-[#E2E5E9] p-3 space-y-1 shrink-0">
           <div className="px-3 py-2 text-[10px] font-bold text-[#64748B] uppercase tracking-wider">
-            SaaS Navigation
+            통합 현장관리 Navigation
           </div>
           {menuItems.map((item) => {
             const Icon = item.icon;
@@ -401,7 +400,6 @@ export default function MainPage() {
           })}
         </aside>
 
-        {/* 바깥 여백을 완전히 없애기 위해 p-0 적용 */}
         <main className="flex-1 p-0 overflow-y-auto min-w-0">
           {mainTab === 'TASKS' && (
             <WorkManagement
@@ -480,8 +478,8 @@ export default function MainPage() {
                 <AlertCircle className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-[#1F2937]">앱 종료</h3>
-                <p className="text-xs text-[#64748B]">통합현장관리 시스템을 종료하시겠습니까?</p>
+                <h3 className="text-sm font-bold text-[#1F2937]">시스템 종료</h3>
+                <p className="text-xs text-[#64748B]">시스템을 종료하고 로그아웃 하시겠습니까?</p>
               </div>
             </div>
 
@@ -489,16 +487,16 @@ export default function MainPage() {
               <button
                 type="button"
                 onClick={cancelExitApp}
-                className="flex-1 py-2.5 px-4 bg-[#F5F6F8] text-[#1F2937] hover:bg-[#E2E5E9] text-xs font-semibold rounded-lg transition border border-[#E2E5E9]"
+                className="flex-1 py-2.5 px-4 bg-[#F5F6F8] text-[#1F2937] hover:bg-[#E2E5E9] text-xs font-semibold rounded-lg transition border border-[#E2E5E9] cursor-pointer"
               >
                 취소
               </button>
               <button
                 type="button"
                 onClick={confirmExitApp}
-                className="flex-1 py-2.5 px-4 bg-[#243B5A] text-white hover:bg-[#1a2d46] text-xs font-bold rounded-lg transition shadow-xs"
+                className="flex-1 py-2.5 px-4 bg-[#243B5A] text-white hover:bg-[#1a2d46] text-xs font-bold rounded-lg transition shadow-xs cursor-pointer"
               >
-                종료
+                확인
               </button>
             </div>
           </div>
