@@ -484,7 +484,6 @@ export default function MaterialManagement({
     setShowLogSheet(true);
   };
 
-  // 불출/반납/소모성 사용 제출 및 DB 반영 함수
   const handleSubmitLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetItem) return;
@@ -509,7 +508,6 @@ export default function MaterialManagement({
         newQty = currentQty + qtyChange;
       }
 
-      // 1. inventory 수량 업데이트
       const { error: invError } = await supabase
         .from('inventory')
         .update({ quantity: newQty, updated_at: new Date().toISOString() })
@@ -517,7 +515,6 @@ export default function MaterialManagement({
 
       if (invError) throw invError;
 
-      // 2. inventory_logs 이력 기록 추가
       const { error: logError } = await supabase
         .from('inventory_logs')
         .insert([{
