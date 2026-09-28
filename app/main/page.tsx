@@ -295,7 +295,6 @@ export default function MainPage() {
     router.push('/login');
   };
 
-  // 모달 확인 시 세션 및 로컬스토리지 정리 후 로그인 페이지로 이동
   const confirmExitApp = async () => {
     setShowExitModal(false);
     await supabase.auth.signOut();
@@ -451,7 +450,8 @@ export default function MainPage() {
         </main>
       </div>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E5E9] z-40 px-2 py-2 flex justify-around items-center shadow-lg">
+      {/* 모바일 하단 네비게이션 (찌그러짐 방지 및 균등 분할 수정 적용) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E5E9] z-40 px-1 py-1.5 flex justify-between items-center shadow-lg">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = mainTab === item.id;
@@ -459,12 +459,14 @@ export default function MainPage() {
             <button
               key={item.id}
               onClick={() => setMainTab(item.id as any)}
-              className={`flex flex-col items-center justify-center py-2 px-3 rounded-lg transition ${
+              className={`flex-1 flex flex-col items-center justify-center py-1.5 px-0.5 rounded-lg transition min-w-0 ${
                 isActive ? 'text-[#243B5A] font-bold' : 'text-[#64748B] font-medium'
               }`}
             >
-              <Icon className={`h-5 w-5 mb-1 ${isActive ? 'text-[#243B5A]' : 'text-[#64748B]'}`} />
-              <span className="text-[11px] leading-tight">{item.label}</span>
+              <Icon className={`h-5 w-5 mb-1 shrink-0 ${isActive ? 'text-[#243B5A]' : 'text-[#64748B]'}`} />
+              <span className="text-[10px] sm:text-[11px] leading-tight tracking-tight truncate w-full text-center">
+                {item.label}
+              </span>
             </button>
           );
         })}
