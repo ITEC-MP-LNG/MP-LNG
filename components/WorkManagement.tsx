@@ -393,8 +393,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   });
 
   return (
-    <div className="bg-[#F5F6F8] min-h-screen p-2 sm:p-4 text-[#1F2937]">
-      <div className="w-full bg-white rounded-xl border border-[#E2E5E9] p-3 sm:p-5 space-y-4">
+    <div className="bg-[#F5F6F8] min-h-screen w-full text-[#1F2937] p-0 m-0">
+      <div className="w-full bg-white border-b border-[#E2E5E9] p-3 sm:p-4 space-y-4">
         
         {/* Header - 모바일에서 유연한 랩핑 및 높이/간격 정렬 개선 */}
         <div className="flex flex-col gap-3 pb-3 border-b border-[#E2E5E9]">
