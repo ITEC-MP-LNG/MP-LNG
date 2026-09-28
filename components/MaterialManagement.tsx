@@ -1360,7 +1360,7 @@ export default function MaterialManagement({
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">자재 구별</label>
                 <div className="flex space-x-1 bg-[#F5F6F8] p-1 rounded-md border border-[#E2E5E9]">
-                  {(['고정', '소모성', 'CABIN'] as MainTab[]).tab.toString && (['고정', '소모성', 'CABIN'] as MainTab[]).map(tab => (
+                  {(['고정', '소모성', 'CABIN'] as MainTab[]).map(tab => (
                     <button
                       key={tab}
                       type="button"
