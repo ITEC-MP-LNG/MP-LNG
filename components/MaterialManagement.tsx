@@ -402,6 +402,7 @@ export default function MaterialManagement({
     setShowLogSheet(true);
   };
 
+  // 히스토리 행의 반납 버튼 클릭 시: 새로운 행을 추가하지 않고, 현재 이력 행을 '반납' 상태로 직접 업데이트
   const handleQuickReturnFromHistory = async (log: InventoryLog) => {
     try {
       let foundItem: InventoryItem | null = null;
@@ -430,9 +431,34 @@ export default function MaterialManagement({
         return alert(`'${log.item_name}'에 해당하는 현재 등록된 자재 정보를 찾을 수 없습니다.`);
       }
 
-      handleOpenLogModal(foundItem, '반납');
+      if (!confirm(`'${log.item_name}' (${log.quantity}개)를 반납 처리하시겠습니까?`)) return;
+
+      // 1. 재고 수량 복구
+      const newQty = foundItem.quantity + log.quantity;
+      const targetTableName = foundItem.type === 'CABIN' ? 'cabin_inventory' : 'inventory';
+
+      const { error: invErr } = await supabase
+        .from(targetTableName)
+        .update({ quantity: newQty, updated_at: new Date().toISOString() })
+        .eq('id', foundItem.id);
+      if (invErr) throw invErr;
+
+      // 2. 기존 이력 행의 타입을 '반납'으로 업데이트 (새로운 행을 만들지 않음)
+      const { error: logErr } = await supabase
+        .from('inventory_logs')
+        .update({ type: '반납', updated_at: new Date().toISOString() })
+        .eq('id', log.id);
+      if (logErr) throw logErr;
+
+      alert('반납 처리가 완료되었습니다.');
+      if (foundItem.type === 'CABIN') {
+        await fetchCabinInventory();
+      } else {
+        await fetchInventory();
+      }
+      await fetchInventoryLogs();
     } catch (err: any) {
-      alert('자재 조회 중 오류가 발생했습니다: ' + err.message);
+      alert('반납 처리 중 오류가 발생했습니다: ' + err.message);
     }
   };
 
@@ -899,12 +925,24 @@ export default function MaterialManagement({
                           />
                         )}
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
-                          log.type === '불출' ? 'bg-emerald-100 text-emerald-800' : log.type === '반납' ? 'bg-blue-100 text-blue-800' : log.type === '소모성 사용' ? 'bg-orange-100 text-orange-800' : 'bg-purple-100 text-purple-800'
+                          log.type === '불출' 
+                            ? 'bg-emerald-100 text-emerald-800' 
+                            : log.type === '반납' 
+                            ? 'bg-emerald-100 text-emerald-800' // 반납 완료 시 녹색 뱃지
+                            : log.type === '소모성 사용' 
+                            ? 'bg-orange-100 text-orange-800' 
+                            : 'bg-purple-100 text-purple-800'
                         }`}>
                           {log.type}
                         </span>
                         <div className="min-w-0 flex items-center space-x-1.5">
                           <span className="font-bold text-[#1F2937] truncate">{log.item_name}</span>
+                          {/* 반납 완료인 경우 품목명 옆에 '반납완료' 표시 */}
+                          {log.type === '반납' && (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded shrink-0">
+                              반납완료
+                            </span>
+                          )}
                           <span className="text-xs font-semibold text-[#243B5A]">({log.quantity}개)</span>
                         </div>
                         <span className="text-[10px] text-[#64748B] truncate hidden sm:inline">
