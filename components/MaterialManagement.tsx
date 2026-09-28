@@ -62,15 +62,18 @@ export default function MaterialManagement({
   const [cabinInventoryList, setCabinInventoryList] = useState<InventoryItem[]>([]);
   const [loadingCabin, setLoadingCabin] = useState<boolean>(false);
 
-  // 커스텀 토스트 알림 상태
+  // 화면 중앙 커스텀 토스트 알림 상태 (메시지)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  const showCustomToast = (msg: string) => {
+  const showCenterToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
-    }, 3000);
+    }, 2500);
   };
+
+  // 히스토리 반납 전용 커스텀 확인 모달 상태
+  const [pendingReturnLog, setPendingReturnLog] = useState<InventoryLog | null>(null);
 
   // 동적 서브 카테고리 목록 상태
   const [fixedSubCategories, setFixedSubCategories] = useState<string[]>([
@@ -362,11 +365,11 @@ export default function MaterialManagement({
       if (editingItem) {
         const { error } = await supabase.from(targetTableName).update(payload).eq('id', editingItem.id);
         if (error) throw error;
-        showCustomToast('자재 정보가 수정되었습니다.');
+        showCenterToast('자재 정보가 수정되었습니다.');
       } else {
         const { error } = await supabase.from(targetTableName).insert([payload]);
         if (error) throw error;
-        showCustomToast('신규 자재가 등록되었습니다.');
+        showCenterToast('신규 자재가 등록되었습니다.');
       }
 
       setShowInventorySheet(false);
@@ -392,7 +395,7 @@ export default function MaterialManagement({
 
       setSelectedDetailItem(null);
       setShowInventorySheet(false);
-      showCustomToast('자재가 삭제되었습니다.');
+      showCenterToast('자재가 삭제되었습니다.');
       if (item.type === 'CABIN') {
         await fetchCabinInventory();
       } else {
@@ -413,8 +416,17 @@ export default function MaterialManagement({
     setShowLogSheet(true);
   };
 
-  // 히스토리 행의 반납 버튼 클릭 시: 새로운 행을 추가하지 않고, 현재 이력 행을 '반납' 상태로 직접 업데이트
-  const handleQuickReturnFromHistory = async (log: InventoryLog) => {
+  // 히스토리 행의 반납 버튼 클릭 시: 스타일 맞춤형 확인 모달을 열어줌
+  const handleQuickReturnFromHistory = (log: InventoryLog) => {
+    setPendingReturnLog(log);
+  };
+
+  // 실제 반납 처리 실행 함수 (스타일 맞춤형 모달에서 확인 버튼 클릭 시 실행)
+  const executeQuickReturn = async () => {
+    const log = pendingReturnLog;
+    if (!log) return;
+    setPendingReturnLog(null);
+
     try {
       let foundItem: InventoryItem | null = null;
 
@@ -442,8 +454,6 @@ export default function MaterialManagement({
         return alert(`'${log.item_name}'에 해당하는 현재 등록된 자재 정보를 찾을 수 없습니다.`);
       }
 
-      if (!confirm(`'${log.item_name}' (${log.quantity}개)를 반납 처리하시겠습니까?`)) return;
-
       // 1. 재고 수량 복구
       const newQty = foundItem.quantity + log.quantity;
       const targetTableName = foundItem.type === 'CABIN' ? 'cabin_inventory' : 'inventory';
@@ -454,14 +464,14 @@ export default function MaterialManagement({
         .eq('id', foundItem.id);
       if (invErr) throw invErr;
 
-      // 2. 기존 이력 행의 타입을 '반납'으로 업데이트 (새로운 행을 만들지 않음)
+      // 2. 기존 이력 행의 타입을 '반납'으로 업데이트
       const { error: logErr } = await supabase
         .from('inventory_logs')
         .update({ type: '반납', updated_at: new Date().toISOString() })
         .eq('id', log.id);
       if (logErr) throw logErr;
 
-      showCustomToast('반납 처리가 완료되었습니다.');
+      showCenterToast('반납 처리가 완료되었습니다.');
       if (foundItem.type === 'CABIN') {
         await fetchCabinInventory();
       } else {
@@ -487,7 +497,7 @@ export default function MaterialManagement({
         .update({ memo: newMemo })
         .eq('id', log.id);
       if (error) throw error;
-      showCustomToast('이력이 수정되었습니다.');
+      showCenterToast('이력이 수정되었습니다.');
       await fetchInventoryLogs();
     } catch (err: any) {
       alert('이력 수정 실패: ' + err.message);
@@ -507,7 +517,7 @@ export default function MaterialManagement({
         .delete()
         .eq('id', logId);
       if (error) throw error;
-      showCustomToast('이력이 삭제되었습니다.');
+      showCenterToast('이력이 삭제되었습니다.');
       await fetchInventoryLogs();
     } catch (err: any) {
       alert('이력 삭제 실패: ' + err.message);
@@ -519,7 +529,6 @@ export default function MaterialManagement({
     if (!isAdmin) return alert('관리자만 삭제할 수 있습니다.');
     if (selectedLogIds.length === 0) return alert('삭제할 이력을 선택해주세요.');
 
-    // 선택된 로그 중 조건에 위배되는 것(반납 미완료 항목 혹은 이상 발생 항목)이 있는지 체크
     const invalidLogs = inventoryLogs.filter(log => {
       const logTypeStr = log.type as string;
       return (selectedLogIds.includes(String(log.id)) && (logTypeStr === '불출' || log.has_issue));
@@ -538,7 +547,7 @@ export default function MaterialManagement({
         .in('id', selectedLogIds);
       if (error) throw error;
 
-      showCustomToast('선택된 이력이 삭제되었습니다.');
+      showCenterToast('선택된 이력이 삭제되었습니다.');
       setSelectedLogIds([]);
       await fetchInventoryLogs();
     } catch (err: any) {
@@ -574,7 +583,6 @@ export default function MaterialManagement({
     const newQty = isUsageType ? targetItem.quantity - logQty : targetItem.quantity + logQty;
     const targetTableName = targetItem.type === 'CABIN' ? 'cabin_inventory' : 'inventory';
 
-    // DB에 저장될 실제 log_type (소모성 자재인 경우 '소모성 사용'으로 기록)
     const actualLogType = targetItem.type === '소모성' ? '소모성 사용' : logType;
 
     try {
@@ -595,7 +603,7 @@ export default function MaterialManagement({
       }]);
       if (logErr) throw logErr;
 
-      showCustomToast(`자재 ${actualLogType} 처리가 완료되었습니다.`);
+      showCenterToast(`자재 ${actualLogType} 처리가 완료되었습니다.`);
       setShowLogSheet(false);
       if (targetItem.type === 'CABIN') {
         await fetchCabinInventory();
@@ -651,11 +659,44 @@ export default function MaterialManagement({
   return (
     <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-4 space-y-3 font-sans border-box relative">
       
-      {/* 상단 커스텀 토스트 알림 배너 */}
+      {/* 화면 정가운데(중앙) 배치되는 처리 완료 알림 모달/토스트 */}
       {toastMessage && (
-        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-[#243B5A] text-white px-4 py-2.5 rounded-lg shadow-xl flex items-center space-x-2 text-xs font-semibold border border-slate-600 transition animate-bounce">
-          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
-          <span>{toastMessage}</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-xs">
+          <div className="bg-[#243B5A] text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 text-sm font-bold border border-slate-600 animate-scale-up">
+            <CheckCircle2 className="h-6 w-6 text-emerald-400 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 스타일 맞춤형 반납 확인 모달 */}
+      {pendingReturnLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
+            <div className="mx-auto w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
+              <ArrowDownRight className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-[#1F2937] mb-1">반납 처리 확인</h3>
+              <p className="text-xs text-[#64748B]">
+                <strong className="text-[#1F2937]">{pendingReturnLog.item_name}</strong> ({pendingReturnLog.quantity}개)를 반납 처리하시겠습니까?
+              </p>
+            </div>
+            <div className="flex space-x-2 pt-2">
+              <button
+                onClick={() => setPendingReturnLog(null)}
+                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition"
+              >
+                취소
+              </button>
+              <button
+                onClick={executeQuickReturn}
+                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition"
+              >
+                반납하기
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -956,7 +997,6 @@ export default function MaterialManagement({
                         </span>
                         <div className="min-w-0 flex items-center space-x-1.5">
                           <span className="font-bold text-[#1F2937] truncate">{log.item_name}</span>
-                          {/* 반납 완료인 경우 품목명 옆에 '반납완료' 표시 */}
                           {log.type === '반납' && (
                             <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded shrink-0">
                               반납완료
