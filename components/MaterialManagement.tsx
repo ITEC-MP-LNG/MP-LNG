@@ -482,10 +482,11 @@ export default function MaterialManagement({
     if (!isAdmin) return alert('관리자만 삭제할 수 있습니다.');
     if (selectedLogIds.length === 0) return alert('삭제할 이력을 선택해주세요.');
 
-    // 선택된 로그 중 조건에 위배되는 것(반납 미완료 혹은 이상 발생)이 있는지 체크
-    const invalidLogs = inventoryLogs.filter(log => 
-      selectedLogIds.includes(String(log.id)) && (log.type === '불출' || log.has_issue)
-    );
+    // 선택된 로그 중 조건에 위배되는 것(반납 미완료 항목 혹은 이상 발생 항목)이 있는지 체크
+    const invalidLogs = inventoryLogs.filter(log => {
+      const logTypeStr = log.type as string;
+      return (selectedLogIds.includes(String(log.id)) && (logTypeStr === '불출' || log.has_issue));
+    });
 
     if (invalidLogs.length > 0) {
       return alert('선택하신 항목 중 반납이 완료되지 않았거나 이상(Issue)이 발생한 이력이 포함되어 있어 일괄 삭제할 수 없습니다. (정상 처리 및 반납 완료된 항목만 삭제 가능합니다)');
@@ -785,7 +786,7 @@ export default function MaterialManagement({
         </button>
       </div>
 
-      {/* 서브탭 통합 내용 목록 영역 (3. 상세보기 버튼 제거 및 행 클릭 시 상세 모달 오픈) */}
+      {/* 서브탭 통합 내용 목록 영역 */}
       {!isCurrentSubCatCollapsed && (
         <div>
           {loadingInventory || (inventoryTab === 'CABIN' && loadingCabin) ? (
@@ -836,7 +837,7 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 최근 불출/반납/교정 이력 섹션 (1. 조건부 일괄 삭제 및 2. 소모성 자재 '소모성 사용' 반영) */}
+      {/* 최근 불출/반납/교정 이력 섹션 */}
       <div className="bg-white rounded-lg border border-[#E2E5E9] shadow-2xs mt-4 overflow-hidden">
         <div className="p-3 flex items-center justify-between bg-[#F5F6F8] border-b border-[#E2E5E9]">
           <button
@@ -883,7 +884,6 @@ export default function MaterialManagement({
                 )}
 
                 {inventoryLogs.map((log) => {
-                  const isConsumableLog = log.type === '소모성 사용';
                   const isChecked = selectedLogIds.includes(String(log.id));
 
                   return (
@@ -921,7 +921,6 @@ export default function MaterialManagement({
                           <span className="text-[10px] text-emerald-600 font-medium">정상</span>
                         )}
 
-                        {/* 소모성 자재는 반납 버튼 미표시, 불출일 때만 반납 버튼 표시 */}
                         {log.type === '불출' && (
                           <button
                             onClick={() => handleQuickReturnFromHistory(log)}
