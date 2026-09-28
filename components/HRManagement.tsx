@@ -213,8 +213,8 @@ export default function HRManagement({
     birthDate: '' 
   });
 
-  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<Node>([cite: 3]);
-  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([cite: 3]);
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<Node>([]);
+  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
   const onConnect = useCallback(
     (params: any) => setFlowEdges((eds) => addEdge({ ...params, type: 'smoothstep', style: { stroke: '#4f46e5', strokeWidth: 2 } }, eds)),
@@ -700,7 +700,7 @@ export default function HRManagement({
     : [selectedSubCategory];
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] p-4 sm:p-6 space-y-4 font-sans box-border">
+    <div className="w-full min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-3 space-y-3 font-sans box-border">
       <style>{`
         .pdf-export-mode .org-node-normal {
           display: none !important;
@@ -710,33 +710,33 @@ export default function HRManagement({
         }
       `}</style>
 
-      <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-white p-3 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
-          <div className="p-2.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
-            <Users className="h-6 w-6" />
+          <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
+            <Users className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-[#1F2937]">인사 관리 및 조직도</h1>
-            <p className="text-xs text-[#64748B]">파트별·직급별 체계적인 조직도를 조회합니다.</p>
+            <h1 className="text-sm font-bold text-[#1F2937]">인사 관리 및 조직도</h1>
+            <p className="text-[11px] text-[#64748B]">파트별·직급별 체계적인 조직도를 조회합니다.</p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative flex-1 sm:w-56">
-            <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
+            <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
             <input
               type="text"
               placeholder="이름, 아이디, 파트 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-2 text-xs border border-[#E2E5E9] rounded-lg bg-[#F5F6F8] text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none transition"
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#E2E5E9] rounded-lg bg-[#F5F6F8] text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none transition"
             />
           </div>
 
-          <div className="flex bg-[#F5F6F8] border border-[#E2E5E9] p-1 rounded-lg">
+          <div className="flex bg-[#F5F6F8] border border-[#E2E5E9] p-0.5 rounded-lg">
             <button
               onClick={() => setActiveTab('ORG')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 ${
                 activeTab === 'ORG' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
               }`}
             >
@@ -744,7 +744,7 @@ export default function HRManagement({
             </button>
             <button
               onClick={() => setActiveTab('DAGRE')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 ${
                 activeTab === 'DAGRE' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
               }`}
             >
@@ -752,7 +752,7 @@ export default function HRManagement({
             </button>
             <button
               onClick={() => setActiveTab('LIST')}
-              className={`px-3 py-1.5 rounded-md text-xs font-bold transition ${
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
                 activeTab === 'LIST' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
               }`}
             >
@@ -763,10 +763,10 @@ export default function HRManagement({
           {activeTab === 'LIST' && (
             <button
               onClick={handleExportExcel}
-              className="flex items-center space-x-1.5 bg-[#16A34A] hover:bg-[#15803d] text-white px-3.5 py-2 rounded-lg text-xs font-bold transition shadow-xs"
+              className="flex items-center space-x-1 bg-[#16A34A] hover:bg-[#15803d] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
               title="현재 목록을 엑셀 파일로 저장합니다"
             >
-              <FileSpreadsheet className="h-4 w-4" />
+              <FileSpreadsheet className="h-3.5 w-3.5" />
               <span>엑셀 저장</span>
             </button>
           )}
@@ -774,20 +774,20 @@ export default function HRManagement({
           {activeTab === 'DAGRE' && (
             <button
               onClick={handleExportPDF}
-              className="flex items-center space-x-1.5 bg-[#DC2626] hover:bg-red-700 text-white px-3.5 py-2 rounded-lg text-xs font-bold transition shadow-xs"
-              title="인터랙티브 조직도를 고해상도 PDF로 저장합니다 (이름, 직급, 경력 포함)"
+              className="flex items-center space-x-1 bg-[#DC2626] hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+              title="인터랙티브 조직도를 고해상도 PDF로 저장합니다"
             >
-              <FileText className="h-4 w-4" />
-              <span>PDF 저장 (이름/직급/경력)</span>
+              <FileText className="h-3.5 w-3.5" />
+              <span>PDF 저장</span>
             </button>
           )}
 
           {isAdmin && (
             <button
               onClick={handleOpenAddModal}
-              className="flex items-center space-x-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white px-3.5 py-2 rounded-lg text-xs font-bold transition shadow-xs"
+              className="flex items-center space-x-1 bg-[#243B5A] hover:bg-[#1d3049] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
             >
-              <UserPlus className="h-4 w-4" />
+              <UserPlus className="h-3.5 w-3.5" />
               <span>구성원 추가</span>
             </button>
           )}
@@ -795,15 +795,15 @@ export default function HRManagement({
       </div>
 
       {activeTab === 'ORG' && (
-        <div className="bg-white border border-[#E2E5E9] rounded-xl p-4 shadow-xs space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E5E9] pb-3">
+        <div className="bg-white border border-[#E2E5E9] rounded-xl p-3 shadow-xs space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E5E9] pb-2.5">
             <div className="flex items-center space-x-2">
-              <span className="text-xs font-bold text-[#64748B] flex items-center gap-1 mr-2">
-                <Layers className="h-4 w-4 text-[#243B5A]" /> :
+              <span className="text-xs font-bold text-[#64748B] flex items-center gap-1 mr-1">
+                <Layers className="h-3.5 w-3.5 text-[#243B5A]" /> :
               </span>
               <button
                 onClick={() => setSubGroupType('DEPT')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
                   subGroupType === 'DEPT'
                     ? 'bg-[#243B5A] text-white border-[#243B5A] shadow-xs'
                     : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
@@ -814,42 +814,41 @@ export default function HRManagement({
               </button>
               <button
                 onClick={() => setSubGroupType('POS')}
-                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition border ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
                   subGroupType === 'POS'
                     ? 'bg-[#243B5A] text-white border-[#243B5A] shadow-xs'
                     : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
                 }`}
               >
                 <Briefcase className="h-3.5 w-3.5" />
-                <span>직급별 조직도 </span>
+                <span>직급별 조직도</span>
               </button>
             </div>
 
             <div className="flex items-center space-x-2 text-xs">
               <button
                 onClick={() => toggleAllGroups(false)}
-                className="px-2.5 py-1 text-[#64748B] bg-[#F5F6F8] hover:bg-[#E2E5E9] border border-[#E2E5E9] rounded-lg font-medium transition"
+                className="px-2 py-1 text-[#64748B] bg-[#F5F6F8] hover:bg-[#E2E5E9] border border-[#E2E5E9] rounded-lg font-medium transition text-[11px]"
               >
                 모두 펼치기
               </button>
               <button
                 onClick={() => toggleAllGroups(true)}
-                className="px-2.5 py-1 text-[#64748B] bg-[#F5F6F8] hover:bg-[#E2E5E9] border border-[#E2E5E9] rounded-lg font-medium transition"
+                className="px-2 py-1 text-[#64748B] bg-[#F5F6F8] hover:bg-[#E2E5E9] border border-[#E2E5E9] rounded-lg font-medium transition text-[11px]"
               >
                 모두 접기
               </button>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 overflow-x-auto pt-1 pb-1 scrollbar-none">
+          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none">
             <span className="text-xs font-bold text-[#64748B] shrink-0 flex items-center gap-0.5">
-              <ChevronRight className="h-3.5 w-3.5" /> 
-              {subGroupType === 'DEPT' ? '' : '직급 선택 (고정순):'}
+              <ChevronRight className="h-3.5 w-3.5" />
             </span>
 
             <button
               onClick={() => setSelectedSubCategory('ALL')}
-              className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
                 selectedSubCategory === 'ALL'
                   ? 'bg-[#243B5A] text-white border-[#243B5A]'
                   : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
@@ -869,7 +868,7 @@ export default function HRManagement({
                 <button
                   key={subCat}
                   onClick={() => setSelectedSubCategory(subCat)}
-                  className={`px-3 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
                     selectedSubCategory === subCat
                       ? 'bg-[#243B5A] text-white border-[#243B5A]'
                       : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
@@ -886,35 +885,35 @@ export default function HRManagement({
       {loading ? (
         <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-16 text-xs text-[#64748B]">조직도를 구성하는 중...</div>
       ) : activeTab === 'DAGRE' ? (
-        <div className="bg-white border border-[#E2E5E9] rounded-xl p-4 shadow-xs space-y-3 relative">
+        <div className="bg-white border border-[#E2E5E9] rounded-xl p-3 shadow-xs space-y-2.5 relative">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-1.5 font-bold text-[#64748B]">
-              <Layers className="h-4 w-4 text-[#243B5A]" />
+              <Layers className="h-3.5 w-3.5 text-[#243B5A]" />
               <span>인터랙티브 조직도 (Shift + 클릭 또는 드래그로 다중 선택하여 일괄 연결 가능)</span>
             </div>
             
             <div className="flex items-center space-x-2">
               <button
                 onClick={handleResetAutoLayout}
-                className="flex items-center gap-1 px-3 py-1.5 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition"
+                className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
                 title="기본 자동 정렬 상태로 되돌립니다"
               >
-                <RotateCcw className="h-3.5 w-3.5" /> 자동 정렬 초기화
+                <RotateCcw className="h-3 w-3" /> 자동 정렬 초기화
               </button>
               
               {isAdmin && (
                 <button
                   onClick={handleSaveNodePositions}
                   disabled={isSavingPositions}
-                  className="flex items-center gap-1 px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white font-bold rounded-lg transition shadow-xs disabled:opacity-50"
+                  className="flex items-center gap-1 px-3 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white font-bold rounded-lg transition shadow-xs disabled:opacity-50 text-[11px]"
                 >
-                  <Save className="h-3.5 w-3.5" /> {isSavingPositions ? '저장 중...' : '조직도 위치 저장'}
+                  <Save className="h-3 w-3" /> {isSavingPositions ? '저장 중...' : '조직도 위치 저장'}
                 </button>
               )}
             </div>
           </div>
 
-          <div ref={dagreContainerRef} className="w-full h-[630px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
+          <div ref={dagreContainerRef} className="w-full h-[720px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
@@ -937,19 +936,19 @@ export default function HRManagement({
             </ReactFlow>
 
             {selectedFlowNodes.length > 0 && (
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#243B5A] text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center space-x-3 text-xs border border-white/20 animate-fade-in">
+              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#243B5A] text-white px-4 py-2 rounded-xl shadow-xl flex items-center space-x-3 text-xs border border-white/20 animate-fade-in">
                 <span className="font-semibold">
                   선택됨: <span className="text-yellow-300 font-bold">{selectedFlowNodes.length}명</span>
                 </span>
                 <button
                   onClick={handleBatchConnect}
-                  className="bg-white text-[#243B5A] px-3 py-1.5 rounded-lg font-bold hover:bg-slate-100 transition flex items-center gap-1 shadow-xs"
+                  className="bg-white text-[#243B5A] px-2.5 py-1 rounded-lg font-bold hover:bg-slate-100 transition flex items-center gap-1 shadow-xs text-[11px]"
                 >
-                  <Link2 className="h-3.5 w-3.5" /> 첫 번째 선택자에 일괄 선 연결
+                  <Link2 className="h-3 w-3" /> 첫 번째 선택자에 일괄 선 연결
                 </button>
                 <button
                   onClick={() => setSelectedFlowNodes([])}
-                  className="text-slate-300 hover:text-white px-1 font-medium"
+                  className="text-slate-300 hover:text-white px-1 font-medium text-[11px]"
                 >
                   선택 해제
                 </button>
@@ -958,7 +957,7 @@ export default function HRManagement({
           </div>
         </div>
       ) : activeTab === 'ORG' ? (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {displayedCategories.map((catName) => {
             const groupMembers = filteredUsers.filter((u) =>
               subGroupType === 'DEPT'
@@ -988,16 +987,16 @@ export default function HRManagement({
               <div key={catName} className="bg-white border border-[#E2E5E9] rounded-xl overflow-hidden shadow-xs transition-all">
                 <div 
                   onClick={() => toggleGroup(catName)}
-                  className="flex items-center justify-between p-3.5 bg-[#F5F6F8] hover:bg-[#E2E5E9]/50 cursor-pointer border-b border-[#E2E5E9] transition"
+                  className="flex items-center justify-between p-3 bg-[#F5F6F8] hover:bg-[#E2E5E9]/50 cursor-pointer border-b border-[#E2E5E9] transition"
                 >
-                  <div className="flex items-center space-x-2.5">
+                  <div className="flex items-center space-x-2">
                     <div className="p-1.5 bg-[#243B5A] text-white rounded-lg">
-                      {subGroupType === 'DEPT' ? <Building2 className="h-4 w-4" /> : <Briefcase className="h-4 w-4" />}
+                      {subGroupType === 'DEPT' ? <Building2 className="h-3.5 w-3.5" /> : <Briefcase className="h-3.5 w-3.5" />}
                     </div>
                     <div>
                       <h3 className="font-bold text-[#1F2937] text-xs flex items-center gap-2">
                         {catName} 
-                        <span className="text-[10px] bg-white text-[#243B5A] font-bold px-2 py-0.5 rounded-full border border-[#E2E5E9]">
+                        <span className="text-[10px] bg-white text-[#243B5A] font-bold px-2 py-0.2 rounded-full border border-[#E2E5E9]">
                           총 {groupMembers.length}명
                         </span>
                       </h3>
@@ -1006,19 +1005,19 @@ export default function HRManagement({
 
                   <button className="text-[#64748B] hover:text-[#1F2937] p-1 flex items-center gap-1 text-xs font-medium">
                     <span>{isCollapsed ? '펼치기' : '접기'}</span>
-                    {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+                    {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
                   </button>
                 </div>
 
                 {!isCollapsed && (
-                  <div className="p-4 bg-gradient-to-b from-slate-50/50 to-white space-y-4">
+                  <div className="p-3 bg-gradient-to-b from-slate-50/50 to-white space-y-3">
                     {leaders.length > 0 && (
                       <div className="space-y-2">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#243B5A] px-1">
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-[#243B5A] px-1">
                           <GitCommit className="h-3.5 w-3.5 text-[#243B5A]" />
                           <span>파트 리더 (팀장)</span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
                           {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf))}
                         </div>
                       </div>
@@ -1026,17 +1025,17 @@ export default function HRManagement({
 
                     {leaders.length > 0 && members.length > 0 && (
                       <div className="relative flex justify-center my-1">
-                        <div className="h-4 w-0.5 bg-slate-300"></div>
+                        <div className="h-3 w-0.5 bg-slate-300"></div>
                       </div>
                     )}
 
                     {members.length > 0 && (
                       <div className="space-y-2">
-                        <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#64748B] px-1">
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-[#64748B] px-1">
                           <Users className="h-3.5 w-3.5 text-[#64748B]" />
                           <span>소속 구성원 ({members.length}명)</span>
                         </div>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
                           {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf))}
                         </div>
                       </div>
@@ -1053,8 +1052,8 @@ export default function HRManagement({
         </div>
       ) : (
         <div>
-          {/* 모바일 화면 맞춤 카드 리스트 뷰 (중복 텍스트 방어 및 반응형 레이아웃) */}
-          <div className="block md:hidden space-y-3">
+          {/* 모바일 화면 맞춤 카드 리스트 뷰 */}
+          <div className="block md:hidden space-y-2.5">
             {filteredUsers.map((u) => {
               const canEdit = canEditUser(u);
               const joinCareer = calculateCareerDetails(u.join_date);
@@ -1062,7 +1061,7 @@ export default function HRManagement({
               const age = calculateAge(u.password);
 
               return (
-                <div key={u.id} className="bg-white p-3.5 border border-[#E2E5E9] rounded-xl shadow-xs space-y-2.5">
+                <div key={u.id} className="bg-white p-3 border border-[#E2E5E9] rounded-xl shadow-xs space-y-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -1104,7 +1103,7 @@ export default function HRManagement({
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9]">
+                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-[#F5F6F8] p-2 rounded-lg border border-[#E2E5E9]">
                     <div>
                       <span className="text-[#64748B] block text-[10px]">연락처</span>
                       {u.phone ? (
@@ -1140,15 +1139,15 @@ export default function HRManagement({
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F5F6F8] border-b border-[#E2E5E9] font-bold text-[#64748B]">
                 <tr>
-                  <th className="p-3.5">성명 (나이/아이디)</th>
-                  <th className="p-3.5">파트 / 직급(직책/분야)</th>
-                  <th className="p-3.5">연락처 / 주소</th>
-                  <th className="p-3.5">권한</th>
-                  <th className="p-3.5">자사 근속 (입사일)</th>
-                  <th className="p-3.5">총 경력 (시작일)</th>
-                  <th className="p-3.5">사내자격</th>
-                  <th className="p-3.5">국가자격</th>
-                  <th className="p-3.5 text-center">관리</th>
+                  <th className="p-3">성명 (나이/아이디)</th>
+                  <th className="p-3">파트 / 직급(직책/분야)</th>
+                  <th className="p-3">연락처 / 주소</th>
+                  <th className="p-3">권한</th>
+                  <th className="p-3">자사 근속 (입사일)</th>
+                  <th className="p-3">총 경력 (시작일)</th>
+                  <th className="p-3">사내자격</th>
+                  <th className="p-3">국가자격</th>
+                  <th className="p-3 text-center">관리</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E5E9]">
@@ -1157,7 +1156,7 @@ export default function HRManagement({
                   const age = calculateAge(u.password);
                   return (
                     <tr key={u.id} className="hover:bg-[#F5F6F8]/60 transition">
-                      <td className="p-3.5 font-bold text-[#1F2937]">
+                      <td className="p-3 font-bold text-[#1F2937]">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span>{u.name}</span>
                           {age && <span className="text-xs text-[#243B5A] font-bold">({age}세)</span>}
@@ -1169,10 +1168,10 @@ export default function HRManagement({
                           )}
                         </div>
                       </td>
-                      <td className="p-3.5 text-[#1F2937]">
+                      <td className="p-3 text-[#1F2937]">
                         {u.department} / {u.position} {u.job_title && u.job_title !== '없음' ? `(${u.job_title}${u.field ? `/${u.field}` : ''})` : ''}
                       </td>
-                      <td className="p-3.5 font-medium">
+                      <td className="p-3 font-medium">
                         <div>
                           {u.phone ? (
                             <a href={`tel:${u.phone}`} className="text-[#243B5A] hover:underline flex items-center gap-1">
@@ -1184,24 +1183,24 @@ export default function HRManagement({
                           {u.address || '주소 미등록'}
                         </div>
                       </td>
-                      <td className="p-3.5">
+                      <td className="p-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
                           u.role === 'ADMIN' ? 'bg-[#243B5A] text-white border-[#243B5A]' : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9]'
                         }`}>
                           {u.role === 'ADMIN' ? '관리자' : '일반 사용자'}
                         </span>
                       </td>
-                      <td className="p-3.5">
+                      <td className="p-3">
                         <div className="text-[#16A34A] font-semibold">{calculateCareerDetails(u.join_date) || '-'}</div>
                         <div className="text-[10px] text-[#64748B]">{u.join_date || ''}</div>
                       </td>
-                      <td className="p-3.5">
+                      <td className="p-3">
                         <div className="text-[#2563EB] font-semibold">{calculateCareerDetails(u.career_start_date) || '-'}</div>
                         <div className="text-[10px] text-[#64748B]">{u.career_start_date || ''}</div>
                       </td>
-                      <td className="p-3.5 text-[#1F2937] font-medium">{u.internal_certificates || '-'}</td>
-                      <td className="p-3.5 text-[#1F2937] font-medium">{u.national_certificates || '-'}</td>
-                      <td className="p-3.5 text-center">
+                      <td className="p-3 text-[#1F2937] font-medium">{u.internal_certificates || '-'}</td>
+                      <td className="p-3 text-[#1F2937] font-medium">{u.national_certificates || '-'}</td>
+                      <td className="p-3 text-center">
                         <div className="flex items-center justify-center space-x-1">
                           {canEdit && (
                             <button
@@ -1233,13 +1232,13 @@ export default function HRManagement({
       )}
 
       {detailUser && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4">
-          <div className="bg-white border-t sm:border border-[#E2E5E9] rounded-t-2xl sm:rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4 text-[#1F2937] relative animate-in slide-in-from-bottom duration-200">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-3">
+          <div className="bg-white border-t sm:border border-[#E2E5E9] rounded-t-2xl sm:rounded-xl max-w-md w-full p-4 shadow-2xl space-y-3 text-[#1F2937] relative animate-in slide-in-from-bottom duration-200">
             <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto sm:hidden mb-1"></div>
 
-            <div className="flex items-start justify-between border-b border-[#E2E5E9] pb-3">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-full bg-[#243B5A] text-white flex items-center justify-center font-bold text-sm shadow-xs">
+            <div className="flex items-start justify-between border-b border-[#E2E5E9] pb-2.5">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-full bg-[#243B5A] text-white flex items-center justify-center font-bold text-xs shadow-xs">
                   {detailUser.name?.[0] || '유'}
                 </div>
                 <div>
@@ -1267,8 +1266,8 @@ export default function HRManagement({
               </button>
             </div>
 
-            <div className="space-y-3 text-xs">
-              <div className="bg-[#F5F6F8] p-3 rounded-lg space-y-2 border border-[#E2E5E9]">
+            <div className="space-y-2.5 text-xs">
+              <div className="bg-[#F5F6F8] p-2.5 rounded-lg space-y-2 border border-[#E2E5E9]">
                 {detailUser.id && (
                   <div className="flex items-center justify-between text-[#1F2937] pb-2 border-b border-[#E2E5E9]">
                     <span className="font-semibold text-[#64748B] flex items-center gap-1.5">
@@ -1296,14 +1295,14 @@ export default function HRManagement({
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                <div className="bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9]">
+                <div className="bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9]">
                   <span className="text-[10px] text-[#16A34A] font-bold block mb-0.5">자사 근속</span>
                   <span className="text-xs font-extrabold text-[#1F2937] block">
                     {calculateCareerDetails(detailUser.join_date) || '-'}
                   </span>
                 </div>
 
-                <div className="bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9]">
+                <div className="bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9]">
                   <span className="text-[10px] text-[#2563EB] font-bold block mb-0.5">총 경력</span>
                   <span className="text-xs font-extrabold text-[#1F2937] block">
                     {calculateCareerDetails(detailUser.career_start_date) || '-'}
@@ -1311,13 +1310,13 @@ export default function HRManagement({
                 </div>
               </div>
 
-              <div className="bg-[#F5F6F8] p-3 rounded-lg space-y-1.5 border border-[#E2E5E9]">
+              <div className="bg-[#F5F6F8] p-2.5 rounded-lg space-y-1 border border-[#E2E5E9]">
                 <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격:</span> {detailUser.internal_certificates || '없음'}</div>
                 <div className="text-[11px]"><span className="font-bold text-[#64748B]">국가자격:</span> {detailUser.national_certificates || '없음'}</div>
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-3 border-t border-[#E2E5E9]">
+            <div className="flex items-center justify-between pt-2.5 border-t border-[#E2E5E9]">
               {canEditUser(detailUser) ? (
                 <button
                   onClick={() => {
@@ -1325,7 +1324,7 @@ export default function HRManagement({
                     setDetailUser(null);
                     handleOpenEditModal(target);
                   }}
-                  className="px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white font-bold rounded-lg text-xs transition flex items-center space-x-1"
+                  className="px-3 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white font-bold rounded-lg text-xs transition flex items-center space-x-1"
                 >
                   <Edit3 className="h-3.5 w-3.5" />
                   <span>정보 수정</span>
@@ -1334,7 +1333,7 @@ export default function HRManagement({
               
               <button
                 onClick={() => setDetailUser(null)}
-                className="px-4 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#1F2937] font-bold rounded-lg text-xs transition"
+                className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#1F2937] font-bold rounded-lg text-xs transition"
               >
                 닫기
               </button>
@@ -1344,9 +1343,9 @@ export default function HRManagement({
       )}
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full p-5 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto text-[#1F2937]">
-            <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full p-4 shadow-xl space-y-3 max-h-[90vh] overflow-y-auto text-[#1F2937]">
+            <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2.5">
               <h3 className="font-bold text-xs text-[#1F2937]">
                 {selectedUser 
                   ? (isSelf(selectedUser) ? '내 인사 정보 수정' : '구성원 정보 수정') 
@@ -1357,11 +1356,11 @@ export default function HRManagement({
               </button>
             </div>
 
-            <form onSubmit={handleSave} className="space-y-3 text-xs">
-              <div className="grid grid-cols-2 gap-3">
+            <form onSubmit={handleSave} className="space-y-2.5 text-xs">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1 flex items-center gap-1">
-                    <AtSign className="h-3.5 w-3.5 text-[#243B5A]" /> 로그인 아이디 (id) *
+                    <AtSign className="h-3.5 w-3.5 text-[#243B5A]" /> 로그인 아이디 *
                   </label>
                   <input
                     type="text"
@@ -1414,7 +1413,7 @@ export default function HRManagement({
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">파트 (부서)</label>
                   <select
@@ -1442,7 +1441,7 @@ export default function HRManagement({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">직책</label>
                   <select
@@ -1474,7 +1473,7 @@ export default function HRManagement({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">연락처</label>
                   <input
@@ -1497,7 +1496,7 @@ export default function HRManagement({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">자사 근속 시작일 (입사일)</label>
                   <input
@@ -1518,7 +1517,7 @@ export default function HRManagement({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">사내 자격</label>
                   <input
@@ -1541,7 +1540,7 @@ export default function HRManagement({
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9]">
+              <div className="flex justify-end space-x-2 pt-2.5 border-t border-[#E2E5E9]">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -1579,7 +1578,7 @@ function renderMemberCard(
     <div 
       key={member.id} 
       onClick={() => setDetailUser(member)}
-      className={`p-3 rounded-xl border transition-all flex flex-col justify-between space-y-2 group cursor-pointer shadow-xs ${
+      className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between space-y-1.5 group cursor-pointer shadow-xs ${
         isLeader 
           ? 'bg-white border-[#243B5A] ring-1 ring-[#243B5A]/20 shadow-sm' 
           : 'bg-white border-[#E2E5E9] hover:border-slate-400 hover:shadow-sm'
@@ -1587,7 +1586,7 @@ function renderMemberCard(
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-2 min-w-0">
-          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
             isLeader ? 'bg-[#243B5A] text-white' : 'bg-slate-200 text-[#243B5A]'
           }`}>
             {member.name?.[0] || '유'}
@@ -1616,7 +1615,7 @@ function renderMemberCard(
         </div>
       </div>
 
-      <div className="pt-2 border-t border-[#E2E5E9] text-[10px] space-y-1">
+      <div className="pt-1.5 border-t border-[#E2E5E9] text-[10px] space-y-1">
         <div className="flex items-center justify-between text-[#64748B]">
           <span className="flex items-center gap-1 font-medium">
             <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
