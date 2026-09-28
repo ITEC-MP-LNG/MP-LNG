@@ -52,14 +52,10 @@ export default function MaterialManagement({
   fetchInventory,
   fetchInventoryLogs,
 }: MaterialManagementProps) {
-  // 메인 탭 상태
   const [inventoryTab, setInventoryTab] = useState<MainTab>('고정');
-
-  // CABIN 전용 목록 상태
   const [cabinInventoryList, setCabinInventoryList] = useState<any[]>([]);
   const [loadingCabin, setLoadingCabin] = useState<boolean>(false);
 
-  // 화면 중앙 커스텀 토스트 알림 상태 (메시지)
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showCenterToast = (msg: string) => {
@@ -69,16 +65,10 @@ export default function MaterialManagement({
     }, 2500);
   };
 
-  // 히스토리 반납 전용 커스텀 확인 모달 상태
   const [pendingReturnLog, setPendingReturnLog] = useState<InventoryLog | null>(null);
-
-  // 단건 이력 삭제용 커스텀 확인 모달 상태
   const [pendingDeleteLogId, setPendingDeleteLogId] = useState<string | number | null>(null);
-
-  // 일괄 이력 삭제용 커스텀 확인 모달 상태
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState<boolean>(false);
 
-  // 동적 카테고리 목록 상태
   const [fixedSubCategories, setFixedSubCategories] = useState<string[]>([
     '압력계', '가스측정기', 'VBT', '공구', '무선 배터리', '교정', '기타'
   ]);
@@ -89,14 +79,12 @@ export default function MaterialManagement({
   ]);
   const [selectedConsumableCategory, setSelectedConsumableCategory] = useState<string>('검사약품');
 
-  // CABIN 사용자 정의 Sheet 목록 및 항목 서브태그 상태
   const [customCabinSheets, setCustomCabinSheets] = useState<string[]>([]);
   const [selectedCabinSheet, setSelectedCabinSheet] = useState<string>('');
 
   const [customCabinTextSubTags, setCustomCabinTextSubTags] = useState<string[]>([]);
   const [selectedCabinTextSubTag, setSelectedCabinTextSubTag] = useState<string>('');
 
-  // 종류별 / 항목별 수정/관리 모달 제어 상태
   const [isCabinSheetModalOpen, setIsCabinSheetModalOpen] = useState<boolean>(false);
   const [isCabinTagModalOpen, setIsCabinTagModalOpen] = useState<boolean>(false);
   const [newSheetInput, setNewSheetInput] = useState<string>('');
@@ -107,20 +95,16 @@ export default function MaterialManagement({
   const [editingTagIndex, setEditingTagIndex] = useState<number | null>(null);
   const [editTagInputValue, setEditTagInputValue] = useState<string>('');
 
-  // VBT 서브 탭
   const [selectedVbtSubCategory, setSelectedVbtSubCategory] = useState<VbtSubCategory>('1L');
 
-  // 일반 서브 카테고리 관리 모달 상태
   const [isSubCatModalOpen, setIsSubCatModalOpen] = useState<boolean>(false);
   const [newSubCatInput, setNewSubCatInput] = useState<string>('');
   const [editingSubCatIndex, setEditingSubCatIndex] = useState<number | null>(null);
   const [editSubCatInputValue, setEditSubCatInputValue] = useState<string>('');
 
-  // UI 제어 상태
   const [isAlertBannerOpen, setIsAlertBannerOpen] = useState(true);
   const [isHistorySectionOpen, setIsHistorySectionOpen] = useState(true);
   
-  // 서브탭별 내용 통합 접고/펴기 상태 관리
   const [collapsedSubTabs, setCollapsedSubTabs] = useState<{ [key: string]: boolean }>({});
 
   const toggleSubTabContent = (subCatName: string) => {
@@ -134,26 +118,22 @@ export default function MaterialManagement({
   const [showInventorySheet, setShowInventorySheet] = useState(false);
   const [editingItem, setEditingItem] = useState<any | null>(null);
   
-  // 불출/반납/소모성 사용 모달 상태
+  // 불출/반납/소모성 사용 모달 상태 (이상유무 및 수량 포함)
   const [showLogSheet, setShowLogSheet] = useState(false);
   const [targetItem, setTargetItem] = useState<any | null>(null);
   const [logType, setLogType] = useState<'불출' | '반납' | '소모성 사용'>('불출');
   const [logQty, setLogQty] = useState<number>(1);
+  const [logHasIssue, setLogHasIssue] = useState<boolean>(false); // 이상 유무 체크
   const [logMemo, setLogMemo] = useState('');
 
-  // 이력 일괄 삭제용 선택된 ID 관리
   const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
-
-  // 교정일 30일 전 알림 항목
   const [calibrationAlertItems, setCalibrationAlertItems] = useState<{ item: any; daysLeft: number; calDate: string; nextCalDate: string }[]>([]);
 
-  // 시트 이름에서 앞의 숫자(예: "1.", "1-")를 깔끔하게 제거해주는 유틸 함수
   const cleanSheetName = (rawName: string) => {
     if (!rawName) return '';
     return rawName.replace(/^\d+[\.\-\s]+/, '').trim();
   };
 
-  // CABIN 전용 데이터 패치 함수
   const fetchCabinInventory = async () => {
     setLoadingCabin(true);
     try {
@@ -215,7 +195,6 @@ export default function MaterialManagement({
 
   const cabinTextSubTagsForSheet = useMemo(() => {
     const filteredBySheet = cabinInventoryList.filter(item => cleanSheetName(item.sheet_name) === selectedCabinSheet);
-
     const tags = new Set<string>();
     filteredBySheet.forEach(item => {
       const itemNameLower = (item.item || '').toLowerCase();
@@ -229,9 +208,7 @@ export default function MaterialManagement({
         if (firstWord) tags.add(firstWord);
       }
     });
-
-    const autoTags = Array.from(tags).sort();
-    return Array.from(new Set([...autoTags, ...customCabinTextSubTags]));
+    return Array.from(new Set([...Array.from(tags).sort(), ...customCabinTextSubTags]));
   }, [cabinInventoryList, selectedCabinSheet, customCabinTextSubTags]);
 
   const handleSelectCabinSheet = (sheetName: string) => {
@@ -476,10 +453,16 @@ export default function MaterialManagement({
   };
 
   const handleOpenLogModal = (item: any, type: '불출' | '반납' | '소모성 사용') => {
+    // 소모성 자재는 반납 불가 처리
+    if (item.type === '소모성' && type === '반납') {
+      alert('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
+      return;
+    }
     setSelectedDetailItem(null);
     setTargetItem(item);
     setLogType(type);
     setLogQty(1);
+    setLogHasIssue(false); // 초기화
     setLogMemo('');
     setShowLogSheet(true);
   };
@@ -515,12 +498,18 @@ export default function MaterialManagement({
 
       if (invError) throw invError;
 
+      // 이상 유무에 따른 이력 타입 문자열 결정 (불출, 반납완료, 이상알림 등 요구사항 반영)
+      let finalLogType = logType === '소모성 사용' ? '불출' : logType;
+      if (logType === '반납') {
+        finalLogType = logHasIssue ? '불출, 반납완료, 이상알림' : '반납완료';
+      }
+
       const { error: logError } = await supabase
         .from('inventory_logs')
         .insert([{
           inventory_id: targetItem.id,
           item_name: targetItem.name,
-          type: logType === '소모성 사용' ? '불출' : logType,
+          type: finalLogType,
           quantity: qtyChange,
           worker_name: currentUser?.name || '작업자',
           memo: logMemo.trim() || null,
@@ -574,6 +563,11 @@ export default function MaterialManagement({
         return alert(`'${log.item_name}'에 해당하는 현재 등록된 자재 정보를 찾을 수 없습니다.`);
       }
 
+      // 소모성 자재는 반납 불가
+      if (foundItem.type === '소모성') {
+        return alert('소모성 자재는 반납 처리를 할 수 없습니다.');
+      }
+
       if (foundItem.type !== 'CABIN') {
         const newQty = foundItem.quantity + log.quantity;
         const { error: invErr } = await supabase
@@ -585,7 +579,7 @@ export default function MaterialManagement({
 
       const { error: logErr } = await supabase
         .from('inventory_logs')
-        .update({ type: '반납', updated_at: new Date().toISOString() })
+        .update({ type: '반납완료', updated_at: new Date().toISOString() })
         .eq('id', log.id);
       if (logErr) throw logErr;
 
@@ -739,7 +733,6 @@ export default function MaterialManagement({
   return (
     <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
       
-      {/* 화면 중앙 알림 모달 */}
       {toastMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-xs p-4">
           <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-xs text-center">
@@ -749,7 +742,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 반납 확인 모달 */}
       {pendingReturnLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
@@ -770,7 +762,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 단건 이력 삭제 확인 모달 */}
       {pendingDeleteLogId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
@@ -789,7 +780,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 일괄 이력 삭제 확인 모달 */}
       {showBatchDeleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
@@ -808,7 +798,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* CABIN 종류(Sheet) 추가/수정/삭제 관리 모달 */}
       {isCabinSheetModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
@@ -905,7 +894,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* CABIN 항목별 서브태그 추가/수정/삭제 관리 모달 */}
       {isCabinTagModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
@@ -1004,7 +992,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 일반 카테고리(기자재/소모성) 추가/수정/삭제 관리 모달 */}
       {isSubCatModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
@@ -1099,7 +1086,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 상단 타이틀 영역 */}
       <div className="bg-white p-3 rounded-lg border border-[#E2E5E9] shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 overflow-hidden">
         <div className="flex items-center space-x-2.5 min-w-0">
           <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#243B5A] shrink-0">
@@ -1112,7 +1098,6 @@ export default function MaterialManagement({
         </div>
       </div>
 
-      {/* 교정 예정 알림 Banner */}
       {calibrationAlertItems.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden shadow-2xs">
           <button
@@ -1151,7 +1136,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 메인 탭 */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2">
         <div className="flex bg-[#E2E5E9]/60 p-1 rounded-lg border border-[#E2E5E9] w-full sm:w-auto">
           <button
@@ -1194,7 +1178,6 @@ export default function MaterialManagement({
         )}
       </div>
 
-      {/* 종류별(Sheet) 탭 영역 */}
       {inventoryTab === 'CABIN' ? (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
@@ -1276,7 +1259,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* CABIN 항목별 서브탭 */}
       {inventoryTab === 'CABIN' && cabinTextSubTagsForSheet.length > 0 && (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
@@ -1317,7 +1299,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* VBT 상세 서브탭 */}
       {inventoryTab === '고정' && selectedFixedSubCategory === 'VBT' && (
         <div className="bg-white p-1.5 rounded-lg border border-[#E2E5E9] flex overflow-x-auto gap-1 shadow-2xs">
           {(['1L', '1S', '2L', '2S', 'FLAT', '기타'] as VbtSubCategory[]).map((subCat) => (
@@ -1334,7 +1315,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 서브탭 통합 내용 접기/펴기 헤더 바 */}
       <div className="bg-white rounded-lg border border-[#E2E5E9] p-3 flex items-center justify-between gap-2 shadow-2xs">
         <div className="flex items-center space-x-2 text-xs font-bold text-[#1F2937] min-w-0 truncate">
           <Package className="h-4 w-4 text-[#243B5A] shrink-0" />
@@ -1356,7 +1336,6 @@ export default function MaterialManagement({
         </button>
       </div>
 
-      {/* 목록 영역 */}
       {!isCurrentSubCatCollapsed && (
         <div>
           {loadingInventory || (inventoryTab === 'CABIN' && loadingCabin) ? (
@@ -1407,7 +1386,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 최근 불출/반납 이력 섹션 */}
       <div className="bg-white rounded-lg border border-[#E2E5E9] shadow-2xs mt-4 overflow-hidden">
         <div className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#F5F6F8] border-b border-[#E2E5E9] gap-2">
           <button
@@ -1415,7 +1393,7 @@ export default function MaterialManagement({
             className="flex items-center space-x-2 text-xs font-bold text-[#1F2937] flex-1 text-left min-w-0"
           >
             <History className="h-4 w-4 text-[#243B5A] shrink-0" />
-            <span className="truncate">최근 불출 / 반납 이력 (매일 23시 초기화)</span>
+            <span className="truncate">최근 불출 / 반납 이력 (매일 23시 초기화 조건부 삭제)</span>
             <span className="text-[10px] px-1.5 py-0.2 bg-white border border-[#E2E5E9] rounded-full text-[#64748B] font-normal shrink-0">
               {inventoryLogs?.length || 0}건
             </span>
@@ -1470,7 +1448,7 @@ export default function MaterialManagement({
                           />
                         )}
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
-                          log.type === '불출' ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                          log.type.includes('이상알림') ? 'bg-red-100 text-red-800' : log.type.includes('불출') ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
                         }`}>
                           {log.type}
                         </span>
@@ -1522,7 +1500,6 @@ export default function MaterialManagement({
         )}
       </div>
 
-      {/* 자재 상세 보기 바텀시트 */}
       {selectedDetailItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-3">
           <div className="bg-white border border-[#E2E5E9] rounded-t-xl sm:rounded-lg max-w-md w-full p-4 shadow-2xl text-[#1F2937]">
@@ -1594,15 +1571,18 @@ export default function MaterialManagement({
                     className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md flex items-center justify-center space-x-1 text-xs"
                   >
                     <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
-                    <span>불출 처리</span>
+                    <span>{selectedDetailItem.type === '소모성' ? '소모성 사용' : '불출 처리'}</span>
                   </button>
-                  <button
-                    onClick={() => handleOpenLogModal(selectedDetailItem, '반납')}
-                    className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md flex items-center justify-center space-x-1 text-xs"
-                  >
-                    <ArrowDownRight className="h-3.5 w-3.5 shrink-0" />
-                    <span>반납 처리</span>
-                  </button>
+                  {/* 소모성 자재는 반납 버튼 숨김 처리 */}
+                  {selectedDetailItem.type !== '소모성' && (
+                    <button
+                      onClick={() => handleOpenLogModal(selectedDetailItem, '반납')}
+                      className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md flex items-center justify-center space-x-1 text-xs"
+                    >
+                      <ArrowDownRight className="h-3.5 w-3.5 shrink-0" />
+                      <span>반납 처리</span>
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -1629,7 +1609,7 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 자재 불출 / 반납 / 소모성 사용 처리 입력 모달 */}
+      {/* 자재 불출 / 반납 처리 입력 모달 (수량 및 이상유무 체크 포함) */}
       {showLogSheet && targetItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-3">
           <div className="bg-white border border-[#E2E5E9] rounded-t-xl sm:rounded-lg max-w-md w-full p-4 shadow-2xl text-[#1F2937]">
@@ -1654,6 +1634,21 @@ export default function MaterialManagement({
                   className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                 />
               </div>
+
+              {logType === '반납' && (
+                <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 flex items-center space-x-2">
+                  <input 
+                    type="checkbox" 
+                    id="logHasIssue"
+                    checked={logHasIssue} 
+                    onChange={e => setLogHasIssue(e.target.checked)} 
+                    className="w-4 h-4 accent-amber-600 rounded"
+                  />
+                  <label htmlFor="logHasIssue" className="text-amber-900 font-semibold cursor-pointer select-none">
+                    장비 이상(결함) 있음 체크 (체크 시: 불출, 반납완료, 이상알림 표시)
+                  </label>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">메모 / 특이사항</label>
@@ -1686,7 +1681,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 신규 등록/수정 모달 */}
       {showInventorySheet && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-3">
           <div className="bg-white border border-[#E2E5E9] rounded-t-xl sm:rounded-lg max-w-lg w-full p-4 shadow-2xl max-h-[85vh] overflow-y-auto text-[#1F2937]">
