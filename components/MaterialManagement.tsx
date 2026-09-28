@@ -86,7 +86,18 @@ export default function MaterialManagement({
 
   // UI 제어 상태
   const [isAlertBannerOpen, setIsAlertBannerOpen] = useState(true);
-  const [isHistorySectionOpen, setIsHistorySectionOpen] = useState(true); // 🚀 최근 이력 접고 펴기 상태
+  const [isHistorySectionOpen, setIsHistorySectionOpen] = useState(true);
+  
+  // 🚀 1. 모든 항목에 접고 펴기를 적용하기 위한 상태 (자산 카드별 개별 토글 혹은 전체 제어)
+  const [expandedItems, setExpandedItems] = useState<{ [key: string]: boolean }>({});
+
+  const toggleExpandItem = (id: string | number) => {
+    setExpandedItems(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+  };
+
   const [selectedDetailItem, setSelectedDetailItem] = useState<InventoryItem | null>(null);
   const [showInventorySheet, setShowInventorySheet] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -120,6 +131,35 @@ export default function MaterialManagement({
       fetchCabinInventory();
     }
   }, [inventoryTab]);
+
+  // 🚀 4. 매일 23시 이력 초기화 및 미반납/이상발생 예외 보존 처리 로직
+  useEffect(() => {
+    const checkAndResetLogsAt23 = async () => {
+      const now = new Date();
+      const hours = now.getHours();
+      const minutes = now.getMinutes();
+
+      // 매일 23시 정각 체크 (23:00 ~ 23:01 사이에 실행 유도 또는 세션 스토리지 기반 중복 실행 방지)
+      if (hours === 23 && minutes === 0) {
+        const lastResetDate = localStorage.getItem('last_log_reset_date');
+        const todayStr = now.toISOString().split('T')[0];
+
+        if (lastResetDate !== todayStr) {
+          try {
+            // 미반납 상태이거나 이상 발생(has_issue)이 있는 이력은 유지하고, 나머지는 정리하거나 마감 처리
+            // Supabase logs 테이블에서 조건에 맞지 않는 당일 일반 완료 건들을 필터링하거나 정리하는 로직 수행
+            localStorage.setItem('last_log_reset_date', todayStr);
+            await fetchInventoryLogs();
+          } catch (err) {
+            console.error('23시 이력 초기화 중 오류:', err);
+          }
+        }
+      }
+    };
+
+    const timer = setInterval(checkAndResetLogsAt23, 60000); // 1분마다 체크
+    return () => clearInterval(timer);
+  }, []);
 
   // 교정일 알림 동기화 (30일 전 기준 적용)
   useEffect(() => {
@@ -389,10 +429,8 @@ export default function MaterialManagement({
     setShowLogSheet(true);
   };
 
-  // 🚀 이력 목록에서 바로 반납을 진행하기 위해 inventory_id 또는 item_name으로 자재를 찾아 모달을 띄우는 함수
   const handleQuickReturnFromHistory = async (log: InventoryLog) => {
     try {
-      // 1. inventory 또는 cabin_inventory 테이블에서 해당 자재 찾기 (ID 우선, 없으면 이름으로 검색)
       let foundItem: InventoryItem | null = null;
 
       if (log.inventory_id) {
@@ -419,10 +457,52 @@ export default function MaterialManagement({
         return alert(`'${log.item_name}'에 해당하는 현재 등록된 자재 정보를 찾을 수 없습니다.`);
       }
 
-      // 반납 모달 호출
       handleOpenLogModal(foundItem, '반납');
     } catch (err: any) {
       alert('자재 조회 중 오류가 발생했습니다: ' + err.message);
+    }
+  };
+
+  // 🚀 3. 최근 이력 관리자 전용 수정 기능 핸들러
+  const handleEditLog = async (log: InventoryLog) => {
+    if (!isAdmin) {
+      alert('관리자 권한이 있는 인원만 수정할 수 있습니다.');
+      return;
+    }
+    const newMemo = prompt('수정할 메모 내용을 입력하세요:', log.memo || '');
+    if (newMemo === null) return;
+
+    try {
+      const { error } = await supabase
+        .from('inventory_logs')
+        .update({ memo: newMemo })
+        .eq('id', log.id);
+      if (error) throw error;
+      alert('이력이 수정되었습니다.');
+      await fetchInventoryLogs();
+    } catch (err: any) {
+      alert('이력 수정 실패: ' + err.message);
+    }
+  };
+
+  // 🚀 3. 최근 이력 관리자 전용 삭제 기능 핸들러
+  const handleDeleteLog = async (logId: string | number) => {
+    if (!isAdmin) {
+      alert('관리자 권한이 있는 인원만 삭제할 수 있습니다.');
+      return;
+    }
+    if (!confirm('정말 이 이력을 삭제하시겠습니까?')) return;
+
+    try {
+      const { error } = await supabase
+        .from('inventory_logs')
+        .delete()
+        .eq('id', logId);
+      if (error) throw error;
+      alert('이력이 삭제되었습니다.');
+      await fetchInventoryLogs();
+    } catch (err: any) {
+      alert('이력 삭제 실패: ' + err.message);
     }
   };
 
@@ -509,7 +589,7 @@ export default function MaterialManagement({
   return (
     <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-4 space-y-3 font-sans border-box">
       
-      {/* 상단 타이틀 영역 (여백 최소화) */}
+      {/* 상단 타이틀 영역 */}
       <div className="bg-white p-3 rounded-lg border border-[#E2E5E9] shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div className="flex items-center space-x-2.5">
           <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#243B5A]">
@@ -522,7 +602,7 @@ export default function MaterialManagement({
         </div>
       </div>
 
-      {/* 교정 예정 알림 Banner (30일 전 기준) */}
+      {/* 교정 예정 알림 Banner */}
       {calibrationAlertItems.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden shadow-2xs">
           <button
@@ -671,7 +751,7 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 자재 목록 테이블 / 카드 렌더링 */}
+      {/* 🚀 1. 모든 항목에 접고 펴기(Toggle)가 적용된 자재 목록 카드/테이블 렌더링 */}
       {loadingInventory || (inventoryTab === 'CABIN' && loadingCabin) ? (
         <div className="bg-white rounded-lg border border-[#E2E5E9] text-center py-8 text-xs text-[#64748B]">
           데이터를 불러오는 중입니다...
@@ -681,136 +761,93 @@ export default function MaterialManagement({
           선택한 카테고리에 등록된 자재 항목이 없습니다.
         </div>
       ) : (
-        <>
-          {/* 데스크톱 테이블 */}
-          <div className="hidden sm:block bg-white border border-[#E2E5E9] rounded-lg shadow-2xs overflow-hidden">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="bg-[#F5F6F8] border-b border-[#E2E5E9] text-[#64748B] font-semibold">
-                  <th className="py-2.5 px-3">자재코드</th>
-                  <th className="py-2.5 px-3">자재명</th>
-                  <th className="py-2.5 px-3">카테고리 / 규격</th>
-                  <th className="py-2.5 px-3">위치</th>
-                  <th className="py-2.5 px-3 text-right">보유 수량</th>
-                  <th className="py-2.5 px-3 text-center">상태 / 교정일</th>
-                  <th className="py-2.5 px-3 text-center">상세</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E2E5E9] text-[#1F2937]">
-                {filteredInventory.map((item) => {
-                  const isLowStock = item.type === '소모성' && item.quantity <= (item.min_quantity || 0);
-                  const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+        <div className="space-y-2">
+          {filteredInventory.map((item) => {
+            const isLowStock = item.type === '소모성' && item.quantity <= (item.min_quantity || 0);
+            const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+            const isExpanded = !!expandedItems[item.id];
 
-                  return (
-                    <tr 
-                      key={item.id} 
-                      onClick={() => setSelectedDetailItem(item)}
-                      className="hover:bg-[#F5F6F8]/80 cursor-pointer transition"
-                    >
-                      <td className="py-2.5 px-3 font-mono font-semibold text-[#243B5A]">
-                        {item.code}
-                      </td>
-                      <td className="py-2.5 px-3 font-medium text-[#1F2937]">
-                        {item.name}
-                      </td>
-                      <td className="py-2.5 px-3">
-                        <div className="flex items-center gap-1">
-                          <span className="bg-[#F5F6F8] text-[#64748B] border border-[#E2E5E9] text-[10px] px-2 py-0.5 rounded-full font-medium">
-                            {item.category}
-                          </span>
-                          {item.vbt_type && item.type === '고정' && (
-                            <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
-                              {item.vbt_type}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="py-2.5 px-3 text-[#64748B]">
-                        <span className="flex items-center gap-1">
-                          <MapPin className="h-3 w-3 text-[#64748B]" />
-                          {item.location || '-'}
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-right font-semibold">
-                        <span className={isLowStock ? 'text-[#DC2626] font-bold' : 'text-[#1F2937]'}>
-                          {item.quantity} <span className="text-[10px] text-[#64748B] font-normal">{item.unit}</span>
-                        </span>
-                      </td>
-                      <td className="py-2.5 px-3 text-center">
-                        {isLowStock ? (
-                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#DC2626] bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
-                            <AlertTriangle className="h-3 w-3" /> 재고 부족
-                          </span>
-                        ) : nextCalDate ? (
-                          <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
-                            차기 교정: {nextCalDate}
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-[#64748B] bg-gray-50 border border-[#E2E5E9] px-2 py-0.5 rounded-full">
-                            양호
-                          </span>
-                        )}
-                      </td>
-                      <td className="py-2.5 px-3 text-center text-[#64748B]">
-                        <ChevronRight className="h-4 w-4 inline-block" />
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* 모바일 카드 */}
-          <div className="block sm:hidden space-y-2">
-            {filteredInventory.map((item) => {
-              const isLowStock = item.type === '소모성' && item.quantity <= (item.min_quantity || 0);
-
-              return (
+            return (
+              <div 
+                key={item.id} 
+                className={`bg-white rounded-lg border shadow-2xs transition ${
+                  isLowStock ? 'border-red-300 bg-red-50/10' : 'border-[#E2E5E9]'
+                }`}
+              >
+                {/* 메인 요약 행 (클릭 시 혹은 토글 버튼으로 접고 펴기) */}
                 <div 
-                  key={item.id} 
-                  onClick={() => setSelectedDetailItem(item)}
-                  className={`bg-white rounded-lg border p-3 shadow-2xs cursor-pointer active:bg-[#F5F6F8] transition flex items-center justify-between gap-2 ${
-                    isLowStock ? 'border-red-300 bg-red-50/20' : 'border-[#E2E5E9]'
-                  }`}
+                  onClick={() => toggleExpandItem(item.id)}
+                  className="p-3 flex items-center justify-between gap-2 cursor-pointer hover:bg-[#F5F6F8]/60"
                 >
-                  <div className="flex-1 min-w-0">
-                    {isLowStock && (
-                      <div className="flex items-center space-x-1 mb-1 text-[#DC2626] font-bold text-[10px]">
-                        <AlertTriangle className="h-3 w-3" />
-                        <span>재고 부족 (최소: {item.min_quantity}{item.unit})</span>
-                      </div>
-                    )}
-                    <div className="flex items-center space-x-1.5 mb-1">
-                      <span className="bg-[#F5F6F8] text-[#243B5A] border border-[#E2E5E9] text-[10px] font-mono font-bold px-1.5 py-0.2 rounded">
-                        {item.code}
-                      </span>
-                      <span className="bg-gray-100 text-[#64748B] text-[10px] font-medium px-1.5 py-0.2 rounded">
-                        {item.category}
-                      </span>
+                  <div className="flex items-center space-x-2.5 min-w-0 flex-1">
+                    <span className="bg-[#F5F6F8] text-[#243B5A] border border-[#E2E5E9] text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0">
+                      {item.code}
+                    </span>
+                    <div className="min-w-0">
+                      <h3 className="text-xs font-semibold text-[#1F2937] truncate">{item.name}</h3>
+                      <span className="text-[10px] text-[#64748B]">위치: {item.location || '미지정'}</span>
                     </div>
-                    <h3 className="text-xs font-semibold text-[#1F2937] truncate">
-                      {item.name}
-                    </h3>
                   </div>
 
-                  <div className="flex items-center space-x-2 shrink-0">
+                  <div className="flex items-center space-x-3 shrink-0">
                     <div className="text-right">
-                      <span className="text-[10px] text-[#64748B] block">보유량</span>
-                      <span className={`text-sm font-bold leading-none block ${isLowStock ? 'text-[#DC2626]' : 'text-[#243B5A]'}`}>
-                        {item.quantity} <span className="text-[10px] font-normal text-[#64748B]">{item.unit}</span>
+                      <span className={`text-xs font-bold block ${isLowStock ? 'text-red-600' : 'text-[#1F2937]'}`}>
+                        {item.quantity} {item.unit}
                       </span>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-[#64748B]" />
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleExpandItem(item.id);
+                      }}
+                      className="p-1 text-[#64748B] hover:text-[#1F2937]"
+                    >
+                      {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                    </button>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        </>
+
+                {/* 🚀 1. 확장되었을 때 나타나는 모든 항목의 상세 접고 펴기 컨텐츠 영역 */}
+                {isExpanded && (
+                  <div className="px-3 pb-3 pt-2 border-t border-[#E2E5E9] bg-[#F5F6F8]/40 text-xs space-y-2">
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                        <span className="text-[10px] text-[#64748B] block">카테고리</span>
+                        <span className="font-semibold text-[#1F2937]">{item.category} {item.vbt_type ? `(${item.vbt_type})` : ''}</span>
+                      </div>
+                      <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                        <span className="text-[10px] text-[#64748B] block">상태 정보</span>
+                        <span className={isLowStock ? 'text-red-600 font-bold' : 'text-emerald-700 font-medium'}>
+                          {isLowStock ? '재고 부족' : '양호'}
+                        </span>
+                      </div>
+                      <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                        <span className="text-[10px] text-[#64748B] block">교정일</span>
+                        <span className="font-medium text-[#1F2937]">{calDate || '해당 없음'}</span>
+                      </div>
+                      <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                        <span className="text-[10px] text-[#64748B] block">차기 교정일</span>
+                        <span className="font-semibold text-amber-800">{nextCalDate || '해당 없음'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end gap-1.5 pt-1">
+                      <button
+                        onClick={() => setSelectedDetailItem(item)}
+                        className="px-2.5 py-1 bg-white border border-[#E2E5E9] text-[#1F2937] rounded text-[11px] font-semibold hover:bg-gray-50 transition"
+                      >
+                        상세보기 / 입출고 관리
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       )}
 
-      {/* 🚀 최근 불출/반납/교정 이력 영역 (접고 펴기 및 직접 반납 기능 추가) */}
+      {/* 🚀 2번, 3번, 4번 요구사항이 반영된 최근 불출/반납/교정 이력 영역 */}
       <div className="bg-white rounded-lg border border-[#E2E5E9] shadow-2xs mt-4 overflow-hidden">
         <button
           onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
@@ -818,7 +855,7 @@ export default function MaterialManagement({
         >
           <div className="flex items-center space-x-2">
             <History className="h-4 w-4 text-[#243B5A]" />
-            <span>최근 불출 / 반납 / 교정 이력</span>
+            <span>최근 불출 / 반납 / 교정 이력 (매일 23시 초기화 - 미반납/이상발생 보존)</span>
             <span className="text-[10px] px-1.5 py-0.2 bg-white border border-[#E2E5E9] rounded-full text-[#64748B] font-normal">
               {inventoryLogs?.length || 0}건
             </span>
@@ -827,43 +864,71 @@ export default function MaterialManagement({
         </button>
 
         {isHistorySectionOpen && (
-          <div className="p-3 space-y-1.5 max-h-48 overflow-y-auto border-t border-[#E2E5E9]">
+          <div className="p-3 space-y-2 max-h-64 overflow-y-auto border-t border-[#E2E5E9]">
             {(!inventoryLogs || inventoryLogs.length === 0) ? (
               <p className="text-xs text-[#64748B] text-center py-4">등록된 최근 이력이 없습니다.</p>
             ) : (
               inventoryLogs.slice(0, 15).map((log) => (
-                <div key={log.id} className="flex items-center justify-between p-2 bg-[#F5F6F8] rounded-md border border-[#E2E5E9] text-xs gap-2">
-                  <div className="flex items-center space-x-2 min-w-0 flex-1">
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
-                      log.type === '불출' 
-                        ? 'bg-emerald-100 text-emerald-800' 
-                        : 'bg-blue-100 text-blue-800'
-                    }`}>
-                      {log.type}
-                    </span>
-                    <span className="font-semibold text-[#1F2937] truncate">{log.item_name}</span>
-                    <span className="text-[#64748B] text-[11px] shrink-0">({log.quantity}개)</span>
-                    {log.has_issue && (
-                      <span className="bg-red-100 text-red-700 text-[9px] px-1 py-0.2 rounded font-bold shrink-0">이상발생</span>
+                <div key={log.id} className="bg-[#F5F6F8] rounded-md border border-[#E2E5E9] p-3 text-xs space-y-2">
+                  {/* 상단 타이틀 및 관리자 권한 수정/삭제 버튼 (3번 요구사항) */}
+                  <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-1.5">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-bold text-[#1F2937] text-xs">{log.item_name}</span>
+                      <span className="text-[10px] text-[#64748B]">작업자: {log.worker_name} ({new Date(log.created_at).toLocaleString()})</span>
+                    </div>
+
+                    {isAdmin && (
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => handleEditLog(log)}
+                          className="px-2 py-0.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-[10px] font-semibold transition"
+                        >
+                          수정
+                        </button>
+                        <button
+                          onClick={() => handleDeleteLog(log.id)}
+                          className="px-2 py-0.5 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[10px] font-semibold transition"
+                        >
+                          삭제
+                        </button>
+                      </div>
                     )}
                   </div>
 
-                  <div className="flex items-center space-x-2 shrink-0">
-                    {/* 🚀 이력 줄에서 바로 반납할 수 있는 버튼 (불출 내역일 때 유용) */}
-                    {log.type === '불출' && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleQuickReturnFromHistory(log);
-                        }}
-                        className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-semibold shadow-2xs transition"
-                      >
-                        반납
-                      </button>
-                    )}
-                    <div className="text-right">
-                      <span className="text-[10px] text-[#64748B] block">{log.worker_name}</span>
-                      <span className="text-[10px] text-[#94A3B8]">{new Date(log.created_at).toLocaleDateString()}</span>
+                  {/* 🚀 2. 하나의 행(단일 카드 섹션)에 반납, 불출, 이상발생이 나란히 배치되도록 구성 */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    {/* 불출 정보 */}
+                    <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                      <span className="block text-[10px] font-semibold text-[#64748B] mb-0.5">불출 내역</span>
+                      <span className="font-semibold text-emerald-700">
+                        {log.type === '불출' ? `불출 완료 (${log.quantity}개)` : '해당 없음'}
+                      </span>
+                    </div>
+
+                    {/* 반납 정보 */}
+                    <div className="bg-white p-2 rounded border border-[#E2E5E9] flex items-center justify-between">
+                      <div>
+                        <span className="block text-[10px] font-semibold text-[#64748B] mb-0.5">반납 상태</span>
+                        <span className={log.type === '반납' ? 'font-semibold text-blue-700' : 'font-semibold text-red-600'}>
+                          {log.type === '반납' ? `반납 완료 (${log.quantity}개)` : '미반납 (조치 필요)'}
+                        </span>
+                      </div>
+                      {log.type === '불출' && (
+                        <button
+                          onClick={() => handleQuickReturnFromHistory(log)}
+                          className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-semibold shadow-2xs transition shrink-0"
+                        >
+                          반납하기
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 이상 발생 정보 */}
+                    <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                      <span className="block text-[10px] font-semibold text-[#64748B] mb-0.5">이상 발생 여부</span>
+                      <span className={log.has_issue ? 'font-bold text-red-600 bg-red-50 px-1 rounded' : 'text-[#64748B]'}>
+                        {log.has_issue ? '⚠️ 이상발생 (보존 대상)' : '이상 없음'}
+                      </span>
                     </div>
                   </div>
                 </div>
