@@ -156,9 +156,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
         setMyAssignedTasks(targetTasks);
 
-        const hideUntilDate = localStorage.getItem('cabin_alert_hide_until');
-        const todayStr = formatDateToYYYYMMDD(new Date());
-        
         if (targetTasks.length > 0) {
           setIsAlertOpen(true);
         }
@@ -192,7 +189,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return { validList, invalidList };
   };
 
-  // 호선 추가 / 수정 / 삭제 (관리자만 가능)
   const handleAddVessel = async () => {
     if (!isAdmin) { alert('관리자 권한이 없습니다.'); return; }
     if (!newVesselName.trim()) return;
@@ -398,51 +394,64 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   return (
     <div className="bg-[#F5F6F8] min-h-screen p-4 text-[#1F2937]">
-      <div className="max-w-[1400px] mx-auto bg-white rounded-xl border border-[#E2E5E9] p-6 space-y-5">
+      <div className="max-w-[1400px] mx-auto bg-white rounded-xl border border-[#E2E5E9] p-4 sm:p-6 space-y-5">
         
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-4 border-b border-[#E2E5E9]">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-[#243B5A]/10 text-[#243B5A] rounded-lg">
-              <CalendarIcon className="h-5 w-5" />
+        {/* Header - 모바일에서 유연한 랩핑 및 높이/간격 정렬 개선 */}
+        <div className="flex flex-col gap-3 pb-4 border-b border-[#E2E5E9]">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center space-x-2.5">
+              <div className="p-2 bg-[#243B5A]/10 text-[#243B5A] rounded-lg shrink-0">
+                <CalendarIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold">운영 및 근무 관리 시스템</h2>
+                <p className="text-xs text-[#64748B]">일일, 주간 및 CABIN 업무 편성</p>
+              </div>
             </div>
-            <div>
-              <h2 className="text-base font-bold">운영 및 근무 관리 시스템</h2>
-              <p className="text-xs text-[#64748B]">일일, 주간 및 CABIN 업무 편성</p>
-            </div>
+
+            {isAdmin && (
+              <button
+                onClick={() => handleOpenCreateModal()}
+                className="hidden sm:flex items-center space-x-1 bg-[#243B5A] text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs shrink-0"
+              >
+                <Plus className="h-4 w-4" />
+                <span>등록</span>
+              </button>
+            )}
           </div>
 
-          <div className="flex items-center space-x-2">
+          {/* 모바일 화면 대응 컨트롤바 (동일 높이·간격, 글자 겹침 방지) */}
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1">
             <button
               onClick={() => {
                 const pending = tasks.filter(t => t.status !== 'COMPLETED');
                 setMyAssignedTasks(pending);
                 setIsAlertOpen(true);
               }}
-              className="flex items-center space-x-1 bg-amber-100 text-amber-900 border border-amber-300 px-3 py-1.5 rounded-lg text-xs font-semibold hover:bg-amber-200 cursor-pointer"
+              className="col-span-2 sm:col-span-1 flex items-center justify-center space-x-1.5 bg-amber-50 text-amber-900 border border-amber-300 px-3 py-2 rounded-lg text-xs font-semibold hover:bg-amber-100 transition h-9 shrink-0"
             >
-              <Bell className="h-3.5 w-3.5 text-amber-600 animate-pulse" />
-              <span>미완료 알림 ({myAssignedTasks.length})</span>
+              <Bell className="h-3.5 w-3.5 text-amber-600 animate-pulse shrink-0" />
+              <span className="truncate">미완료 알림 ({myAssignedTasks.length})</span>
             </button>
 
-            <div className="bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] flex space-x-1">
+            <div className="col-span-2 sm:col-span-auto bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] grid grid-cols-3 gap-1 h-9 items-center shrink-0">
               <button
                 onClick={() => setTaskTab('DAILY')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md ${taskTab === 'DAILY' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}
+                className={`px-3 py-1 text-xs font-semibold rounded-md text-center transition ${taskTab === 'DAILY' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
               >
-                일일 업무
+                일일업무
               </button>
               <button
                 onClick={() => setTaskTab('WEEKLY')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md ${taskTab === 'WEEKLY' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}
+                className={`px-3 py-1 text-xs font-semibold rounded-md text-center transition ${taskTab === 'WEEKLY' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
               >
-                주간 업무
+                주간업무
               </button>
               <button
                 onClick={() => setTaskTab('CABIN')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1 ${taskTab === 'CABIN' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}
+                className={`px-3 py-1 text-xs font-semibold rounded-md flex items-center justify-center gap-1 transition ${taskTab === 'CABIN' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
               >
-                <Home className="h-3.5 w-3.5" />
+                <Home className="h-3 w-3 shrink-0" />
                 <span>CABIN</span>
               </button>
             </div>
@@ -450,10 +459,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             {isAdmin && (
               <button
                 onClick={() => handleOpenCreateModal()}
-                className="flex items-center space-x-1 bg-[#243B5A] text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-xs"
+                className="col-span-2 sm:hidden flex items-center justify-center space-x-1 bg-[#243B5A] text-white px-3 py-2 rounded-lg text-xs font-semibold shadow-xs h-9"
               >
-                <Plus className="h-3.5 w-3.5" />
-                <span>등록</span>
+                <Plus className="h-4 w-4" />
+                <span>업무 등록</span>
               </button>
             )}
           </div>
@@ -462,7 +471,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         {/* CABIN 호선 선택 서브탭 */}
         {taskTab === 'CABIN' && (
           <div className="flex items-center justify-between bg-[#F5F6F8] p-2 rounded-xl border border-[#E2E5E9]">
-            <div className="flex items-center space-x-1.5 overflow-x-auto">
+            <div className="flex items-center space-x-1.5 overflow-x-auto pb-1 sm:pb-0 [&::-webkit-scrollbar]:h-1">
               <Tag className="h-4 w-4 text-[#64748B] ml-1 shrink-0" />
               <span className="text-xs font-bold text-[#1F2937] mr-1 shrink-0">호선:</span>
               <button
@@ -489,10 +498,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             {isAdmin && (
               <button
                 onClick={() => setIsVesselManagerOpen(true)}
-                className="flex items-center space-x-1 text-xs text-[#243B5A] font-semibold bg-white border px-2.5 py-1 rounded-lg shrink-0 hover:bg-slate-50 ml-2"
+                className="flex items-center space-x-1 text-xs text-[#243B5A] font-semibold bg-white border px-2.5 py-1.5 rounded-lg shrink-0 hover:bg-slate-50 ml-2"
               >
                 <Settings className="h-3.5 w-3.5" />
-                <span>호선 관리</span>
+                <span className="hidden sm:inline">호선 관리</span>
               </button>
             )}
           </div>
@@ -567,7 +576,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
 
             {weeklyViewMode === 'GRID' ? (
-              /* [요청 2번 반영] 투명한 가로 스크롤바 적용 (webkit-scrollbar 투명화) */
+              /* 투명한 가로 스크롤바 적용 영역 */
               <div className="overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:bg-slate-300/50 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-track]:bg-transparent">
                 <div className="grid grid-cols-7 gap-2 min-w-[900px]">
                   {weekDays.map((day) => {
