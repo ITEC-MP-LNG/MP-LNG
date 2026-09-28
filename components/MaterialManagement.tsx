@@ -322,6 +322,11 @@ export default function MaterialManagement({
     return [];
   };
 
+  const setCurrentSubCategories = (list: string[]) => {
+    if (inventoryTab === '고정') setFixedSubCategories(list);
+    else if (inventoryTab === '소모성') setConsumableSubCategories(list);
+  };
+
   const getCurrentSelectedCategory = () => {
     if (inventoryTab === '고정') return selectedFixedSubCategory;
     if (inventoryTab === '소모성') return selectedConsumableCategory;
@@ -755,7 +760,7 @@ export default function MaterialManagement({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
             <div className="flex justify-between items-center">
-              <h3 className="text-sm font-bold">종류별(Sheet) 추가 / 수정 / 삭제</h3>
+              <h3 className="text-sm font-bold">종류별 추가 / 수정 / 삭제</h3>
               <button onClick={() => setIsCabinSheetModalOpen(false)}><X className="h-4 w-4" /></button>
             </div>
             <div className="space-y-2">
@@ -852,7 +857,7 @@ export default function MaterialManagement({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
             <div className="flex justify-between items-center">
-              <h3 className="text-sm font-bold">항목별 분류 태그 추가 / 수정 / 삭제</h3>
+              <h3 className="text-sm font-bold">파트별 분류 태그 추가 / 수정 / 삭제</h3>
               <button onClick={() => setIsCabinTagModalOpen(false)}><X className="h-4 w-4" /></button>
             </div>
             <div className="space-y-2">
@@ -1141,7 +1146,7 @@ export default function MaterialManagement({
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
             <Package className="h-3.5 w-3.5 text-[#243B5A]" />
-            <span>종류별(Sheet):</span>
+            <span>종류별:</span>
           </div>
           <div 
             className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
@@ -1169,7 +1174,7 @@ export default function MaterialManagement({
             <button
               onClick={() => setIsCabinSheetModalOpen(true)}
               className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
-              title="종류(Sheet) 추가/수정/관리"
+              title="종류 추가/수정/관리"
             >
               <Settings className="h-4 w-4 shrink-0" />
             </button>
@@ -1223,7 +1228,7 @@ export default function MaterialManagement({
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
             <Compass className="h-3.5 w-3.5 text-[#243B5A]" />
-            <span>항목별 분류:</span>
+            <span>파트별:</span>
           </div>
           <div 
             className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
@@ -1357,7 +1362,7 @@ export default function MaterialManagement({
             className="flex items-center space-x-2 text-xs font-bold text-[#1F2937] flex-1 text-left min-w-0"
           >
             <History className="h-4 w-4 text-[#243B5A] shrink-0" />
-            <span className="truncate">최근 불출 / 반납 / 교정 이력 (매일 23시 초기화)</span>
+            <span className="truncate">최근 불출 / 반납 이력 (매일 23시 초기화)</span>
             <span className="text-[10px] px-1.5 py-0.2 bg-white border border-[#E2E5E9] rounded-full text-[#64748B] font-normal shrink-0">
               {inventoryLogs?.length || 0}건
             </span>
