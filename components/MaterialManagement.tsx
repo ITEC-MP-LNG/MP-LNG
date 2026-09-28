@@ -96,17 +96,25 @@ export default function MaterialManagement({
   const [customCabinTextSubTags, setCustomCabinTextSubTags] = useState<string[]>([]);
   const [selectedCabinTextSubTag, setSelectedCabinTextSubTag] = useState<string>('');
 
-  // 종류별 / 항목별 수정 모달 제어 상태
+  // 종류별 / 항목별 수정/관리 모달 제어 상태
   const [isCabinSheetModalOpen, setIsCabinSheetModalOpen] = useState<boolean>(false);
   const [isCabinTagModalOpen, setIsCabinTagModalOpen] = useState<boolean>(false);
   const [newSheetInput, setNewSheetInput] = useState<string>('');
+  const [editingSheetIndex, setEditingSheetIndex] = useState<number | null>(null);
+  const [editSheetInputValue, setEditSheetInputValue] = useState<string>('');
+
   const [newTagInput, setNewTagInput] = useState<string>('');
+  const [editingTagIndex, setEditingTagIndex] = useState<number | null>(null);
+  const [editTagInputValue, setEditTagInputValue] = useState<string>('');
 
   // VBT 서브 탭
   const [selectedVbtSubCategory, setSelectedVbtSubCategory] = useState<VbtSubCategory>('1L');
 
-  // 서브 카테고리 관리 모달
+  // 일반 서브 카테고리 관리 모달 상태
   const [isSubCatModalOpen, setIsSubCatModalOpen] = useState<boolean>(false);
+  const [newSubCatInput, setNewSubCatInput] = useState<string>('');
+  const [editingSubCatIndex, setEditingSubCatIndex] = useState<number | null>(null);
+  const [editSubCatInputValue, setEditSubCatInputValue] = useState<string>('');
 
   // UI 제어 상태
   const [isAlertBannerOpen, setIsAlertBannerOpen] = useState(true);
@@ -166,7 +174,6 @@ export default function MaterialManagement({
 
       setCabinInventoryList(formattedData);
 
-      // 데이터 기반 Sheet 목록 자동 추출 및 정렬 (C# 시리즈 우선 정렬 후 알파벳 순)
       const sheets = new Set<string>();
       formattedData.forEach((item: any) => {
         if (item.sheet_name) {
@@ -206,7 +213,6 @@ export default function MaterialManagement({
     }
   }, [inventoryTab]);
 
-  // 선택된 CABIN Sheet 내부의 텍스트 구성 성격 자동 분류 서브태그 추출 ('전체' 옵션 제외)
   const cabinTextSubTagsForSheet = useMemo(() => {
     const filteredBySheet = cabinInventoryList.filter(item => cleanSheetName(item.sheet_name) === selectedCabinSheet);
 
@@ -225,22 +231,13 @@ export default function MaterialManagement({
     });
 
     const autoTags = Array.from(tags).sort();
-    const combined = Array.from(new Set([...autoTags, ...customCabinTextSubTags]));
-    return combined;
+    return Array.from(new Set([...autoTags, ...customCabinTextSubTags]));
   }, [cabinInventoryList, selectedCabinSheet, customCabinTextSubTags]);
 
-  // Sheet 변경 시 첫 번째 서브 텍스트 태그 자동 선택
   const handleSelectCabinSheet = (sheetName: string) => {
     setSelectedCabinSheet(sheetName);
-    const updatedTags = cabinTextSubTagsForSheet;
-    if (updatedTags.length > 0) {
-      setSelectedCabinTextSubTag(updatedTags[0]);
-    } else {
-      setSelectedCabinTextSubTag('');
-    }
   };
 
-  // 태그 목록이 변경되었을 때 선택된 태그가 유효하지 않으면 첫 번째 항목으로 설정
   useEffect(() => {
     if (cabinTextSubTagsForSheet.length > 0) {
       if (!selectedCabinTextSubTag || !cabinTextSubTagsForSheet.includes(selectedCabinTextSubTag)) {
@@ -251,7 +248,6 @@ export default function MaterialManagement({
     }
   }, [cabinTextSubTagsForSheet]);
 
-  // 교정일 알림 동기화 (30일 전 기준 적용)
   useEffect(() => {
     const targetList = inventoryTab === 'CABIN' ? cabinInventoryList : inventoryList;
     if (!targetList || targetList.length === 0) return;
@@ -301,7 +297,6 @@ export default function MaterialManagement({
     return { calDate: subEquipment, nextCalDate: '' };
   };
 
-  // 폼 입력 필드 상태
   const [itemType, setItemType] = useState<MainTab>('고정');
   const [itemCode, setItemCode] = useState('');
   const [itemName, setItemName] = useState('');
@@ -314,7 +309,6 @@ export default function MaterialManagement({
   const [itemMinQty, setItemMinQty] = useState<number>(0);
   const [itemLocation, setItemLocation] = useState('장비실 A');
 
-  // CABIN 전용 입력 상태 추가
   const [cabinSheetName, setCabinSheetName] = useState('');
   const [cabinLocationSection, setCabinLocationSection] = useState('');
   const [cabinMakerModel, setCabinMakerModel] = useState('');
@@ -326,11 +320,6 @@ export default function MaterialManagement({
     if (inventoryTab === '고정') return fixedSubCategories;
     if (inventoryTab === '소모성') return consumableSubCategories;
     return [];
-  };
-
-  const setCurrentSubCategories = (newList: string[]) => {
-    if (inventoryTab === '고정') setFixedSubCategories(newList);
-    else if (inventoryTab === '소모성') setConsumableSubCategories(newList);
   };
 
   const getCurrentSelectedCategory = () => {
@@ -640,7 +629,6 @@ export default function MaterialManagement({
     );
   };
 
-  // 필터링된 인벤토리 목록 계산 (시트 이름 비교 시 앞의 숫자 제거 버전 고려)
   const filteredInventory = useMemo(() => {
     if (inventoryTab === 'CABIN') {
       return cabinInventoryList.filter(item => {
@@ -691,7 +679,7 @@ export default function MaterialManagement({
   const isCurrentSubCatCollapsed = !!collapsedSubTabs[currentActiveSubCatName];
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-4 space-y-3 font-sans box-border relative">
+    <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
       
       {/* 화면 중앙 알림 모달 */}
       {toastMessage && (
@@ -762,88 +750,292 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* CABIN 종류(Sheet) 관리 모달 */}
+      {/* CABIN 종류(Sheet) 추가/수정/삭제 관리 모달 */}
       {isCabinSheetModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
             <div className="flex justify-between items-center">
-              <h3 className="text-sm font-bold">종류별(Sheet) 추가/관리</h3>
+              <h3 className="text-sm font-bold">종류별(Sheet) 추가 / 수정 / 삭제</h3>
               <button onClick={() => setIsCabinSheetModalOpen(false)}><X className="h-4 w-4" /></button>
             </div>
-            <p className="text-xs text-[#64748B]">새로운 Sheet 이름(예: C#1 등)을 추가할 수 있습니다.</p>
             <div className="space-y-2">
-              <input 
-                type="text" 
-                placeholder="추가할 Sheet 이름" 
-                value={newSheetInput} 
-                onChange={e => setNewSheetInput(e.target.value)} 
-                className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs" 
-              />
-              <button 
-                onClick={() => {
-                  if(!newSheetInput.trim()) return;
-                  const cleaned = cleanSheetName(newSheetInput.trim());
-                  if(!customCabinSheets.includes(cleaned)) {
-                    const updated = [...customCabinSheets, cleaned].sort((a, b) => {
-                      const isCA = a.toUpperCase().startsWith('C#');
-                      const isCB = b.toUpperCase().startsWith('C#');
+              <div className="flex gap-1">
+                <input 
+                  type="text" 
+                  placeholder="새로운 Sheet 이름" 
+                  value={newSheetInput} 
+                  onChange={e => setNewSheetInput(e.target.value)} 
+                  className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs" 
+                />
+                <button 
+                  onClick={() => {
+                    if(!newSheetInput.trim()) return;
+                    const cleaned = cleanSheetName(newSheetInput.trim());
+                    if(!customCabinSheets.includes(cleaned)) {
+                      const updated = [...customCabinSheets, cleaned];
+                      setCustomCabinSheets(updated);
+                      setSelectedCabinSheet(cleaned);
+                    }
+                    setNewSheetInput('');
+                  }}
+                  className="px-3 py-1.5 bg-[#243B5A] text-white rounded text-xs font-semibold shrink-0"
+                >
+                  추가
+                </button>
+              </div>
 
-                      if (isCA && isCB) {
-                        const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
-                        const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
-                        return numA - numB;
-                      }
-                      if (isCA) return -1;
-                      if (isCB) return 1;
+              <div className="max-h-40 overflow-y-auto space-y-1 pt-2 border-t border-[#E2E5E9]">
+                {customCabinSheets.map((sheet, index) => (
+                  <div key={sheet} className="flex items-center justify-between bg-[#F5F6F8] px-2 py-1 rounded text-xs">
+                    {editingSheetIndex === index ? (
+                      <input 
+                        type="text" 
+                        value={editSheetInputValue} 
+                        onChange={e => setEditSheetInputValue(e.target.value)}
+                        className="w-full px-1.5 py-0.5 border border-[#E2E5E9] rounded text-xs mr-1 bg-white"
+                      />
+                    ) : (
+                      <span className="font-medium text-[#1F2937] truncate">{sheet}</span>
+                    )}
 
-                      return a.localeCompare(b);
-                    });
-                    setCustomCabinSheets(updated);
-                    setSelectedCabinSheet(cleaned);
-                  }
-                  setNewSheetInput('');
-                  setIsCabinSheetModalOpen(false);
-                }}
-                className="w-full py-2 bg-[#243B5A] text-white rounded text-xs font-semibold"
-              >
-                Sheet 추가하기
-              </button>
+                    <div className="flex items-center space-x-1 shrink-0 ml-1">
+                      {editingSheetIndex === index ? (
+                        <button 
+                          onClick={() => {
+                            if (!editSheetInputValue.trim()) return;
+                            const cleaned = cleanSheetName(editSheetInputValue.trim());
+                            const updated = [...customCabinSheets];
+                            updated[index] = cleaned;
+                            setCustomCabinSheets(updated);
+                            if (selectedCabinSheet === sheet) setSelectedCabinSheet(cleaned);
+                            setEditingSheetIndex(null);
+                          }}
+                          className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px]"
+                        >
+                          저장
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => {
+                            setEditingSheetIndex(index);
+                            setEditSheetInputValue(sheet);
+                          }}
+                          className="px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded text-[10px]"
+                        >
+                          수정
+                        </button>
+                      )}
+
+                      <button 
+                        onClick={() => {
+                          if (confirm(`'${sheet}' Sheet를 삭제하시겠습니까?`)) {
+                            const updated = customCabinSheets.filter(s => s !== sheet);
+                            setCustomCabinSheets(updated);
+                            if (selectedCabinSheet === sheet && updated.length > 0) setSelectedCabinSheet(updated[0]);
+                          }
+                        }}
+                        className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* CABIN 항목별 서브태그 관리 모달 */}
+      {/* CABIN 항목별 서브태그 추가/수정/삭제 관리 모달 */}
       {isCabinTagModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
             <div className="flex justify-between items-center">
-              <h3 className="text-sm font-bold">항목별 분류 서브탭 추가</h3>
+              <h3 className="text-sm font-bold">항목별 분류 태그 추가 / 수정 / 삭제</h3>
               <button onClick={() => setIsCabinTagModalOpen(false)}><X className="h-4 w-4" /></button>
             </div>
-            <p className="text-xs text-[#64748B]">현재 Sheet 내에서 필터링할 새로운 검색 키워드(태그)를 추가합니다.</p>
             <div className="space-y-2">
-              <input 
-                type="text" 
-                placeholder="예: Transmitter 등" 
-                value={newTagInput} 
-                onChange={e => setNewTagInput(e.target.value)} 
-                className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs" 
-              />
-              <button 
-                onClick={() => {
-                  if(!newTagInput.trim()) return;
-                  if(!customCabinTextSubTags.includes(newTagInput.trim())) {
-                    setCustomCabinTextSubTags([...customCabinTextSubTags, newTagInput.trim()]);
-                    setSelectedCabinTextSubTag(newTagInput.trim());
-                  }
-                  setNewTagInput('');
-                  setIsCabinTagModalOpen(false);
-                }}
-                className="w-full py-2 bg-[#243B5A] text-white rounded text-xs font-semibold"
-              >
-                태그 추가하기
-              </button>
+              <div className="flex gap-1">
+                <input 
+                  type="text" 
+                  placeholder="새로운 태그 이름" 
+                  value={newTagInput} 
+                  onChange={e => setNewTagInput(e.target.value)} 
+                  className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs" 
+                />
+                <button 
+                  onClick={() => {
+                    if(!newTagInput.trim()) return;
+                    if(!customCabinTextSubTags.includes(newTagInput.trim())) {
+                      const updated = [...customCabinTextSubTags, newTagInput.trim()];
+                      setCustomCabinTextSubTags(updated);
+                      setSelectedCabinTextSubTag(newTagInput.trim());
+                    }
+                    setNewTagInput('');
+                  }}
+                  className="px-3 py-1.5 bg-[#243B5A] text-white rounded text-xs font-semibold shrink-0"
+                >
+                  추가
+                </button>
+              </div>
+
+              <div className="max-h-40 overflow-y-auto space-y-1 pt-2 border-t border-[#E2E5E9]">
+                {cabinTextSubTagsForSheet.map((tag, index) => (
+                  <div key={tag} className="flex items-center justify-between bg-[#F5F6F8] px-2 py-1 rounded text-xs">
+                    {editingTagIndex === index ? (
+                      <input 
+                        type="text" 
+                        value={editTagInputValue} 
+                        onChange={e => setEditTagInputValue(e.target.value)}
+                        className="w-full px-1.5 py-0.5 border border-[#E2E5E9] rounded text-xs mr-1 bg-white"
+                      />
+                    ) : (
+                      <span className="font-medium text-[#1F2937] truncate">{tag}</span>
+                    )}
+
+                    <div className="flex items-center space-x-1 shrink-0 ml-1">
+                      {editingTagIndex === index ? (
+                        <button 
+                          onClick={() => {
+                            if (!editTagInputValue.trim()) return;
+                            const updated = [...customCabinTextSubTags];
+                            const targetIdx = updated.indexOf(tag);
+                            if (targetIdx !== -1) {
+                              updated[targetIdx] = editTagInputValue.trim();
+                            } else {
+                              updated.push(editTagInputValue.trim());
+                            }
+                            setCustomCabinTextSubTags(updated);
+                            if (selectedCabinTextSubTag === tag) setSelectedCabinTextSubTag(editTagInputValue.trim());
+                            setEditingTagIndex(null);
+                          }}
+                          className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px]"
+                        >
+                          저장
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => {
+                            setEditingTagIndex(index);
+                            setEditTagInputValue(tag);
+                          }}
+                          className="px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded text-[10px]"
+                        >
+                          수정
+                        </button>
+                      )}
+
+                      <button 
+                        onClick={() => {
+                          if (confirm(`'${tag}' 태그를 삭제하시겠습니까?`)) {
+                            const updated = customCabinTextSubTags.filter(t => t !== tag);
+                            setCustomCabinTextSubTags(updated);
+                          }
+                        }}
+                        className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 일반 카테고리(기자재/소모성) 추가/수정/삭제 관리 모달 */}
+      {isSubCatModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold">[{inventoryTab}] 서브 카테고리 추가 / 수정 / 삭제</h3>
+              <button onClick={() => setIsSubCatModalOpen(false)}><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-2">
+              <div className="flex gap-1">
+                <input 
+                  type="text" 
+                  placeholder="새로운 카테고리 이름" 
+                  value={newSubCatInput} 
+                  onChange={e => setNewSubCatInput(e.target.value)} 
+                  className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs" 
+                />
+                <button 
+                  onClick={() => {
+                    if(!newSubCatInput.trim()) return;
+                    const list = getCurrentSubCategories();
+                    if(!list.includes(newSubCatInput.trim())) {
+                      setCurrentSubCategories([...list, newSubCatInput.trim()]);
+                      setCurrentSelectedCategory(newSubCatInput.trim());
+                    }
+                    setNewSubCatInput('');
+                  }}
+                  className="px-3 py-1.5 bg-[#243B5A] text-white rounded text-xs font-semibold shrink-0"
+                >
+                  추가
+                </button>
+              </div>
+
+              <div className="max-h-40 overflow-y-auto space-y-1 pt-2 border-t border-[#E2E5E9]">
+                {getCurrentSubCategories().map((cat, index) => (
+                  <div key={cat} className="flex items-center justify-between bg-[#F5F6F8] px-2 py-1 rounded text-xs">
+                    {editingSubCatIndex === index ? (
+                      <input 
+                        type="text" 
+                        value={editSubCatInputValue} 
+                        onChange={e => setEditSubCatInputValue(e.target.value)}
+                        className="w-full px-1.5 py-0.5 border border-[#E2E5E9] rounded text-xs mr-1 bg-white"
+                      />
+                    ) : (
+                      <span className="font-medium text-[#1F2937] truncate">{cat}</span>
+                    )}
+
+                    <div className="flex items-center space-x-1 shrink-0 ml-1">
+                      {editingSubCatIndex === index ? (
+                        <button 
+                          onClick={() => {
+                            if (!editSubCatInputValue.trim()) return;
+                            const list = [...getCurrentSubCategories()];
+                            list[index] = editSubCatInputValue.trim();
+                            setCurrentSubCategories(list);
+                            if (getCurrentSelectedCategory() === cat) setCurrentSelectedCategory(editSubCatInputValue.trim());
+                            setEditingSubCatIndex(null);
+                          }}
+                          className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px]"
+                        >
+                          저장
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => {
+                            setEditingSubCatIndex(index);
+                            setEditSubCatInputValue(cat);
+                          }}
+                          className="px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded text-[10px]"
+                        >
+                          수정
+                        </button>
+                      )}
+
+                      <button 
+                        onClick={() => {
+                          if (confirm(`'${cat}' 카테고리를 삭제하시겠습니까?`)) {
+                            const list = getCurrentSubCategories().filter(c => c !== cat);
+                            setCurrentSubCategories(list);
+                            if (getCurrentSelectedCategory() === cat && list.length > 0) setCurrentSelectedCategory(list[0]);
+                          }
+                        }}
+                        className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]"
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -944,7 +1136,7 @@ export default function MaterialManagement({
         )}
       </div>
 
-      {/* 종류별(Sheet) 탭 영역 (C#1~9 우선 정렬 및 알파벳 순) */}
+      {/* 종류별(Sheet) 탭 영역 */}
       {inventoryTab === 'CABIN' ? (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
@@ -977,7 +1169,7 @@ export default function MaterialManagement({
             <button
               onClick={() => setIsCabinSheetModalOpen(true)}
               className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
-              title="종류(Sheet) 추가 및 관리"
+              title="종류(Sheet) 추가/수정/관리"
             >
               <Settings className="h-4 w-4 shrink-0" />
             </button>
@@ -1018,7 +1210,7 @@ export default function MaterialManagement({
             <button
               onClick={() => setIsSubCatModalOpen(true)}
               className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
-              title="서브 카테고리 관리"
+              title="서브 카테고리 추가/수정/관리"
             >
               <Settings className="h-4 w-4 shrink-0" />
             </button>
@@ -1059,7 +1251,7 @@ export default function MaterialManagement({
             <button
               onClick={() => setIsCabinTagModalOpen(true)}
               className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
-              title="항목별 서브탭 추가/수정"
+              title="항목별 서브탭 추가/수정/삭제"
             >
               <Settings className="h-4 w-4 shrink-0" />
             </button>
