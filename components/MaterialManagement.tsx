@@ -166,7 +166,7 @@ export default function MaterialManagement({
 
       setCabinInventoryList(formattedData);
 
-      // 데이터 기반 Sheet 목록 자동 추출 (앞의 숫자 제거된 순수 이름 기준 정렬)
+      // 데이터 기반 Sheet 목록 자동 추출 및 정렬 (C# 시리즈 우선 정렬 후 알파벳 순)
       const sheets = new Set<string>();
       formattedData.forEach((item: any) => {
         if (item.sheet_name) {
@@ -175,9 +175,17 @@ export default function MaterialManagement({
       });
 
       const sortedSheets = Array.from(sheets).sort((a, b) => {
-        const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
-        const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
-        if (numA !== numB) return numA - numB;
+        const isCA = a.toUpperCase().startsWith('C#');
+        const isCB = b.toUpperCase().startsWith('C#');
+
+        if (isCA && isCB) {
+          const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
+          const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
+          return numA - numB;
+        }
+        if (isCA) return -1;
+        if (isCB) return 1;
+
         return a.localeCompare(b);
       });
 
@@ -345,7 +353,7 @@ export default function MaterialManagement({
     setItemName('');
     setItemCategory(inventoryTab === '고정' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : '일반');
     
-    setCabinSheetName(selectedCabinSheet || '#C1');
+    setCabinSheetName(selectedCabinSheet || 'C#1');
     setCabinLocationSection('');
     setCabinMakerModel('');
     setCabinSerialNo('');
@@ -762,7 +770,7 @@ export default function MaterialManagement({
               <h3 className="text-sm font-bold">종류별(Sheet) 추가/관리</h3>
               <button onClick={() => setIsCabinSheetModalOpen(false)}><X className="h-4 w-4" /></button>
             </div>
-            <p className="text-xs text-[#64748B]">새로운 Sheet 이름(예: #C1 등)을 추가할 수 있습니다.</p>
+            <p className="text-xs text-[#64748B]">새로운 Sheet 이름(예: C#1 등)을 추가할 수 있습니다.</p>
             <div className="space-y-2">
               <input 
                 type="text" 
@@ -777,9 +785,17 @@ export default function MaterialManagement({
                   const cleaned = cleanSheetName(newSheetInput.trim());
                   if(!customCabinSheets.includes(cleaned)) {
                     const updated = [...customCabinSheets, cleaned].sort((a, b) => {
-                      const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
-                      const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
-                      if (numA !== numB) return numA - numB;
+                      const isCA = a.toUpperCase().startsWith('C#');
+                      const isCB = b.toUpperCase().startsWith('C#');
+
+                      if (isCA && isCB) {
+                        const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
+                        const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
+                        return numA - numB;
+                      }
+                      if (isCA) return -1;
+                      if (isCB) return 1;
+
                       return a.localeCompare(b);
                     });
                     setCustomCabinSheets(updated);
@@ -928,7 +944,7 @@ export default function MaterialManagement({
         )}
       </div>
 
-      {/* 종류별(Sheet) 탭 영역 (앞에 숫자 제거된 형태로 표시) */}
+      {/* 종류별(Sheet) 탭 영역 (C#1~9 우선 정렬 및 알파벳 순) */}
       {inventoryTab === 'CABIN' ? (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
@@ -1010,7 +1026,7 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* CABIN 항목별 서브탭 ('전체' 옵션 삭제 완료, 수정 버튼 포함) */}
+      {/* CABIN 항목별 서브탭 */}
       {inventoryTab === 'CABIN' && cabinTextSubTagsForSheet.length > 0 && (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
