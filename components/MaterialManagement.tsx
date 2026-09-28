@@ -9,10 +9,8 @@ import {
   Package, 
   ArrowUpRight, 
   ArrowDownRight,
-  AlertTriangle, 
   Lock,
   Box,
-  Calendar,
   Bell,
   ChevronDown,
   ChevronUp,
@@ -22,7 +20,8 @@ import {
   ChevronLeft,
   Settings,
   History,
-  CheckCircle2
+  CheckCircle2,
+  AlertTriangle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { AppUser, InventoryItem, InventoryLog } from '@/lib/types';
@@ -74,6 +73,12 @@ export default function MaterialManagement({
 
   // 히스토리 반납 전용 커스텀 확인 모달 상태
   const [pendingReturnLog, setPendingReturnLog] = useState<InventoryLog | null>(null);
+
+  // 단건 이력 삭제용 커스텀 확인 모달 상태
+  const [pendingDeleteLogId, setPendingDeleteLogId] = useState<string | number | null>(null);
+
+  // 일괄 이력 삭제용 커스텀 확인 모달 상태
+  const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState<boolean>(false);
 
   // 동적 서브 카테고리 목록 상태
   const [fixedSubCategories, setFixedSubCategories] = useState<string[]>([
@@ -421,7 +426,7 @@ export default function MaterialManagement({
     setPendingReturnLog(log);
   };
 
-  // 실제 반납 처리 실행 함수 (스타일 맞춤형 모달에서 확인 버튼 클릭 시 실행)
+  // 실제 반납 처리 실행 함수
   const executeQuickReturn = async () => {
     const log = pendingReturnLog;
     if (!log) return;
@@ -454,7 +459,6 @@ export default function MaterialManagement({
         return alert(`'${log.item_name}'에 해당하는 현재 등록된 자재 정보를 찾을 수 없습니다.`);
       }
 
-      // 1. 재고 수량 복구
       const newQty = foundItem.quantity + log.quantity;
       const targetTableName = foundItem.type === 'CABIN' ? 'cabin_inventory' : 'inventory';
 
@@ -464,7 +468,6 @@ export default function MaterialManagement({
         .eq('id', foundItem.id);
       if (invErr) throw invErr;
 
-      // 2. 기존 이력 행의 타입을 '반납'으로 업데이트
       const { error: logErr } = await supabase
         .from('inventory_logs')
         .update({ type: '반납', updated_at: new Date().toISOString() })
@@ -504,12 +507,20 @@ export default function MaterialManagement({
     }
   };
 
-  const handleDeleteLog = async (logId: string | number) => {
+  // 단건 이력 삭제 버튼 클릭 시 커스텀 확인 모달 오픈
+  const handleOpenDeleteLog = (logId: string | number) => {
     if (!isAdmin) {
       alert('관리자 권한이 있는 인원만 삭제할 수 있습니다.');
       return;
     }
-    if (!confirm('정말 이 이력을 삭제하시겠습니까?')) return;
+    setPendingDeleteLogId(logId);
+  };
+
+  // 실제 단건 이력 삭제 실행 함수
+  const executeDeleteLog = async () => {
+    const logId = pendingDeleteLogId;
+    if (!logId) return;
+    setPendingDeleteLogId(null);
 
     try {
       const { error } = await supabase
@@ -524,8 +535,8 @@ export default function MaterialManagement({
     }
   };
 
-  // 1. 이력 일괄 삭제 핸들러 (조건 검증: 반납 완료 및 이상없음인 항목만 삭제)
-  const handleBatchDeleteLogs = async () => {
+  // 일괄 삭제 버튼 클릭 시 검증 후 커스텀 확인 모달 오픈
+  const handleOpenBatchDeleteLogs = () => {
     if (!isAdmin) return alert('관리자만 삭제할 수 있습니다.');
     if (selectedLogIds.length === 0) return alert('삭제할 이력을 선택해주세요.');
 
@@ -538,7 +549,12 @@ export default function MaterialManagement({
       return alert('선택하신 항목 중 반납이 완료되지 않았거나 이상(Issue)이 발생한 이력이 포함되어 있어 일괄 삭제할 수 없습니다. (정상 처리 및 반납 완료된 항목만 삭제 가능합니다)');
     }
 
-    if (!confirm(`선택한 ${selectedLogIds.length}개의 이력을 삭제하시겠습니까?`)) return;
+    setShowBatchDeleteConfirm(true);
+  };
+
+  // 실제 일괄 이력 삭제 실행 함수
+  const executeBatchDeleteLogs = async () => {
+    setShowBatchDeleteConfirm(false);
 
     try {
       const { error } = await supabase
@@ -662,7 +678,7 @@ export default function MaterialManagement({
       {/* 화면 정가운데(중앙) 배치되는 처리 완료 알림 모달/토스트 */}
       {toastMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-xs">
-          <div className="bg-[#243B5A] text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 text-sm font-bold border border-slate-600 animate-scale-up">
+          <div className="bg-[#243B5A] text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 text-sm font-bold border border-slate-600">
             <CheckCircle2 className="h-6 w-6 text-emerald-400 shrink-0" />
             <span>{toastMessage}</span>
           </div>
@@ -694,6 +710,64 @@ export default function MaterialManagement({
                 className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition"
               >
                 반납하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 스타일 맞춤형 단건 이력 삭제 확인 모달 */}
+      {pendingDeleteLogId !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
+            <div className="mx-auto w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-[#1F2937] mb-1">이력 삭제 확인</h3>
+              <p className="text-xs text-[#64748B]">정말 이 이력을 삭제하시겠습니까?</p>
+            </div>
+            <div className="flex space-x-2 pt-2">
+              <button
+                onClick={() => setPendingDeleteLogId(null)}
+                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition"
+              >
+                취소
+              </button>
+              <button
+                onClick={executeDeleteLog}
+                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition"
+              >
+                삭제하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 스타일 맞춤형 일괄 이력 삭제 확인 모달 */}
+      {showBatchDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
+            <div className="mx-auto w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600">
+              <Trash2 className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-[#1F2937] mb-1">이력 일괄 삭제 확인</h3>
+              <p className="text-xs text-[#64748B]">선택한 <strong className="text-[#1F2937]">{selectedLogIds.length}개</strong>의 이력을 정말 삭제하시겠습니까?</p>
+            </div>
+            <div className="flex space-x-2 pt-2">
+              <button
+                onClick={() => setShowBatchDeleteConfirm(false)}
+                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition"
+              >
+                취소
+              </button>
+              <button
+                onClick={executeBatchDeleteLogs}
+                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg shadow-2xs transition"
+              >
+                일괄 삭제
               </button>
             </div>
           </div>
@@ -940,7 +1014,7 @@ export default function MaterialManagement({
           <div className="flex items-center space-x-2 shrink-0">
             {isAdmin && inventoryLogs.length > 0 && (
               <button
-                onClick={handleBatchDeleteLogs}
+                onClick={handleOpenBatchDeleteLogs}
                 disabled={selectedLogIds.length === 0}
                 className="px-2.5 py-1 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white rounded text-[11px] font-semibold transition shadow-2xs"
               >
@@ -1036,7 +1110,7 @@ export default function MaterialManagement({
                               수정
                             </button>
                             <button
-                              onClick={() => handleDeleteLog(log.id)}
+                              onClick={() => handleOpenDeleteLog(log.id)}
                               className="px-1.5 py-0.5 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[10px] font-semibold transition"
                             >
                               삭제
