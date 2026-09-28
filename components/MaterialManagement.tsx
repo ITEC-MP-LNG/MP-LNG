@@ -134,11 +134,11 @@ export default function MaterialManagement({
   const [showInventorySheet, setShowInventorySheet] = useState(false);
   const [editingItem, setEditingItem] = useState<any | null>(null);
   
+  // 불출/반납/소모성 사용 모달 상태
   const [showLogSheet, setShowLogSheet] = useState(false);
   const [targetItem, setTargetItem] = useState<any | null>(null);
   const [logType, setLogType] = useState<'불출' | '반납' | '소모성 사용'>('불출');
   const [logQty, setLogQty] = useState<number>(1);
-  const [logHasIssue, setLogHasIssue] = useState<boolean>(false);
   const [logMemo, setLogMemo] = useState('');
 
   // 이력 일괄 삭제용 선택된 ID 관리
@@ -480,9 +480,65 @@ export default function MaterialManagement({
     setTargetItem(item);
     setLogType(type);
     setLogQty(1);
-    setLogHasIssue(false);
     setLogMemo('');
     setShowLogSheet(true);
+  };
+
+  // 불출/반납/소모성 사용 제출 및 DB 반영 함수
+  const handleSubmitLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetItem) return;
+
+    try {
+      const qtyChange = Number(logQty);
+      if (qtyChange <= 0) {
+        alert('수량은 1 이상이어야 합니다.');
+        return;
+      }
+
+      let currentQty = targetItem.quantity || 0;
+      let newQty = currentQty;
+
+      if (logType === '불출' || logType === '소모성 사용') {
+        if (currentQty < qtyChange) {
+          alert('현재 보유 재고보다 불출(사용) 수량이 많습니다.');
+          return;
+        }
+        newQty = currentQty - qtyChange;
+      } else if (logType === '반납') {
+        newQty = currentQty + qtyChange;
+      }
+
+      // 1. inventory 수량 업데이트
+      const { error: invError } = await supabase
+        .from('inventory')
+        .update({ quantity: newQty, updated_at: new Date().toISOString() })
+        .eq('id', targetItem.id);
+
+      if (invError) throw invError;
+
+      // 2. inventory_logs 이력 기록 추가
+      const { error: logError } = await supabase
+        .from('inventory_logs')
+        .insert([{
+          inventory_id: targetItem.id,
+          item_name: targetItem.name,
+          type: logType === '소모성 사용' ? '불출' : logType,
+          quantity: qtyChange,
+          worker_name: currentUser?.name || '작업자',
+          memo: logMemo.trim() || null,
+          created_at: new Date().toISOString()
+        }]);
+
+      if (logError) throw logError;
+
+      showCenterToast(`${logType} 처리가 완료되었습니다.`);
+      setShowLogSheet(false);
+      await fetchInventory();
+      await fetchInventoryLogs();
+    } catch (err: any) {
+      alert('처리 중 오류가 발생했습니다: ' + err.message);
+    }
   };
 
   const handleQuickReturnFromHistory = (log: InventoryLog) => {
@@ -1572,6 +1628,63 @@ export default function MaterialManagement({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 자재 불출 / 반납 / 소모성 사용 처리 입력 모달 */}
+      {showLogSheet && targetItem && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-3">
+          <div className="bg-white border border-[#E2E5E9] rounded-t-xl sm:rounded-lg max-w-md w-full p-4 shadow-2xl text-[#1F2937]">
+            <div className="flex justify-between items-center mb-2 pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-xs font-bold text-[#1F2937]">
+                {targetItem.name} - [{logType}] 처리
+              </h3>
+              <button onClick={() => setShowLogSheet(false)} className="p-1 text-[#64748B]">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitLog} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">처리 수량 ({targetItem.unit})</label>
+                <input 
+                  type="number" 
+                  min="1" 
+                  required 
+                  value={logQty} 
+                  onChange={e => setLogQty(Number(e.target.value))} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">메모 / 특이사항</label>
+                <input 
+                  type="text" 
+                  placeholder="사용 목적이나 특이사항을 입력하세요" 
+                  value={logMemo} 
+                  onChange={e => setLogMemo(e.target.value)} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                />
+              </div>
+
+              <div className="pt-2 flex gap-2">
+                <button 
+                  type="button" 
+                  onClick={() => setShowLogSheet(false)} 
+                  className="flex-1 py-2 bg-white border border-[#E2E5E9] font-semibold rounded-md text-[#64748B]"
+                >
+                  취소
+                </button>
+                <button 
+                  type="submit" 
+                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md shadow-2xs"
+                >
+                  확인
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
