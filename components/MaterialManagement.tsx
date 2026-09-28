@@ -91,7 +91,8 @@ export default function MaterialManagement({
   ]);
   const [selectedConsumableCategory, setSelectedConsumableCategory] = useState<string>('검사약품');
 
-  const [cabinSubCategories, setCabinSubCategories] = useState<string[]>(['부품 A', '부품 B', '기타']);
+  // CABIN 서브 카테고리 기본값 확장
+  const [cabinSubCategories, setCabinSubCategories] = useState<string[]>(['부품 A', '부품 B', '일반', '기타']);
   const [selectedCabinSubCategory, setSelectedCabinSubCategory] = useState<string>('부품 A');
 
   // VBT 서브 탭
@@ -421,12 +422,10 @@ export default function MaterialManagement({
     setShowLogSheet(true);
   };
 
-  // 히스토리 행의 반납 버튼 클릭 시: 스타일 맞춤형 확인 모달을 열어줌
   const handleQuickReturnFromHistory = (log: InventoryLog) => {
     setPendingReturnLog(log);
   };
 
-  // 실제 반납 처리 실행 함수
   const executeQuickReturn = async () => {
     const log = pendingReturnLog;
     if (!log) return;
@@ -507,7 +506,6 @@ export default function MaterialManagement({
     }
   };
 
-  // 단건 이력 삭제 버튼 클릭 시 커스텀 확인 모달 오픈
   const handleOpenDeleteLog = (logId: string | number) => {
     if (!isAdmin) {
       alert('관리자 권한이 있는 인원만 삭제할 수 있습니다.');
@@ -516,7 +514,6 @@ export default function MaterialManagement({
     setPendingDeleteLogId(logId);
   };
 
-  // 실제 단건 이력 삭제 실행 함수
   const executeDeleteLog = async () => {
     const logId = pendingDeleteLogId;
     if (!logId) return;
@@ -535,7 +532,6 @@ export default function MaterialManagement({
     }
   };
 
-  // 일괄 삭제 버튼 클릭 시 검증 후 커스텀 확인 모달 오픈
   const handleOpenBatchDeleteLogs = () => {
     if (!isAdmin) return alert('관리자만 삭제할 수 있습니다.');
     if (selectedLogIds.length === 0) return alert('삭제할 이력을 선택해주세요.');
@@ -546,13 +542,12 @@ export default function MaterialManagement({
     });
 
     if (invalidLogs.length > 0) {
-      return alert('선택하신 항목 중 반납이 완료되지 않았거나 이상(Issue)이 발생한 이력이 포함되어 있어 일괄 삭제할 수 없습니다. (정상 처리 및 반납 완료된 항목만 삭제 가능합니다)');
+      return alert('선택하신 항목 중 반납이 완료되지 않았거나 이상(Issue)이 발생한 이력이 포함되어 있어 일괄 삭제할 수 없습니다.');
     }
 
     setShowBatchDeleteConfirm(true);
   };
 
-  // 실제 일괄 이력 삭제 실행 함수
   const executeBatchDeleteLogs = async () => {
     setShowBatchDeleteConfirm(false);
 
@@ -787,7 +782,7 @@ export default function MaterialManagement({
         </div>
       </div>
 
-      {/* 교정 예정 알림 Banner */}
+      {/* 교정 예정 알림 Banner (30일 이내 알림) */}
       {calibrationAlertItems.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden shadow-2xs">
           <button
@@ -1367,6 +1362,10 @@ export default function MaterialManagement({
                       onClick={() => {
                         setItemType(tab);
                         if (tab !== '고정') setItemVbtType('');
+                        // 탭 변경 시 현재 선택된 카테고리를 기본값으로 자동 설정
+                        if (tab === 'CABIN') setItemCategory(selectedCabinSubCategory);
+                        else if (tab === '소모성') setItemCategory(selectedConsumableCategory);
+                        else setItemCategory(selectedFixedSubCategory);
                       }}
                       className={`flex-1 py-1 rounded font-semibold transition text-[11px] sm:text-xs ${itemType === tab ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B]'}`}
                     >
@@ -1410,6 +1409,7 @@ export default function MaterialManagement({
                 </div>
               )}
 
+              {/* CABIN 및 고정 기자재 교정일 입력 영역 (30일 전 알림 연동) */}
               {(itemType === '고정' || itemType === 'CABIN') && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-[#F5F6F8] p-2 rounded-md border border-[#E2E5E9]">
                   <div>
@@ -1417,7 +1417,7 @@ export default function MaterialManagement({
                     <input type="date" value={itemCalDate} onChange={e => setItemCalDate(e.target.value)} className="w-full px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[#1F2937]" />
                   </div>
                   <div>
-                    <label className="block text-amber-800 font-semibold mb-1">차기 교정일</label>
+                    <label className="block text-amber-800 font-semibold mb-1">차기 교정일 (30일 전 알림)</label>
                     <input type="date" value={itemNextCalDate} onChange={e => setItemNextCalDate(e.target.value)} className="w-full px-2 py-1 bg-white border border-[#E2E5E9] rounded text-amber-900" />
                   </div>
                 </div>
