@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogIn, User, Lock, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { LogIn, User, Lock, ShieldAlert, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { supabase } from '@/lib/supabase';
@@ -14,6 +14,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 export default function LoginPage() {
   const [userCode, setUserCode] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false); // 비밀번호 표시 여부 상태
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -151,13 +152,26 @@ export default function LoginPage() {
                 <input
                   id="password"
                   name="password"
-                  type="password"
+                  type={showPassword ? 'text' : 'password'} // 상태에 따라 텍스트/비밀번호 전환
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="block w-full pl-9 pr-3 py-2 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] placeholder-[#64748B]/60 focus:bg-white focus:border-[#243B5A] focus:ring-1 focus:ring-[#243B5A] focus:outline-hidden transition font-medium"
+                  className="block w-full pl-9 pr-10 py-2 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] placeholder-[#64748B]/60 focus:bg-white focus:border-[#243B5A] focus:ring-1 focus:ring-[#243B5A] focus:outline-hidden transition font-medium"
                   placeholder="예: 19980101"
                 />
+                {/* 비밀번호 보기/숨기기 토글 버튼 */}
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center text-[#64748B] hover:text-[#1F2937] cursor-pointer"
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
+                </button>
               </div>
             </div>
           </div>
