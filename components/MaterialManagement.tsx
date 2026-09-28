@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// 자체적으로 정의된 타입 (에러 방지용)
+// 자체 정의된 타입 (에러 방지용)
 export interface AppUser {
   id: string | number;
   name: string;
@@ -56,7 +56,7 @@ export interface InventoryLog {
   id: string | number;
   inventory_id?: string | number;
   item_name?: string;
-  type: string; // 모든 상태 문자열 허용
+  type: string;
   quantity: number;
   worker_name?: string;
   memo?: string;
@@ -104,7 +104,13 @@ export default function MaterialManagement({
     }, 2500);
   };
 
-  const [pendingReturnLog, setPendingReturnLog] = useState<InventoryLog | null>(null);
+  // 반납 모달 상태 (수량 확인 및 이상유무 체크 포함)
+  const [showReturnModal, setShowReturnModal] = useState<boolean>(false);
+  const [targetReturnLog, setTargetReturnLog] = useState<InventoryLog | null>(null);
+  const [returnQty, setReturnQty] = useState<number>(1);
+  const [returnHasIssue, setReturnHasIssue] = useState<boolean>(false);
+  const [returnMemo, setReturnMemo] = useState<string>('');
+
   const [pendingDeleteLogId, setPendingDeleteLogId] = useState<string | number | null>(null);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState<boolean>(false);
 
@@ -563,40 +569,54 @@ export default function MaterialManagement({
     }
   };
 
-  const handleQuickReturnFromHistory = (log: InventoryLog) => {
-    setPendingReturnLog(log);
+  // 반납 모달 오픈 (수량 확인 및 이상유무 체크)
+  const handleOpenReturnModal = (log: InventoryLog) => {
+    // 소모성 자재는 반납 불가 방어 코드
+    const foundItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
+    if (foundItem && foundItem.type === '소모성') {
+      alert('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
+      return;
+    }
+
+    setTargetReturnLog(log);
+    setReturnQty(log.quantity || 1);
+    setReturnHasIssue(false);
+    setReturnMemo('');
+    setShowReturnModal(true);
   };
 
-  const executeQuickReturn = async () => {
-    const log = pendingReturnLog;
-    if (!log) return;
-    setPendingReturnLog(null);
+  // 반납 실행 처리
+  const handleSubmitReturn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetReturnLog) return;
 
     try {
-      let foundItem: any | null = null;
+      const qtyToReturn = Number(returnQty);
+      if (qtyToReturn <= 0) {
+        alert('반납 수량은 1 이상이어야 합니다.');
+        return;
+      }
 
-      if (log.inventory_id) {
-        const { data: invData } = await supabase.from('inventory').select('*').eq('id', log.inventory_id).single();
+      let foundItem: any | null = null;
+      if (targetReturnLog.inventory_id) {
+        const { data: invData } = await supabase.from('inventory').select('*').eq('id', targetReturnLog.inventory_id).single();
         if (invData) {
           foundItem = invData;
         } else {
-          const { data: cabinData } = await supabase.from('cabin_inventory').select('*').eq('id', log.inventory_id).single();
+          const { data: cabinData } = await supabase.from('cabin_inventory').select('*').eq('id', targetReturnLog.inventory_id).single();
           if (cabinData) foundItem = { ...cabinData, type: 'CABIN', quantity: 1, unit: 'EA' };
         }
       }
 
-      if (!foundItem && log.item_name) {
-        const { data: invDataByName } = await supabase.from('inventory').select('*').eq('name', log.item_name).limit(1);
+      if (!foundItem && targetReturnLog.item_name) {
+        const { data: invDataByName } = await supabase.from('inventory').select('*').eq('name', targetReturnLog.item_name).limit(1);
         if (invDataByName && invDataByName.length > 0) {
           foundItem = invDataByName[0];
-        } else {
-          const { data: cabinDataByName } = await supabase.from('cabin_inventory').select('*').eq('item', log.item_name).limit(1);
-          if (cabinDataByName && cabinDataByName.length > 0) foundItem = { ...cabinDataByName[0], type: 'CABIN', quantity: 1, unit: 'EA' };
         }
       }
 
       if (!foundItem) {
-        return alert(`'${log.item_name}'에 해당하는 현재 등록된 자재 정보를 찾을 수 없습니다.`);
+        return alert(`'${targetReturnLog.item_name}'에 해당하는 자재 정보를 찾을 수 없습니다.`);
       }
 
       if (foundItem.type === '소모성') {
@@ -604,7 +624,7 @@ export default function MaterialManagement({
       }
 
       if (foundItem.type !== 'CABIN') {
-        const newQty = foundItem.quantity + log.quantity;
+        const newQty = foundItem.quantity + qtyToReturn;
         const { error: invErr } = await supabase
           .from('inventory')
           .update({ quantity: newQty, updated_at: new Date().toISOString() })
@@ -612,13 +632,22 @@ export default function MaterialManagement({
         if (invErr) throw invErr;
       }
 
+      const finalLogType = returnHasIssue ? '불출, 반납완료, 이상알림' : '반납완료';
+      const memoText = returnMemo.trim() ? `반납메모: ${returnMemo.trim()}` : targetReturnLog.memo;
+
       const { error: logErr } = await supabase
         .from('inventory_logs')
-        .update({ type: '반납완료', updated_at: new Date().toISOString() })
-        .eq('id', log.id);
+        .update({ 
+          type: finalLogType, 
+          quantity: qtyToReturn, 
+          memo: memoText,
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', targetReturnLog.id);
       if (logErr) throw logErr;
 
       showCenterToast('반납 처리가 완료되었습니다.');
+      setShowReturnModal(false);
       if (foundItem.type === 'CABIN') {
         await fetchCabinInventory();
       } else {
@@ -777,22 +806,63 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {pendingReturnLog && (
+      {/* 반납 확인 및 수량/이상유무 체크 모달 */}
+      {showReturnModal && targetReturnLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
-            <div className="mx-auto w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600">
-              <ArrowDownRight className="h-5 w-5" />
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-sm font-bold">반납 수량 확인 및 장비 점검</h3>
+              <button onClick={() => setShowReturnModal(false)}><X className="h-4 w-4" /></button>
             </div>
-            <div>
-              <h3 className="text-sm font-bold text-[#1F2937] mb-1">반납 처리 확인</h3>
-              <p className="text-xs text-[#64748B] break-keep">
-                <strong className="text-[#1F2937]">{pendingReturnLog.item_name}</strong> ({pendingReturnLog.quantity}개)를 반납 처리하시겠습니까?
-              </p>
-            </div>
-            <div className="flex space-x-2 pt-2">
-              <button onClick={() => setPendingReturnLog(null)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-              <button onClick={executeQuickReturn} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition">반납하기</button>
-            </div>
+
+            <form onSubmit={handleSubmitReturn} className="space-y-3 text-xs">
+              <div className="bg-[#F5F6F8] p-2.5 rounded-md border border-[#E2E5E9] space-y-1">
+                <span className="text-[10px] text-[#64748B] block">품목명</span>
+                <p className="font-bold text-[#1F2937]">{targetReturnLog.item_name}</p>
+              </div>
+
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">반납 수량 확인</label>
+                <input 
+                  type="number" 
+                  min="1" 
+                  required
+                  value={returnQty} 
+                  onChange={e => setReturnQty(Number(e.target.value))} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] font-bold" 
+                />
+                <span className="text-[10px] text-[#64748B] mt-1 block">불출된 수량과 실제 반납 수량이 일치하는지 확인해주세요.</span>
+              </div>
+
+              <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  id="returnHasIssue"
+                  checked={returnHasIssue} 
+                  onChange={e => setReturnHasIssue(e.target.checked)} 
+                  className="w-4 h-4 accent-amber-600 rounded"
+                />
+                <label htmlFor="returnHasIssue" className="text-amber-900 font-semibold cursor-pointer select-none">
+                  장비 이상(결함) 있음 체크 (체크 시 이상알림 표시)
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">반납 메모 / 특이사항</label>
+                <input 
+                  type="text" 
+                  placeholder="특이사항이 있으면 입력하세요" 
+                  value={returnMemo} 
+                  onChange={e => setReturnMemo(e.target.value)} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                />
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <button type="button" onClick={() => setShowReturnModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition">반납 확정</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1470,6 +1540,10 @@ export default function MaterialManagement({
 
                 {inventoryLogs.map((log) => {
                   const isChecked = selectedLogIds.includes(String(log.id));
+                  
+                  // 소모성 자재인지 확인 (소모성 자재는 반납 버튼 비활성화)
+                  const matchedItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
+                  const isConsumable = matchedItem?.type === '소모성';
 
                   return (
                     <div key={log.id} className="bg-[#F5F6F8] rounded-md border border-[#E2E5E9] p-2.5 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
@@ -1499,9 +1573,10 @@ export default function MaterialManagement({
                         </span>
 
                         <div className="flex items-center space-x-1.5 shrink-0">
-                          {log.type === '불출' && (
+                          {/* 소모성 자재가 아닐 때만 반납 버튼 노출 */}
+                          {log.type === '불출' && !isConsumable && (
                             <button
-                              onClick={() => handleQuickReturnFromHistory(log)}
+                              onClick={() => handleOpenReturnModal(log)}
                               className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-semibold transition"
                             >
                               반납
@@ -1608,6 +1683,7 @@ export default function MaterialManagement({
                     <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
                     <span>{selectedDetailItem.type === '소모성' ? '소모성 사용' : '불출 처리'}</span>
                   </button>
+                  {/* 소모성 자재는 상세창에서도 반납 버튼 미노출 */}
                   {selectedDetailItem.type !== '소모성' && (
                     <button
                       onClick={() => handleOpenLogModal(selectedDetailItem, '반납')}
