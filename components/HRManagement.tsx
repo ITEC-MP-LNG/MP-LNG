@@ -120,13 +120,12 @@ function calculateAge(birthStr?: string) {
   return isNaN(age) ? null : age;
 }
 
-const dagreGraph = new dagre.graphlib.Graph();
-dagreGraph.setDefaultEdgeLabel(() => ({}));
-
 const nodeWidth = 200;
 const nodeHeight = 65;
 
 const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
   dagreGraph.setGraph({ rankdir: direction, nodesep: 50, ranksep: 80, align: 'UL' });
 
   nodes.forEach((node) => {
@@ -141,7 +140,13 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
 
   const newNodes = nodes.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
-    if (!nodeWithPosition) return node;
+    // 에러 방어 코드: nodeWithPosition이 없거나 x, y가 undefined일 경우 기본값 부여
+    if (!nodeWithPosition || typeof nodeWithPosition.x !== 'number' || typeof nodeWithPosition.y !== 'number') {
+      return {
+        ...node,
+        position: { x: node.position?.x || 0, y: node.position?.y || 0 },
+      };
+    }
     return {
       ...node,
       position: {
@@ -191,7 +196,6 @@ export default function HRManagement({
   const [selectedUser, setSelectedUser] = useState<HRUser | null>(null);
   const [isSavingPositions, setIsSavingPositions] = useState(false);
 
-  // 수정: 빈 배열 대신 명시적인 타입 지정 (<any[]>)
   const [selectedFlowNodes, setSelectedFlowNodes] = useState<any[]>([]);
   const dagreContainerRef = useRef<HTMLDivElement>(null);
   
@@ -353,6 +357,7 @@ export default function HRManagement({
       initialNodes.push({
         id: uId,
         type: 'default',
+        position: { x: 0, y: 0 },
         data: {
           label: (
             <div onClick={() => setDetailUser(u)} className="p-2 text-left cursor-pointer select-none">
@@ -1053,7 +1058,6 @@ export default function HRManagement({
         </div>
       ) : (
         <div>
-          {/* 모바일 화면 맞춤 카드 리스트 뷰 */}
           <div className="block md:hidden space-y-2.5">
             {filteredUsers.map((u) => {
               const canEdit = canEditUser(u);
@@ -1135,7 +1139,6 @@ export default function HRManagement({
             })}
           </div>
 
-          {/* PC 화면 테이블 뷰 */}
           <div className="hidden md:block bg-white border border-[#E2E5E9] rounded-xl overflow-hidden shadow-xs">
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F5F6F8] border-b border-[#E2E5E9] font-bold text-[#64748B]">
