@@ -213,8 +213,8 @@ export default function HRManagement({
     birthDate: '' 
   });
 
-  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<Node>([]);
-const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<Node>([cite: 3]);
+  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([cite: 3]);
 
   const onConnect = useCallback(
     (params: any) => setFlowEdges((eds) => addEdge({ ...params, type: 'smoothstep', style: { stroke: '#4f46e5', strokeWidth: 2 } }, eds)),
@@ -1053,6 +1053,7 @@ const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
         </div>
       ) : (
         <div>
+          {/* 모바일 화면 맞춤 카드 리스트 뷰 (중복 텍스트 방어 및 반응형 레이아웃) */}
           <div className="block md:hidden space-y-3">
             {filteredUsers.map((u) => {
               const canEdit = canEditUser(u);
@@ -1062,22 +1063,26 @@ const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
               return (
                 <div key={u.id} className="bg-white p-3.5 border border-[#E2E5E9] rounded-xl shadow-xs space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-bold text-xs text-[#1F2937]">{u.name}</span>
-                      {age && <span className="text-[10px] text-[#243B5A] font-bold">({age}세)</span>}
-                      {u.id && <span className="text-[10px] text-[#64748B] font-mono">({u.id})</span>}
-                      {isSelf(u) && (
-                        <span className="text-[10px] bg-[#243B5A] text-white font-bold px-1.5 py-0.2 rounded">
-                          나
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-xs text-[#1F2937]">{u.name}</span>
+                        {age && <span className="text-[10px] text-[#243B5A] font-bold">({age}세)</span>}
+                        {u.id && <span className="text-[10px] text-[#64748B] font-mono">({u.id})</span>}
+                        {isSelf(u) && (
+                          <span className="text-[9px] bg-[#243B5A] text-white font-bold px-1.5 py-0.2 rounded shrink-0">
+                            나
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-[#64748B] flex items-center gap-1 flex-wrap">
+                        <span className="px-1.5 py-0.5 bg-[#F5F6F8] font-medium rounded border border-[#E2E5E9]">
+                          {u.department || '미지정'} · {u.position || '사원'} {u.job_title && u.job_title !== '없음' ? `(${u.job_title}${u.field ? `/${u.field}` : ''})` : ''}
                         </span>
-                      )}
-                      <span className="text-[10px] px-2 py-0.5 bg-[#F5F6F8] text-[#64748B] font-medium rounded border border-[#E2E5E9]">
-                        {u.department || '미지정'} · {u.position || '사원'} {u.job_title && u.job_title !== '없음' ? `(${u.job_title}${u.field ? `/${u.field}` : ''})` : ''}
-                      </span>
+                      </div>
                     </div>
 
-                    <div className="flex items-center space-x-1">
+                    <div className="flex items-center space-x-1 shrink-0">
                       {canEdit && (
                         <button
                           onClick={() => handleOpenEditModal(u)}
@@ -1103,8 +1108,8 @@ const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
                     <div>
                       <span className="text-[#64748B] block text-[10px]">연락처</span>
                       {u.phone ? (
-                        <a href={`tel:${u.phone}`} className="font-medium text-[#243B5A] hover:underline flex items-center gap-1">
-                          <Phone className="h-3 w-3" /> {u.phone}
+                        <a href={`tel:${u.phone}`} className="font-medium text-[#243B5A] hover:underline flex items-center gap-1 truncate">
+                          <Phone className="h-3 w-3 shrink-0" /> <span className="truncate">{u.phone}</span>
                         </a>
                       ) : (
                         <span className="font-medium text-[#1F2937]">-</span>
@@ -1130,6 +1135,7 @@ const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
             })}
           </div>
 
+          {/* PC 화면 테이블 뷰 */}
           <div className="hidden md:block bg-white border border-[#E2E5E9] rounded-xl overflow-hidden shadow-xs">
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F5F6F8] border-b border-[#E2E5E9] font-bold text-[#64748B]">
