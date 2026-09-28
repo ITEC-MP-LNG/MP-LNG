@@ -22,7 +22,46 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import { AppUser, InventoryItem, InventoryLog } from '@/lib/types';
+
+// 자체적으로 정의된 타입 (에러 방지용)
+export interface AppUser {
+  id: string | number;
+  name: string;
+  role?: string;
+}
+
+export interface InventoryItem {
+  id: string | number;
+  type: string;
+  code?: string;
+  no?: string;
+  name?: string;
+  item?: string;
+  category?: string;
+  sheet_name?: string;
+  vbt_type?: string;
+  sub_equipment?: string;
+  quantity: number;
+  unit: string;
+  min_quantity?: number;
+  location?: string;
+  location_or_section?: string;
+  maker_model?: string;
+  serial_number?: string;
+  cert_no?: string;
+  calibration_date?: string;
+}
+
+export interface InventoryLog {
+  id: string | number;
+  inventory_id?: string | number;
+  item_name?: string;
+  type: string; // 모든 상태 문자열 허용
+  quantity: number;
+  worker_name?: string;
+  memo?: string;
+  created_at: string;
+}
 
 interface MaterialManagementProps {
   currentUser: AppUser;
