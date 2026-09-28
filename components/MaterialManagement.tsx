@@ -114,6 +114,12 @@ export default function MaterialManagement({
   const [pendingDeleteLogId, setPendingDeleteLogId] = useState<string | number | null>(null);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState<boolean>(false);
 
+  // --- CABIN 전용 추가 상태 ---
+  const [selectedCabinIds, setSelectedCabinIds] = useState<string[]>([]);
+  const [cabinCalibrationOnly, setCabinCalibrationOnly] = useState<boolean>(false);
+  const [showCabinBatchModal, setShowCabinBatchModal] = useState<boolean>(false);
+  const [cabinBatchMemo, setCabinBatchMemo] = useState<string>('');
+
   const [fixedSubCategories, setFixedSubCategories] = useState<string[]>([
     '압력계', '가스측정기', 'VBT', '공구', '무선 배터리', '교정', '기타'
   ]);
@@ -257,6 +263,7 @@ export default function MaterialManagement({
 
   const handleSelectCabinSheet = (sheetName: string) => {
     setSelectedCabinSheet(sheetName);
+    setSelectedCabinIds([]); // Sheet 변경 시 선택 초기화
   };
 
   useEffect(() => {
@@ -569,9 +576,62 @@ export default function MaterialManagement({
     }
   };
 
+  // CABIN 일괄 선택 핸들러
+  const toggleSelectCabinItem = (id: string | number) => {
+    const strId = String(id);
+    setSelectedCabinIds(prev => 
+      prev.includes(strId) ? prev.filter(item => item !== strId) : [...prev, strId]
+    );
+  };
+
+  const toggleSelectAllCabin = () => {
+    if (selectedCabinIds.length === filteredInventory.length) {
+      setSelectedCabinIds([]);
+    } else {
+      setSelectedCabinIds(filteredInventory.map(item => String(item.id)));
+    }
+  };
+
+  // CABIN 일괄 불출 처리 실행 함수 (품목 수량이 통합적으로 기록됨)
+  const handleCabinBatchIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedCabinIds.length === 0) return;
+
+    try {
+      const selectedItems = cabinInventoryList.filter(item => selectedCabinIds.includes(String(item.id)));
+      if (selectedItems.length === 0) return;
+
+      const firstItemName = selectedItems[0].name || selectedItems[0].item || 'CABIN 품목';
+      const integratedItemName = selectedItems.length === 1 
+        ? firstItemName 
+        : `${firstItemName} 외 ${selectedItems.length - 1}건`;
+
+      const { error: logError } = await supabase
+        .from('inventory_logs')
+        .insert([{
+          inventory_id: null,
+          item_name: `[CABIN 일괄 불출] ${integratedItemName}`,
+          type: '불출',
+          quantity: selectedItems.length,
+          worker_name: currentUser?.name || '작업자',
+          memo: cabinBatchMemo.trim() || 'CABIN 교정/작업용 일괄 불출',
+          created_at: new Date().toISOString()
+        }]);
+
+      if (logError) throw logError;
+
+      showCenterToast(`선택된 ${selectedItems.length}개 품목이 일괄 불출되었습니다.`);
+      setShowCabinBatchModal(false);
+      setSelectedCabinIds([]);
+      setCabinBatchMemo('');
+      await fetchInventoryLogs();
+    } catch (err: any) {
+      alert('CABIN 일괄 불출 처리 중 오류가 발생했습니다: ' + err.message);
+    }
+  };
+
   // 반납 모달 오픈 (수량 확인 및 이상유무 체크)
   const handleOpenReturnModal = (log: InventoryLog) => {
-    // 소모성 자재는 반납 불가 방어 코드
     const foundItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
     if (foundItem && foundItem.type === '소모성') {
       alert('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
@@ -752,6 +812,11 @@ export default function MaterialManagement({
         const matchesSheet = itemCleanSheet === selectedCabinSheet;
         if (!matchesSheet) return false;
 
+        // 교정 대상만 보기 필터 적용
+        if (cabinCalibrationOnly && !item.calibration_date) {
+          return false;
+        }
+
         if (!selectedCabinTextSubTag) return true;
 
         const itemNameLower = (item.item || '').toLowerCase();
@@ -789,7 +854,7 @@ export default function MaterialManagement({
 
       return cat === selectedFixedSubCategory;
     });
-  }, [inventoryTab, inventoryList, cabinInventoryList, selectedConsumableCategory, selectedFixedSubCategory, selectedVbtSubCategory, selectedCabinSheet, selectedCabinTextSubTag]);
+  }, [inventoryTab, inventoryList, cabinInventoryList, selectedConsumableCategory, selectedFixedSubCategory, selectedVbtSubCategory, selectedCabinSheet, selectedCabinTextSubTag, cabinCalibrationOnly]);
 
   const currentActiveSubCatName = getCurrentSelectedCategory();
   const isCurrentSubCatCollapsed = !!collapsedSubTabs[currentActiveSubCatName];
@@ -802,6 +867,41 @@ export default function MaterialManagement({
           <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-xs text-center">
             <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
             <span className="truncate">{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* CABIN 일괄 불출 처리 모달 */}
+      {showCabinBatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-sm font-bold">CABIN 품목 일괄 불출</h3>
+              <button onClick={() => setShowCabinBatchModal(false)}><X className="h-4 w-4" /></button>
+            </div>
+
+            <form onSubmit={handleCabinBatchIssue} className="space-y-3 text-xs">
+              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200 space-y-1">
+                <span className="text-[10px] text-blue-700 block font-semibold">선택된 품목 수량</span>
+                <p className="font-bold text-blue-900 text-sm">총 {selectedCabinIds.length}개 품목</p>
+              </div>
+
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">불출 메모 / 목적 (통합 기록)</label>
+                <input 
+                  type="text" 
+                  placeholder="예: 정기 교정 검사 목적 일괄 불출" 
+                  value={cabinBatchMemo} 
+                  onChange={e => setCabinBatchMemo(e.target.value)} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                />
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <button type="button" onClick={() => setShowCabinBatchModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">일괄 불출 확정</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -1311,15 +1411,30 @@ export default function MaterialManagement({
             })}
           </div>
 
-          {isAdmin && (
+          <div className="flex items-center space-x-1 shrink-0">
+            {/* 교정 대상만 보기 필터 버튼 */}
             <button
-              onClick={() => setIsCabinSheetModalOpen(true)}
-              className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
-              title="종류 추가/수정/관리"
+              onClick={() => setCabinCalibrationOnly(!cabinCalibrationOnly)}
+              className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1 ${
+                cabinCalibrationOnly 
+                  ? 'bg-amber-600 text-white shadow-2xs' 
+                  : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+              }`}
+              title="교정일이 등록된 품목만 필터링합니다"
             >
-              <Settings className="h-4 w-4 shrink-0" />
+              <span>🔬 교정 대상</span>
             </button>
-          )}
+
+            {isAdmin && (
+              <button
+                onClick={() => setIsCabinSheetModalOpen(true)}
+                className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
+                title="종류 추가/수정/관리"
+              >
+                <Settings className="h-4 w-4 shrink-0" />
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
@@ -1432,13 +1547,30 @@ export default function MaterialManagement({
             총 {filteredInventory.length}건
           </span>
         </div>
-        <button
-          onClick={() => toggleSubTabContent(currentActiveSubCatName)}
-          className="flex items-center space-x-1 text-xs font-semibold text-[#243B5A] bg-[#F5F6F8] hover:bg-[#E2E5E9] px-2.5 py-1 rounded border border-[#E2E5E9] transition shrink-0"
-        >
-          <span>{isCurrentSubCatCollapsed ? '펼치기' : '접기'}</span>
-          {isCurrentSubCatCollapsed ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronUp className="h-3.5 w-3.5 shrink-0" />}
-        </button>
+
+        <div className="flex items-center space-x-2">
+          {/* CABIN 탭일 때 일괄 불출 버튼 노출 */}
+          {inventoryTab === 'CABIN' && filteredInventory.length > 0 && (
+            <div className="flex items-center space-x-2">
+              {selectedCabinIds.length > 0 && (
+                <button
+                  onClick={() => setShowCabinBatchModal(true)}
+                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition shadow-2xs"
+                >
+                  선택 품목 일괄 불출 ({selectedCabinIds.length})
+                </button>
+              )}
+            </div>
+          )}
+
+          <button
+            onClick={() => toggleSubTabContent(currentActiveSubCatName)}
+            className="flex items-center space-x-1 text-xs font-semibold text-[#243B5A] bg-[#F5F6F8] hover:bg-[#E2E5E9] px-2.5 py-1 rounded border border-[#E2E5E9] transition shrink-0"
+          >
+            <span>{isCurrentSubCatCollapsed ? '펼치기' : '접기'}</span>
+            {isCurrentSubCatCollapsed ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronUp className="h-3.5 w-3.5 shrink-0" />}
+          </button>
+        </div>
       </div>
 
       {!isCurrentSubCatCollapsed && (
@@ -1453,22 +1585,54 @@ export default function MaterialManagement({
             </div>
           ) : (
             <div className="space-y-2">
+              {/* CABIN 탭일 때 전체 선택 헤더 추가 */}
+              {inventoryTab === 'CABIN' && (
+                <div className="bg-[#F5F6F8] px-3 py-1.5 rounded-lg border border-[#E2E5E9] flex items-center space-x-2 text-xs">
+                  <input 
+                    type="checkbox" 
+                    checked={selectedCabinIds.length === filteredInventory.length && filteredInventory.length > 0} 
+                    onChange={toggleSelectAllCabin}
+                    className="accent-[#243B5A] rounded shrink-0"
+                  />
+                  <span className="font-semibold text-[#64748B]">현재 목록 전체 선택 ({filteredInventory.length}건)</span>
+                </div>
+              )}
+
               {filteredInventory.map((item, idx) => {
                 const isLowStock = item.type === '소모성' && item.quantity <= (item.min_quantity || 0);
+                const isCabinSelected = selectedCabinIds.includes(String(item.id));
                 
                 return (
                   <div 
                     key={item.id || idx} 
-                    onClick={() => setSelectedDetailItem(item)}
-                    className={`bg-white rounded-lg border shadow-2xs transition p-3 flex items-center justify-between gap-2 cursor-pointer hover:border-blue-400 hover:bg-slate-50/50 overflow-hidden ${
-                      isLowStock ? 'border-red-300 bg-red-50/10' : 'border-[#E2E5E9]'
+                    className={`bg-white rounded-lg border shadow-2xs transition p-3 flex items-center justify-between gap-2 hover:border-blue-400 hover:bg-slate-50/50 overflow-hidden ${
+                      isLowStock ? 'border-red-300 bg-red-50/10' : isCabinSelected ? 'border-blue-500 bg-blue-50/20' : 'border-[#E2E5E9]'
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0 flex-1">
-                      <span className="bg-[#F5F6F8] text-[#243B5A] border border-[#E2E5E9] text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0">
+                      {/* CABIN 탭일 때 각 아이템별 체크박스 */}
+                      {inventoryTab === 'CABIN' && (
+                        <input 
+                          type="checkbox" 
+                          checked={isCabinSelected} 
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            toggleSelectCabinItem(item.id);
+                          }}
+                          className="accent-[#243B5A] rounded shrink-0 w-4 h-4 cursor-pointer"
+                        />
+                      )}
+
+                      <span 
+                        onClick={() => setSelectedDetailItem(item)}
+                        className="bg-[#F5F6F8] text-[#243B5A] border border-[#E2E5E9] text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0 cursor-pointer"
+                      >
                         {item.code || item.no || 'NO'}
                       </span>
-                      <div className="min-w-0 flex-1">
+                      <div 
+                        onClick={() => setSelectedDetailItem(item)}
+                        className="min-w-0 flex-1 cursor-pointer"
+                      >
                         <h3 className="text-xs font-semibold text-[#1F2937] truncate">{item.name || item.item}</h3>
                         <span className="text-[10px] text-[#64748B] block truncate">
                           위치: {item.location || item.location_or_section || '미지정'} {item.maker_model ? `| 모델: ${item.maker_model}` : ''} {item.calibration_date ? `| 교정일: ${item.calibration_date}` : ''}
@@ -1476,7 +1640,10 @@ export default function MaterialManagement({
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-3 shrink-0 text-right">
+                    <div 
+                      onClick={() => setSelectedDetailItem(item)}
+                      className="flex items-center space-x-3 shrink-0 text-right cursor-pointer"
+                    >
                       <div>
                         <span className={`text-xs font-bold block ${isLowStock ? 'text-red-600' : 'text-[#1F2937]'}`}>
                           {item.type === 'CABIN' ? (item.cert_no || '보유') : `${item.quantity} ${item.unit}`}
@@ -1541,7 +1708,6 @@ export default function MaterialManagement({
                 {inventoryLogs.map((log) => {
                   const isChecked = selectedLogIds.includes(String(log.id));
                   
-                  // 소모성 자재인지 확인 (소모성 자재는 반납 버튼 비활성화)
                   const matchedItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
                   const isConsumable = matchedItem?.type === '소모성';
 
@@ -1573,7 +1739,6 @@ export default function MaterialManagement({
                         </span>
 
                         <div className="flex items-center space-x-1.5 shrink-0">
-                          {/* 소모성 자재가 아닐 때만 반납 버튼 노출 */}
                           {log.type === '불출' && !isConsumable && (
                             <button
                               onClick={() => handleOpenReturnModal(log)}
@@ -1683,7 +1848,6 @@ export default function MaterialManagement({
                     <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
                     <span>{selectedDetailItem.type === '소모성' ? '소모성 사용' : '불출 처리'}</span>
                   </button>
-                  {/* 소모성 자재는 상세창에서도 반납 버튼 미노출 */}
                   {selectedDetailItem.type !== '소모성' && (
                     <button
                       onClick={() => handleOpenLogModal(selectedDetailItem, '반납')}
