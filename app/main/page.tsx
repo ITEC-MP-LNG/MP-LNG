@@ -12,7 +12,9 @@ import {
   Layers,
   Calendar,
   Briefcase,
-  Anchor
+  Anchor,
+  AlertCircle,
+  X
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
@@ -85,10 +87,13 @@ export default function MainPage() {
   const [eduRecords, setEduRecords] = useState<EducationRecord[]>([]);
   const [loadingEdu, setLoadingEdu] = useState(false);
 
+  // 앱 종료 확인 커스텀 모달 상태
+  const [showExitModal, setShowExitModal] = useState(false);
+
   const normalizedRole = String(currentUser?.role || '').trim().toUpperCase();
   const isAdmin = normalizedRole === 'ADMIN';
 
-  // 모바일 뒤로가기 방지 및 종료 알림 처리
+  // 모바일 뒤로가기 방지 및 커스텀 종료 알림 처리
   useEffect(() => {
     let lastBackPressTime = 0;
 
@@ -98,17 +103,20 @@ export default function MainPage() {
       event.preventDefault();
       const currentTime = new Date().getTime();
 
-      // 2초 안에 뒤로가기를 한 번 더 누르거나 확인을 누를 경우 종료 처리
       if (currentTime - lastBackPressTime < 2000) {
-        window.history.back();
+        // 2초 내 두 번 누른 경우 즉시 종료 처리
+        setShowExitModal(false);
+        if (window.history.length > 1) {
+          window.history.go(-2);
+        } else {
+          window.close();
+        }
       } else {
         lastBackPressTime = currentTime;
-        const confirmExit = window.confirm('앱을 종료하시겠습니까?');
-        if (confirmExit) {
-          window.history.back();
-        } else {
-          window.history.pushState(null, '', window.location.href);
-        }
+        // 브라우저 기본 confirm 대신 커스텀 모달 노출
+        setShowExitModal(true);
+        // 히스토리가 풀리지 않도록 다시 상태 푸시
+        window.history.pushState(null, '', window.location.href);
       }
     };
 
@@ -295,6 +303,26 @@ export default function MainPage() {
     router.push('/login');
   };
 
+  // 앱 종료 확인 모달에서 '확인'을 눌렀을 때 처리
+  const confirmExitApp = () => {
+    setShowExitModal(false);
+    // 모바일 웹앱/웹뷰 환경 또는 브라우저 탭 닫기 시도
+    if (window.history.length > 1) {
+      window.history.go(-2);
+    } else {
+      window.close();
+    }
+    // 웹뷰나 브라우저 보안 정책으로 창이 안 닫힐 경우 홈이나 빈 페이지로 밀어내기 안전장치
+    router.push('/login');
+  };
+
+  // 앱 종료 확인 모달에서 '취소'를 눌렀을 때 처리
+  const cancelExitApp = () => {
+    setShowExitModal(false);
+    // 히스토리 스택 유지용 푸시
+    window.history.pushState(null, '', window.location.href);
+  };
+
   if (!currentUser) return null;
 
   const companyCareer = calculateCareerDetails(currentUser.join_date);
@@ -309,7 +337,7 @@ export default function MainPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] flex flex-col pb-20 md:pb-0 font-sans">
+    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] flex flex-col pb-20 md:pb-0 font-sans relative">
       
       {/* 1. Header */}
       <header className="bg-white border-b border-[#E2E5E9] sticky top-0 z-30 shadow-2xs">
@@ -349,17 +377,16 @@ export default function MainPage() {
                 isAdmin ? 'bg-[#243B5A] text-white' : 'bg-[#E2E5E9] text-[#1F2937]'
               }`}>
                 {isAdmin ? 'ADMIN' : 'USER'}
-              </span>
-            </div>
-            
-            <button
-              onClick={handleLogout}
-              className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg transition border border-transparent hover:border-red-200 cursor-pointer"
-              title="로그아웃"
-            >
-              <LogOut className="h-4 w-4 sm:h-5 sm:w-5" />
-            </button>
+            </span>
           </div>
+          
+          <button
+            onClick={handleLogout}
+            className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg transition border border-transparent hover:border-red-200 cursor-pointer"
+            title="로그아웃"
+          >
+            <LogOut className="h-4 w-4 sm:h-5 sm:w-5" />
+          </button>
         </div>
       </header>
 
@@ -443,7 +470,7 @@ export default function MainPage() {
         </main>
       </div>
 
-      {/* 3. Mobile Bottom Nav (높이 및 여백 한 단계 상향 조정) */}
+      {/* 3. Mobile Bottom Nav */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E5E9] z-40 px-2 py-2 flex justify-around items-center shadow-lg">
         {menuItems.map((item) => {
           const Icon = item.icon;
@@ -462,6 +489,40 @@ export default function MainPage() {
           );
         })}
       </nav>
+
+      {/* 앱 종료 확인 커스텀 모달 (앱 테마 스타일 적용) */}
+      {showExitModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-fadeIn">
+          <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-xl border border-[#E2E5E9] space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 bg-[#243B5A]/10 rounded-xl text-[#243B5A]">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#1F2937]">앱 종료</h3>
+                <p className="text-xs text-[#64748B]">통합현장관리 시스템을 종료하시겠습니까?</p>
+              </div>
+            </div>
+
+            <div className="flex space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={cancelExitApp}
+                className="flex-1 py-2.5 px-4 bg-[#F5F6F8] text-[#1F2937] hover:bg-[#E2E5E9] text-xs font-semibold rounded-lg transition border border-[#E2E5E9]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={confirmExitApp}
+                className="flex-1 py-2.5 px-4 bg-[#243B5A] text-white hover:bg-[#1a2d46] text-xs font-bold rounded-lg transition shadow-xs"
+              >
+                종료
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
