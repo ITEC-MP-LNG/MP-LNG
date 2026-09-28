@@ -86,6 +86,7 @@ export default function MaterialManagement({
 
   // UI 제어 상태
   const [isAlertBannerOpen, setIsAlertBannerOpen] = useState(true);
+  const [isHistorySectionOpen, setIsHistorySectionOpen] = useState(true); // 🚀 최근 이력 접고 펴기 상태
   const [selectedDetailItem, setSelectedDetailItem] = useState<InventoryItem | null>(null);
   const [showInventorySheet, setShowInventorySheet] = useState(false);
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -151,7 +152,7 @@ export default function MaterialManagement({
           nextCalDate.setHours(0, 0, 0, 0);
           const diffDays = Math.ceil((nextCalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-          if (diffDays <= 30) { // 30일 전 알림 요구사항 반영
+          if (diffDays <= 30) {
             upcomingCalibrations.push({
               item,
               daysLeft: diffDays,
@@ -317,7 +318,6 @@ export default function MaterialManagement({
       ? (itemNextCalDate.trim() ? `${itemCalDate.trim()} | ${itemNextCalDate.trim()}` : itemCalDate.trim())
       : null;
 
-    // 테이블 분기: CABIN인 경우 cabin_inventory 테이블 사용
     const targetTableName = itemType === 'CABIN' ? 'cabin_inventory' : 'inventory';
 
     try {
@@ -387,6 +387,43 @@ export default function MaterialManagement({
     setLogHasIssue(false);
     setLogMemo('');
     setShowLogSheet(true);
+  };
+
+  // 🚀 이력 목록에서 바로 반납을 진행하기 위해 inventory_id 또는 item_name으로 자재를 찾아 모달을 띄우는 함수
+  const handleQuickReturnFromHistory = async (log: InventoryLog) => {
+    try {
+      // 1. inventory 또는 cabin_inventory 테이블에서 해당 자재 찾기 (ID 우선, 없으면 이름으로 검색)
+      let foundItem: InventoryItem | null = null;
+
+      if (log.inventory_id) {
+        const { data: invData } = await supabase.from('inventory').select('*').eq('id', log.inventory_id).single();
+        if (invData) {
+          foundItem = invData;
+        } else {
+          const { data: cabinData } = await supabase.from('cabin_inventory').select('*').eq('id', log.inventory_id).single();
+          if (cabinData) foundItem = cabinData;
+        }
+      }
+
+      if (!foundItem && log.item_name) {
+        const { data: invDataByName } = await supabase.from('inventory').select('*').eq('name', log.item_name).limit(1);
+        if (invDataByName && invDataByName.length > 0) {
+          foundItem = invDataByName[0];
+        } else {
+          const { data: cabinDataByName } = await supabase.from('cabin_inventory').select('*').eq('name', log.item_name).limit(1);
+          if (cabinDataByName && cabinDataByName.length > 0) foundItem = cabinDataByName[0];
+        }
+      }
+
+      if (!foundItem) {
+        return alert(`'${log.item_name}'에 해당하는 현재 등록된 자재 정보를 찾을 수 없습니다.`);
+      }
+
+      // 반납 모달 호출
+      handleOpenLogModal(foundItem, '반납');
+    } catch (err: any) {
+      alert('자재 조회 중 오류가 발생했습니다: ' + err.message);
+    }
   };
 
   const handleSubmitStockLog = async (e: React.FormEvent) => {
@@ -773,44 +810,67 @@ export default function MaterialManagement({
         </>
       )}
 
-      {/* 🚀 요구사항 4항: 하단 최근 불출/반납/교정 이력 출력 영역 */}
-      <div className="bg-white rounded-lg border border-[#E2E5E9] p-3 shadow-2xs space-y-2 mt-4">
-        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
+      {/* 🚀 최근 불출/반납/교정 이력 영역 (접고 펴기 및 직접 반납 기능 추가) */}
+      <div className="bg-white rounded-lg border border-[#E2E5E9] shadow-2xs mt-4 overflow-hidden">
+        <button
+          onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
+          className="w-full p-3 flex items-center justify-between bg-[#F5F6F8] hover:bg-[#E2E5E9]/60 transition text-xs font-bold text-[#1F2937]"
+        >
           <div className="flex items-center space-x-2">
             <History className="h-4 w-4 text-[#243B5A]" />
-            <h3 className="text-xs font-bold text-[#1F2937]">최근 불출 / 반납 / 교정 이력</h3>
+            <span>최근 불출 / 반납 / 교정 이력</span>
+            <span className="text-[10px] px-1.5 py-0.2 bg-white border border-[#E2E5E9] rounded-full text-[#64748B] font-normal">
+              {inventoryLogs?.length || 0}건
+            </span>
           </div>
-          <span className="text-[10px] text-[#64748B]">최근 기록 실시간 반영</span>
-        </div>
+          {isHistorySectionOpen ? <ChevronUp className="h-4 w-4 text-[#64748B]" /> : <ChevronDown className="h-4 w-4 text-[#64748B]" />}
+        </button>
 
-        <div className="space-y-1.5 max-h-48 overflow-y-auto">
-          {(!inventoryLogs || inventoryLogs.length === 0) ? (
-            <p className="text-xs text-[#64748B] text-center py-4">등록된 최근 이력이 없습니다.</p>
-          ) : (
-            inventoryLogs.slice(0, 15).map((log) => (
-              <div key={log.id} className="flex items-center justify-between p-2 bg-[#F5F6F8] rounded-md border border-[#E2E5E9] text-xs">
-                <div className="flex items-center space-x-2 min-w-0">
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                    log.type === '불출' 
-                      ? 'bg-emerald-100 text-emerald-800' 
-                      : 'bg-blue-100 text-blue-800'
-                  }`}>
-                    {log.type}
-                  </span>
-                  <span className="font-semibold text-[#1F2937] truncate">{log.item_name}</span>
-                  <span className="text-[#64748B] text-[11px]">({log.quantity}개)</span>
-                  {log.has_issue && (
-                    <span className="bg-red-100 text-red-700 text-[9px] px-1 py-0.2 rounded font-bold">이상발생</span>
-                  )}
+        {isHistorySectionOpen && (
+          <div className="p-3 space-y-1.5 max-h-48 overflow-y-auto border-t border-[#E2E5E9]">
+            {(!inventoryLogs || inventoryLogs.length === 0) ? (
+              <p className="text-xs text-[#64748B] text-center py-4">등록된 최근 이력이 없습니다.</p>
+            ) : (
+              inventoryLogs.slice(0, 15).map((log) => (
+                <div key={log.id} className="flex items-center justify-between p-2 bg-[#F5F6F8] rounded-md border border-[#E2E5E9] text-xs gap-2">
+                  <div className="flex items-center space-x-2 min-w-0 flex-1">
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                      log.type === '불출' 
+                        ? 'bg-emerald-100 text-emerald-800' 
+                        : 'bg-blue-100 text-blue-800'
+                    }`}>
+                      {log.type}
+                    </span>
+                    <span className="font-semibold text-[#1F2937] truncate">{log.item_name}</span>
+                    <span className="text-[#64748B] text-[11px] shrink-0">({log.quantity}개)</span>
+                    {log.has_issue && (
+                      <span className="bg-red-100 text-red-700 text-[9px] px-1 py-0.2 rounded font-bold shrink-0">이상발생</span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center space-x-2 shrink-0">
+                    {/* 🚀 이력 줄에서 바로 반납할 수 있는 버튼 (불출 내역일 때 유용) */}
+                    {log.type === '불출' && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleQuickReturnFromHistory(log);
+                        }}
+                        className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-semibold shadow-2xs transition"
+                      >
+                        반납
+                      </button>
+                    )}
+                    <div className="text-right">
+                      <span className="text-[10px] text-[#64748B] block">{log.worker_name}</span>
+                      <span className="text-[10px] text-[#94A3B8]">{new Date(log.created_at).toLocaleDateString()}</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-right shrink-0">
-                  <span className="text-[10px] text-[#64748B] block">{log.worker_name}</span>
-                  <span className="text-[10px] text-[#94A3B8]">{new Date(log.created_at).toLocaleDateString()}</span>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
+              ))
+            )}
+          </div>
+        )}
       </div>
 
       {/* 서브 카테고리 관리 모달 */}
