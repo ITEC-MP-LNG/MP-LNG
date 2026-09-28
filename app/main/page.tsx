@@ -401,7 +401,8 @@ export default function MainPage() {
           })}
         </aside>
 
-        <main className="flex-1 p-4 sm:p-6 overflow-y-auto min-w-0">
+        {/* 바깥 여백을 완전히 없애기 위해 p-0 적용 */}
+        <main className="flex-1 p-0 overflow-y-auto min-w-0">
           {mainTab === 'TASKS' && (
             <WorkManagement
               currentUser={currentUser}
