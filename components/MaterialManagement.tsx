@@ -16,8 +16,6 @@ import {
   ChevronUp,
   Compass,
   MapPin,
-  ChevronRight,
-  ChevronLeft,
   Settings,
   History,
   CheckCircle2,
@@ -80,7 +78,7 @@ export default function MaterialManagement({
   // 일괄 이력 삭제용 커스텀 확인 모달 상태
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState<boolean>(false);
 
-  // 동적 서브 카테고리 목록 상태
+  // 동적 카테고리 목록 상태
   const [fixedSubCategories, setFixedSubCategories] = useState<string[]>([
     '압력계', '가스측정기', 'VBT', '공구', '무선 배터리', '교정', '기타'
   ]);
@@ -91,9 +89,11 @@ export default function MaterialManagement({
   ]);
   const [selectedConsumableCategory, setSelectedConsumableCategory] = useState<string>('검사약품');
 
-  // CABIN 2단 계층형 탭 상태 (1. 위치 앞자리 숫자, 2. 종류/Sheet별)
-  const [selectedCabinLocation, setSelectedCabinLocation] = useState<string>('전체');
-  const [selectedCabinType, setSelectedCabinType] = useState<string>('전체');
+  // CABIN 1단계: 종류별(Sheet 이름별) 탭 상태
+  const [selectedCabinSheet, setSelectedCabinSheet] = useState<string>('전체');
+
+  // CABIN 2단계: 종류(Sheet) 내에서 텍스트 기반 그룹 서브탭 상태
+  const [selectedCabinTextSubTag, setSelectedCabinTextSubTag] = useState<string>('전체');
 
   // VBT 서브 탭
   const [selectedVbtSubCategory, setSelectedVbtSubCategory] = useState<VbtSubCategory>('1L');
@@ -168,42 +168,44 @@ export default function MaterialManagement({
     }
   }, [inventoryTab]);
 
-  // CABIN 위치(앞자리 숫자) 목록 동적 추출
-  const cabinLocationNumbers = useMemo(() => {
-    const locs = new Set<string>();
+  // CABIN 종류(sheet_name) 목록 동적 추출
+  const cabinSheetNames = useMemo(() => {
+    const sheets = new Set<string>();
     cabinInventoryList.forEach(item => {
-      const loc = (item.location_or_section || '').trim();
-      const firstChar = loc.charAt(0);
-      if (firstChar && /[0-9]/.test(firstChar)) {
-        locs.add(firstChar);
-      } else if (loc) {
-        locs.add('기타');
-      }
+      if (item.sheet_name) sheets.add(item.sheet_name);
     });
-    return ['전체', ...Array.from(locs).sort()];
+    return ['전체', ...Array.from(sheets).sort()];
   }, [cabinInventoryList]);
 
-  // 선택된 위치(앞자리 숫자)에 따른 종류(sheet_name) 목록 동적 추출
-  const cabinTypesForLocation = useMemo(() => {
-    const filteredByLoc = cabinInventoryList.filter(item => {
-      if (selectedCabinLocation === '전체') return true;
-      const loc = (item.location_or_section || '').trim();
-      const firstChar = loc.charAt(0);
-      if (selectedCabinLocation === '기타') return !/[0-9]/.test(firstChar);
-      return firstChar === selectedCabinLocation;
+  // 선택된 CABIN Sheet 내부의 텍스트 구성 성격(예: pressure Transmitter 등) 자동 분류 서브탭 추출
+  const cabinTextSubTagsForSheet = useMemo(() => {
+    const filteredBySheet = cabinInventoryList.filter(item => {
+      if (selectedCabinSheet === '전체') return true;
+      return item.sheet_name === selectedCabinSheet;
     });
 
-    const types = new Set<string>();
-    filteredByLoc.forEach(item => {
-      if (item.sheet_name) types.add(item.sheet_name);
+    const tags = new Set<string>();
+    filteredBySheet.forEach(item => {
+      const itemNameLower = (item.item || '').toLowerCase();
+      if (itemNameLower.includes('transmitter')) tags.add('Transmitter');
+      else if (itemNameLower.includes('gauge')) tags.add('Gauge');
+      else if (itemNameLower.includes('sensor')) tags.add('Sensor');
+      else if (itemNameLower.includes('switch')) tags.add('Switch');
+      else if (itemNameLower.includes('valve')) tags.add('Valve');
+      else {
+        // 단어 첫 단어나 대표 명사 추출 시도 또는 기타 처리
+        const firstWord = (item.item || '').split(' ')[0];
+        if (firstWord) tags.add(firstWord);
+      }
     });
-    return ['전체', ...Array.from(types)];
-  }, [cabinInventoryList, selectedCabinLocation]);
 
-  // 위치 탭 변경 시 종류 탭 초기화
-  const handleSelectCabinLocation = (loc: string) => {
-    setSelectedCabinLocation(loc);
-    setSelectedCabinType('전체');
+    return ['전체', ...Array.from(tags).sort()];
+  }, [cabinInventoryList, selectedCabinSheet]);
+
+  // Sheet 변경 시 서브 텍스트 태그 초기화
+  const handleSelectCabinSheet = (sheetName: string) => {
+    setSelectedCabinSheet(sheetName);
+    setSelectedCabinTextSubTag('전체');
   };
 
   // 교정일 알림 동기화 (30일 전 기준 적용)
@@ -291,7 +293,7 @@ export default function MaterialManagement({
   const getCurrentSelectedCategory = () => {
     if (inventoryTab === '고정') return selectedFixedSubCategory;
     if (inventoryTab === '소모성') return selectedConsumableCategory;
-    return `${selectedCabinLocation} - ${selectedCabinType}`;
+    return `${selectedCabinSheet} - ${selectedCabinTextSubTag}`;
   };
 
   const setCurrentSelectedCategory = (val: string) => {
@@ -308,8 +310,8 @@ export default function MaterialManagement({
     setItemName('');
     setItemCategory(inventoryTab === '고정' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : '일반');
     
-    setCabinSheetName(selectedCabinType === '전체' ? '일반' : selectedCabinType);
-    setCabinLocationSection(selectedCabinLocation === '전체' ? '' : `${selectedCabinLocation}-`);
+    setCabinSheetName(selectedCabinSheet === '전체' ? '일반' : selectedCabinSheet);
+    setCabinLocationSection('');
     setCabinMakerModel('');
     setCabinSerialNo('');
     setCabinCertNo('');
@@ -595,26 +597,19 @@ export default function MaterialManagement({
     );
   };
 
-  // 필터링된 인벤토리 목록 계산 (CABIN은 위치 번호 및 종류별 2단 필터 적용)
+  // 필터링된 인벤토리 목록 계산 (CABIN은 Sheet별 1단계 및 텍스트 키워드별 2단계 필터 적용)
   const filteredInventory = useMemo(() => {
     if (inventoryTab === 'CABIN') {
       return cabinInventoryList.filter(item => {
-        const loc = (item.location_or_section || '').trim();
-        const firstChar = loc.charAt(0);
-        
-        // 1. 위치(앞자리 숫자) 필터
-        const matchesLocation = 
-          selectedCabinLocation === '전체' || 
-          (selectedCabinLocation === '기타' ? !/[0-9]/.test(firstChar) : firstChar === selectedCabinLocation);
+        // 1. Sheet별 필터
+        const matchesSheet = selectedCabinSheet === '전체' || item.sheet_name === selectedCabinSheet;
+        if (!matchesSheet) return false;
 
-        if (!matchesLocation) return false;
+        // 2. 종류(Sheet) 내 텍스트 키워드별 서브탭 필터
+        if (selectedCabinTextSubTag === '전체') return true;
 
-        // 2. 종류(sheet_name) 필터
-        const matchesType = 
-          selectedCabinType === '전체' || 
-          item.sheet_name === selectedCabinType;
-
-        return matchesType;
+        const itemNameLower = (item.item || '').toLowerCase();
+        return itemNameLower.includes(selectedCabinTextSubTag.toLowerCase());
       });
     }
 
@@ -648,7 +643,7 @@ export default function MaterialManagement({
 
       return cat === selectedFixedSubCategory;
     });
-  }, [inventoryTab, inventoryList, cabinInventoryList, selectedConsumableCategory, selectedFixedSubCategory, selectedVbtSubCategory, selectedCabinLocation, selectedCabinType]);
+  }, [inventoryTab, inventoryList, cabinInventoryList, selectedConsumableCategory, selectedFixedSubCategory, selectedVbtSubCategory, selectedCabinSheet, selectedCabinTextSubTag]);
 
   const currentActiveSubCatName = getCurrentSelectedCategory();
   const isCurrentSubCatCollapsed = !!collapsedSubTabs[currentActiveSubCatName];
@@ -850,30 +845,30 @@ export default function MaterialManagement({
         )}
       </div>
 
-      {/* 서브 카테고리 탭 영역 (CABIN일 경우 1단계: 위치 앞자리 숫자별 탭) */}
+      {/* 서브 카테고리 탭 영역 (CABIN일 경우 1단계: 종류별/Sheet 이름별 탭) */}
       {inventoryTab === 'CABIN' ? (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
-            <MapPin className="h-3.5 w-3.5 text-[#243B5A]" />
-            <span>위치별(구분):</span>
+            <Package className="h-3.5 w-3.5 text-[#243B5A]" />
+            <span>종류별(Sheet):</span>
           </div>
           <div 
             className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
             style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
           >
-            {cabinLocationNumbers.map((loc) => {
-              const isSelected = selectedCabinLocation === loc;
+            {cabinSheetNames.map((sheet) => {
+              const isSelected = selectedCabinSheet === sheet;
               return (
                 <button
-                  key={loc}
-                  onClick={() => handleSelectCabinLocation(loc)}
+                  key={sheet}
+                  onClick={() => handleSelectCabinSheet(sheet)}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
                     isSelected
                       ? 'bg-[#243B5A] text-white font-semibold shadow-2xs'
                       : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
                   }`}
                 >
-                  {loc === '전체' ? '전체 위치' : `${loc}번대 위치`}
+                  {sheet}
                 </button>
               );
             })}
@@ -922,30 +917,30 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* CABIN 2단계 서브탭: 종류별(Sheet 이름별) 정렬 서브탭 */}
+      {/* CABIN 2단계 서브탭: 선택된 Sheet(예: 1.#C1) 내에서 텍스트(Transmitter, Gauge, Sensor 등) 그룹별 서브탭 */}
       {inventoryTab === 'CABIN' && (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
-            <Package className="h-3.5 w-3.5 text-[#243B5A]" />
-            <span>종류별:</span>
+            <Compass className="h-3.5 w-3.5 text-[#243B5A]" />
+            <span>항목별 분류:</span>
           </div>
           <div 
             className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
             style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
           >
-            {cabinTypesForLocation.map((type) => {
-              const isSelected = selectedCabinType === type;
+            {cabinTextSubTagsForSheet.map((tag) => {
+              const isSelected = selectedCabinTextSubTag === tag;
               return (
                 <button
-                  key={type}
-                  onClick={() => setSelectedCabinType(type)}
+                  key={tag}
+                  onClick={() => setSelectedCabinTextSubTag(tag)}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
                     isSelected
                       ? 'bg-slate-700 text-white font-semibold shadow-2xs'
                       : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
                   }`}
                 >
-                  {type}
+                  {tag === '전체' ? '전체 항목' : tag}
                 </button>
               );
             })}
@@ -976,7 +971,7 @@ export default function MaterialManagement({
           <Package className="h-4 w-4 text-[#243B5A] shrink-0" />
           <span className="truncate">
             {inventoryTab === 'CABIN' 
-              ? `위치 [${selectedCabinLocation}] > 종류 [${selectedCabinType}] 목록`
+              ? `종류 [${selectedCabinSheet}] > 항목 [${selectedCabinTextSubTag}] 목록`
               : `서브탭 [${currentActiveSubCatName}] 목록`}
           </span>
           <span className="text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-0.5 rounded-full text-[#64748B] shrink-0">
