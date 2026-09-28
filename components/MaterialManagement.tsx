@@ -20,7 +20,8 @@ import {
   MapPin,
   ChevronRight,
   ChevronLeft,
-  Settings
+  Settings,
+  History
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { AppUser, InventoryItem, InventoryLog } from '@/lib/types';
@@ -56,6 +57,10 @@ export default function MaterialManagement({
   // 메인 탭 상태
   const [inventoryTab, setInventoryTab] = useState<MainTab>('고정');
 
+  // CABIN 전용 목록 상태 (cabin_inventory 테이블 연동)
+  const [cabinInventoryList, setCabinInventoryList] = useState<InventoryItem[]>([]);
+  const [loadingCabin, setLoadingCabin] = useState<boolean>(false);
+
   // 동적 서브 카테고리 목록 상태
   const [fixedSubCategories, setFixedSubCategories] = useState<string[]>([
     '압력계', '가스측정기', 'VBT', '공구', '무선 배터리', '교정', '기타'
@@ -70,10 +75,10 @@ export default function MaterialManagement({
   const [cabinSubCategories, setCabinSubCategories] = useState<string[]>(['부품 A', '부품 B', '기타']);
   const [selectedCabinSubCategory, setSelectedCabinSubCategory] = useState<string>('부품 A');
 
-  // VBT 서브 탭 (기자재 내 VBT 전용)
+  // VBT 서브 탭
   const [selectedVbtSubCategory, setSelectedVbtSubCategory] = useState<VbtSubCategory>('1L');
 
-  // 서브 카테고리 관리 모달 제어 상태
+  // 서브 카테고리 관리 모달
   const [isSubCatModalOpen, setIsSubCatModalOpen] = useState<boolean>(false);
   const [newCatName, setNewCatName] = useState<string>('');
   const [editingCatIndex, setEditingCatIndex] = useState<number | null>(null);
@@ -92,21 +97,40 @@ export default function MaterialManagement({
   const [logHasIssue, setLogHasIssue] = useState<boolean>(false);
   const [logMemo, setLogMemo] = useState('');
 
-  // 차기 교정일 알림 항목
+  // 교정일 30일 전 알림 항목
   const [calibrationAlertItems, setCalibrationAlertItems] = useState<{ item: InventoryItem; daysLeft: number; calDate: string; nextCalDate: string }[]>([]);
 
-  // 교정일 알림 동기화
+  // CABIN 전용 데이터 패치 함수 (cabin_inventory 테이블)
+  const fetchCabinInventory = async () => {
+    setLoadingCabin(true);
+    try {
+      const { data, error } = await supabase.from('cabin_inventory').select('*');
+      if (error) throw error;
+      setCabinInventoryList(data || []);
+    } catch (err: any) {
+      console.error('cabin_inventory 로드 실패:', err.message);
+    } finally {
+      setLoadingCabin(false);
+    }
+  };
+
   useEffect(() => {
-    if (!inventoryList || inventoryList.length === 0) return;
+    if (inventoryTab === 'CABIN') {
+      fetchCabinInventory();
+    }
+  }, [inventoryTab]);
+
+  // 교정일 알림 동기화 (30일 전 기준 적용)
+  useEffect(() => {
+    const targetList = inventoryTab === 'CABIN' ? cabinInventoryList : inventoryList;
+    if (!targetList || targetList.length === 0) return;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const upcomingCalibrations: { item: InventoryItem; daysLeft: number; calDate: string; nextCalDate: string }[] = [];
 
-    inventoryList.forEach((item) => {
-      if (item.type !== '고정' && item.type !== 'CABIN') return;
-
+    targetList.forEach((item) => {
       const subEquip = item.sub_equipment || '';
       const parts = subEquip.split('|').map(s => s.trim());
       
@@ -127,7 +151,7 @@ export default function MaterialManagement({
           nextCalDate.setHours(0, 0, 0, 0);
           const diffDays = Math.ceil((nextCalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 
-          if (diffDays <= 15) {
+          if (diffDays <= 30) { // 30일 전 알림 요구사항 반영
             upcomingCalibrations.push({
               item,
               daysLeft: diffDays,
@@ -140,7 +164,7 @@ export default function MaterialManagement({
     });
 
     setCalibrationAlertItems(upcomingCalibrations);
-  }, [inventoryList]);
+  }, [inventoryList, cabinInventoryList, inventoryTab]);
 
   const parseCalDates = (subEquipment: string | null | undefined) => {
     if (!subEquipment) return { calDate: '', nextCalDate: '' };
@@ -164,7 +188,6 @@ export default function MaterialManagement({
   const [itemMinQty, setItemMinQty] = useState<number>(0);
   const [itemLocation, setItemLocation] = useState('장비실 A');
 
-  // 현재 선택된 탭의 서브 카테고리 접근 헬퍼
   const getCurrentSubCategories = () => {
     if (inventoryTab === '고정') return fixedSubCategories;
     if (inventoryTab === '소모성') return consumableSubCategories;
@@ -189,8 +212,9 @@ export default function MaterialManagement({
     else setSelectedCabinSubCategory(val);
   };
 
-  // 서브 카테고리 추가/수정/삭제/이동 핸들러
+  // 카테고리 관리 (관리자 전용)
   const handleAddCategory = () => {
+    if (!isAdmin) return alert('관리자만 카테고리를 추가할 수 있습니다.');
     const trimmed = newCatName.trim();
     if (!trimmed) return alert('카테고리 이름을 입력하세요.');
     const list = getCurrentSubCategories();
@@ -201,6 +225,7 @@ export default function MaterialManagement({
   };
 
   const handleUpdateCategory = (index: number) => {
+    if (!isAdmin) return alert('관리자만 수정할 수 있습니다.');
     const trimmed = editingCatName.trim();
     if (!trimmed) return alert('카테고리 이름을 입력하세요.');
     
@@ -216,6 +241,7 @@ export default function MaterialManagement({
   };
 
   const handleDeleteCategory = (index: number) => {
+    if (!isAdmin) return alert('관리자만 삭제할 수 있습니다.');
     const list = getCurrentSubCategories();
     if (list.length <= 1) return alert('최소 1개 이상의 서브 카테고리가 필요합니다.');
     const targetName = list[index];
@@ -230,6 +256,7 @@ export default function MaterialManagement({
   };
 
   const handleMoveCategory = (index: number, direction: 'left' | 'right') => {
+    if (!isAdmin) return;
     const list = [...getCurrentSubCategories()];
     const targetIndex = direction === 'left' ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= list.length) return;
@@ -283,12 +310,15 @@ export default function MaterialManagement({
 
   const handleSubmitInventory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isAdmin) return alert('권한이 없습니다.');
+    if (!isAdmin) return alert('관리자 권한이 필요합니다.');
     if (!itemName.trim() || !itemCode.trim()) return alert('필수 항목을 입력해주세요.');
 
     const subEquipValue = itemCalDate.trim() 
       ? (itemNextCalDate.trim() ? `${itemCalDate.trim()} | ${itemNextCalDate.trim()}` : itemCalDate.trim())
       : null;
+
+    // 테이블 분기: CABIN인 경우 cabin_inventory 테이블 사용
+    const targetTableName = itemType === 'CABIN' ? 'cabin_inventory' : 'inventory';
 
     try {
       const payload = {
@@ -306,34 +336,44 @@ export default function MaterialManagement({
       };
 
       if (editingItem) {
-        const { error } = await supabase.from('inventory').update(payload).eq('id', editingItem.id);
+        const { error } = await supabase.from(targetTableName).update(payload).eq('id', editingItem.id);
         if (error) throw error;
         alert('자재 정보가 수정되었습니다.');
       } else {
-        const { error } = await supabase.from('inventory').insert([payload]);
+        const { error } = await supabase.from(targetTableName).insert([payload]);
         if (error) throw error;
         alert('신규 자재가 등록되었습니다.');
       }
 
       setShowInventorySheet(false);
-      await fetchInventory();
+      if (itemType === 'CABIN') {
+        await fetchCabinInventory();
+      } else {
+        await fetchInventory();
+      }
     } catch (err: any) {
       alert('데이터베이스 저장 실패: ' + err.message);
     }
   };
 
   const handleDeleteInventory = async (item: InventoryItem) => {
-    if (!isAdmin) return alert('삭제 권한이 없습니다.');
+    if (!isAdmin) return alert('관리자만 삭제할 수 있습니다.');
     if (!confirm('정말로 이 자재를 삭제하시겠습니까?')) return;
 
+    const targetTableName = item.type === 'CABIN' ? 'cabin_inventory' : 'inventory';
+
     try {
-      const { error } = await supabase.from('inventory').delete().eq('id', item.id);
+      const { error } = await supabase.from(targetTableName).delete().eq('id', item.id);
       if (error) throw error;
 
       setSelectedDetailItem(null);
       setShowInventorySheet(false);
       alert('자재가 삭제되었습니다.');
-      await fetchInventory();
+      if (item.type === 'CABIN') {
+        await fetchCabinInventory();
+      } else {
+        await fetchInventory();
+      }
     } catch (err: any) {
       alert('삭제 실패: ' + err.message);
     }
@@ -358,10 +398,11 @@ export default function MaterialManagement({
     }
 
     const newQty = logType === '불출' ? targetItem.quantity - logQty : targetItem.quantity + logQty;
+    const targetTableName = targetItem.type === 'CABIN' ? 'cabin_inventory' : 'inventory';
 
     try {
       const { error: invErr } = await supabase
-        .from('inventory')
+        .from(targetTableName)
         .update({ quantity: newQty, updated_at: new Date().toISOString() })
         .eq('id', targetItem.id);
       if (invErr) throw invErr;
@@ -379,18 +420,21 @@ export default function MaterialManagement({
 
       alert(`자재 ${logType} 처리가 완료되었습니다.`);
       setShowLogSheet(false);
-      await fetchInventory();
+      if (targetItem.type === 'CABIN') {
+        await fetchCabinInventory();
+      } else {
+        await fetchInventory();
+      }
       await fetchInventoryLogs();
     } catch (err: any) {
       alert('처리 중 오류 발생: ' + err.message);
     }
   };
 
-  // 탭별 & 카테고리별 필터링 로직
+  // 탭별 & 카테고리별 필터링
   const filteredInventory = useMemo(() => {
     if (inventoryTab === 'CABIN') {
-      const cabinList = inventoryList.filter(i => i.type === 'CABIN');
-      return cabinList.filter(item => item.category === selectedCabinSubCategory);
+      return cabinInventoryList.filter(item => item.category === selectedCabinSubCategory);
     }
 
     if (inventoryTab === '소모성') {
@@ -423,52 +467,52 @@ export default function MaterialManagement({
 
       return cat === selectedFixedSubCategory;
     });
-  }, [inventoryTab, inventoryList, selectedConsumableCategory, selectedFixedSubCategory, selectedVbtSubCategory, selectedCabinSubCategory]);
+  }, [inventoryTab, inventoryList, cabinInventoryList, selectedConsumableCategory, selectedFixedSubCategory, selectedVbtSubCategory, selectedCabinSubCategory]);
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] p-4 sm:p-6 space-y-4 font-sans border-box">
+    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-4 space-y-3 font-sans border-box">
       
-      {/* 🚀 가장 상단 타이틀 영역 추가 */}
-      <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div className="flex items-center space-x-3">
-          <div className="p-2.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
-            <Package className="h-6 w-6" />
+      {/* 상단 타이틀 영역 (여백 최소화) */}
+      <div className="bg-white p-3 rounded-lg border border-[#E2E5E9] shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+        <div className="flex items-center space-x-2.5">
+          <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#243B5A]">
+            <Package className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-[#1F2937]">기자재 및 소모성 자재 관리 시스템</h1>
-            <p className="text-xs text-[#64748B]">고정 기자재, 소모품 및 CABIN 자재 통합 관리</p>
+            <h1 className="text-sm font-bold text-[#1F2937]">기자재 및 소모성 자재 관리 시스템</h1>
+            <p className="text-[11px] text-[#64748B]">고정 기자재, 소모품 및 CABIN 자재 통합 관리</p>
           </div>
         </div>
       </div>
 
-      {/* 교정 예정 알림 Banner */}
+      {/* 교정 예정 알림 Banner (30일 전 기준) */}
       {calibrationAlertItems.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl overflow-hidden shadow-xs">
+        <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden shadow-2xs">
           <button
             onClick={() => setIsAlertBannerOpen(!isAlertBannerOpen)}
-            className="w-full px-4 py-2.5 flex items-center justify-between text-amber-900 font-semibold text-xs bg-amber-100/60 hover:bg-amber-100 transition"
+            className="w-full px-3 py-2 flex items-center justify-between text-amber-900 font-semibold text-xs bg-amber-100/60 hover:bg-amber-100 transition"
           >
             <div className="flex items-center space-x-2">
               <Bell className="h-4 w-4 text-amber-600" />
-              <span>교정 예정 장비가 <strong className="text-amber-800 font-bold">{calibrationAlertItems.length}건</strong> 점검 필요 상태입니다.</span>
+              <span>교정 예정 장비가 <strong className="text-amber-800 font-bold">{calibrationAlertItems.length}건</strong> 점검 필요 상태입니다. (30일 이내)</span>
             </div>
             {isAlertBannerOpen ? <ChevronUp className="h-4 w-4 text-amber-600" /> : <ChevronDown className="h-4 w-4 text-amber-600" />}
           </button>
 
           {isAlertBannerOpen && (
-            <div className="p-3 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs border-t border-amber-200/60 bg-white">
+            <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs border-t border-amber-200/60 bg-white">
               {calibrationAlertItems.map(({ item, daysLeft, nextCalDate }) => (
                 <div 
                   key={item.id} 
                   onClick={() => setSelectedDetailItem(item)}
-                  className="p-2.5 bg-[#F5F6F8] rounded-lg border border-[#E2E5E9] flex justify-between items-center cursor-pointer hover:border-amber-400 transition"
+                  className="p-2 bg-[#F5F6F8] rounded-md border border-[#E2E5E9] flex justify-between items-center cursor-pointer hover:border-amber-400 transition"
                 >
                   <div className="min-w-0 pr-2">
                     <div className="flex items-center space-x-1 mb-0.5">
-                      <span className="bg-amber-100 text-amber-800 text-[10px] font-mono font-bold px-1.5 py-0.2 rounded">{item.code}</span>
+                      <span className="bg-amber-100 text-amber-800 text-[10px] font-mono font-bold px-1 py-0.2 rounded">{item.code}</span>
                       <span className="font-semibold text-[#1F2937] truncate text-xs">{item.name}</span>
                     </div>
-                    <span className="text-[11px] text-[#64748B] block">만료 예정: {nextCalDate}</span>
+                    <span className="text-[10px] text-[#64748B] block">만료 예정: {nextCalDate}</span>
                   </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white shrink-0">
                     {daysLeft <= 0 ? 'D-DAY' : `D-${daysLeft}`}
@@ -481,14 +525,13 @@ export default function MaterialManagement({
       )}
 
       {/* 상단 메인 헤더 & 메인 탭 */}
-      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
-        {/* Main Tab Segmented Control */}
-        <div className="flex bg-[#E2E5E9]/60 p-1 rounded-xl border border-[#E2E5E9] w-full sm:w-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2">
+        <div className="flex bg-[#E2E5E9]/60 p-1 rounded-lg border border-[#E2E5E9] w-full sm:w-auto">
           <button
             onClick={() => setInventoryTab('고정')}
-            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition ${
+            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
               inventoryTab === '고정' 
-                ? 'bg-[#243B5A] text-white shadow-xs' 
+                ? 'bg-[#243B5A] text-white shadow-2xs' 
                 : 'text-[#64748B] hover:text-[#1F2937] hover:bg-white/50'
             }`}
           >
@@ -497,9 +540,9 @@ export default function MaterialManagement({
           </button>
           <button
             onClick={() => setInventoryTab('소모성')}
-            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition ${
+            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
               inventoryTab === '소모성' 
-                ? 'bg-[#243B5A] text-white shadow-xs' 
+                ? 'bg-[#243B5A] text-white shadow-2xs' 
                 : 'text-[#64748B] hover:text-[#1F2937] hover:bg-white/50'
             }`}
           >
@@ -508,9 +551,9 @@ export default function MaterialManagement({
           </button>
           <button
             onClick={() => setInventoryTab('CABIN')}
-            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition ${
+            className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
               inventoryTab === 'CABIN' 
-                ? 'bg-[#243B5A] text-white shadow-xs' 
+                ? 'bg-[#243B5A] text-white shadow-2xs' 
                 : 'text-[#64748B] hover:text-[#1F2937] hover:bg-white/50'
             }`}
           >
@@ -519,11 +562,10 @@ export default function MaterialManagement({
           </button>
         </div>
 
-        {/* Primary Navy Action Button */}
         {isAdmin && (
           <button
             onClick={handleOpenInventoryCreate}
-            className="w-full sm:w-auto flex items-center justify-center space-x-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white px-4 py-2 rounded-lg transition font-medium text-xs shadow-xs"
+            className="w-full sm:w-auto flex items-center justify-center space-x-1 bg-[#243B5A] hover:bg-[#1d3049] text-white px-3 py-1.5 rounded-lg transition font-medium text-xs shadow-2xs"
           >
             <Plus className="h-4 w-4" />
             <span>신규 자재 등록</span>
@@ -532,30 +574,11 @@ export default function MaterialManagement({
       </div>
 
       {/* 서브 카테고리 탭 영역 */}
-      <div className="bg-white px-3 py-3 rounded-xl border border-[#E2E5E9] shadow-xs flex items-center justify-between gap-3">
+      <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2">
         <div 
-          className="flex items-center gap-2 overflow-x-auto flex-1 py-1"
-          style={{
-            scrollbarWidth: 'thin',
-            scrollbarColor: '#CBD5E1 transparent',
-          }}
+          className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5"
+          style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
         >
-          <style jsx>{`
-            div::-webkit-scrollbar {
-              height: 2px;
-            }
-            div::-webkit-scrollbar-track {
-              background: transparent;
-            }
-            div::-webkit-scrollbar-thumb {
-              background: #CBD5E1;
-              border-radius: 9999px;
-            }
-            div::-webkit-scrollbar-thumb:hover {
-              background: #94A3B8;
-            }
-          `}</style>
-          
           {getCurrentSubCategories().map((cat) => {
             const isSelected = getCurrentSelectedCategory() === cat;
             const isCalib = cat === '교정';
@@ -567,7 +590,7 @@ export default function MaterialManagement({
                   setCurrentSelectedCategory(cat);
                   if (cat === 'VBT') setSelectedVbtSubCategory('1L');
                 }}
-                className={`px-3.5 py-2 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
+                className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
                   isSelected
                     ? 'bg-[#243B5A] text-white font-semibold shadow-2xs'
                     : isCalib
@@ -584,28 +607,22 @@ export default function MaterialManagement({
         {isAdmin && (
           <button
             onClick={() => setIsSubCatModalOpen(true)}
-            className="p-2 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
-            title={`${inventoryTab} 서브 카테고리 관리`}
+            className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
+            title="서브 카테고리 관리"
           >
             <Settings className="h-4 w-4" />
           </button>
         )}
       </div>
 
-      {/* VBT 상세 서브탭 (기자재 전용) */}
+      {/* VBT 상세 서브탭 */}
       {inventoryTab === '고정' && selectedFixedSubCategory === 'VBT' && (
-        <div 
-          className="bg-white p-2 rounded-xl border border-[#E2E5E9] flex overflow-x-auto gap-1.5 shadow-2xs"
-          style={{
-            scrollbarWidth: 'thin',
-            scrollbarColor: '#CBD5E1 transparent',
-          }}
-        >
+        <div className="bg-white p-1.5 rounded-lg border border-[#E2E5E9] flex overflow-x-auto gap-1 shadow-2xs">
           {(['1L', '1S', '2L', '2S', 'FLAT', '기타'] as VbtSubCategory[]).map((subCat) => (
             <button
               key={subCat}
               onClick={() => setSelectedVbtSubCategory(subCat)}
-              className={`flex-1 min-w-[60px] py-1.5 rounded-md text-[11px] font-semibold transition shrink-0 ${
+              className={`flex-1 min-w-[50px] py-1 rounded-md text-[11px] font-semibold transition shrink-0 ${
                 selectedVbtSubCategory === subCat
                   ? 'bg-slate-700 text-white shadow-2xs'
                   : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
@@ -617,29 +634,29 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 콘텐츠 영역 - 반응형 테이블 (데스크톱) / 메탈 카드 (모바일) */}
-      {loadingInventory ? (
-        <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-12 text-xs text-[#64748B]">
+      {/* 자재 목록 테이블 / 카드 렌더링 */}
+      {loadingInventory || (inventoryTab === 'CABIN' && loadingCabin) ? (
+        <div className="bg-white rounded-lg border border-[#E2E5E9] text-center py-8 text-xs text-[#64748B]">
           데이터를 불러오는 중입니다...
         </div>
       ) : filteredInventory.length === 0 ? (
-        <div className="bg-white rounded-xl p-12 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
+        <div className="bg-white rounded-lg p-8 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
           선택한 카테고리에 등록된 자재 항목이 없습니다.
         </div>
       ) : (
         <>
-          {/* 데스크톱 전용 Modern SaaS Table */}
-          <div className="hidden sm:block bg-white border border-[#E2E5E9] rounded-xl shadow-xs overflow-hidden">
+          {/* 데스크톱 테이블 */}
+          <div className="hidden sm:block bg-white border border-[#E2E5E9] rounded-lg shadow-2xs overflow-hidden">
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-[#F5F6F8] border-b border-[#E2E5E9] text-[#64748B] font-semibold">
-                  <th className="py-3 px-4">자재코드</th>
-                  <th className="py-3 px-4">자재명</th>
-                  <th className="py-3 px-4">카테고리 / 규격</th>
-                  <th className="py-3 px-4">위치</th>
-                  <th className="py-3 px-4 text-right">보유 수량</th>
-                  <th className="py-3 px-4 text-center">상태 / 교정일</th>
-                  <th className="py-3 px-4 text-center">상세</th>
+                  <th className="py-2.5 px-3">자재코드</th>
+                  <th className="py-2.5 px-3">자재명</th>
+                  <th className="py-2.5 px-3">카테고리 / 규격</th>
+                  <th className="py-2.5 px-3">위치</th>
+                  <th className="py-2.5 px-3 text-right">보유 수량</th>
+                  <th className="py-2.5 px-3 text-center">상태 / 교정일</th>
+                  <th className="py-2.5 px-3 text-center">상세</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E5E9] text-[#1F2937]">
@@ -653,51 +670,51 @@ export default function MaterialManagement({
                       onClick={() => setSelectedDetailItem(item)}
                       className="hover:bg-[#F5F6F8]/80 cursor-pointer transition"
                     >
-                      <td className="py-3 px-4 font-mono font-semibold text-[#243B5A]">
+                      <td className="py-2.5 px-3 font-mono font-semibold text-[#243B5A]">
                         {item.code}
                       </td>
-                      <td className="py-3 px-4 font-medium text-[#1F2937]">
+                      <td className="py-2.5 px-3 font-medium text-[#1F2937]">
                         {item.name}
                       </td>
-                      <td className="py-3 px-4">
-                        <div className="flex items-center gap-1.5">
-                          <span className="bg-[#F5F6F8] text-[#64748B] border border-[#E2E5E9] text-[11px] px-2 py-0.5 rounded-full font-medium">
+                      <td className="py-2.5 px-3">
+                        <div className="flex items-center gap-1">
+                          <span className="bg-[#F5F6F8] text-[#64748B] border border-[#E2E5E9] text-[10px] px-2 py-0.5 rounded-full font-medium">
                             {item.category}
                           </span>
                           {item.vbt_type && item.type === '고정' && (
-                            <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[11px] px-2 py-0.5 rounded-full font-bold">
+                            <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] px-2 py-0.5 rounded-full font-bold">
                               {item.vbt_type}
                             </span>
                           )}
                         </div>
                       </td>
-                      <td className="py-3 px-4 text-[#64748B]">
+                      <td className="py-2.5 px-3 text-[#64748B]">
                         <span className="flex items-center gap-1">
                           <MapPin className="h-3 w-3 text-[#64748B]" />
                           {item.location || '-'}
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-right font-semibold">
+                      <td className="py-2.5 px-3 text-right font-semibold">
                         <span className={isLowStock ? 'text-[#DC2626] font-bold' : 'text-[#1F2937]'}>
-                          {item.quantity} <span className="text-[11px] text-[#64748B] font-normal">{item.unit}</span>
+                          {item.quantity} <span className="text-[10px] text-[#64748B] font-normal">{item.unit}</span>
                         </span>
                       </td>
-                      <td className="py-3 px-4 text-center">
+                      <td className="py-2.5 px-3 text-center">
                         {isLowStock ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#DC2626] bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-[#DC2626] bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
                             <AlertTriangle className="h-3 w-3" /> 재고 부족
                           </span>
                         ) : nextCalDate ? (
-                          <span className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
+                          <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full font-medium">
                             차기 교정: {nextCalDate}
                           </span>
                         ) : (
-                          <span className="text-[11px] text-[#64748B] bg-gray-50 border border-[#E2E5E9] px-2 py-0.5 rounded-full">
+                          <span className="text-[10px] text-[#64748B] bg-gray-50 border border-[#E2E5E9] px-2 py-0.5 rounded-full">
                             양호
                           </span>
                         )}
                       </td>
-                      <td className="py-3 px-4 text-center text-[#64748B]">
+                      <td className="py-2.5 px-3 text-center text-[#64748B]">
                         <ChevronRight className="h-4 w-4 inline-block" />
                       </td>
                     </tr>
@@ -707,8 +724,8 @@ export default function MaterialManagement({
             </table>
           </div>
 
-          {/* 모바일 전용 Corporate Cards */}
-          <div className="block sm:hidden space-y-2.5">
+          {/* 모바일 카드 */}
+          <div className="block sm:hidden space-y-2">
             {filteredInventory.map((item) => {
               const isLowStock = item.type === '소모성' && item.quantity <= (item.min_quantity || 0);
 
@@ -716,10 +733,8 @@ export default function MaterialManagement({
                 <div 
                   key={item.id} 
                   onClick={() => setSelectedDetailItem(item)}
-                  className={`bg-white rounded-xl border p-3.5 shadow-xs cursor-pointer active:bg-[#F5F6F8] transition flex items-center justify-between gap-2.5 ${
-                    isLowStock 
-                      ? 'border-red-300 bg-red-50/20' 
-                      : 'border-[#E2E5E9]'
+                  className={`bg-white rounded-lg border p-3 shadow-2xs cursor-pointer active:bg-[#F5F6F8] transition flex items-center justify-between gap-2 ${
+                    isLowStock ? 'border-red-300 bg-red-50/20' : 'border-[#E2E5E9]'
                   }`}
                 >
                   <div className="flex-1 min-w-0">
@@ -733,11 +748,6 @@ export default function MaterialManagement({
                       <span className="bg-[#F5F6F8] text-[#243B5A] border border-[#E2E5E9] text-[10px] font-mono font-bold px-1.5 py-0.2 rounded">
                         {item.code}
                       </span>
-                      {item.vbt_type && item.type === '고정' && (
-                        <span className="bg-slate-700 text-white text-[9px] font-semibold px-1.5 py-0.2 rounded">
-                          {item.vbt_type}
-                        </span>
-                      )}
                       <span className="bg-gray-100 text-[#64748B] text-[10px] font-medium px-1.5 py-0.2 rounded">
                         {item.category}
                       </span>
@@ -763,19 +773,56 @@ export default function MaterialManagement({
         </>
       )}
 
-      {/* 통합 서브 카테고리 관리 모달 */}
+      {/* 🚀 요구사항 4항: 하단 최근 불출/반납/교정 이력 출력 영역 */}
+      <div className="bg-white rounded-lg border border-[#E2E5E9] p-3 shadow-2xs space-y-2 mt-4">
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
+          <div className="flex items-center space-x-2">
+            <History className="h-4 w-4 text-[#243B5A]" />
+            <h3 className="text-xs font-bold text-[#1F2937]">최근 불출 / 반납 / 교정 이력</h3>
+          </div>
+          <span className="text-[10px] text-[#64748B]">최근 기록 실시간 반영</span>
+        </div>
+
+        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+          {(!inventoryLogs || inventoryLogs.length === 0) ? (
+            <p className="text-xs text-[#64748B] text-center py-4">등록된 최근 이력이 없습니다.</p>
+          ) : (
+            inventoryLogs.slice(0, 15).map((log) => (
+              <div key={log.id} className="flex items-center justify-between p-2 bg-[#F5F6F8] rounded-md border border-[#E2E5E9] text-xs">
+                <div className="flex items-center space-x-2 min-w-0">
+                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                    log.type === '불출' 
+                      ? 'bg-emerald-100 text-emerald-800' 
+                      : 'bg-blue-100 text-blue-800'
+                  }`}>
+                    {log.type}
+                  </span>
+                  <span className="font-semibold text-[#1F2937] truncate">{log.item_name}</span>
+                  <span className="text-[#64748B] text-[11px]">({log.quantity}개)</span>
+                  {log.has_issue && (
+                    <span className="bg-red-100 text-red-700 text-[9px] px-1 py-0.2 rounded font-bold">이상발생</span>
+                  )}
+                </div>
+                <div className="text-right shrink-0">
+                  <span className="text-[10px] text-[#64748B] block">{log.worker_name}</span>
+                  <span className="text-[10px] text-[#94A3B8]">{new Date(log.created_at).toLocaleDateString()}</span>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+
+      {/* 서브 카테고리 관리 모달 */}
       {isSubCatModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-md w-full p-5 shadow-xl space-y-4">
-            <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-3">
-              <h2 className="text-sm font-bold text-[#1F2937] flex items-center gap-2">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-3">
+          <div className="bg-white border border-[#E2E5E9] rounded-lg max-w-md w-full p-4 shadow-xl space-y-3">
+            <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-2">
+              <h2 className="text-xs font-bold text-[#1F2937] flex items-center gap-1.5">
                 <Settings className="h-4 w-4 text-[#243B5A]" /> [{inventoryTab}] 서브 카테고리 설정
               </h2>
-              <button 
-                onClick={() => setIsSubCatModalOpen(false)} 
-                className="p-1 text-[#64748B] hover:text-[#1F2937] hover:bg-[#F5F6F8] rounded-md transition"
-              >
-                <X className="h-5 w-5" />
+              <button onClick={() => setIsSubCatModalOpen(false)} className="p-1 text-[#64748B] hover:text-[#1F2937] rounded-md">
+                <X className="h-4 w-4" />
               </button>
             </div>
 
@@ -785,63 +832,43 @@ export default function MaterialManagement({
                 placeholder="새 카테고리 입력"
                 value={newCatName}
                 onChange={(e) => setNewCatName(e.target.value)}
-                className="flex-1 px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] text-[#1F2937] text-xs rounded-lg focus:bg-white focus:border-[#243B5A] focus:outline-hidden transition"
+                className="flex-1 px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] text-[#1F2937] text-xs rounded-md"
               />
-              <button
-                onClick={handleAddCategory}
-                className="px-3 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition shrink-0"
-              >
+              <button onClick={handleAddCategory} className="px-3 py-1.5 bg-[#243B5A] text-white font-semibold text-xs rounded-md">
                 추가
               </button>
             </div>
 
-            <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+            <div className="space-y-1 max-h-48 overflow-y-auto">
               {getCurrentSubCategories().map((cat, idx) => (
-                <div key={idx} className="flex items-center justify-between p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs">
+                <div key={idx} className="flex items-center justify-between p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-xs">
                   {editingCatIndex === idx ? (
                     <div className="flex gap-1 flex-1 mr-2">
                       <input
                         type="text"
                         value={editingCatName}
                         onChange={(e) => setEditingCatName(e.target.value)}
-                        className="flex-1 px-2 py-1 bg-white border border-[#E2E5E9] text-[#1F2937] text-xs rounded-md"
+                        className="flex-1 px-2 py-1 bg-white border border-[#E2E5E9] rounded-md text-xs"
                       />
-                      <button onClick={() => handleUpdateCategory(idx)} className="px-2 py-1 bg-[#16A34A] text-white rounded-md text-[11px] font-semibold">저장</button>
-                      <button onClick={() => setEditingCatIndex(null)} className="px-2 py-1 bg-[#E2E5E9] text-[#64748B] rounded-md text-[11px]">취소</button>
+                      <button onClick={() => handleUpdateCategory(idx)} className="px-2 py-1 bg-emerald-600 text-white rounded-md text-[10px]">저장</button>
+                      <button onClick={() => setEditingCatIndex(null)} className="px-2 py-1 bg-gray-200 text-gray-700 rounded-md text-[10px]">취소</button>
                     </div>
                   ) : (
                     <span className="font-semibold text-[#1F2937]">{cat}</span>
                   )}
 
                   <div className="flex items-center space-x-1">
-                    <button
-                      onClick={() => handleMoveCategory(idx, 'left')}
-                      disabled={idx === 0}
-                      className="p-1 text-[#64748B] hover:text-[#1F2937] disabled:opacity-30"
-                      title="위로 이동"
-                    >
-                      <ChevronLeft className="h-4 w-4" />
+                    <button onClick={() => handleMoveCategory(idx, 'left')} disabled={idx === 0} className="p-1 text-gray-500 disabled:opacity-30">
+                      <ChevronLeft className="h-3.5 w-3.5" />
                     </button>
-                    <button
-                      onClick={() => handleMoveCategory(idx, 'right')}
-                      disabled={idx === getCurrentSubCategories().length - 1}
-                      className="p-1 text-[#64748B] hover:text-[#1F2937] disabled:opacity-30"
-                      title="아래로 이동"
-                    >
-                      <ChevronRight className="h-4 w-4" />
+                    <button onClick={() => handleMoveCategory(idx, 'right')} disabled={idx === getCurrentSubCategories().length - 1} className="p-1 text-gray-500 disabled:opacity-30">
+                      <ChevronRight className="h-3.5 w-3.5" />
                     </button>
-
-                    <button
-                      onClick={() => { setEditingCatIndex(idx); setEditingCatName(cat); }}
-                      className="p-1 text-[#64748B] hover:text-[#2563EB] ml-1"
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
+                    <button onClick={() => { setEditingCatIndex(idx); setEditingCatName(cat); }} className="p-1 text-blue-600">
+                      <Pencil className="h-3 w-3" />
                     </button>
-                    <button
-                      onClick={() => handleDeleteCategory(idx)}
-                      className="p-1 text-[#64748B] hover:text-[#DC2626]"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
+                    <button onClick={() => handleDeleteCategory(idx)} className="p-1 text-red-600">
+                      <Trash2 className="h-3 w-3" />
                     </button>
                   </div>
                 </div>
@@ -849,113 +876,97 @@ export default function MaterialManagement({
             </div>
 
             <div className="pt-2 border-t border-[#E2E5E9] text-right">
-              <button
-                onClick={() => setIsSubCatModalOpen(false)}
-                className="px-4 py-2 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#1F2937] font-semibold text-xs rounded-lg transition"
-              >
-                닫기
-              </button>
+              <button onClick={() => setIsSubCatModalOpen(false)} className="px-3 py-1.5 bg-white border border-[#E2E5E9] rounded-md text-xs font-semibold">닫기</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 자재 상세 보기 바텀시트 / 모달 */}
+      {/* 자재 상세 보기 바텀시트 */}
       {selectedDetailItem && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-          <div className="bg-white border border-[#E2E5E9] rounded-t-2xl sm:rounded-xl max-w-md w-full p-5 shadow-2xl text-[#1F2937] animate-in fade-in duration-150">
-            <div className="flex justify-between items-start mb-3 pb-2 border-b border-[#E2E5E9]">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-3">
+          <div className="bg-white border border-[#E2E5E9] rounded-t-xl sm:rounded-lg max-w-md w-full p-4 shadow-2xl text-[#1F2937]">
+            <div className="flex justify-between items-start mb-2 pb-2 border-b border-[#E2E5E9]">
               <div>
-                <div className="flex items-center space-x-1.5 mb-1">
+                <div className="flex items-center space-x-1 mb-1">
                   <span className="bg-[#243B5A] text-white text-[10px] font-mono font-bold px-1.5 py-0.5 rounded">
                     {selectedDetailItem.code}
                   </span>
-                  {selectedDetailItem.vbt_type && selectedDetailItem.type === '고정' && (
-                    <span className="bg-slate-100 text-slate-700 border border-slate-200 text-[10px] font-bold px-1.5 py-0.5 rounded">
-                      규격: {selectedDetailItem.vbt_type}
-                    </span>
-                  )}
                   <span className="bg-[#F5F6F8] text-[#64748B] border border-[#E2E5E9] text-[10px] font-semibold px-1.5 py-0.5 rounded">
                     {selectedDetailItem.category}
                   </span>
                 </div>
-                <h2 className="text-base font-bold text-[#1F2937]">{selectedDetailItem.name}</h2>
+                <h2 className="text-sm font-bold text-[#1F2937]">{selectedDetailItem.name}</h2>
               </div>
-              <button 
-                onClick={() => setSelectedDetailItem(null)} 
-                className="p-1 text-[#64748B] hover:text-[#1F2937] hover:bg-[#F5F6F8] rounded-md transition"
-              >
-                <X className="h-5 w-5" />
+              <button onClick={() => setSelectedDetailItem(null)} className="p-1 text-[#64748B] hover:text-[#1F2937]">
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <div className="space-y-2 text-xs mb-4">
-              <div className="bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9] flex justify-between items-center">
+            <div className="space-y-2 text-xs mb-3">
+              <div className="bg-[#F5F6F8] p-2.5 rounded-md border border-[#E2E5E9] flex justify-between items-center">
                 <div>
                   <span className="text-[10px] text-[#64748B] block">현재 보유 재고</span>
-                  <p className="text-xl font-bold text-[#243B5A]">
+                  <p className="text-base font-bold text-[#243B5A]">
                     {selectedDetailItem.quantity} <span className="text-xs font-normal text-[#64748B]">{selectedDetailItem.unit}</span>
                   </p>
-                  {selectedDetailItem.type === '소모성' && (
-                    <span className="text-[10px] text-[#DC2626] block font-semibold mt-0.5">최소 재고 기준: {selectedDetailItem.min_quantity || 0} {selectedDetailItem.unit}</span>
-                  )}
                 </div>
                 <div className="text-right">
                   <span className="text-[10px] text-[#64748B] block">보관 위치</span>
                   <p className="font-semibold text-[#1F2937] flex items-center justify-end gap-1 mt-0.5">
-                    <MapPin className="h-3.5 w-3.5 text-[#243B5A]" /> {selectedDetailItem.location || '미지정'}
+                    <MapPin className="h-3 w-3 text-[#243B5A]" /> {selectedDetailItem.location || '미지정'}
                   </p>
                 </div>
               </div>
 
               {(selectedDetailItem.type === '고정' || selectedDetailItem.type === 'CABIN') && (
-                <div className="bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9] space-y-1.5">
+                <div className="bg-[#F5F6F8] p-2.5 rounded-md border border-[#E2E5E9] space-y-1">
                   <div className="flex justify-between text-[#64748B]">
-                    <span className="flex items-center gap-1"><Calendar className="h-3 w-3 text-[#243B5A]" /> 최근 교정일</span>
+                    <span>최근 교정일</span>
                     <span className="font-semibold text-[#1F2937]">{parseCalDates(selectedDetailItem.sub_equipment).calDate || '-'}</span>
                   </div>
-                  <div className="flex justify-between text-amber-800 font-semibold pt-1.5 border-t border-[#E2E5E9]">
-                    <span className="flex items-center gap-1"><Calendar className="h-3 w-3 text-amber-600" /> 차기 교정일</span>
+                  <div className="flex justify-between text-amber-800 font-semibold pt-1 border-t border-[#E2E5E9]">
+                    <span>차기 교정일</span>
                     <span>{parseCalDates(selectedDetailItem.sub_equipment).nextCalDate || '-'}</span>
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               <div className="flex space-x-2">
                 <button
                   onClick={() => handleOpenLogModal(selectedDetailItem, '불출')}
-                  className="flex-1 py-2 bg-[#16A34A] hover:bg-[#15803D] text-white font-semibold rounded-lg flex items-center justify-center space-x-1 shadow-2xs text-xs"
+                  className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md flex items-center justify-center space-x-1 text-xs"
                 >
-                  <ArrowUpRight className="h-4 w-4" />
+                  <ArrowUpRight className="h-3.5 w-3.5" />
                   <span>불출 처리</span>
                 </button>
                 {selectedDetailItem.type !== '소모성' && (
                   <button
                     onClick={() => handleOpenLogModal(selectedDetailItem, '반납')}
-                    className="flex-1 py-2 bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold rounded-lg flex items-center justify-center space-x-1 shadow-2xs text-xs"
+                    className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md flex items-center justify-center space-x-1 text-xs"
                   >
-                    <ArrowDownRight className="h-4 w-4" />
+                    <ArrowDownRight className="h-3.5 w-3.5" />
                     <span>반납 처리</span>
                   </button>
                 )}
               </div>
 
               {isAdmin && (
-                <div className="flex space-x-2 pt-2 border-t border-[#E2E5E9]">
+                <div className="flex space-x-2 pt-1.5 border-t border-[#E2E5E9]">
                   <button
                     onClick={() => handleOpenInventoryEdit(selectedDetailItem)}
-                    className="flex-1 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#1F2937] font-medium rounded-lg flex items-center justify-center space-x-1 text-xs"
+                    className="flex-1 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#1F2937] font-medium rounded-md flex items-center justify-center space-x-1 text-xs"
                   >
-                    <Pencil className="h-3.5 w-3.5" />
+                    <Pencil className="h-3 w-3" />
                     <span>수정</span>
                   </button>
                   <button
                     onClick={() => handleDeleteInventory(selectedDetailItem)}
-                    className="flex-1 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-[#DC2626] font-medium rounded-lg flex items-center justify-center space-x-1 text-xs"
+                    className="flex-1 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 font-medium rounded-md flex items-center justify-center space-x-1 text-xs"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-3 w-3" />
                     <span>삭제</span>
                   </button>
                 </div>
@@ -967,20 +978,17 @@ export default function MaterialManagement({
 
       {/* 불출/반납 폼 모달 */}
       {showLogSheet && targetItem && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-          <div className="bg-white border border-[#E2E5E9] rounded-t-2xl sm:rounded-xl max-w-md w-full p-5 shadow-2xl text-[#1F2937]">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-3">
+          <div className="bg-white border border-[#E2E5E9] rounded-t-xl sm:rounded-lg max-w-md w-full p-4 shadow-2xl text-[#1F2937]">
             <div className="flex justify-between items-center mb-1">
-              <h2 className="text-sm font-bold text-[#1F2937]">자재 {logType} 처리</h2>
-              <button 
-                onClick={() => setShowLogSheet(false)} 
-                className="p-1 text-[#64748B] hover:text-[#1F2937] hover:bg-[#F5F6F8] rounded-md transition"
-              >
-                <X className="h-5 w-5" />
+              <h2 className="text-xs font-bold text-[#1F2937]">자재 {logType} 처리</h2>
+              <button onClick={() => setShowLogSheet(false)} className="p-1 text-[#64748B]">
+                <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="text-xs text-[#64748B] mb-3">[{targetItem.code}] {targetItem.name}</p>
+            <p className="text-[11px] text-[#64748B] mb-2.5">[{targetItem.code}] {targetItem.name}</p>
 
-            <form onSubmit={handleSubmitStockLog} className="space-y-3 text-xs">
+            <form onSubmit={handleSubmitStockLog} className="space-y-2.5 text-xs">
               <div>
                 <label className="block text-[#64748B] font-medium mb-1">{logType} 수량 ({targetItem.unit})</label>
                 <input 
@@ -990,49 +998,46 @@ export default function MaterialManagement({
                   required 
                   value={logQty} 
                   onChange={(e) => setLogQty(Number(e.target.value))} 
-                  className="w-full px-3 py-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-bold text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md font-bold text-[#1F2937]" 
                 />
               </div>
 
               {logType === '반납' && (
-                <div className="flex items-center space-x-2 bg-red-50 p-2.5 rounded-lg border border-red-200">
-                  <input type="checkbox" id="hasIssue" checked={logHasIssue} onChange={(e) => setLogHasIssue(e.target.checked)} className="h-4 w-4 accent-red-600 rounded" />
-                  <label htmlFor="hasIssue" className="text-[#DC2626] font-semibold cursor-pointer">자재 파손 및 이상 발생 시 체크</label>
+                <div className="flex items-center space-x-2 bg-red-50 p-2 rounded-md border border-red-200">
+                  <input type="checkbox" id="hasIssue" checked={logHasIssue} onChange={(e) => setLogHasIssue(e.target.checked)} className="h-3.5 w-3.5 accent-red-600 rounded" />
+                  <label htmlFor="hasIssue" className="text-red-600 font-semibold cursor-pointer text-[11px]">자재 파손 및 이상 발생 시 체크</label>
                 </div>
               )}
 
               <div>
                 <label className="block text-[#64748B] font-medium mb-1">메모 / 작업내용</label>
-                <textarea rows={2} value={logMemo} onChange={(e) => setLogMemo(e.target.value)} className="w-full px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#1F2937] resize-none focus:bg-white focus:border-[#243B5A] focus:outline-hidden" />
+                <textarea rows={2} value={logMemo} onChange={(e) => setLogMemo(e.target.value)} className="w-full px-2.5 py-1 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] resize-none" />
               </div>
 
-              <div className="pt-2 flex space-x-2">
-                <button type="button" onClick={() => setShowLogSheet(false)} className="flex-1 py-2 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#1F2937] font-semibold rounded-lg">취소</button>
-                <button type="submit" className={`flex-1 py-2 text-white font-semibold rounded-lg shadow-2xs ${logType === '불출' ? 'bg-[#16A34A] hover:bg-[#15803D]' : 'bg-[#2563EB] hover:bg-[#1D4ED8]'}`}>{logType} 완료</button>
+              <div className="pt-1 flex space-x-2">
+                <button type="button" onClick={() => setShowLogSheet(false)} className="flex-1 py-1.5 bg-white border border-[#E2E5E9] rounded-md font-semibold">취소</button>
+                <button type="submit" className={`flex-1 py-1.5 text-white font-semibold rounded-md ${logType === '불출' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{logType} 완료</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* 자재 신규 등록/수정 모달 */}
+      {/* 신규 등록/수정 모달 */}
       {showInventorySheet && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
-          <div className="bg-white border border-[#E2E5E9] rounded-t-2xl sm:rounded-xl max-w-lg w-full p-5 shadow-2xl max-h-[85vh] overflow-y-auto text-[#1F2937]">
-            <div className="flex justify-between items-center mb-3">
-              <h2 className="text-sm font-bold text-[#1F2937]">{editingItem ? '자재 정보 수정' : '신규 자재 등록'}</h2>
-              <button 
-                onClick={() => setShowInventorySheet(false)} 
-                className="p-1 text-[#64748B] hover:text-[#1F2937] hover:bg-[#F5F6F8] rounded-md transition"
-              >
-                <X className="h-5 w-5" />
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-3">
+          <div className="bg-white border border-[#E2E5E9] rounded-t-xl sm:rounded-lg max-w-lg w-full p-4 shadow-2xl max-h-[85vh] overflow-y-auto text-[#1F2937]">
+            <div className="flex justify-between items-center mb-2">
+              <h2 className="text-xs font-bold text-[#1F2937]">{editingItem ? '자재 정보 수정' : '신규 자재 등록'}</h2>
+              <button onClick={() => setShowInventorySheet(false)} className="p-1 text-[#64748B]">
+                <X className="h-4 w-4" />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitInventory} className="space-y-3 text-xs">
+            <form onSubmit={handleSubmitInventory} className="space-y-2.5 text-xs">
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">자재 구별</label>
-                <div className="flex space-x-1 bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9]">
+                <div className="flex space-x-1 bg-[#F5F6F8] p-1 rounded-md border border-[#E2E5E9]">
                   {(['고정', '소모성', 'CABIN'] as MainTab[]).map(tab => (
                     <button
                       key={tab}
@@ -1041,7 +1046,7 @@ export default function MaterialManagement({
                         setItemType(tab);
                         if (tab !== '고정') setItemVbtType('');
                       }}
-                      className={`flex-1 py-1.5 rounded-md font-semibold transition ${itemType === tab ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
+                      className={`flex-1 py-1 rounded font-semibold transition ${itemType === tab ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B]'}`}
                     >
                       {tab === '고정' ? '기자재' : tab === '소모성' ? '소모성 자재' : 'CABIN'}
                     </button>
@@ -1052,17 +1057,17 @@ export default function MaterialManagement({
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[#64748B] font-semibold mb-1">자재 코드 *</label>
-                  <input type="text" required value={itemCode} onChange={e => setItemCode(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-mono text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" />
+                  <input type="text" required value={itemCode} onChange={e => setItemCode(e.target.value)} className="w-full px-2 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md font-mono text-[#1F2937]" />
                 </div>
                 <div>
                   <label className="block text-[#64748B] font-semibold mb-1">카테고리 *</label>
-                  <input type="text" required value={itemCategory} onChange={e => setItemCategory(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" />
+                  <input type="text" required value={itemCategory} onChange={e => setItemCategory(e.target.value)} className="w-full px-2 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">자재명 *</label>
-                <input type="text" required value={itemName} onChange={e => setItemName(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" />
+                <input type="text" required value={itemName} onChange={e => setItemName(e.target.value)} className="w-full px-2 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
               </div>
 
               {itemType === '고정' && itemCategory === 'VBT' && (
@@ -1071,7 +1076,7 @@ export default function MaterialManagement({
                   <select 
                     value={itemVbtType} 
                     onChange={e => setItemVbtType(e.target.value)}
-                    className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
+                    className="w-full px-2 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md font-semibold text-[#1F2937]"
                   >
                     <option value="">미선택 (기타)</option>
                     <option value="1L">1L</option>
@@ -1084,14 +1089,14 @@ export default function MaterialManagement({
               )}
 
               {(itemType === '고정' || itemType === 'CABIN') && (
-                <div className="grid grid-cols-2 gap-2 bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9]">
+                <div className="grid grid-cols-2 gap-2 bg-[#F5F6F8] p-2 rounded-md border border-[#E2E5E9]">
                   <div>
                     <label className="block text-[#64748B] font-semibold mb-1">교정일</label>
-                    <input type="date" value={itemCalDate} onChange={e => setItemCalDate(e.target.value)} className="w-full px-2 py-1 bg-white border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                    <input type="date" value={itemCalDate} onChange={e => setItemCalDate(e.target.value)} className="w-full px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[#1F2937]" />
                   </div>
                   <div>
                     <label className="block text-amber-800 font-semibold mb-1">차기 교정일</label>
-                    <input type="date" value={itemNextCalDate} onChange={e => setItemNextCalDate(e.target.value)} className="w-full px-2 py-1 bg-white border border-[#E2E5E9] rounded-md text-amber-900" />
+                    <input type="date" value={itemNextCalDate} onChange={e => setItemNextCalDate(e.target.value)} className="w-full px-2 py-1 bg-white border border-[#E2E5E9] rounded text-amber-900" />
                   </div>
                 </div>
               )}
@@ -1099,26 +1104,26 @@ export default function MaterialManagement({
               <div className="grid grid-cols-3 gap-2">
                 <div>
                   <label className="block text-[#64748B] font-semibold mb-1">수량</label>
-                  <input type="number" min="0" value={itemQuantity} onChange={e => setItemQuantity(Number(e.target.value))} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#1F2937]" />
+                  <input type="number" min="0" value={itemQuantity} onChange={e => setItemQuantity(Number(e.target.value))} className="w-full px-2 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
                 </div>
                 <div>
-                  <label className="block text-[#DC2626] font-semibold mb-1">최소 재고</label>
-                  <input type="number" min="0" value={itemMinQty} onChange={e => setItemMinQty(Number(e.target.value))} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-red-200 rounded-lg text-[#DC2626] font-bold" />
+                  <label className="block text-red-600 font-semibold mb-1">최소 재고</label>
+                  <input type="number" min="0" value={itemMinQty} onChange={e => setItemMinQty(Number(e.target.value))} className="w-full px-2 py-1.5 bg-[#F5F6F8] border border-red-200 rounded-md text-red-600 font-bold" />
                 </div>
                 <div>
                   <label className="block text-[#64748B] font-semibold mb-1">단위</label>
-                  <input type="text" value={itemUnit} onChange={e => setItemUnit(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#1F2937]" />
+                  <input type="text" value={itemUnit} onChange={e => setItemUnit(e.target.value)} className="w-full px-2 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
                 </div>
               </div>
 
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">보관 위치</label>
-                <input type="text" value={itemLocation} onChange={e => setItemLocation(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#1F2937]" />
+                <input type="text" value={itemLocation} onChange={e => setItemLocation(e.target.value)} className="w-full px-2 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
               </div>
 
               <div className="pt-2 flex gap-2">
-                <button type="button" onClick={() => setShowInventorySheet(false)} className="flex-1 py-2 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] font-semibold rounded-lg text-[#1F2937]">취소</button>
-                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold rounded-lg shadow-2xs">저장</button>
+                <button type="button" onClick={() => setShowInventorySheet(false)} className="flex-1 py-1.5 bg-white border border-[#E2E5E9] font-semibold rounded-md">취소</button>
+                <button type="submit" className="flex-1 py-1.5 bg-[#243B5A] text-white font-semibold rounded-md shadow-2xs">저장</button>
               </div>
             </form>
           </div>
