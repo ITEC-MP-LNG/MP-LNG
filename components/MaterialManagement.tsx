@@ -673,14 +673,14 @@ export default function MaterialManagement({
   const isCurrentSubCatCollapsed = !!collapsedSubTabs[currentActiveSubCatName];
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-4 space-y-3 font-sans border-box relative">
+    <div className="w-full max-w-full overflow-x-hidden min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-4 space-y-3 font-sans box-border relative">
       
       {/* 화면 정가운데(중앙) 배치되는 처리 완료 알림 모달/토스트 */}
       {toastMessage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-xs">
-          <div className="bg-[#243B5A] text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-3 text-sm font-bold border border-slate-600">
-            <CheckCircle2 className="h-6 w-6 text-emerald-400 shrink-0" />
-            <span>{toastMessage}</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-xs p-4">
+          <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-xs text-center">
+            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+            <span className="truncate">{toastMessage}</span>
           </div>
         </div>
       )}
@@ -694,7 +694,7 @@ export default function MaterialManagement({
             </div>
             <div>
               <h3 className="text-sm font-bold text-[#1F2937] mb-1">반납 처리 확인</h3>
-              <p className="text-xs text-[#64748B]">
+              <p className="text-xs text-[#64748B] break-keep">
                 <strong className="text-[#1F2937]">{pendingReturnLog.item_name}</strong> ({pendingReturnLog.quantity}개)를 반납 처리하시겠습니까?
               </p>
             </div>
@@ -754,7 +754,7 @@ export default function MaterialManagement({
             </div>
             <div>
               <h3 className="text-sm font-bold text-[#1F2937] mb-1">이력 일괄 삭제 확인</h3>
-              <p className="text-xs text-[#64748B]">선택한 <strong className="text-[#1F2937]">{selectedLogIds.length}개</strong>의 이력을 정말 삭제하시겠습니까?</p>
+              <p className="text-xs text-[#64748B] break-keep">선택한 <strong className="text-[#1F2937]">{selectedLogIds.length}개</strong>의 이력을 정말 삭제하시겠습니까?</p>
             </div>
             <div className="flex space-x-2 pt-2">
               <button
@@ -775,14 +775,14 @@ export default function MaterialManagement({
       )}
 
       {/* 상단 타이틀 영역 */}
-      <div className="bg-white p-3 rounded-lg border border-[#E2E5E9] shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-        <div className="flex items-center space-x-2.5">
-          <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#243B5A]">
+      <div className="bg-white p-3 rounded-lg border border-[#E2E5E9] shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 overflow-hidden">
+        <div className="flex items-center space-x-2.5 min-w-0">
+          <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#243B5A] shrink-0">
             <Package className="h-5 w-5" />
           </div>
-          <div>
-            <h1 className="text-sm font-bold text-[#1F2937]">기자재 및 소모성 자재 관리 시스템</h1>
-            <p className="text-[11px] text-[#64748B]">고정 기자재, 소모품 및 CABIN 자재 통합 관리</p>
+          <div className="min-w-0">
+            <h1 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate">기자재 및 소모성 자재 관리 시스템</h1>
+            <p className="text-[10px] sm:text-[11px] text-[#64748B] truncate">고정 기자재, 소모품 및 CABIN 자재 통합 관리</p>
           </div>
         </div>
       </div>
@@ -792,13 +792,13 @@ export default function MaterialManagement({
         <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden shadow-2xs">
           <button
             onClick={() => setIsAlertBannerOpen(!isAlertBannerOpen)}
-            className="w-full px-3 py-2 flex items-center justify-between text-amber-900 font-semibold text-xs bg-amber-100/60 hover:bg-amber-100 transition"
+            className="w-full px-3 py-2 flex items-center justify-between text-amber-900 font-semibold text-xs bg-amber-100/60 hover:bg-amber-100 transition text-left"
           >
-            <div className="flex items-center space-x-2">
-              <Bell className="h-4 w-4 text-amber-600" />
-              <span>교정 예정 장비가 <strong className="text-amber-800 font-bold">{calibrationAlertItems.length}건</strong> 점검 필요 상태입니다. (30일 이내)</span>
+            <div className="flex items-center space-x-2 min-w-0 pr-2">
+              <Bell className="h-4 w-4 text-amber-600 shrink-0" />
+              <span className="truncate">교정 예정 장비 <strong className="text-amber-800 font-bold">{calibrationAlertItems.length}건</strong> 점검 필요 (30일 이내)</span>
             </div>
-            {isAlertBannerOpen ? <ChevronUp className="h-4 w-4 text-amber-600" /> : <ChevronDown className="h-4 w-4 text-amber-600" />}
+            {isAlertBannerOpen ? <ChevronUp className="h-4 w-4 text-amber-600 shrink-0" /> : <ChevronDown className="h-4 w-4 text-amber-600 shrink-0" />}
           </button>
 
           {isAlertBannerOpen && (
@@ -807,14 +807,14 @@ export default function MaterialManagement({
                 <div 
                   key={item.id} 
                   onClick={() => setSelectedDetailItem(item)}
-                  className="p-2 bg-[#F5F6F8] rounded-md border border-[#E2E5E9] flex justify-between items-center cursor-pointer hover:border-amber-400 transition"
+                  className="p-2 bg-[#F5F6F8] rounded-md border border-[#E2E5E9] flex justify-between items-center cursor-pointer hover:border-amber-400 transition min-w-0"
                 >
-                  <div className="min-w-0 pr-2">
-                    <div className="flex items-center space-x-1 mb-0.5">
-                      <span className="bg-amber-100 text-amber-800 text-[10px] font-mono font-bold px-1 py-0.2 rounded">{item.code}</span>
+                  <div className="min-w-0 pr-2 flex-1">
+                    <div className="flex items-center space-x-1 mb-0.5 min-w-0">
+                      <span className="bg-amber-100 text-amber-800 text-[10px] font-mono font-bold px-1 py-0.2 rounded shrink-0">{item.code}</span>
                       <span className="font-semibold text-[#1F2937] truncate text-xs">{item.name}</span>
                     </div>
-                    <span className="text-[10px] text-[#64748B] block">만료 예정: {nextCalDate}</span>
+                    <span className="text-[10px] text-[#64748B] block truncate">만료 예정: {nextCalDate}</span>
                   </div>
                   <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white shrink-0">
                     {daysLeft <= 0 ? 'D-DAY' : `D-${daysLeft}`}
@@ -835,7 +835,7 @@ export default function MaterialManagement({
               inventoryTab === '고정' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
           >
-            <Lock className="h-3.5 w-3.5" />
+            <Lock className="h-3.5 w-3.5 shrink-0" />
             <span>기자재</span>
           </button>
           <button
@@ -844,7 +844,7 @@ export default function MaterialManagement({
               inventoryTab === '소모성' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
           >
-            <Box className="h-3.5 w-3.5" />
+            <Box className="h-3.5 w-3.5 shrink-0" />
             <span>소모성 자재</span>
           </button>
           <button
@@ -853,7 +853,7 @@ export default function MaterialManagement({
               inventoryTab === 'CABIN' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
           >
-            <Compass className="h-3.5 w-3.5" />
+            <Compass className="h-3.5 w-3.5 shrink-0" />
             <span>CABIN</span>
           </button>
         </div>
@@ -861,18 +861,18 @@ export default function MaterialManagement({
         {isAdmin && (
           <button
             onClick={handleOpenInventoryCreate}
-            className="w-full sm:w-auto flex items-center justify-center space-x-1 bg-[#243B5A] hover:bg-[#1d3049] text-white px-3 py-1.5 rounded-lg transition font-medium text-xs shadow-2xs"
+            className="w-full sm:w-auto flex items-center justify-center space-x-1 bg-[#243B5A] hover:bg-[#1d3049] text-white px-3 py-2 sm:py-1.5 rounded-lg transition font-medium text-xs shadow-2xs shrink-0"
           >
-            <Plus className="h-4 w-4" />
+            <Plus className="h-4 w-4 shrink-0" />
             <span>신규 자재 등록</span>
           </button>
         )}
       </div>
 
       {/* 서브 카테고리 탭 영역 */}
-      <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2">
+      <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
         <div 
-          className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5"
+          className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
           style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
         >
           {getCurrentSubCategories().map((cat) => {
@@ -906,7 +906,7 @@ export default function MaterialManagement({
             className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
             title="서브 카테고리 관리"
           >
-            <Settings className="h-4 w-4" />
+            <Settings className="h-4 w-4 shrink-0" />
           </button>
         )}
       </div>
@@ -918,7 +918,7 @@ export default function MaterialManagement({
             <button
               key={subCat}
               onClick={() => setSelectedVbtSubCategory(subCat)}
-              className={`flex-1 min-w-[50px] py-1 rounded-md text-[11px] font-semibold transition shrink-0 ${
+              className={`flex-1 min-w-[42px] py-1 rounded-md text-[11px] font-semibold transition shrink-0 ${
                 selectedVbtSubCategory === subCat ? 'bg-slate-700 text-white shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B]'
               }`}
             >
@@ -929,20 +929,20 @@ export default function MaterialManagement({
       )}
 
       {/* 서브탭 통합 내용 접기/펴기 헤더 바 */}
-      <div className="bg-white rounded-lg border border-[#E2E5E9] p-3 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center space-x-2 text-xs font-bold text-[#1F2937]">
-          <Package className="h-4 w-4 text-[#243B5A]" />
-          <span>서브탭 [{currentActiveSubCatName}] 목록 영역</span>
-          <span className="text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-0.5 rounded-full text-[#64748B]">
+      <div className="bg-white rounded-lg border border-[#E2E5E9] p-3 flex items-center justify-between gap-2 shadow-2xs">
+        <div className="flex items-center space-x-2 text-xs font-bold text-[#1F2937] min-w-0 truncate">
+          <Package className="h-4 w-4 text-[#243B5A] shrink-0" />
+          <span className="truncate">서브탭 [{currentActiveSubCatName}] 목록</span>
+          <span className="text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-0.5 rounded-full text-[#64748B] shrink-0">
             총 {filteredInventory.length}건
           </span>
         </div>
         <button
           onClick={() => toggleSubTabContent(currentActiveSubCatName)}
-          className="flex items-center space-x-1 text-xs font-semibold text-[#243B5A] bg-[#F5F6F8] hover:bg-[#E2E5E9] px-3 py-1 rounded border border-[#E2E5E9] transition"
+          className="flex items-center space-x-1 text-xs font-semibold text-[#243B5A] bg-[#F5F6F8] hover:bg-[#E2E5E9] px-2.5 py-1 rounded border border-[#E2E5E9] transition shrink-0"
         >
-          <span>{isCurrentSubCatCollapsed ? '서브탭 내용 펼치기' : '서브탭 내용 접기'}</span>
-          {isCurrentSubCatCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+          <span>{isCurrentSubCatCollapsed ? '펼치기' : '접기'}</span>
+          {isCurrentSubCatCollapsed ? <ChevronDown className="h-3.5 w-3.5 shrink-0" /> : <ChevronUp className="h-3.5 w-3.5 shrink-0" />}
         </button>
       </div>
 
@@ -967,7 +967,7 @@ export default function MaterialManagement({
                   <div 
                     key={item.id} 
                     onClick={() => setSelectedDetailItem(item)}
-                    className={`bg-white rounded-lg border shadow-2xs transition p-3 flex items-center justify-between gap-2 cursor-pointer hover:border-blue-400 hover:bg-slate-50/50 ${
+                    className={`bg-white rounded-lg border shadow-2xs transition p-3 flex items-center justify-between gap-2 cursor-pointer hover:border-blue-400 hover:bg-slate-50/50 overflow-hidden ${
                       isLowStock ? 'border-red-300 bg-red-50/10' : 'border-[#E2E5E9]'
                     }`}
                   >
@@ -975,18 +975,20 @@ export default function MaterialManagement({
                       <span className="bg-[#F5F6F8] text-[#243B5A] border border-[#E2E5E9] text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0">
                         {item.code}
                       </span>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <h3 className="text-xs font-semibold text-[#1F2937] truncate">{item.name}</h3>
-                        <span className="text-[10px] text-[#64748B]">위치: {item.location || '미지정'} {calDate ? `| 교정: ${calDate}` : ''} {nextCalDate ? `(차기: ${nextCalDate})` : ''}</span>
+                        <span className="text-[10px] text-[#64748B] block truncate">
+                          위치: {item.location || '미지정'} {calDate ? `| 교정: ${calDate}` : ''} {nextCalDate ? `(차기: ${nextCalDate})` : ''}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-3 shrink-0">
-                      <div className="text-right">
+                    <div className="flex items-center space-x-3 shrink-0 text-right">
+                      <div>
                         <span className={`text-xs font-bold block ${isLowStock ? 'text-red-600' : 'text-[#1F2937]'}`}>
                           {item.quantity} {item.unit}
                         </span>
-                        {isLowStock && <span className="text-[10px] text-red-600 block">재고 부족</span>}
+                        {isLowStock && <span className="text-[10px] text-red-600 block">재고부족</span>}
                       </div>
                     </div>
                   </div>
@@ -999,19 +1001,19 @@ export default function MaterialManagement({
 
       {/* 최근 불출/반납/교정 이력 섹션 */}
       <div className="bg-white rounded-lg border border-[#E2E5E9] shadow-2xs mt-4 overflow-hidden">
-        <div className="p-3 flex items-center justify-between bg-[#F5F6F8] border-b border-[#E2E5E9]">
+        <div className="p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between bg-[#F5F6F8] border-b border-[#E2E5E9] gap-2">
           <button
             onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
-            className="flex items-center space-x-2 text-xs font-bold text-[#1F2937] flex-1 text-left"
+            className="flex items-center space-x-2 text-xs font-bold text-[#1F2937] flex-1 text-left min-w-0"
           >
-            <History className="h-4 w-4 text-[#243B5A]" />
-            <span>최근 불출 / 반납 / 교정 이력 (매일 23시 초기화 - 미반납/이상발생 보존)</span>
-            <span className="text-[10px] px-1.5 py-0.2 bg-white border border-[#E2E5E9] rounded-full text-[#64748B] font-normal">
+            <History className="h-4 w-4 text-[#243B5A] shrink-0" />
+            <span className="truncate">최근 불출 / 반납 / 교정 이력 (매일 23시 초기화)</span>
+            <span className="text-[10px] px-1.5 py-0.2 bg-white border border-[#E2E5E9] rounded-full text-[#64748B] font-normal shrink-0">
               {inventoryLogs?.length || 0}건
             </span>
           </button>
           
-          <div className="flex items-center space-x-2 shrink-0">
+          <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto space-x-2 shrink-0">
             {isAdmin && inventoryLogs.length > 0 && (
               <button
                 onClick={handleOpenBatchDeleteLogs}
@@ -1021,7 +1023,9 @@ export default function MaterialManagement({
                 선택 일괄 삭제 ({selectedLogIds.length})
               </button>
             )}
-            {isHistorySectionOpen ? <ChevronUp className="h-4 w-4 text-[#64748B]" /> : <ChevronDown className="h-4 w-4 text-[#64748B]" />}
+            <button onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)} className="p-1 sm:hidden">
+              {isHistorySectionOpen ? <ChevronUp className="h-4 w-4 text-[#64748B]" /> : <ChevronDown className="h-4 w-4 text-[#64748B]" />}
+            </button>
           </div>
         </div>
 
@@ -1037,9 +1041,9 @@ export default function MaterialManagement({
                       type="checkbox" 
                       checked={selectedLogIds.length === inventoryLogs.length && inventoryLogs.length > 0} 
                       onChange={toggleSelectAllLogs}
-                      className="accent-[#243B5A] rounded"
+                      className="accent-[#243B5A] rounded shrink-0"
                     />
-                    <span>전체 선택 (반납 완료 및 정상 항목만 일괄 삭제 가능)</span>
+                    <span className="truncate">전체 선택 (반납 완료 및 정상 항목만 일괄 삭제 가능)</span>
                   </div>
                 )}
 
@@ -1047,9 +1051,9 @@ export default function MaterialManagement({
                   const isChecked = selectedLogIds.includes(String(log.id));
 
                   return (
-                    <div key={log.id} className="bg-[#F5F6F8] rounded-md border border-[#E2E5E9] p-2.5 text-xs flex items-center justify-between gap-3">
+                    <div key={log.id} className="bg-[#F5F6F8] rounded-md border border-[#E2E5E9] p-2.5 text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
                       
-                      <div className="flex items-center space-x-2.5 min-w-0 flex-1">
+                      <div className="flex items-center space-x-2 min-w-0 flex-1 w-full">
                         {isAdmin && (
                           <input 
                             type="checkbox" 
@@ -1058,7 +1062,7 @@ export default function MaterialManagement({
                             className="accent-[#243B5A] rounded shrink-0"
                           />
                         )}
-                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
                           log.type === '불출' 
                             ? 'bg-emerald-100 text-emerald-800' 
                             : log.type === '반납' 
@@ -1069,54 +1073,57 @@ export default function MaterialManagement({
                         }`}>
                           {log.type}
                         </span>
-                        <div className="min-w-0 flex items-center space-x-1.5">
+                        <div className="min-w-0 flex items-center space-x-1 flex-1">
                           <span className="font-bold text-[#1F2937] truncate">{log.item_name}</span>
                           {log.type === '반납' && (
-                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded shrink-0">
+                            <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1 py-0.2 rounded shrink-0">
                               반납완료
                             </span>
                           )}
-                          <span className="text-xs font-semibold text-[#243B5A]">({log.quantity}개)</span>
+                          <span className="text-xs font-semibold text-[#243B5A] shrink-0">({log.quantity}개)</span>
                         </div>
-                        <span className="text-[10px] text-[#64748B] truncate hidden sm:inline">
-                          작업자: {log.worker_name} ({new Date(log.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}) {log.memo ? `| ${log.memo}` : ''}
-                        </span>
                       </div>
 
-                      <div className="flex items-center space-x-2 shrink-0">
-                        {log.has_issue ? (
-                          <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-[10px] font-bold">
-                            ⚠️ 이상발생
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-emerald-600 font-medium">정상</span>
-                        )}
+                      <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto space-x-2 shrink-0 pt-1 sm:pt-0 border-t sm:border-t-0 border-[#E2E5E9]">
+                        <span className="text-[10px] text-[#64748B] truncate mr-1">
+                          {log.worker_name} ({new Date(log.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})
+                        </span>
 
-                        {log.type === '불출' && (
-                          <button
-                            onClick={() => handleQuickReturnFromHistory(log)}
-                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-semibold shadow-2xs transition"
-                          >
-                            반납
-                          </button>
-                        )}
+                        <div className="flex items-center space-x-1.5 shrink-0">
+                          {log.has_issue ? (
+                            <span className="bg-red-100 text-red-700 px-1.5 py-0.5 rounded text-[10px] font-bold">
+                              ⚠️ 이상
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-emerald-600 font-medium">정상</span>
+                          )}
 
-                        {isAdmin && (
-                          <div className="flex items-center space-x-1 pl-2 border-l border-[#E2E5E9]">
+                          {log.type === '불출' && (
                             <button
-                              onClick={() => handleEditLog(log)}
-                              className="px-1.5 py-0.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-[10px] font-semibold transition"
+                              onClick={() => handleQuickReturnFromHistory(log)}
+                              className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-semibold shadow-2xs transition"
                             >
-                              수정
+                              반납
                             </button>
-                            <button
-                              onClick={() => handleOpenDeleteLog(log.id)}
-                              className="px-1.5 py-0.5 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[10px] font-semibold transition"
-                            >
-                              삭제
-                            </button>
-                          </div>
-                        )}
+                          )}
+
+                          {isAdmin && (
+                            <div className="flex items-center space-x-1 pl-1.5 border-l border-[#E2E5E9]">
+                              <button
+                                onClick={() => handleEditLog(log)}
+                                className="px-1.5 py-0.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-[10px] font-semibold transition"
+                              >
+                                수정
+                              </button>
+                              <button
+                                onClick={() => handleOpenDeleteLog(log.id)}
+                                className="px-1.5 py-0.5 bg-red-50 text-red-600 hover:bg-red-100 rounded text-[10px] font-semibold transition"
+                              >
+                                삭제
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
 
                     </div>
@@ -1133,10 +1140,10 @@ export default function MaterialManagement({
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-3">
           <div className="bg-white border border-[#E2E5E9] rounded-lg max-w-md w-full p-4 shadow-xl space-y-3">
             <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-2">
-              <h2 className="text-xs font-bold text-[#1F2937] flex items-center gap-1.5">
-                <Settings className="h-4 w-4 text-[#243B5A]" /> [{inventoryTab}] 서브 카테고리 설정
+              <h2 className="text-xs font-bold text-[#1F2937] flex items-center gap-1.5 truncate">
+                <Settings className="h-4 w-4 text-[#243B5A] shrink-0" /> [{inventoryTab}] 서브 카테고리 설정
               </h2>
-              <button onClick={() => setIsSubCatModalOpen(false)} className="p-1 text-[#64748B] hover:text-[#1F2937] rounded-md">
+              <button onClick={() => setIsSubCatModalOpen(false)} className="p-1 text-[#64748B] hover:text-[#1F2937] rounded-md shrink-0">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -1147,32 +1154,32 @@ export default function MaterialManagement({
                 placeholder="새 카테고리 입력"
                 value={newCatName}
                 onChange={(e) => setNewCatName(e.target.value)}
-                className="flex-1 px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] text-[#1F2937] text-xs rounded-md"
+                className="flex-1 px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] text-[#1F2937] text-xs rounded-md min-w-0"
               />
-              <button onClick={handleAddCategory} className="px-3 py-1.5 bg-[#243B5A] text-white font-semibold text-xs rounded-md">
+              <button onClick={handleAddCategory} className="px-3 py-1.5 bg-[#243B5A] text-white font-semibold text-xs rounded-md shrink-0">
                 추가
               </button>
             </div>
 
             <div className="space-y-1 max-h-48 overflow-y-auto">
               {getCurrentSubCategories().map((cat, idx) => (
-                <div key={idx} className="flex items-center justify-between p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-xs">
+                <div key={idx} className="flex items-center justify-between p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-xs gap-1">
                   {editingCatIndex === idx ? (
-                    <div className="flex gap-1 flex-1 mr-2">
+                    <div className="flex gap-1 flex-1 min-w-0">
                       <input
                         type="text"
                         value={editingCatName}
                         onChange={(e) => setEditingCatName(e.target.value)}
-                        className="flex-1 px-2 py-1 bg-white border border-[#E2E5E9] rounded-md text-xs"
+                        className="flex-1 px-2 py-1 bg-white border border-[#E2E5E9] rounded-md text-xs min-w-0"
                       />
-                      <button onClick={() => handleUpdateCategory(idx)} className="px-2 py-1 bg-emerald-600 text-white rounded-md text-[10px]">저장</button>
-                      <button onClick={() => setEditingCatIndex(null)} className="px-2 py-1 bg-gray-200 text-gray-700 rounded-md text-[10px]">취소</button>
+                      <button onClick={() => handleUpdateCategory(idx)} className="px-2 py-1 bg-emerald-600 text-white rounded-md text-[10px] shrink-0">저장</button>
+                      <button onClick={() => setEditingCatIndex(null)} className="px-2 py-1 bg-gray-200 text-gray-700 rounded-md text-[10px] shrink-0">취소</button>
                     </div>
                   ) : (
-                    <span className="font-semibold text-[#1F2937]">{cat}</span>
+                    <span className="font-semibold text-[#1F2937] truncate flex-1">{cat}</span>
                   )}
 
-                  <div className="flex items-center space-x-1">
+                  <div className="flex items-center space-x-0.5 shrink-0">
                     <button onClick={() => handleMoveCategory(idx, 'left')} disabled={idx === 0} className="p-1 text-gray-500 disabled:opacity-30">
                       <ChevronLeft className="h-3.5 w-3.5" />
                     </button>
@@ -1201,19 +1208,19 @@ export default function MaterialManagement({
       {selectedDetailItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-3">
           <div className="bg-white border border-[#E2E5E9] rounded-t-xl sm:rounded-lg max-w-md w-full p-4 shadow-2xl text-[#1F2937]">
-            <div className="flex justify-between items-start mb-2 pb-2 border-b border-[#E2E5E9]">
-              <div>
-                <div className="flex items-center space-x-1 mb-1">
-                  <span className="bg-[#243B5A] text-white text-[10px] font-mono font-bold px-1.5 py-0.5 rounded">
+            <div className="flex justify-between items-start mb-2 pb-2 border-b border-[#E2E5E9] gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center space-x-1 mb-1 min-w-0">
+                  <span className="bg-[#243B5A] text-white text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0">
                     {selectedDetailItem.code}
                   </span>
-                  <span className="bg-[#F5F6F8] text-[#64748B] border border-[#E2E5E9] text-[10px] font-semibold px-1.5 py-0.5 rounded">
+                  <span className="bg-[#F5F6F8] text-[#64748B] border border-[#E2E5E9] text-[10px] font-semibold px-1.5 py-0.5 rounded truncate">
                     {selectedDetailItem.category}
                   </span>
                 </div>
-                <h2 className="text-sm font-bold text-[#1F2937]">{selectedDetailItem.name}</h2>
+                <h2 className="text-sm font-bold text-[#1F2937] truncate">{selectedDetailItem.name}</h2>
               </div>
-              <button onClick={() => setSelectedDetailItem(null)} className="p-1 text-[#64748B] hover:text-[#1F2937]">
+              <button onClick={() => setSelectedDetailItem(null)} className="p-1 text-[#64748B] hover:text-[#1F2937] shrink-0">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -1228,8 +1235,8 @@ export default function MaterialManagement({
                 </div>
                 <div className="text-right">
                   <span className="text-[10px] text-[#64748B] block">보관 위치</span>
-                  <p className="font-semibold text-[#1F2937] flex items-center justify-end gap-1 mt-0.5">
-                    <MapPin className="h-3 w-3 text-[#243B5A]" /> {selectedDetailItem.location || '미지정'}
+                  <p className="font-semibold text-[#1F2937] flex items-center justify-end gap-1 mt-0.5 truncate">
+                    <MapPin className="h-3 w-3 text-[#243B5A] shrink-0" /> <span className="truncate">{selectedDetailItem.location || '미지정'}</span>
                   </p>
                 </div>
               </div>
@@ -1249,12 +1256,12 @@ export default function MaterialManagement({
             </div>
 
             <div className="space-y-1.5">
-              <div className="flex space-x-2">
+              <div className="flex flex-col sm:flex-row gap-2">
                 <button
                   onClick={() => handleOpenLogModal(selectedDetailItem, selectedDetailItem.type === '소모성' ? '소모성 사용' : '불출')}
                   className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-md flex items-center justify-center space-x-1 text-xs"
                 >
-                  <ArrowUpRight className="h-3.5 w-3.5" />
+                  <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
                   <span>{selectedDetailItem.type === '소모성' ? '소모성 사용 처리' : '불출 처리'}</span>
                 </button>
                 {selectedDetailItem.type !== '소모성' && (
@@ -1262,26 +1269,26 @@ export default function MaterialManagement({
                     onClick={() => handleOpenLogModal(selectedDetailItem, '반납')}
                     className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-md flex items-center justify-center space-x-1 text-xs"
                   >
-                    <ArrowDownRight className="h-3.5 w-3.5" />
+                    <ArrowDownRight className="h-3.5 w-3.5 shrink-0" />
                     <span>반납 처리</span>
                   </button>
                 )}
               </div>
 
               {isAdmin && (
-                <div className="flex space-x-2 pt-1.5 border-t border-[#E2E5E9]">
+                <div className="flex gap-2 pt-1.5 border-t border-[#E2E5E9]">
                   <button
                     onClick={() => handleOpenInventoryEdit(selectedDetailItem)}
                     className="flex-1 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#1F2937] font-medium rounded-md flex items-center justify-center space-x-1 text-xs"
                   >
-                    <Pencil className="h-3 w-3" />
+                    <Pencil className="h-3 w-3 shrink-0" />
                     <span>수정</span>
                   </button>
                   <button
                     onClick={() => handleDeleteInventory(selectedDetailItem)}
                     className="flex-1 py-1.5 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 font-medium rounded-md flex items-center justify-center space-x-1 text-xs"
                   >
-                    <Trash2 className="h-3 w-3" />
+                    <Trash2 className="h-3 w-3 shrink-0" />
                     <span>삭제</span>
                   </button>
                 </div>
@@ -1301,7 +1308,7 @@ export default function MaterialManagement({
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <p className="text-[11px] text-[#64748B] mb-2.5">[{targetItem.code}] {targetItem.name}</p>
+            <p className="text-[11px] text-[#64748B] mb-2.5 truncate">[{targetItem.code}] {targetItem.name}</p>
 
             <form onSubmit={handleSubmitStockLog} className="space-y-2.5 text-xs">
               <div>
@@ -1319,7 +1326,7 @@ export default function MaterialManagement({
 
               {logType === '반납' && (
                 <div className="flex items-center space-x-2 bg-red-50 p-2 rounded-md border border-red-200">
-                  <input type="checkbox" id="hasIssue" checked={logHasIssue} onChange={(e) => setLogHasIssue(e.target.checked)} className="h-3.5 w-3.5 accent-red-600 rounded" />
+                  <input type="checkbox" id="hasIssue" checked={logHasIssue} onChange={(e) => setLogHasIssue(e.target.checked)} className="h-3.5 w-3.5 accent-red-600 rounded shrink-0" />
                   <label htmlFor="hasIssue" className="text-red-600 font-semibold cursor-pointer text-[11px]">자재 파손 및 이상 발생 시 체크</label>
                 </div>
               )}
@@ -1353,7 +1360,7 @@ export default function MaterialManagement({
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">자재 구별</label>
                 <div className="flex space-x-1 bg-[#F5F6F8] p-1 rounded-md border border-[#E2E5E9]">
-                  {(['고정', '소모성', 'CABIN'] as MainTab[]).map(tab => (
+                  {(['고정', '소모성', 'CABIN'] as MainTab[]).tab.toString && (['고정', '소모성', 'CABIN'] as MainTab[]).map(tab => (
                     <button
                       key={tab}
                       type="button"
@@ -1361,9 +1368,9 @@ export default function MaterialManagement({
                         setItemType(tab);
                         if (tab !== '고정') setItemVbtType('');
                       }}
-                      className={`flex-1 py-1 rounded font-semibold transition ${itemType === tab ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B]'}`}
+                      className={`flex-1 py-1 rounded font-semibold transition text-[11px] sm:text-xs ${itemType === tab ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B]'}`}
                     >
-                      {tab === '고정' ? '기자재' : tab === '소모성' ? '소모성 자재' : 'CABIN'}
+                      {tab === '고정' ? '기자재' : tab === '소모성' ? '소모품' : 'CABIN'}
                     </button>
                   ))}
                 </div>
@@ -1404,7 +1411,7 @@ export default function MaterialManagement({
               )}
 
               {(itemType === '고정' || itemType === 'CABIN') && (
-                <div className="grid grid-cols-2 gap-2 bg-[#F5F6F8] p-2 rounded-md border border-[#E2E5E9]">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-[#F5F6F8] p-2 rounded-md border border-[#E2E5E9]">
                   <div>
                     <label className="block text-[#64748B] font-semibold mb-1">교정일</label>
                     <input type="date" value={itemCalDate} onChange={e => setItemCalDate(e.target.value)} className="w-full px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[#1F2937]" />
