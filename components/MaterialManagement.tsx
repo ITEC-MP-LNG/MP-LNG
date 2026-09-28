@@ -111,6 +111,12 @@ export default function MaterialManagement({
   const [returnHasIssue, setReturnHasIssue] = useState<boolean>(false);
   const [returnMemo, setReturnMemo] = useState<string>('');
 
+  // --- 이력 수정 모달 상태 추가 ---
+  const [showEditLogModal, setShowEditLogModal] = useState<boolean>(false);
+  const [targetEditLog, setTargetEditLog] = useState<InventoryLog | null>(null);
+  const [editLogQty, setEditLogQty] = useState<number>(1);
+  const [editLogMemo, setEditLogMemo] = useState<string>('');
+
   const [pendingDeleteLogId, setPendingDeleteLogId] = useState<string | number | null>(null);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState<boolean>(false);
 
@@ -629,6 +635,12 @@ export default function MaterialManagement({
   };
 
   const handleOpenReturnModal = (log: InventoryLog) => {
+    // CABIN 일괄 불출 요약 이력인 경우 개별 항목 연동 안내 및 선택 반납 지원
+    if (log.item_name && log.item_name.includes('[CABIN 일괄 불출]')) {
+      alert('CABIN 일괄 불출된 항목은 개별적으로 항목을 찾아 반납 처리해야 합니다. CABIN 탭에서 해당 항목을 확인 후 반납하세요.');
+      return;
+    }
+
     const foundItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
     if (foundItem && foundItem.type === '소모성') {
       alert('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
@@ -650,13 +662,6 @@ export default function MaterialManagement({
       const qtyToReturn = Number(returnQty);
       if (qtyToReturn <= 0) {
         alert('반납 수량은 1 이상이어야 합니다.');
-        return;
-      }
-
-      // CABIN 일괄 불출 요약 이력인 경우 반납 프로세스 예외 처리 안내
-      if (targetReturnLog.item_name && targetReturnLog.item_name.includes('[CABIN 일괄 불출]')) {
-        alert('CABIN 일괄 불출 이력은 개별 품목별로 관리되므로 이 화면에서 직접 반납 처리할 수 없습니다.');
-        setShowReturnModal(false);
         return;
       }
 
@@ -728,21 +733,44 @@ export default function MaterialManagement({
     }
   };
 
-  const handleEditLog = async (log: InventoryLog) => {
+  // --- 이력 수정 모달 오픈 핸들러 ---
+  const handleOpenEditLog = (log: InventoryLog) => {
     if (!isAdmin) {
       alert('관리자 권한이 있는 인원만 수정할 수 있습니다.');
       return;
     }
-    const newMemo = prompt('수정할 메모 내용을 입력하세요:', log.memo || '');
-    if (newMemo === null) return;
+    setTargetEditLog(log);
+    setEditLogQty(log.quantity || 1);
+    setEditLogMemo(log.memo || '');
+    setShowEditLogModal(true);
+  };
+
+  // --- 이력 수정 확정 핸들러 ---
+  const handleSubmitEditLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!targetEditLog) return;
 
     try {
+      const newQty = Number(editLogQty);
+      if (newQty <= 0) {
+        alert('수량은 1 이상이어야 합니다.');
+        return;
+      }
+
       const { error } = await supabase
         .from('inventory_logs')
-        .update({ memo: newMemo })
-        .eq('id', log.id);
+        .update({ 
+          quantity: newQty, 
+          memo: editLogMemo.trim() || null,
+          updated_at: new Date().toISOString() 
+        })
+        .eq('id', targetEditLog.id);
+
       if (error) throw error;
-      showCenterToast('이력이 수정되었습니다.');
+
+      showCenterToast('불출/반납 이력이 수정되었습니다.');
+      setShowEditLogModal(false);
+      setTargetEditLog(null);
       await fetchInventoryLogs();
     } catch (err: any) {
       alert('이력 수정 실패: ' + err.message);
@@ -879,6 +907,7 @@ export default function MaterialManagement({
         </div>
       )}
 
+      {/* CABIN 일괄 불출 모달 */}
       {showCabinBatchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
@@ -913,6 +942,7 @@ export default function MaterialManagement({
         </div>
       )}
 
+      {/* 반납 모달 */}
       {showReturnModal && targetReturnLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
@@ -967,6 +997,53 @@ export default function MaterialManagement({
               <div className="flex space-x-2 pt-2">
                 <button type="button" onClick={() => setShowReturnModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
                 <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition">반납 확정</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 이력 수정 모달 (수량 및 내용 수정 지원) */}
+      {showEditLogModal && targetEditLog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-sm font-bold">불출/반납 이력 수정</h3>
+              <button onClick={() => setShowEditLogModal(false)}><X className="h-4 w-4" /></button>
+            </div>
+
+            <form onSubmit={handleSubmitEditLog} className="space-y-3 text-xs">
+              <div className="bg-[#F5F6F8] p-2.5 rounded-md border border-[#E2E5E9] space-y-1">
+                <span className="text-[10px] text-[#64748B] block">품목명 / 구분</span>
+                <p className="font-bold text-[#1F2937]">{targetEditLog.item_name} <span className="text-[10px] font-normal text-blue-600">[{targetEditLog.type}]</span></p>
+              </div>
+
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">수량 수정</label>
+                <input 
+                  type="number" 
+                  min="1" 
+                  required 
+                  value={editLogQty} 
+                  onChange={e => setEditLogQty(Number(e.target.value))} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] font-bold" 
+                />
+              </div>
+
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">내용 / 메모 수정</label>
+                <input 
+                  type="text" 
+                  placeholder="수정할 내용이나 메모를 입력하세요" 
+                  value={editLogMemo} 
+                  onChange={e => setEditLogMemo(e.target.value)} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                />
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <button type="button" onClick={() => setShowEditLogModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">수정 완료</button>
               </div>
             </form>
           </div>
@@ -1753,7 +1830,7 @@ export default function MaterialManagement({
                           {isAdmin && (
                             <div className="flex items-center space-x-1 pl-1.5 border-l border-[#E2E5E9]">
                               <button
-                                onClick={() => handleEditLog(log)}
+                                onClick={() => handleOpenEditLog(log)}
                                 className="px-1.5 py-0.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded text-[10px] font-semibold transition"
                               >
                                 수정
