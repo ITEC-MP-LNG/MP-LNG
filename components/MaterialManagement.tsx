@@ -89,20 +89,24 @@ export default function MaterialManagement({
   ]);
   const [selectedConsumableCategory, setSelectedConsumableCategory] = useState<string>('검사약품');
 
-  // CABIN 1단계: 종류별(Sheet 이름별) 탭 상태
-  const [selectedCabinSheet, setSelectedCabinSheet] = useState<string>('전체');
+  // CABIN 사용자 정의 Sheet 목록 및 항목 서브태그 상태
+  const [customCabinSheets, setCustomCabinSheets] = useState<string[]>([]);
+  const [selectedCabinSheet, setSelectedCabinSheet] = useState<string>('');
 
-  // CABIN 2단계: 종류(Sheet) 내에서 텍스트 기반 그룹 서브탭 상태
-  const [selectedCabinTextSubTag, setSelectedCabinTextSubTag] = useState<string>('전체');
+  const [customCabinTextSubTags, setCustomCabinTextSubTags] = useState<string[]>([]);
+  const [selectedCabinTextSubTag, setSelectedCabinTextSubTag] = useState<string>('');
+
+  // 종류별 / 항목별 수정 모달 제어 상태
+  const [isCabinSheetModalOpen, setIsCabinSheetModalOpen] = useState<boolean>(false);
+  const [isCabinTagModalOpen, setIsCabinTagModalOpen] = useState<boolean>(false);
+  const [newSheetInput, setNewSheetInput] = useState<string>('');
+  const [newTagInput, setNewTagInput] = useState<string>('');
 
   // VBT 서브 탭
   const [selectedVbtSubCategory, setSelectedVbtSubCategory] = useState<VbtSubCategory>('1L');
 
   // 서브 카테고리 관리 모달
   const [isSubCatModalOpen, setIsSubCatModalOpen] = useState<boolean>(false);
-  const [newCatName, setNewCatName] = useState<string>('');
-  const [editingCatIndex, setEditingCatIndex] = useState<number | null>(null);
-  const [editingCatName, setEditingCatName] = useState<string>('');
 
   // UI 제어 상태
   const [isAlertBannerOpen, setIsAlertBannerOpen] = useState(true);
@@ -135,6 +139,12 @@ export default function MaterialManagement({
   // 교정일 30일 전 알림 항목
   const [calibrationAlertItems, setCalibrationAlertItems] = useState<{ item: any; daysLeft: number; calDate: string; nextCalDate: string }[]>([]);
 
+  // 시트 이름에서 앞의 숫자(예: "1.", "1-")를 깔끔하게 제거해주는 유틸 함수
+  const cleanSheetName = (rawName: string) => {
+    if (!rawName) return '';
+    return rawName.replace(/^\d+[\.\-\s]+/, '').trim();
+  };
+
   // CABIN 전용 데이터 패치 함수
   const fetchCabinInventory = async () => {
     setLoadingCabin(true);
@@ -155,6 +165,26 @@ export default function MaterialManagement({
       }));
 
       setCabinInventoryList(formattedData);
+
+      // 데이터 기반 Sheet 목록 자동 추출 (앞의 숫자 제거된 순수 이름 기준 정렬)
+      const sheets = new Set<string>();
+      formattedData.forEach((item: any) => {
+        if (item.sheet_name) {
+          sheets.add(cleanSheetName(item.sheet_name));
+        }
+      });
+
+      const sortedSheets = Array.from(sheets).sort((a, b) => {
+        const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
+        const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
+        if (numA !== numB) return numA - numB;
+        return a.localeCompare(b);
+      });
+
+      setCustomCabinSheets(sortedSheets);
+      if (sortedSheets.length > 0 && (!selectedCabinSheet || !sortedSheets.includes(selectedCabinSheet))) {
+        setSelectedCabinSheet(sortedSheets[0]);
+      }
     } catch (err: any) {
       console.error('cabin_inventory 로드 실패:', err.message);
     } finally {
@@ -168,21 +198,9 @@ export default function MaterialManagement({
     }
   }, [inventoryTab]);
 
-  // CABIN 종류(sheet_name) 목록 동적 추출
-  const cabinSheetNames = useMemo(() => {
-    const sheets = new Set<string>();
-    cabinInventoryList.forEach(item => {
-      if (item.sheet_name) sheets.add(item.sheet_name);
-    });
-    return ['전체', ...Array.from(sheets).sort()];
-  }, [cabinInventoryList]);
-
-  // 선택된 CABIN Sheet 내부의 텍스트 구성 성격(예: pressure Transmitter 등) 자동 분류 서브탭 추출
+  // 선택된 CABIN Sheet 내부의 텍스트 구성 성격 자동 분류 서브태그 추출 ('전체' 옵션 제외)
   const cabinTextSubTagsForSheet = useMemo(() => {
-    const filteredBySheet = cabinInventoryList.filter(item => {
-      if (selectedCabinSheet === '전체') return true;
-      return item.sheet_name === selectedCabinSheet;
-    });
+    const filteredBySheet = cabinInventoryList.filter(item => cleanSheetName(item.sheet_name) === selectedCabinSheet);
 
     const tags = new Set<string>();
     filteredBySheet.forEach(item => {
@@ -193,20 +211,37 @@ export default function MaterialManagement({
       else if (itemNameLower.includes('switch')) tags.add('Switch');
       else if (itemNameLower.includes('valve')) tags.add('Valve');
       else {
-        // 단어 첫 단어나 대표 명사 추출 시도 또는 기타 처리
         const firstWord = (item.item || '').split(' ')[0];
         if (firstWord) tags.add(firstWord);
       }
     });
 
-    return ['전체', ...Array.from(tags).sort()];
-  }, [cabinInventoryList, selectedCabinSheet]);
+    const autoTags = Array.from(tags).sort();
+    const combined = Array.from(new Set([...autoTags, ...customCabinTextSubTags]));
+    return combined;
+  }, [cabinInventoryList, selectedCabinSheet, customCabinTextSubTags]);
 
-  // Sheet 변경 시 서브 텍스트 태그 초기화
+  // Sheet 변경 시 첫 번째 서브 텍스트 태그 자동 선택
   const handleSelectCabinSheet = (sheetName: string) => {
     setSelectedCabinSheet(sheetName);
-    setSelectedCabinTextSubTag('전체');
+    const updatedTags = cabinTextSubTagsForSheet;
+    if (updatedTags.length > 0) {
+      setSelectedCabinTextSubTag(updatedTags[0]);
+    } else {
+      setSelectedCabinTextSubTag('');
+    }
   };
+
+  // 태그 목록이 변경되었을 때 선택된 태그가 유효하지 않으면 첫 번째 항목으로 설정
+  useEffect(() => {
+    if (cabinTextSubTagsForSheet.length > 0) {
+      if (!selectedCabinTextSubTag || !cabinTextSubTagsForSheet.includes(selectedCabinTextSubTag)) {
+        setSelectedCabinTextSubTag(cabinTextSubTagsForSheet[0]);
+      }
+    } else {
+      setSelectedCabinTextSubTag('');
+    }
+  }, [cabinTextSubTagsForSheet]);
 
   // 교정일 알림 동기화 (30일 전 기준 적용)
   useEffect(() => {
@@ -310,7 +345,7 @@ export default function MaterialManagement({
     setItemName('');
     setItemCategory(inventoryTab === '고정' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : '일반');
     
-    setCabinSheetName(selectedCabinSheet === '전체' ? '일반' : selectedCabinSheet);
+    setCabinSheetName(selectedCabinSheet || '#C1');
     setCabinLocationSection('');
     setCabinMakerModel('');
     setCabinSerialNo('');
@@ -329,7 +364,7 @@ export default function MaterialManagement({
     if (item.type === 'CABIN') {
       setItemCode(item.no || '');
       setItemName(item.item || '');
-      setCabinSheetName(item.sheet_name || '');
+      setCabinSheetName(cleanSheetName(item.sheet_name || ''));
       setCabinLocationSection(item.location_or_section || '');
       setCabinMakerModel(item.maker_model || '');
       setCabinSerialNo(item.serial_number || '');
@@ -597,16 +632,15 @@ export default function MaterialManagement({
     );
   };
 
-  // 필터링된 인벤토리 목록 계산 (CABIN은 Sheet별 1단계 및 텍스트 키워드별 2단계 필터 적용)
+  // 필터링된 인벤토리 목록 계산 (시트 이름 비교 시 앞의 숫자 제거 버전 고려)
   const filteredInventory = useMemo(() => {
     if (inventoryTab === 'CABIN') {
       return cabinInventoryList.filter(item => {
-        // 1. Sheet별 필터
-        const matchesSheet = selectedCabinSheet === '전체' || item.sheet_name === selectedCabinSheet;
+        const itemCleanSheet = cleanSheetName(item.sheet_name);
+        const matchesSheet = itemCleanSheet === selectedCabinSheet;
         if (!matchesSheet) return false;
 
-        // 2. 종류(Sheet) 내 텍스트 키워드별 서브탭 필터
-        if (selectedCabinTextSubTag === '전체') return true;
+        if (!selectedCabinTextSubTag) return true;
 
         const itemNameLower = (item.item || '').toLowerCase();
         return itemNameLower.includes(selectedCabinTextSubTag.toLowerCase());
@@ -651,7 +685,7 @@ export default function MaterialManagement({
   return (
     <div className="w-full max-w-full overflow-x-hidden min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-4 space-y-3 font-sans box-border relative">
       
-      {/* 화면 정가운데(중앙) 배치되는 처리 완료 알림 모달/토스트 */}
+      {/* 화면 중앙 알림 모달 */}
       {toastMessage && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-xs p-4">
           <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-xs text-center">
@@ -675,18 +709,8 @@ export default function MaterialManagement({
               </p>
             </div>
             <div className="flex space-x-2 pt-2">
-              <button
-                onClick={() => setPendingReturnLog(null)}
-                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition"
-              >
-                취소
-              </button>
-              <button
-                onClick={executeQuickReturn}
-                className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition"
-              >
-                반납하기
-              </button>
+              <button onClick={() => setPendingReturnLog(null)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+              <button onClick={executeQuickReturn} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition">반납하기</button>
             </div>
           </div>
         </div>
@@ -704,18 +728,8 @@ export default function MaterialManagement({
               <p className="text-xs text-[#64748B]">정말 이 이력을 삭제하시겠습니까?</p>
             </div>
             <div className="flex space-x-2 pt-2">
-              <button
-                onClick={() => setPendingDeleteLogId(null)}
-                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition"
-              >
-                취소
-              </button>
-              <button
-                onClick={executeDeleteLog}
-                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg transition"
-              >
-                삭제하기
-              </button>
+              <button onClick={() => setPendingDeleteLogId(null)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+              <button onClick={executeDeleteLog} className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg transition">삭제하기</button>
             </div>
           </div>
         </div>
@@ -733,17 +747,86 @@ export default function MaterialManagement({
               <p className="text-xs text-[#64748B] break-keep">선택한 <strong className="text-[#1F2937]">{selectedLogIds.length}개</strong>의 이력을 정말 삭제하시겠습니까?</p>
             </div>
             <div className="flex space-x-2 pt-2">
-              <button
-                onClick={() => setShowBatchDeleteConfirm(false)}
-                className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition"
+              <button onClick={() => setShowBatchDeleteConfirm(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+              <button onClick={executeBatchDeleteLogs} className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg transition">일괄 삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CABIN 종류(Sheet) 관리 모달 */}
+      {isCabinSheetModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold">종류별(Sheet) 추가/관리</h3>
+              <button onClick={() => setIsCabinSheetModalOpen(false)}><X className="h-4 w-4" /></button>
+            </div>
+            <p className="text-xs text-[#64748B]">새로운 Sheet 이름(예: #C1 등)을 추가할 수 있습니다.</p>
+            <div className="space-y-2">
+              <input 
+                type="text" 
+                placeholder="추가할 Sheet 이름" 
+                value={newSheetInput} 
+                onChange={e => setNewSheetInput(e.target.value)} 
+                className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs" 
+              />
+              <button 
+                onClick={() => {
+                  if(!newSheetInput.trim()) return;
+                  const cleaned = cleanSheetName(newSheetInput.trim());
+                  if(!customCabinSheets.includes(cleaned)) {
+                    const updated = [...customCabinSheets, cleaned].sort((a, b) => {
+                      const numA = parseInt(a.replace(/[^0-9]/g, '')) || 0;
+                      const numB = parseInt(b.replace(/[^0-9]/g, '')) || 0;
+                      if (numA !== numB) return numA - numB;
+                      return a.localeCompare(b);
+                    });
+                    setCustomCabinSheets(updated);
+                    setSelectedCabinSheet(cleaned);
+                  }
+                  setNewSheetInput('');
+                  setIsCabinSheetModalOpen(false);
+                }}
+                className="w-full py-2 bg-[#243B5A] text-white rounded text-xs font-semibold"
               >
-                취소
+                Sheet 추가하기
               </button>
-              <button
-                onClick={executeBatchDeleteLogs}
-                className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg transition"
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CABIN 항목별 서브태그 관리 모달 */}
+      {isCabinTagModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold">항목별 분류 서브탭 추가</h3>
+              <button onClick={() => setIsCabinTagModalOpen(false)}><X className="h-4 w-4" /></button>
+            </div>
+            <p className="text-xs text-[#64748B]">현재 Sheet 내에서 필터링할 새로운 검색 키워드(태그)를 추가합니다.</p>
+            <div className="space-y-2">
+              <input 
+                type="text" 
+                placeholder="예: Transmitter 등" 
+                value={newTagInput} 
+                onChange={e => setNewTagInput(e.target.value)} 
+                className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs" 
+              />
+              <button 
+                onClick={() => {
+                  if(!newTagInput.trim()) return;
+                  if(!customCabinTextSubTags.includes(newTagInput.trim())) {
+                    setCustomCabinTextSubTags([...customCabinTextSubTags, newTagInput.trim()]);
+                    setSelectedCabinTextSubTag(newTagInput.trim());
+                  }
+                  setNewTagInput('');
+                  setIsCabinTagModalOpen(false);
+                }}
+                className="w-full py-2 bg-[#243B5A] text-white rounded text-xs font-semibold"
               >
-                일괄 삭제
+                태그 추가하기
               </button>
             </div>
           </div>
@@ -845,7 +928,7 @@ export default function MaterialManagement({
         )}
       </div>
 
-      {/* 서브 카테고리 탭 영역 (CABIN일 경우 1단계: 종류별/Sheet 이름별 탭) */}
+      {/* 종류별(Sheet) 탭 영역 (앞에 숫자 제거된 형태로 표시) */}
       {inventoryTab === 'CABIN' ? (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
@@ -856,7 +939,7 @@ export default function MaterialManagement({
             className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
             style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
           >
-            {cabinSheetNames.map((sheet) => {
+            {customCabinSheets.map((sheet) => {
               const isSelected = selectedCabinSheet === sheet;
               return (
                 <button
@@ -873,6 +956,16 @@ export default function MaterialManagement({
               );
             })}
           </div>
+
+          {isAdmin && (
+            <button
+              onClick={() => setIsCabinSheetModalOpen(true)}
+              className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
+              title="종류(Sheet) 추가 및 관리"
+            >
+              <Settings className="h-4 w-4 shrink-0" />
+            </button>
+          )}
         </div>
       ) : (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
@@ -917,8 +1010,8 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* CABIN 2단계 서브탭: 선택된 Sheet(예: 1.#C1) 내에서 텍스트(Transmitter, Gauge, Sensor 등) 그룹별 서브탭 */}
-      {inventoryTab === 'CABIN' && (
+      {/* CABIN 항목별 서브탭 ('전체' 옵션 삭제 완료, 수정 버튼 포함) */}
+      {inventoryTab === 'CABIN' && cabinTextSubTagsForSheet.length > 0 && (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
             <Compass className="h-3.5 w-3.5 text-[#243B5A]" />
@@ -940,11 +1033,21 @@ export default function MaterialManagement({
                       : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
                   }`}
                 >
-                  {tag === '전체' ? '전체 항목' : tag}
+                  {tag}
                 </button>
               );
             })}
           </div>
+
+          {isAdmin && (
+            <button
+              onClick={() => setIsCabinTagModalOpen(true)}
+              className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
+              title="항목별 서브탭 추가/수정"
+            >
+              <Settings className="h-4 w-4 shrink-0" />
+            </button>
+          )}
         </div>
       )}
 
@@ -1164,7 +1267,7 @@ export default function MaterialManagement({
                     {selectedDetailItem.code || selectedDetailItem.no}
                   </span>
                   <span className="bg-[#F5F6F8] text-[#64748B] border border-[#E2E5E9] text-[10px] font-semibold px-1.5 py-0.5 rounded truncate">
-                    {selectedDetailItem.category || selectedDetailItem.sheet_name}
+                    {cleanSheetName(selectedDetailItem.category || selectedDetailItem.sheet_name)}
                   </span>
                 </div>
                 <h2 className="text-sm font-bold text-[#1F2937] truncate">{selectedDetailItem.name || selectedDetailItem.item}</h2>
