@@ -213,8 +213,8 @@ export default function HRManagement({
     birthDate: '' 
   });
 
-  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<Node>([]);
-  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState([]);
+  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState([]);
 
   const onConnect = useCallback(
     (params: any) => setFlowEdges((eds) => addEdge({ ...params, type: 'smoothstep', style: { stroke: '#4f46e5', strokeWidth: 2 } }, eds)),
@@ -338,8 +338,14 @@ export default function HRManagement({
   }, [subGroupType]);
 
   const buildFlowData = (userList: HRUser[], forceAutoLayout = false) => {
-    const initialNodes: any[] = [];
-    const initialEdges: any[] = [];
+    if (!userList || userList.length === 0) {
+      setFlowNodes([]);
+      setFlowEdges([]);
+      return;
+    }
+
+    const initialNodes: Node[] = [];
+    const initialEdges: Edge[] = [];
 
     userList.forEach((u, idx) => {
       const uId = `user_${u.id}_${idx}`;
@@ -352,6 +358,7 @@ export default function HRManagement({
       initialNodes.push({
         id: uId,
         type: 'default',
+        position: { x: 0, y: 0 },
         data: {
           label: (
             <div onClick={() => setDetailUser(u)} className="p-2 text-left cursor-pointer select-none">
@@ -389,8 +396,8 @@ export default function HRManagement({
 
     if (forceAutoLayout) {
       const layouted = getLayoutedElements(initialNodes, initialEdges, 'TB');
-      setFlowNodes([...layouted.nodes]);
-      setFlowEdges([...layouted.edges]);
+      setFlowNodes(layouted.nodes);
+      setFlowEdges(layouted.edges);
     } else {
       const nodesWithSavedPos = initialNodes.map(node => {
         const foundUser = userList.find(u => u.id === node.data?.userId);
@@ -406,8 +413,8 @@ export default function HRManagement({
       const hasAnySavedPos = userList.some(u => typeof u.pos_x === 'number' && typeof u.pos_y === 'number');
       if (!hasAnySavedPos) {
         const layouted = getLayoutedElements(initialNodes, initialEdges, 'TB');
-        setFlowNodes([...layouted.nodes]);
-        setFlowEdges([...layouted.edges]);
+        setFlowNodes(layouted.nodes);
+        setFlowEdges(layouted.edges);
       } else {
         setFlowNodes(nodesWithSavedPos);
         setFlowEdges(initialEdges);
@@ -1052,7 +1059,6 @@ export default function HRManagement({
         </div>
       ) : (
         <div>
-          {/* 모바일 화면 맞춤 카드 리스트 뷰 */}
           <div className="block md:hidden space-y-2.5">
             {filteredUsers.map((u) => {
               const canEdit = canEditUser(u);
@@ -1134,7 +1140,6 @@ export default function HRManagement({
             })}
           </div>
 
-          {/* PC 화면 테이블 뷰 */}
           <div className="hidden md:block bg-white border border-[#E2E5E9] rounded-xl overflow-hidden shadow-xs">
             <table className="w-full text-left text-xs">
               <thead className="bg-[#F5F6F8] border-b border-[#E2E5E9] font-bold text-[#64748B]">
