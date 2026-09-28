@@ -653,7 +653,7 @@ export default function MaterialManagement({
         return;
       }
 
-      // CABIN 일괄 불출 요약 이력인 경우 반납 프로세스 예외 처리
+      // CABIN 일괄 불출 요약 이력인 경우 반납 프로세스 예외 처리 안내
       if (targetReturnLog.item_name && targetReturnLog.item_name.includes('[CABIN 일괄 불출]')) {
         alert('CABIN 일괄 불출 이력은 개별 품목별로 관리되므로 이 화면에서 직접 반납 처리할 수 없습니다.');
         setShowReturnModal(false);
