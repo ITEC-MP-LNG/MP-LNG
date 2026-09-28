@@ -21,7 +21,8 @@ import {
   ChevronRight,
   ChevronLeft,
   Settings,
-  History
+  History,
+  CheckCircle2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { AppUser, InventoryItem, InventoryLog } from '@/lib/types';
@@ -60,6 +61,16 @@ export default function MaterialManagement({
   // CABIN 전용 목록 상태
   const [cabinInventoryList, setCabinInventoryList] = useState<InventoryItem[]>([]);
   const [loadingCabin, setLoadingCabin] = useState<boolean>(false);
+
+  // 커스텀 토스트 알림 상태
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showCustomToast = (msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 3000);
+  };
 
   // 동적 서브 카테고리 목록 상태
   const [fixedSubCategories, setFixedSubCategories] = useState<string[]>([
@@ -351,11 +362,11 @@ export default function MaterialManagement({
       if (editingItem) {
         const { error } = await supabase.from(targetTableName).update(payload).eq('id', editingItem.id);
         if (error) throw error;
-        alert('자재 정보가 수정되었습니다.');
+        showCustomToast('자재 정보가 수정되었습니다.');
       } else {
         const { error } = await supabase.from(targetTableName).insert([payload]);
         if (error) throw error;
-        alert('신규 자재가 등록되었습니다.');
+        showCustomToast('신규 자재가 등록되었습니다.');
       }
 
       setShowInventorySheet(false);
@@ -381,7 +392,7 @@ export default function MaterialManagement({
 
       setSelectedDetailItem(null);
       setShowInventorySheet(false);
-      alert('자재가 삭제되었습니다.');
+      showCustomToast('자재가 삭제되었습니다.');
       if (item.type === 'CABIN') {
         await fetchCabinInventory();
       } else {
@@ -450,7 +461,7 @@ export default function MaterialManagement({
         .eq('id', log.id);
       if (logErr) throw logErr;
 
-      alert('반납 처리가 완료되었습니다.');
+      showCustomToast('반납 처리가 완료되었습니다.');
       if (foundItem.type === 'CABIN') {
         await fetchCabinInventory();
       } else {
@@ -476,7 +487,7 @@ export default function MaterialManagement({
         .update({ memo: newMemo })
         .eq('id', log.id);
       if (error) throw error;
-      alert('이력이 수정되었습니다.');
+      showCustomToast('이력이 수정되었습니다.');
       await fetchInventoryLogs();
     } catch (err: any) {
       alert('이력 수정 실패: ' + err.message);
@@ -496,7 +507,7 @@ export default function MaterialManagement({
         .delete()
         .eq('id', logId);
       if (error) throw error;
-      alert('이력이 삭제되었습니다.');
+      showCustomToast('이력이 삭제되었습니다.');
       await fetchInventoryLogs();
     } catch (err: any) {
       alert('이력 삭제 실패: ' + err.message);
@@ -527,7 +538,7 @@ export default function MaterialManagement({
         .in('id', selectedLogIds);
       if (error) throw error;
 
-      alert('선택된 이력이 삭제되었습니다.');
+      showCustomToast('선택된 이력이 삭제되었습니다.');
       setSelectedLogIds([]);
       await fetchInventoryLogs();
     } catch (err: any) {
@@ -557,7 +568,7 @@ export default function MaterialManagement({
     const isUsageType = logType === '불출' || logType === '소모성 사용';
 
     if (isUsageType && targetItem.quantity < logQty) {
-      return alert(`가 가능한 수량을 초과했습니다. (현재 재고: ${targetItem.quantity}${targetItem.unit})`);
+      return alert(`가능한 수량을 초과했습니다. (현재 재고: ${targetItem.quantity}${targetItem.unit})`);
     }
 
     const newQty = isUsageType ? targetItem.quantity - logQty : targetItem.quantity + logQty;
@@ -584,7 +595,7 @@ export default function MaterialManagement({
       }]);
       if (logErr) throw logErr;
 
-      alert(`자재 ${actualLogType} 처리가 완료되었습니다.`);
+      showCustomToast(`자재 ${actualLogType} 처리가 완료되었습니다.`);
       setShowLogSheet(false);
       if (targetItem.type === 'CABIN') {
         await fetchCabinInventory();
@@ -638,8 +649,16 @@ export default function MaterialManagement({
   const isCurrentSubCatCollapsed = !!collapsedSubTabs[currentActiveSubCatName];
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-4 space-y-3 font-sans border-box">
+    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-4 space-y-3 font-sans border-box relative">
       
+      {/* 상단 커스텀 토스트 알림 배너 */}
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50 bg-[#243B5A] text-white px-4 py-2.5 rounded-lg shadow-xl flex items-center space-x-2 text-xs font-semibold border border-slate-600 transition animate-bounce">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
       {/* 상단 타이틀 영역 */}
       <div className="bg-white p-3 rounded-lg border border-[#E2E5E9] shadow-2xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
         <div className="flex items-center space-x-2.5">
@@ -928,7 +947,7 @@ export default function MaterialManagement({
                           log.type === '불출' 
                             ? 'bg-emerald-100 text-emerald-800' 
                             : log.type === '반납' 
-                            ? 'bg-emerald-100 text-emerald-800' // 반납 완료 시 녹색 뱃지
+                            ? 'bg-emerald-100 text-emerald-800' 
                             : log.type === '소모성 사용' 
                             ? 'bg-orange-100 text-orange-800' 
                             : 'bg-purple-100 text-purple-800'
