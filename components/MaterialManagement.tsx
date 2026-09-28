@@ -263,7 +263,7 @@ export default function MaterialManagement({
 
   const handleSelectCabinSheet = (sheetName: string) => {
     setSelectedCabinSheet(sheetName);
-    setSelectedCabinIds([]); // Sheet 변경 시 선택 초기화
+    setSelectedCabinIds([]);
   };
 
   useEffect(() => {
@@ -576,7 +576,6 @@ export default function MaterialManagement({
     }
   };
 
-  // CABIN 일괄 선택 핸들러
   const toggleSelectCabinItem = (id: string | number) => {
     const strId = String(id);
     setSelectedCabinIds(prev => 
@@ -592,7 +591,6 @@ export default function MaterialManagement({
     }
   };
 
-  // CABIN 일괄 불출 처리 실행 함수 (품목 수량이 통합적으로 기록됨)
   const handleCabinBatchIssue = async (e: React.FormEvent) => {
     e.preventDefault();
     if (selectedCabinIds.length === 0) return;
@@ -630,7 +628,6 @@ export default function MaterialManagement({
     }
   };
 
-  // 반납 모달 오픈 (수량 확인 및 이상유무 체크)
   const handleOpenReturnModal = (log: InventoryLog) => {
     const foundItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
     if (foundItem && foundItem.type === '소모성') {
@@ -645,7 +642,6 @@ export default function MaterialManagement({
     setShowReturnModal(true);
   };
 
-  // 반납 실행 처리
   const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetReturnLog) return;
@@ -657,7 +653,15 @@ export default function MaterialManagement({
         return;
       }
 
+      // CABIN 일괄 불출 요약 이력인 경우 반납 프로세스 예외 처리
+      if (targetReturnLog.item_name && targetReturnLog.item_name.includes('[CABIN 일괄 불출]')) {
+        alert('CABIN 일괄 불출 이력은 개별 품목별로 관리되므로 이 화면에서 직접 반납 처리할 수 없습니다.');
+        setShowReturnModal(false);
+        return;
+      }
+
       let foundItem: any | null = null;
+      
       if (targetReturnLog.inventory_id) {
         const { data: invData } = await supabase.from('inventory').select('*').eq('id', targetReturnLog.inventory_id).single();
         if (invData) {
@@ -672,11 +676,16 @@ export default function MaterialManagement({
         const { data: invDataByName } = await supabase.from('inventory').select('*').eq('name', targetReturnLog.item_name).limit(1);
         if (invDataByName && invDataByName.length > 0) {
           foundItem = invDataByName[0];
+        } else {
+          const { data: cabinDataByName } = await supabase.from('cabin_inventory').select('*').eq('item', targetReturnLog.item_name).limit(1);
+          if (cabinDataByName && cabinDataByName.length > 0) {
+            foundItem = { ...cabinDataByName[0], type: 'CABIN', quantity: 1, unit: 'EA' };
+          }
         }
       }
 
       if (!foundItem) {
-        return alert(`'${targetReturnLog.item_name}'에 해당하는 자재 정보를 찾을 수 없습니다.`);
+        return alert(`'${targetReturnLog.item_name}'에 해당하는 자재 정보를 데이터베이스에서 찾을 수 없습니다.`);
       }
 
       if (foundItem.type === '소모성') {
@@ -812,7 +821,6 @@ export default function MaterialManagement({
         const matchesSheet = itemCleanSheet === selectedCabinSheet;
         if (!matchesSheet) return false;
 
-        // 교정 대상만 보기 필터 적용
         if (cabinCalibrationOnly && !item.calibration_date) {
           return false;
         }
@@ -871,7 +879,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* CABIN 일괄 불출 처리 모달 */}
       {showCabinBatchModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
@@ -906,7 +913,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 반납 확인 및 수량/이상유무 체크 모달 */}
       {showReturnModal && targetReturnLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
@@ -1412,7 +1418,6 @@ export default function MaterialManagement({
           </div>
 
           <div className="flex items-center space-x-1 shrink-0">
-            {/* 교정 대상만 보기 필터 버튼 */}
             <button
               onClick={() => setCabinCalibrationOnly(!cabinCalibrationOnly)}
               className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1 ${
@@ -1549,7 +1554,6 @@ export default function MaterialManagement({
         </div>
 
         <div className="flex items-center space-x-2">
-          {/* CABIN 탭일 때 일괄 불출 버튼 노출 */}
           {inventoryTab === 'CABIN' && filteredInventory.length > 0 && (
             <div className="flex items-center space-x-2">
               {selectedCabinIds.length > 0 && (
@@ -1585,7 +1589,6 @@ export default function MaterialManagement({
             </div>
           ) : (
             <div className="space-y-2">
-              {/* CABIN 탭일 때 전체 선택 헤더 추가 */}
               {inventoryTab === 'CABIN' && (
                 <div className="bg-[#F5F6F8] px-3 py-1.5 rounded-lg border border-[#E2E5E9] flex items-center space-x-2 text-xs">
                   <input 
@@ -1610,7 +1613,6 @@ export default function MaterialManagement({
                     }`}
                   >
                     <div className="flex items-center space-x-2.5 min-w-0 flex-1">
-                      {/* CABIN 탭일 때 각 아이템별 체크박스 */}
                       {inventoryTab === 'CABIN' && (
                         <input 
                           type="checkbox" 
