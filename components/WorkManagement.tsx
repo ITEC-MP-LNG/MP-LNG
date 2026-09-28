@@ -393,19 +393,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   });
 
   return (
-    <div className="bg-[#F5F6F8] min-h-screen p-4 text-[#1F2937]">
-      <div className="max-w-[1400px] mx-auto bg-white rounded-xl border border-[#E2E5E9] p-4 sm:p-6 space-y-5">
+    <div className="bg-[#F5F6F8] min-h-screen p-2 sm:p-4 text-[#1F2937]">
+      <div className="w-full bg-white rounded-xl border border-[#E2E5E9] p-3 sm:p-5 space-y-4">
         
         {/* Header - 모바일에서 유연한 랩핑 및 높이/간격 정렬 개선 */}
-        <div className="flex flex-col gap-3 pb-4 border-b border-[#E2E5E9]">
+        <div className="flex flex-col gap-3 pb-3 border-b border-[#E2E5E9]">
           <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2.5">
-              <div className="p-2 bg-[#243B5A]/10 text-[#243B5A] rounded-lg shrink-0">
-                <CalendarIcon className="h-5 w-5" />
+            <div className="flex items-center space-x-2">
+              <div className="p-1.5 bg-[#243B5A]/10 text-[#243B5A] rounded-lg shrink-0">
+                <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
               <div>
-                <h2 className="text-base font-bold">운영 및 근무 관리 시스템</h2>
-                <p className="text-xs text-[#64748B]">일일, 주간 및 CABIN 업무 편성</p>
+                <h2 className="text-sm sm:text-base font-bold">운영 및 근무 관리 시스템</h2>
+                <p className="text-[11px] sm:text-xs text-[#64748B]">일일, 주간 및 CABIN 업무 편성</p>
               </div>
             </div>
 
@@ -511,12 +511,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         {isLoading ? (
           <div className="text-center py-16 text-xs text-[#64748B]">로딩 중...</div>
         ) : taskTab === 'DAILY' ? (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {filteredTasks.length === 0 ? (
               <div className="text-center py-12 text-xs text-[#64748B] border border-dashed rounded-xl">등록된 일일 업무가 없습니다.</div>
             ) : (
               filteredTasks.map((t) => (
-                <div key={t.id} className="border border-[#E2E5E9] rounded-xl p-4 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-[#243B5A]/40 transition">
+                <div key={t.id} className="border border-[#E2E5E9] rounded-xl p-3 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-[#243B5A]/40 transition">
                   <div className="space-y-1">
                     <div className="flex items-center space-x-2">
                       <span className="text-[11px] font-semibold text-[#2563EB] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded font-mono flex items-center gap-1">
@@ -531,7 +531,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     </h4>
                   </div>
 
-                  <div className="flex items-center space-x-3">
+                  <div className="flex items-center justify-between md:justify-end space-x-3">
                     <div className="flex items-center space-x-1.5 text-xs text-[#64748B] bg-[#F5F6F8] px-2.5 py-1 rounded-md border">
                       <User className="h-3.5 w-3.5" />
                       <span className="font-medium text-[#1F2937]">{t.assigned_names?.join(', ') || '미지정'}</span>
@@ -548,8 +548,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         ) : taskTab === 'WEEKLY' ? (
           /* 주간 업무 캘린더 */
-          <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row items-center justify-between pb-3 border-b gap-2">
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row items-center justify-between pb-2.5 border-b gap-2">
               <div className="flex items-center space-x-2">
                 <button onClick={() => changeWeek('prev')} className="p-1.5 border rounded-lg"><ChevronLeft className="h-4 w-4" /></button>
                 <span className="text-xs sm:text-sm font-bold font-mono">{weekDays[0].displayDate} ~ {weekDays[6].displayDate} 일정</span>
@@ -582,8 +582,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   {weekDays.map((day) => {
                     const dayTasks = filteredTasks.filter((t) => t.start_date === day.dateStr);
                     return (
-                      <div key={day.dateStr} className={`rounded-xl border p-2.5 min-h-[420px] flex flex-col ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
-                        <div className="flex items-center justify-between pb-2 mb-2 border-b">
+                      <div key={day.dateStr} className={`rounded-xl border p-2 min-h-[420px] flex flex-col ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
+                        <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b">
                           <span className="font-bold text-xs">{day.label} <span className="text-[10px] text-[#64748B] font-mono">{day.displayDate}</span></span>
                           {isAdmin && (
                             <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="p-0.5 text-[#243B5A] hover:bg-slate-200 rounded">
@@ -614,11 +614,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 </div>
               </div>
             ) : (
-              <div className="space-y-3">
+              <div className="space-y-2.5">
                 {weekDays.map((day) => {
                   const dayTasks = filteredTasks.filter((t) => t.start_date === day.dateStr);
                   return (
-                    <div key={day.dateStr} className={`border rounded-xl p-3.5 ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
+                    <div key={day.dateStr} className={`border rounded-xl p-3 ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
                       <div className="flex items-center justify-between pb-2 mb-2 border-b">
                         <span className="font-bold text-xs">{day.label} ({day.displayDate})</span>
                         {isAdmin && (
@@ -654,7 +654,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             )}
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {filteredTasks.length === 0 ? (
               <div className="text-center py-12 text-xs text-[#64748B] border border-dashed rounded-xl space-y-2">
                 <div>등록된 CABIN 편성이 없습니다.</div>
@@ -669,8 +669,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
             ) : (
               filteredTasks.map((t) => (
-                <div key={t.id} className="border border-[#E2E5E9] rounded-xl p-4 bg-white flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-[#243B5A]/40 transition">
-                  <div className="space-y-1.5">
+                <div key={t.id} className="border border-[#E2E5E9] rounded-xl p-3 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-[#243B5A]/40 transition">
+                  <div className="space-y-1">
                     <div className="flex items-center space-x-2">
                       {t.category && <span className="text-[11px] font-bold text-[#243B5A] bg-[#243B5A]/10 px-2 py-0.5 rounded">{t.category}</span>}
                       <span className="text-xs font-mono font-semibold text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
@@ -682,7 +682,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     {t.description && <p className="text-xs text-[#64748B]">{t.description}</p>}
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg text-xs">
                       <Sun className="h-3.5 w-3.5 text-amber-600" />
                       <span className="font-bold text-amber-900">주간:</span>
@@ -711,7 +711,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         {/* 미완료 팝업 알림 창 */}
         {isAlertOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4 border animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border animate-in fade-in zoom-in-95 duration-150">
               <div className="flex items-center justify-between border-b pb-3">
                 <div className="flex items-center space-x-2 text-[#243B5A]">
                   <Bell className="h-5 w-5 text-amber-500 animate-bounce" />
@@ -761,7 +761,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         {/* 상세 바텀시트 */}
         {selectedTaskForSheet && (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 backdrop-blur-xs">
-            <div className="bg-white rounded-t-2xl max-w-xl w-full p-6 shadow-2xl space-y-4 border-t">
+            <div className="bg-white rounded-t-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl space-y-4 border-t">
               <div className="flex items-center justify-between border-b pb-3">
                 <div className="flex items-center space-x-2">
                   <span className="text-xs font-bold text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded font-mono">
@@ -814,7 +814,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         {/* 호선 관리 모달 */}
         {isVesselManagerOpen && isAdmin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-md w-full p-5 shadow-2xl space-y-4 border">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
               <div className="flex items-center justify-between border-b pb-3">
                 <h3 className="text-sm font-bold text-[#243B5A]">CABIN 호선 관리</h3>
                 <button onClick={() => setIsVesselManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
@@ -869,7 +869,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         {/* 업무 생성 및 수정 모달 */}
         {isModalOpen && isAdmin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-lg w-full p-5 shadow-2xl space-y-4 border">
+            <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
               <div className="flex items-center justify-between border-b pb-3">
                 <h3 className="text-sm font-bold">
                   {formData.task_type === 'CABIN' ? `CABIN 근무 등록/수정 (${formData.category || '호선미정'})` : '업무 등록/수정'}
