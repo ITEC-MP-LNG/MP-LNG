@@ -125,6 +125,11 @@ export default function MaterialManagement({
   const [cabinCalibrationOnly, setCabinCalibrationOnly] = useState<boolean>(false);
   const [showCabinBatchModal, setShowCabinBatchModal] = useState<boolean>(false);
   const [cabinBatchMemo, setCabinBatchMemo] = useState<string>('');
+  
+  // --- CABIN 일괄 반납 모달 상태 추가 ---
+  const [showCabinBatchReturnModal, setShowCabinBatchReturnModal] = useState<boolean>(false);
+  const [cabinBatchReturnMemo, setCabinBatchReturnMemo] = useState<string>('');
+  const [cabinBatchReturnHasIssue, setCabinBatchReturnHasIssue] = useState<boolean>(false);
 
   const [fixedSubCategories, setFixedSubCategories] = useState<string[]>([
     '압력계', '가스측정기', 'VBT', '공구', '무선 배터리', '교정', '기타'
@@ -634,6 +639,49 @@ export default function MaterialManagement({
     }
   };
 
+  // --- CABIN 일괄 반납 처리 핸들러 추가 ---
+  const handleCabinBatchReturn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedCabinIds.length === 0) return;
+
+    try {
+      const selectedItems = cabinInventoryList.filter(item => selectedCabinIds.includes(String(item.id)));
+      if (selectedItems.length === 0) return;
+
+      const firstItemName = selectedItems[0].name || selectedItems[0].item || 'CABIN 품목';
+      const integratedItemName = selectedItems.length === 1 
+        ? firstItemName 
+        : `${firstItemName} 외 ${selectedItems.length - 1}건`;
+
+      const finalLogType = cabinBatchReturnHasIssue ? '불출, 반납완료, 이상알림' : '반납완료';
+      const memoText = cabinBatchReturnMemo.trim() ? `일괄 반납메모: ${cabinBatchReturnMemo.trim()}` : 'CABIN 일괄 반납 완료';
+
+      const { error: logError } = await supabase
+        .from('inventory_logs')
+        .insert([{
+          inventory_id: null,
+          item_name: `[CABIN 일괄 반납] ${integratedItemName}`,
+          type: finalLogType,
+          quantity: selectedItems.length,
+          worker_name: currentUser?.name || '작업자',
+          memo: memoText,
+          created_at: new Date().toISOString()
+        }]);
+
+      if (logError) throw logError;
+
+      showCenterToast(`선택된 ${selectedItems.length}개 CABIN 품목이 일괄 반납되었습니다.`);
+      setShowCabinBatchReturnModal(false);
+      setSelectedCabinIds([]);
+      setCabinBatchReturnMemo('');
+      setCabinBatchReturnHasIssue(false);
+      await fetchCabinInventory();
+      await fetchInventoryLogs();
+    } catch (err: any) {
+      alert('CABIN 일괄 반납 처리 중 오류가 발생했습니다: ' + err.message);
+    }
+  };
+
   const handleOpenReturnModal = (log: InventoryLog) => {
     // CABIN 일괄 불출 요약 이력인 경우 개별 항목 연동 안내 및 선택 반납 지원
     if (log.item_name && log.item_name.includes('[CABIN 일괄 불출]')) {
@@ -899,7 +947,7 @@ export default function MaterialManagement({
     <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
       
       {toastMessage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 backdrop-blur-xs p-4">
           <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-xs text-center">
             <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
             <span className="truncate">{toastMessage}</span>
@@ -936,6 +984,54 @@ export default function MaterialManagement({
               <div className="flex space-x-2 pt-2">
                 <button type="button" onClick={() => setShowCabinBatchModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
                 <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">일괄 불출 확정</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* CABIN 일괄 반납 모달 추가 */}
+      {showCabinBatchReturnModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-sm font-bold">CABIN 품목 일괄 반납 및 점검</h3>
+              <button onClick={() => setShowCabinBatchReturnModal(false)}><X className="h-4 w-4" /></button>
+            </div>
+
+            <form onSubmit={handleCabinBatchReturn} className="space-y-3 text-xs">
+              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200 space-y-1">
+                <span className="text-[10px] text-blue-700 block font-semibold">선택된 반납 대상 품목</span>
+                <p className="font-bold text-blue-900 text-sm">총 {selectedCabinIds.length}개 품목 일괄 반납</p>
+              </div>
+
+              <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 flex items-center space-x-2">
+                <input 
+                  type="checkbox" 
+                  id="cabinBatchReturnHasIssue"
+                  checked={cabinBatchReturnHasIssue} 
+                  onChange={e => setCabinBatchReturnHasIssue(e.target.checked)} 
+                  className="w-4 h-4 accent-amber-600 rounded"
+                />
+                <label htmlFor="cabinBatchReturnHasIssue" className="text-amber-900 font-semibold cursor-pointer select-none">
+                  선택 품목 중 장비 이상(결함) 있음 체크
+                </label>
+              </div>
+
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">일괄 반납 메모 / 특이사항</label>
+                <input 
+                  type="text" 
+                  placeholder="예: 교정 완료 후 일괄 반납" 
+                  value={cabinBatchReturnMemo} 
+                  onChange={e => setCabinBatchReturnMemo(e.target.value)} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                />
+              </div>
+
+              <div className="flex space-x-2 pt-2">
+                <button type="button" onClick={() => setShowCabinBatchReturnModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition">일괄 반납 확정</button>
               </div>
             </form>
           </div>
@@ -1634,12 +1730,20 @@ export default function MaterialManagement({
           {inventoryTab === 'CABIN' && filteredInventory.length > 0 && (
             <div className="flex items-center space-x-2">
               {selectedCabinIds.length > 0 && (
-                <button
-                  onClick={() => setShowCabinBatchModal(true)}
-                  className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition shadow-2xs"
-                >
-                  선택 품목 일괄 불출 ({selectedCabinIds.length})
-                </button>
+                <>
+                  <button
+                    onClick={() => setShowCabinBatchModal(true)}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-semibold transition shadow-2xs"
+                  >
+                    선택 품목 일괄 불출 ({selectedCabinIds.length})
+                  </button>
+                  <button
+                    onClick={() => setShowCabinBatchReturnModal(true)}
+                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-semibold transition shadow-2xs"
+                  >
+                    선택 품목 일괄 반납 ({selectedCabinIds.length})
+                  </button>
+                </>
               )}
             </div>
           )}
@@ -1714,7 +1818,7 @@ export default function MaterialManagement({
                       >
                         <h3 className="text-xs font-semibold text-[#1F2937] truncate">{item.name || item.item}</h3>
                         <span className="text-[10px] text-[#64748B] block truncate">
-                          위치: {item.location || item.location_or_section || '미지정'} {item.maker_model ? `| 모델: ${item.maker_model}` : ''} {item.calibration_date ? `| 교정일: ${item.calibration_date}` : ''}
+                          위치: {item.location || item.location_or_section || '미지정'} {item.maker_model ? `| 모델: ${item.maker_model}` : ''} {item.cert_no ? `| 인증서: ${item.cert_no}` : ''} {item.serial_number ? `| S/N: ${item.serial_number}` : ''} {item.calibration_date ? `| 교정일: ${item.calibration_date}` : ''}
                         </span>
                       </div>
                     </div>
@@ -1725,7 +1829,7 @@ export default function MaterialManagement({
                     >
                       <div>
                         <span className={`text-xs font-bold block ${isLowStock ? 'text-red-600' : 'text-[#1F2937]'}`}>
-                          {item.type === 'CABIN' ? (item.cert_no || '보유') : `${item.quantity} ${item.unit}`}
+                          {item.type === 'CABIN' ? (item.cert_no ? `인증: ${item.cert_no}` : (item.serial_number ? `S/N: ${item.serial_number}` : '보유')) : `${item.quantity} ${item.unit}`}
                         </span>
                       </div>
                     </div>
@@ -1897,8 +2001,12 @@ export default function MaterialManagement({
                     <span className="font-semibold text-[#1F2937]">{selectedDetailItem.maker_model || '-'}</span>
                   </div>
                   <div className="flex justify-between text-[#64748B]">
-                    <span>시리얼 번호</span>
+                    <span>시리얼 번호 (Serial No)</span>
                     <span className="font-semibold text-[#1F2937]">{selectedDetailItem.serial_number || '-'}</span>
+                  </div>
+                  <div className="flex justify-between text-[#64748B]">
+                    <span>인증서 번호 (Cert No)</span>
+                    <span className="font-semibold text-[#1F2937]">{selectedDetailItem.cert_no || '-'}</span>
                   </div>
                   <div className="flex justify-between text-amber-800 font-semibold pt-1 border-t border-[#E2E5E9]">
                     <span>교정일</span>
