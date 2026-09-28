@@ -118,12 +118,11 @@ export default function MaterialManagement({
   const [showInventorySheet, setShowInventorySheet] = useState(false);
   const [editingItem, setEditingItem] = useState<any | null>(null);
   
-  // 불출/반납/소모성 사용 모달 상태 (이상유무 및 수량 포함)
   const [showLogSheet, setShowLogSheet] = useState(false);
   const [targetItem, setTargetItem] = useState<any | null>(null);
-  const [logType, setLogType] = useState<'불출' | '반납' | '소모성 사용'>('불출');
+  const [logType, setLogType] = useState<string>('불출');
   const [logQty, setLogQty] = useState<number>(1);
-  const [logHasIssue, setLogHasIssue] = useState<boolean>(false); // 이상 유무 체크
+  const [logHasIssue, setLogHasIssue] = useState<boolean>(false);
   const [logMemo, setLogMemo] = useState('');
 
   const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
@@ -452,8 +451,7 @@ export default function MaterialManagement({
     }
   };
 
-  const handleOpenLogModal = (item: any, type: '불출' | '반납' | '소모성 사용') => {
-    // 소모성 자재는 반납 불가 처리
+  const handleOpenLogModal = (item: any, type: string) => {
     if (item.type === '소모성' && type === '반납') {
       alert('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
       return;
@@ -462,7 +460,7 @@ export default function MaterialManagement({
     setTargetItem(item);
     setLogType(type);
     setLogQty(1);
-    setLogHasIssue(false); // 초기화
+    setLogHasIssue(false);
     setLogMemo('');
     setShowLogSheet(true);
   };
@@ -498,7 +496,6 @@ export default function MaterialManagement({
 
       if (invError) throw invError;
 
-      // 이상 유무에 따른 이력 타입 문자열 결정 (불출, 반납완료, 이상알림 등 요구사항 반영)
       let finalLogType = logType === '소모성 사용' ? '불출' : logType;
       if (logType === '반납') {
         finalLogType = logHasIssue ? '불출, 반납완료, 이상알림' : '반납완료';
@@ -563,7 +560,6 @@ export default function MaterialManagement({
         return alert(`'${log.item_name}'에 해당하는 현재 등록된 자재 정보를 찾을 수 없습니다.`);
       }
 
-      // 소모성 자재는 반납 불가
       if (foundItem.type === '소모성') {
         return alert('소모성 자재는 반납 처리를 할 수 없습니다.');
       }
@@ -1448,7 +1444,7 @@ export default function MaterialManagement({
                           />
                         )}
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
-                          log.type.includes('이상알림') ? 'bg-red-100 text-red-800' : log.type.includes('불출') ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                          String(log.type).includes('이상알림') ? 'bg-red-100 text-red-800' : String(log.type).includes('불출') ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
                         }`}>
                           {log.type}
                         </span>
@@ -1573,7 +1569,6 @@ export default function MaterialManagement({
                     <ArrowUpRight className="h-3.5 w-3.5 shrink-0" />
                     <span>{selectedDetailItem.type === '소모성' ? '소모성 사용' : '불출 처리'}</span>
                   </button>
-                  {/* 소모성 자재는 반납 버튼 숨김 처리 */}
                   {selectedDetailItem.type !== '소모성' && (
                     <button
                       onClick={() => handleOpenLogModal(selectedDetailItem, '반납')}
@@ -1609,7 +1604,6 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 자재 불출 / 반납 처리 입력 모달 (수량 및 이상유무 체크 포함) */}
       {showLogSheet && targetItem && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-50 p-0 sm:p-3">
           <div className="bg-white border border-[#E2E5E9] rounded-t-xl sm:rounded-lg max-w-md w-full p-4 shadow-2xl text-[#1F2937]">
