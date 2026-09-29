@@ -62,18 +62,16 @@ export default function EducationManagement({
     if (!currentUser?.name || educations.length === 0) return;
 
     const todayStr = getLocalDateString();
-    const myEducations = educations.filter((edu) => 
-      edu.assigned_workers && edu.assigned_workers.includes(currentUser.name)
+    const todayEducations = educations.filter((edu) =>
+      edu.edu_date === todayStr &&
+      edu.assigned_workers &&
+      edu.assigned_workers.includes(currentUser.name)
     );
 
-    if (myEducations.length > 0) {
-      const upcomingEdus = myEducations
-        .filter(edu => edu.edu_date >= todayStr)
-        .sort((a, b) => a.edu_date.localeCompare(b.edu_date));
-
-      const targetEdu = upcomingEdus.length > 0 ? upcomingEdus[0] : myEducations[0];
+    if (todayEducations.length > 0) {
+      const targetEdu = todayEducations[0];
       const hasSeen = sessionStorage.getItem(`edu_notice_seen_${targetEdu.id}_${currentUser.name}`);
-      
+
       if (!hasSeen) {
         setAssignedNoticeEdu(targetEdu);
         setShowNoticeModal(true);
