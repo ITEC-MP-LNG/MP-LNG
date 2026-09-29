@@ -14,7 +14,7 @@ import { supabase } from '@/lib/supabase';
 
 interface NoticeBoardProps {
   isAdmin: boolean;
-  currentUser?: { name: string };
+  currentUser?: { id?: string | number; name: string; email?: string };
 }
 
 interface NoticeItem {
@@ -22,7 +22,7 @@ interface NoticeItem {
   title: string;
   content: string;
   author_name: string;
-  is_pinned: boolean;
+  is_pinned: boolean | string;
   created_at: string;
   updated_at: string;
 }
@@ -65,6 +65,9 @@ export default function NoticeBoard({
   const [popupNotice, setPopupNotice] = useState<NoticeItem | null>(null);
   const [showPopupModal, setShowPopupModal] = useState(false);
 
+  // 읽지 않은 신규 공지 존재 여부 (종 모양 버튼 색상 제어용)
+  const [hasUnreadNotice, setHasUnreadNotice] = useState(false);
+
   const fetchNotices = async () => {
     try {
       setLoading(true);
@@ -72,19 +75,40 @@ export default function NoticeBoard({
       const { data, error } = await supabase
         .from('notices')
         .select('*')
-        .order('is_pinned', { ascending: false })
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      const fetchedNotices = (data || []) as NoticeItem[];
+      const fetchedNotices = (data || []).map((item) => ({
+        ...item,
+        is_pinned: item.is_pinned === true || item.is_pinned === 'true',
+      })) as NoticeItem[];
+
+      // 중요(상단 고정) 공지가 위로 오도록 정렬
+      fetchedNotices.sort((a, b) => {
+        if (a.is_pinned === b.is_pinned) {
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+        }
+        return a.is_pinned ? -1 : 1;
+      });
+
       setNotices(fetchedNotices);
 
-      // 중요 공지(상단 고정)가 존재하고 오늘 하루 보지 않기가 설정되지 않은 경우 팝업 노출
+      // 사용자 고유 식별자 (없을 경우 기본값 적용)
+      const userKey = currentUser?.id || currentUser?.email || currentUser?.name || 'guest';
+
+      // 3, 4, 5번: 모든 공지 중 하나라도 읽지 않은 것이 있는지 체크
+      const unreadExists = fetchedNotices.some((notice) => {
+        const isRead = localStorage.getItem(`notice_read_${userKey}_${notice.id}`);
+        return !isRead;
+      });
+      setHasUnreadNotice(unreadExists);
+
+      // 1번: 중요 공지(상단 고정) 팝업 처리 (오늘 하루 보지 않기 체크 확인)
       const pinnedNotices = fetchedNotices.filter((n) => n.is_pinned);
       if (pinnedNotices.length > 0) {
         const targetNotice = pinnedNotices[0];
-        const hideUntil = localStorage.getItem(`notice_hide_until_${targetNotice.id}`);
+        const hideUntil = localStorage.getItem(`notice_hide_until_${userKey}_${targetNotice.id}`);
         const todayStr = new Date().toDateString();
 
         if (hideUntil !== todayStr) {
@@ -108,15 +132,49 @@ export default function NoticeBoard({
   }, []);
 
   const handleClosePopup = () => {
+    if (popupNotice) {
+      const userKey = currentUser?.id || currentUser?.email || currentUser?.name || 'guest';
+      localStorage.setItem(`notice_read_${userKey}_${popupNotice.id}`, 'true');
+      
+      // 읽음 처리 후 안 읽은 공지 여부 재확인
+      const unreadExists = notices.some((notice) => {
+        const isRead = localStorage.getItem(`notice_read_${userKey}_${notice.id}`);
+        return !isRead;
+      });
+      setHasUnreadNotice(unreadExists);
+    }
     setShowPopupModal(false);
   };
 
   const handleHideToday = () => {
     if (popupNotice) {
+      const userKey = currentUser?.id || currentUser?.email || currentUser?.name || 'guest';
       const todayStr = new Date().toDateString();
-      localStorage.setItem(`notice_hide_until_${popupNotice.id}`, todayStr);
+      localStorage.setItem(`notice_hide_until_${userKey}_${popupNotice.id}`, todayStr);
+      localStorage.setItem(`notice_read_${userKey}_${popupNotice.id}`, 'true');
+
+      const unreadExists = notices.some((notice) => {
+        const isRead = localStorage.getItem(`notice_read_${userKey}_${notice.id}`);
+        return !isRead;
+      });
+      setHasUnreadNotice(unreadExists);
     }
     setShowPopupModal(false);
+  };
+
+  const handleSelectNotice = (notice: NoticeItem) => {
+    const userKey = currentUser?.id || currentUser?.email || currentUser?.name || 'guest';
+    localStorage.setItem(`notice_read_${userKey}_${notice.id}`, 'true');
+
+    // 읽음 처리 후 종 모양 버튼 색상 업데이트
+    const unreadExists = notices.some((n) => {
+      if (n.id === notice.id) return false;
+      const isRead = localStorage.getItem(`notice_read_${userKey}_${n.id}`);
+      return !isRead;
+    });
+    setHasUnreadNotice(unreadExists);
+
+    setSelectedNotice(notice);
   };
 
   const handleOpenCreate = () => {
@@ -146,7 +204,7 @@ export default function NoticeBoard({
     setEditingNotice(notice);
     setTitle(notice.title);
     setContent(notice.content);
-    setIsPinned(notice.is_pinned);
+    setIsPinned(notice.is_pinned === true);
     setShowModal(true);
   };
 
@@ -260,24 +318,45 @@ export default function NoticeBoard({
   return (
     <div className="w-full text-[#1F2937] p-4 sm:p-6 space-y-4 font-sans border-box">
 
-      {/* 상단 제목 */}
+      {/* 상단 제목 영역 및 2~5번 모바일 종 모양 버튼 추가 */}
 
       <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
 
-        <div className="flex items-center space-x-3">
+        <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
 
-          <div className="p-2.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
-            <Bell className="h-6 w-6" />
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
+              <Bell className="h-6 w-6" />
+            </div>
+
+            <div>
+              <h1 className="text-base font-bold text-[#1F2937]">
+                공지사항
+              </h1>
+
+              <p className="text-xs text-[#64748B]">
+                사내 주요 공지 및 안내사항을 확인할 수 있습니다.
+              </p>
+            </div>
           </div>
 
-          <div>
-            <h1 className="text-base font-bold text-[#1F2937]">
-              공지사항
-            </h1>
-
-            <p className="text-xs text-[#64748B]">
-              사내 주요 공지 및 안내사항을 확인할 수 있습니다.
-            </p>
+          {/* 2, 3, 4, 5번: 모바일 기기 접속 시 로그인 계정 옆에 표시되는 종 모양 버튼 (신규글 여부에 따라 색상 변경) */}
+          <div className="sm:hidden flex items-center">
+            <button
+              onClick={() => {
+                if (notices.length > 0) {
+                  handleSelectNotice(notices[0]);
+                }
+              }}
+              className={`p-2 rounded-full border transition ${
+                hasUnreadNotice
+                  ? 'bg-red-50 text-red-600 border-red-200'
+                  : 'bg-blue-50 text-blue-400 border-blue-200'
+              }`}
+              title={hasUnreadNotice ? '읽지 않은 새 공지가 있습니다.' : '모든 공지를 확인했습니다.'}
+            >
+              <Bell className="h-5 w-5" />
+            </button>
           </div>
 
         </div>
@@ -392,7 +471,7 @@ export default function NoticeBoard({
               <div
                 key={notice.id}
                 onClick={() =>
-                  setSelectedNotice(notice)
+                  handleSelectNotice(notice)
                 }
                 className="px-4 py-3.5 hover:bg-[#F8FAFC] cursor-pointer transition"
               >
