@@ -61,6 +61,10 @@ export default function NoticeBoard({
   const [content, setContent] = useState('');
   const [isPinned, setIsPinned] = useState(false);
 
+  // 중요 공지 팝업 알림 상태
+  const [popupNotice, setPopupNotice] = useState<NoticeItem | null>(null);
+  const [showPopupModal, setShowPopupModal] = useState(false);
+
   const fetchNotices = async () => {
     try {
       setLoading(true);
@@ -73,7 +77,21 @@ export default function NoticeBoard({
 
       if (error) throw error;
 
-      setNotices((data || []) as NoticeItem[]);
+      const fetchedNotices = (data || []) as NoticeItem[];
+      setNotices(fetchedNotices);
+
+      // 중요 공지(상단 고정)가 존재하고 오늘 하루 보지 않기가 설정되지 않은 경우 팝업 노출
+      const pinnedNotices = fetchedNotices.filter((n) => n.is_pinned);
+      if (pinnedNotices.length > 0) {
+        const targetNotice = pinnedNotices[0];
+        const hideUntil = localStorage.getItem(`notice_hide_until_${targetNotice.id}`);
+        const todayStr = new Date().toDateString();
+
+        if (hideUntil !== todayStr) {
+          setPopupNotice(targetNotice);
+          setShowPopupModal(true);
+        }
+      }
     } catch (err: any) {
       console.error('공지사항 불러오기 실패:', err);
       alert(
@@ -88,6 +106,18 @@ export default function NoticeBoard({
   useEffect(() => {
     fetchNotices();
   }, []);
+
+  const handleClosePopup = () => {
+    setShowPopupModal(false);
+  };
+
+  const handleHideToday = () => {
+    if (popupNotice) {
+      const todayStr = new Date().toDateString();
+      localStorage.setItem(`notice_hide_until_${popupNotice.id}`, todayStr);
+    }
+    setShowPopupModal(false);
+  };
 
   const handleOpenCreate = () => {
     if (!isAdmin) {
@@ -263,6 +293,61 @@ export default function NoticeBoard({
         )}
 
       </div>
+
+      {/* 중요 공지 팝업 알림 모달 */}
+      {showPopupModal && popupNotice && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full shadow-xl relative text-[#1F2937] overflow-hidden">
+            <div className="p-5">
+              <button
+                onClick={handleClosePopup}
+                className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex items-center gap-2 mb-3">
+                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-[#243B5A] text-white font-bold">
+                  <Pin className="h-3 w-3" />
+                  중요 공지 알림
+                </span>
+              </div>
+
+              <h2 className="text-sm sm:text-base font-bold text-[#1F2937] pr-6 mb-2">
+                {popupNotice.title}
+              </h2>
+
+              <div className="flex items-center gap-3 text-[10px] text-[#64748B] pb-3 border-b border-[#E2E5E9]">
+                <span>작성자: {popupNotice.author_name}</span>
+                <span className="flex items-center gap-1">
+                  <Calendar className="h-3 w-3" />
+                  {formatDate(popupNotice.created_at)}
+                </span>
+              </div>
+
+              <div className="py-5 text-xs sm:text-sm text-[#1F2937] whitespace-pre-wrap leading-6 min-h-[120px]">
+                {popupNotice.content}
+              </div>
+
+              <div className="flex justify-between items-center pt-3 border-t border-[#E2E5E9]">
+                <button
+                  onClick={handleHideToday}
+                  className="text-xs text-[#64748B] hover:text-[#1F2937] font-medium underline"
+                >
+                  오늘 하루 보지 않기
+                </button>
+
+                <button
+                  onClick={handleClosePopup}
+                  className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 공지 목록 */}
 
