@@ -13,7 +13,10 @@ import {
   MapPin, 
   Users,
   Clock,
-  Bell
+  Bell,
+  AlertCircle,
+  HelpCircle,
+  CheckCircle2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Education, EducationRecord } from '@/lib/types';
@@ -58,6 +61,39 @@ export default function EducationManagement({
   
   // 탭 상태 ('education' | 'event')
   const [activeTab, setActiveTab] = useState<'education' | 'event'>('education');
+
+  // 커스텀 알림(Alert / Confirm) 상태 관리
+  const [alertDialog, setAlertDialog] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    type: 'info' | 'error' | 'success';
+  }>({
+    show: false,
+    title: '',
+    message: '',
+    type: 'info',
+  });
+
+  const [confirmDialog, setConfirmDialog] = useState<{
+    show: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    show: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
+
+  const showAlert = (message: string, title = '안내', type: 'info' | 'error' | 'success' = 'info') => {
+    setAlertDialog({ show: true, title, message, type });
+  };
+
+  const showConfirm = (message: string, onConfirm: () => void, title = '확인 요청') => {
+    setConfirmDialog({ show: true, title, message, onConfirm });
+  };
 
   // 교육 관련 모달 상태
   const [showEduModal, setShowEduModal] = useState(false);
@@ -157,7 +193,7 @@ export default function EducationManagement({
 
   // 교육 등록/수정 핸들러
   const handleOpenEduCreate = (dateStr?: string) => {
-    if (!isAdmin) return alert('관리자만 교육을 등록할 수 있습니다.');
+    if (!isAdmin) return showAlert('관리자만 교육을 등록할 수 있습니다.', '권한 없음', 'error');
     setEditingEdu(null);
     setEduTitle('');
     setEduDate(dateStr || getLocalDateString());
@@ -170,7 +206,7 @@ export default function EducationManagement({
 
   const handleOpenEduEdit = (edu: Education, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!isAdmin) return alert('관리자만 교육을 수정할 수 있습니다.');
+    if (!isAdmin) return showAlert('관리자만 교육을 수정할 수 있습니다.', '권한 없음', 'error');
     setEditingEdu(edu);
     setEduTitle(edu.title);
     setEduDate(edu.edu_date);
@@ -181,28 +217,29 @@ export default function EducationManagement({
     setShowEduModal(true);
   };
 
-  const handleDeleteEdu = async (id: number | string, e?: React.MouseEvent) => {
+  const handleDeleteEdu = (id: number | string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!isAdmin) return alert('삭제 권한이 없습니다.');
-    if (!window.confirm('정말 이 교육 항목을 삭제하시겠습니까?')) return;
+    if (!isAdmin) return showAlert('삭제 권한이 없습니다.', '권한 없음', 'error');
 
-    try {
-      const { error } = await supabase.from('educations').delete().eq('id', id);
-      if (error) throw error;
+    showConfirm('정말 이 교육 항목을 삭제하시겠습니까?', async () => {
+      try {
+        const { error } = await supabase.from('educations').delete().eq('id', id);
+        if (error) throw error;
 
-      alert('성공적으로 삭제되었습니다.');
-      setShowEduModal(false);
-      setSelectedEduForDetail(null);
-      fetchEducations();
-    } catch (err: any) {
-      alert(`삭제 실패: ${err?.message || '오류가 발생했습니다.'}`);
-    }
+        showAlert('성공적으로 삭제되었습니다.', '삭제 완료', 'success');
+        setShowEduModal(false);
+        setSelectedEduForDetail(null);
+        fetchEducations();
+      } catch (err: any) {
+        showAlert(`삭제 실패: ${err?.message || '오류가 발생했습니다.'}`, '오류 발생', 'error');
+      }
+    }, '교육 일정 삭제');
   };
 
   const handleSubmitEdu = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isAdmin) return alert('등록/수정 권한이 없습니다.');
-    if (!eduTitle.trim()) return alert('교육명을 입력해주세요.');
+    if (!isAdmin) return showAlert('등록/수정 권한이 없습니다.', '권한 없음', 'error');
+    if (!eduTitle.trim()) return showAlert('교육명을 입력해주세요.', '입력 항목 누락', 'error');
 
     try {
       const basePayload: any = {
@@ -219,24 +256,24 @@ export default function EducationManagement({
           const { error: retryError } = await supabase.from('educations').update(basePayload).eq('id', editingEdu.id);
           if (retryError) throw retryError;
         }
-        alert('교육 일정이 수정되었습니다.');
+        showAlert('교육 일정이 수정되었습니다.', '수정 완료', 'success');
       } else {
         let { error } = await supabase.from('educations').insert([{ ...basePayload, edu_date: eduDate }]);
         if (error) {
           const { error: retryError } = await supabase.from('educations').insert([basePayload]);
           if (retryError) throw retryError;
         }
-        alert('신규 교육 일정이 등록되었습니다.');
+        showAlert('신규 교육 일정이 등록되었습니다.', '등록 완료', 'success');
       }
 
       setShowEduModal(false);
       fetchEducations();
     } catch (err: any) {
-      alert('교육 저장 실패: ' + (err?.message || '오류가 발생했습니다.'));
+      showAlert('교육 저장 실패: ' + (err?.message || '오류가 발생했습니다.'), '저장 오류', 'error');
     }
   };
 
-  // EVENT 등록/수정 핸들러 (관리자 또는 일반 사용자 허용 여부에 따라 조절 가능, 여기서는 교육과 동일하게 관리자 혹은 자유 등록 가능)
+  // EVENT 등록/수정 핸들러
   const handleOpenEventCreate = (dateStr?: string) => {
     setEditingEvent(null);
     setEventTitle('');
@@ -258,26 +295,27 @@ export default function EducationManagement({
     setShowEventModal(true);
   };
 
-  const handleDeleteEvent = async (id: number, e?: React.MouseEvent) => {
+  const handleDeleteEvent = (id: number, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
-    if (!window.confirm('정말 이 EVENT를 삭제하시겠습니까?')) return;
 
-    try {
-      const { error } = await supabase.from('events').delete().eq('id', id);
-      if (error) throw error;
+    showConfirm('정말 이 EVENT를 삭제하시겠습니까?', async () => {
+      try {
+        const { error } = await supabase.from('events').delete().eq('id', id);
+        if (error) throw error;
 
-      alert('EVENT가 삭제되었습니다.');
-      setShowEventModal(false);
-      setSelectedEventForDetail(null);
-      fetchEvents();
-    } catch (err: any) {
-      alert(`EVENT 삭제 실패: ${err?.message || '오류가 발생했습니다.'}`);
-    }
+        showAlert('EVENT가 삭제되었습니다.', '삭제 완료', 'success');
+        setShowEventModal(false);
+        setSelectedEventForDetail(null);
+        fetchEvents();
+      } catch (err: any) {
+        showAlert(`EVENT 삭제 실패: ${err?.message || '오류가 발생했습니다.'}`, '오류 발생', 'error');
+      }
+    }, 'EVENT 삭제');
   };
 
   const handleSubmitEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!eventTitle.trim()) return alert('EVENT 제목을 입력해주세요.');
+    if (!eventTitle.trim()) return showAlert('EVENT 제목을 입력해주세요.', '입력 항목 누락', 'error');
 
     try {
       const payload = {
@@ -292,17 +330,17 @@ export default function EducationManagement({
       if (editingEvent) {
         const { error } = await supabase.from('events').update(payload).eq('id', editingEvent.id);
         if (error) throw error;
-        alert('EVENT가 수정되었습니다.');
+        showAlert('EVENT가 수정되었습니다.', '수정 완료', 'success');
       } else {
         const { error } = await supabase.from('events').insert([payload]);
         if (error) throw error;
-        alert('신규 EVENT가 등록되었습니다.');
+        showAlert('신규 EVENT가 등록되었습니다.', '등록 완료', 'success');
       }
 
       setShowEventModal(false);
       fetchEvents();
     } catch (err: any) {
-      alert('EVENT 저장 실패: ' + (err?.message || '오류가 발생했습니다.'));
+      showAlert('EVENT 저장 실패: ' + (err?.message || '오류가 발생했습니다.'), '저장 오류', 'error');
     }
   };
 
@@ -408,7 +446,7 @@ export default function EducationManagement({
         <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-12 text-xs text-[#64748B]">일정을 불러오는 중...</div>
       ) : (
         <>
-          {/* 달력 뷰 (교육과 이벤트가 색상으로 구분되어 표시됨) */}
+          {/* 달력 뷰 */}
           <div className="bg-white rounded-xl border border-[#E2E5E9] overflow-hidden shadow-xs">
             <div className="grid grid-cols-7 bg-[#F5F6F8] border-b border-[#E2E5E9] text-center py-2.5 text-xs font-bold text-[#64748B]">
               <div className="text-red-600">일</div>
@@ -446,7 +484,6 @@ export default function EducationManagement({
                           {day}
                         </span>
                         
-                        {/* 날짜 칸에서 바로 교육 또는 이벤트 추가 버튼 */}
                         <div className="flex items-center space-x-1">
                           {activeTab === 'education' && isAdmin && (
                             <button
@@ -469,7 +506,6 @@ export default function EducationManagement({
                         </div>
                       </div>
 
-                      {/* 일정 목록 (교육: 남색 계열, 이벤트: 청록색 계열로 구분) */}
                       <div className="space-y-1 max-h-[85px] overflow-y-auto">
                         {dayEdus.map(edu => (
                           <div
@@ -499,7 +535,7 @@ export default function EducationManagement({
             </div>
           </div>
 
-          {/* 하단 목록 영역 (선택된 탭에 따라 교육 또는 이벤트 목록 표시) */}
+          {/* 하단 목록 영역 */}
           {activeTab === 'education' ? (
             <div className="mt-6 space-y-3">
               <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center gap-1.5">
@@ -611,6 +647,57 @@ export default function EducationManagement({
             </div>
           )}
         </>
+      )}
+
+      {/* 🔔 [스타일 공통] 커스텀 Alert 모달 */}
+      {alertDialog.show && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-sm w-full p-5 shadow-xl relative text-[#1F2937]">
+            <div className="flex items-center space-x-2 mb-2">
+              {alertDialog.type === 'error' && <AlertCircle className="h-5 w-5 text-[#DC2626]" />}
+              {alertDialog.type === 'success' && <CheckCircle2 className="h-5 w-5 text-[#0D9488]" />}
+              {alertDialog.type === 'info' && <Bell className="h-5 w-5 text-[#243B5A]" />}
+              <h3 className="text-xs font-bold text-[#1F2937]">{alertDialog.title}</h3>
+            </div>
+            <p className="text-xs text-[#64748B] my-3 leading-relaxed">{alertDialog.message}</p>
+            <button
+              onClick={() => setAlertDialog(prev => ({ ...prev, show: false }))}
+              className="w-full py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition shadow-2xs"
+            >
+              확인
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ❓ [스타일 공통] 커스텀 Confirm 모달 */}
+      {confirmDialog.show && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-sm w-full p-5 shadow-xl relative text-[#1F2937]">
+            <div className="flex items-center space-x-2 mb-2">
+              <HelpCircle className="h-5 w-5 text-[#243B5A]" />
+              <h3 className="text-xs font-bold text-[#1F2937]">{confirmDialog.title}</h3>
+            </div>
+            <p className="text-xs text-[#64748B] my-3 leading-relaxed">{confirmDialog.message}</p>
+            <div className="flex justify-end space-x-2 pt-2">
+              <button
+                onClick={() => setConfirmDialog(prev => ({ ...prev, show: false }))}
+                className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] hover:bg-slate-50 text-[#1F2937] rounded-lg text-xs font-medium transition"
+              >
+                취소
+              </button>
+              <button
+                onClick={() => {
+                  confirmDialog.onConfirm();
+                  setConfirmDialog(prev => ({ ...prev, show: false }));
+                }}
+                className="px-3.5 py-1.5 bg-[#DC2626] hover:bg-[#b91c1c] text-white rounded-lg text-xs font-semibold transition"
+              >
+                삭제하기
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 접속자 교육 당일 배정 알림 팝업 모달 */}
