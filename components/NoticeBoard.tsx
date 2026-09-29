@@ -65,7 +65,7 @@ export default function NoticeBoard({
   const [popupNotice, setPopupNotice] = useState<NoticeItem | null>(null);
   const [showPopupModal, setShowPopupModal] = useState(false);
 
-  // 읽지 않은 신규 공지 존재 여부 (종 모양 버튼 색상 제어용)
+  // 읽지 않은 신규 공지 존재 여부 (모바일 종 모양 버튼 색상 제어용)
   const [hasUnreadNotice, setHasUnreadNotice] = useState(false);
 
   const fetchNotices = async () => {
@@ -94,17 +94,17 @@ export default function NoticeBoard({
 
       setNotices(fetchedNotices);
 
-      // 사용자 고유 식별자 (없을 경우 기본값 적용)
+      // 사용자 고유 식별자
       const userKey = currentUser?.id || currentUser?.email || currentUser?.name || 'guest';
 
-      // 3, 4, 5번: 모든 공지 중 하나라도 읽지 않은 것이 있는지 체크
+      // 읽지 않은 공지가 하나라도 있는지 체크
       const unreadExists = fetchedNotices.some((notice) => {
         const isRead = localStorage.getItem(`notice_read_${userKey}_${notice.id}`);
         return !isRead;
       });
       setHasUnreadNotice(unreadExists);
 
-      // 1번: 중요 공지(상단 고정) 팝업 처리 (오늘 하루 보지 않기 체크 확인)
+      // 중요 공지(상단 고정) 팝업 처리 (오늘 하루 보지 않기 체크 확인)
       const pinnedNotices = fetchedNotices.filter((n) => n.is_pinned);
       if (pinnedNotices.length > 0) {
         const targetNotice = pinnedNotices[0];
@@ -136,7 +136,6 @@ export default function NoticeBoard({
       const userKey = currentUser?.id || currentUser?.email || currentUser?.name || 'guest';
       localStorage.setItem(`notice_read_${userKey}_${popupNotice.id}`, 'true');
       
-      // 읽음 처리 후 안 읽은 공지 여부 재확인
       const unreadExists = notices.some((notice) => {
         const isRead = localStorage.getItem(`notice_read_${userKey}_${notice.id}`);
         return !isRead;
@@ -166,7 +165,7 @@ export default function NoticeBoard({
     const userKey = currentUser?.id || currentUser?.email || currentUser?.name || 'guest';
     localStorage.setItem(`notice_read_${userKey}_${notice.id}`, 'true');
 
-    // 읽음 처리 후 종 모양 버튼 색상 업데이트
+    // 읽음 처리 후 종 모양 버튼 색상 업데이트 (남은 안 읽은 공지 확인)
     const unreadExists = notices.some((n) => {
       if (n.id === notice.id) return false;
       const isRead = localStorage.getItem(`notice_read_${userKey}_${n.id}`);
@@ -318,7 +317,7 @@ export default function NoticeBoard({
   return (
     <div className="w-full text-[#1F2937] p-4 sm:p-6 space-y-4 font-sans border-box">
 
-      {/* 상단 제목 영역 및 2~5번 모바일 종 모양 버튼 추가 */}
+      {/* 상단 제목 영역 */}
 
       <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
 
@@ -340,7 +339,7 @@ export default function NoticeBoard({
             </div>
           </div>
 
-          {/* 2, 3, 4, 5번: 모바일 기기 접속 시 로그인 계정 옆에 표시되는 종 모양 버튼 (신규글 여부에 따라 색상 변경) */}
+          {/* 모바일 전용 종 모양 버튼 (신규 공지 유무에 따라 빨간색 / 옅은 파란색 전환) */}
           <div className="sm:hidden flex items-center">
             <button
               onClick={() => {
@@ -351,7 +350,7 @@ export default function NoticeBoard({
               className={`p-2 rounded-full border transition ${
                 hasUnreadNotice
                   ? 'bg-red-50 text-red-600 border-red-200'
-                  : 'bg-blue-50 text-blue-400 border-blue-200'
+                  : 'bg-sky-50 text-sky-400 border-sky-200'
               }`}
               title={hasUnreadNotice ? '읽지 않은 새 공지가 있습니다.' : '모든 공지를 확인했습니다.'}
             >
