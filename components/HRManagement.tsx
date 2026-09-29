@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { OrgChart } from 'd3-org-chart';
-import { 
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
+import {
   Users, 
   Building2, 
   Briefcase, 
