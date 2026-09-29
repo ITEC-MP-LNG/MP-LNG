@@ -405,8 +405,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             <tr className="bg-[#F5F6F8] border-b border-[#E2E5E9] text-[#64748B] font-semibold">
               <th className="py-3 px-4">호선 번호</th>
               <th className="py-3 px-4">선종 및 프로젝트명</th>
-              <th className="py-3 px-4">건조 위치</th>
-              <th className="py-3 px-4">시운전 진행 단계 현황</th>
+              <th className="py-3 px-4">호선 위치</th>
+              <th className="py-3 px-4">진행 단계 현황</th>
               <th className="py-3 px-4">인도 예정일</th>
               <th className="py-3 px-4">근무자 (주간 / 야간)</th>
               {isAdmin && <th className="py-3 px-4 text-right">관리</th>}
@@ -741,7 +741,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                    건조 위치/도크
+                    호선 위치
                   </label>
                   <input
                     type="text"
