@@ -1,22 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { 
-  ReactFlow, 
-  MiniMap, 
-  Controls, 
-  Background, 
-  useNodesState, 
-  useEdgesState,
-  addEdge,
-  type Node,
-  type Edge
-} from '@xyflow/react';
-import '@xyflow/react/dist/style.css';
-import dagre from '@dagrejs/dagre';
+import { useState, useEffect, useRef } from 'react';
+import { OrgChart } from 'd3-org-chart';
 import * as XLSX from 'xlsx';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 import { 
   Users, 
   Building2, 
@@ -35,11 +21,7 @@ import {
   AtSign,
   Network, 
   GitCommit,
-  Save,
-  RotateCcw,
-  Link2,
   FileSpreadsheet,
-  FileText,
   Shield
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -120,50 +102,6 @@ function calculateAge(birthStr?: string) {
   return isNaN(age) ? null : age;
 }
 
-const nodeWidth = 220;
-const nodeHeight = 70;
-
-const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
-  const dagreGraph = new dagre.graphlib.Graph();
-  dagreGraph.setDefaultEdgeLabel(() => ({}));
-  dagreGraph.setGraph({
-    rankdir: direction,
-    nodesep: 60,
-    ranksep: 100,
-    marginx: 40,
-    marginy: 40,
-  });
-
-  nodes.forEach((node) => {
-    dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
-  });
-
-  edges.forEach((edge) => {
-    dagreGraph.setEdge(edge.source, edge.target);
-  });
-
-  dagre.layout(dagreGraph);
-
-  const newNodes = nodes.map((node) => {
-    const nodeWithPosition = dagreGraph.node(node.id);
-    if (!nodeWithPosition || typeof nodeWithPosition.x !== 'number' || typeof nodeWithPosition.y !== 'number') {
-      return {
-        ...node,
-        position: { x: node.position?.x || 0, y: node.position?.y || 0 },
-      };
-    }
-    return {
-      ...node,
-      position: {
-        x: nodeWithPosition.x - nodeWidth / 2,
-        y: nodeWithPosition.y - nodeHeight / 2,
-      },
-    };
-  });
-
-  return { nodes: newNodes, edges };
-};
-
 const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
 
 const RANK_ORDER: Record<string, number> = {
@@ -199,10 +137,9 @@ export default function HRManagement({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [detailUser, setDetailUser] = useState<HRUser | null>(null);
   const [selectedUser, setSelectedUser] = useState<HRUser | null>(null);
-  const [isSavingPositions, setIsSavingPositions] = useState(false);
 
-  const [selectedFlowNodes, setSelectedFlowNodes] = useState<any[]>([]);
-  const dagreContainerRef = useRef<HTMLDivElement>(null);
+  const d3ContainerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<any>(null);
   
   const [formData, setFormData] = useState({
     inputId: '', 
@@ -223,14 +160,6 @@ export default function HRManagement({
     birthDate: '' 
   });
 
-  const [flowNodes, setFlowNodes, onNodesChange] = useNodesState<Node>([]);
-  const [flowEdges, setFlowEdges, onEdgesChange] = useEdgesState<Edge>([]);
-
-  const onConnect = useCallback(
-    (params: any) => setFlowEdges((eds) => addEdge({ ...params, type: 'smoothstep', style: { stroke: '#4f46e5', strokeWidth: 2 } }, eds)),
-    [setFlowEdges]
-  );
-
   const handleExportExcel = () => {
     const formattedData = filteredUsers.map(item => ({
       '아이디': item.id,
@@ -239,9 +168,7 @@ export default function HRManagement({
       '직급': item.position || '',
       '직책': item.job_title || '',
       '분야': item.field || '',
-      '연락처': item.phone || '',
       '주소': item.address || '',
-      '나이': calculateAge(item.password) ? `${calculateAge(item.password)}세` : '',
       '자사근속': calculateCareerDetails(item.join_date) || '',
       '총경력': calculateCareerDetails(item.career_start_date) || '',
       '사내자격': item.internal_certificates || '',
@@ -251,129 +178,16 @@ export default function HRManagement({
     }));
 
     const worksheet = XLSX.utils.json_to_sheet(formattedData);
+    // 컬럼 넓이 재조정 (연락처, 나이 제외 반영)
     worksheet['!cols'] = [
       { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
-      { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 8 }, { wch: 12 }, { wch: 12 },
+      { wch: 12 }, { wch: 20 }, { wch: 12 }, { wch: 12 },
       { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
     ];
 
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, '인사관리목록');
     XLSX.writeFile(workbook, `인사관리목록_${new Date().toISOString().slice(0, 10)}.xlsx`);
-  };
-
-  const handleExportPDF = async () => {
-    const element = dagreContainerRef.current;
-    if (!element) return;
-
-    try {
-      element.classList.add('pdf-export-mode');
-
-      const canvas = await html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        allowTaint: true,
-        backgroundColor: '#F8FAFC',
-        logging: false,
-        width: element.scrollWidth,
-        height: element.scrollHeight,
-        windowWidth: element.scrollWidth,
-        windowHeight: element.scrollHeight,
-        onclone: (clonedDoc) => {
-          const allElements = clonedDoc.querySelectorAll('*');
-          allElements.forEach((el) => {
-            const htmlEl = el as HTMLElement;
-            const computedStyle = window.getComputedStyle(htmlEl);
-
-            if (computedStyle.backgroundColor.includes('lab') || computedStyle.backgroundColor.includes('oklch')) {
-              htmlEl.style.backgroundColor = computedStyle.backgroundColor;
-            }
-            if (computedStyle.color.includes('lab') || computedStyle.color.includes('oklch')) {
-              htmlEl.style.color = computedStyle.color;
-            }
-            if (computedStyle.borderColor.includes('lab') || computedStyle.borderColor.includes('oklch')) {
-              htmlEl.style.borderColor = computedStyle.borderColor;
-            }
-          });
-        },
-        ignoreElements: (el) => {
-          if (
-            el.classList.contains('react-flow__controls') || 
-            el.classList.contains('react-flow__minimap') ||
-            el.classList.contains('react-flow__panel')
-          ) {
-            return true;
-          }
-          return false;
-        }
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-
-      const isLandscape = canvas.width > canvas.height;
-      const pdf = new jsPDF({
-        orientation: isLandscape ? 'landscape' : 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 10;
-      const availableWidth = pageWidth - margin * 2;
-      const availableHeight = pageHeight - margin * 2;
-
-      const canvasAspect = canvas.width / canvas.height;
-      const pageAspect = availableWidth / availableHeight;
-
-      let imgWidth: number;
-      let imgHeight: number;
-
-      if (canvasAspect > pageAspect) {
-        imgWidth = availableWidth;
-        imgHeight = availableWidth / canvasAspect;
-      } else {
-        imgHeight = availableHeight;
-        imgWidth = availableHeight * canvasAspect;
-      }
-
-      const offsetX = margin + (availableWidth - imgWidth) / 2;
-      const offsetY = margin + (availableHeight - imgHeight) / 2;
-
-      pdf.addImage(imgData, 'PNG', offsetX, offsetY, imgWidth, imgHeight);
-      pdf.save(`조직도_이름직급경력_${new Date().toISOString().slice(0, 10)}.pdf`);
-    } catch (err: any) {
-      console.error('PDF 내보내기 실패:', err);
-      alert(`PDF 내보내기 중 오류가 발생했습니다: ${err?.message || '알 수 없는 오류'}`);
-    } finally {
-      element.classList.remove('pdf-export-mode');
-    }
-  };
-
-  const handleBatchConnect = () => {
-    if (selectedFlowNodes.length < 2) {
-      alert('2개 이상의 구성원을 선택해주세요. (Shift 키를 누르고 여러 명을 클릭하거나 드래그하세요)');
-      return;
-    }
-
-    const parentNode = selectedFlowNodes[0];
-    const childNodes = selectedFlowNodes.slice(1);
-
-    const newEdges = childNodes.map(child => ({
-      id: `edge_${parentNode.id}_${child.id}_${Date.now()}`,
-      source: parentNode.id,
-      target: child.id,
-      type: 'smoothstep',
-      style: { stroke: '#4f46e5', strokeWidth: 2 }
-    }));
-
-    setFlowEdges((eds) => {
-      const existingPairs = new Set(eds.map(e => `${e.source}-${e.target}`));
-      const filtered = newEdges.filter(e => !existingPairs.has(`${e.source}-${e.target}`));
-      return [...eds, ...filtered];
-    });
-
-    alert(`[${parentNode.id}] 번 노드를 기준으로 선택한 ${childNodes.length}명의 구성원에게 선이 일괄 연결되었습니다!`);
   };
 
   const myRole = currentUserRole || currentUser?.role || '';
@@ -398,88 +212,108 @@ export default function HRManagement({
     setSelectedSubCategory('ALL');
   }, [subGroupType]);
 
-  const buildFlowData = (userList: HRUser[], forceAutoLayout = false) => {
-    const initialNodes: any[] = [];
-    const initialEdges: any[] = [];
+  const buildHierarchy = (userList: HRUser[]) => {
+    const data: any[] = [];
+    data.push({ id: 'root', parentId: '', name: '조직도', type: 'root' });
 
-    userList.forEach((u, idx) => {
-      const uId = `user_${u.id}_${idx}`;
-      const uAge = calculateAge(u.password);
-      const isLeader = u.job_title === '팀장';
-      const isHead = u.job_title === '본부장' || (u.position && u.position.includes('본부장'));
-      
-      const careerText = calculateCareerDetails(u.join_date) || calculateCareerDetails(u.career_start_date) || '경력 정보 없음';
+    const rawDepts = Array.from(new Set(userList.map((u) => u.department || '미지정 파트')));
+    const sortedDepts = rawDepts.sort((a, b) => {
+      const indexA = DEPT_ORDER.indexOf(a);
+      const indexB = DEPT_ORDER.indexOf(b);
+      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+      if (indexA !== -1) return -1;
+      if (indexB !== -1) return 1;
+      return a.localeCompare(b);
+    });
 
-      initialNodes.push({
-        id: uId,
-        type: 'default',
-        position: { x: 0, y: 0 },
-        data: {
-          label: (
-            <div onClick={() => setDetailUser(u)} className="p-2 text-left cursor-pointer select-none">
-              <div className="org-node-normal">
-                <div className="font-bold text-xs text-[#1F2937] flex items-center justify-between">
-                  <span>{isHead ? '🏛️' : isLeader ? '👑' : '👤'} {u.name} {uAge ? `(${uAge}세)` : ''}</span>
-                  <span className={`text-[9px] px-1 rounded ${isHead ? 'bg-[#243B5A] text-white' : isLeader ? 'bg-indigo-900 text-white' : 'bg-slate-200 text-slate-700'}`}>
-                    {u.department || '미지정'} {u.position || ''}
-                  </span>
-                </div>
-                <div className="text-[10px] text-[#64748B] mt-0.5">{u.job_title || '팀원'} {u.phone ? `· ${u.phone}` : ''}</div>
-              </div>
+    sortedDepts.forEach((dept) => {
+      data.push({ id: `dept_${dept}`, parentId: 'root', name: dept, type: 'department' });
+    });
 
-              <div className="org-node-pdf-only hidden">
-                <div className="font-bold text-xs text-[#1F2937] flex items-center justify-between">
-                  <span>{u.name}</span>
-                  <span className="text-[10px] bg-slate-200 text-slate-800 px-1 rounded">{u.position || '사원'}</span>
-                </div>
-                <div className="text-[10px] text-[#243B5A] font-medium mt-1">경력: {careerText}</div>
-              </div>
-            </div>
-          ),
-          userId: u.id
-        },
-        style: { 
-          background: isHead ? '#243B5A' : isLeader ? '#ffffff' : '#f8fafc', 
-          color: isHead ? '#fff' : '#1F2937',
-          border: isHead ? '2px solid #1d3049' : isLeader ? '2px solid #4f46e5' : '1px solid #cbd5e1', 
-          borderRadius: '10px', 
-          width: nodeWidth, 
-          height: nodeHeight 
+    const leaderMap: Record<string, string> = {};
+    userList.forEach((u) => {
+      if (u.job_title === '본부장' || u.job_title === '소장' || u.job_title === '팀장') {
+        if (!leaderMap[u.department || '미지정 파트']) {
+          leaderMap[u.department || '미지정 파트'] = u.id;
         }
+      }
+    });
+
+    userList.forEach((u) => {
+      const deptId = `dept_${u.department || '미지정 파트'}`;
+      let parentId = deptId;
+      const isLeader = u.job_title === '본부장' || u.job_title === '소장' || u.job_title === '팀장';
+
+      if (!isLeader && leaderMap[u.department || '미지정 파트']) {
+        parentId = leaderMap[u.department || '미지정 파트'];
+      }
+
+      data.push({
+        id: u.id,
+        parentId: parentId,
+        name: u.name,
+        position: u.position,
+        job_title: u.job_title,
+        department: u.department,
+        type: 'user',
+        data: u,
       });
     });
 
-    if (forceAutoLayout) {
-      const layouted = getLayoutedElements(initialNodes, initialEdges, 'TB');
-      setFlowNodes([...layouted.nodes]);
-      setFlowEdges([...layouted.edges]);
-    } else {
-      const nodesWithSavedPos = initialNodes.map(node => {
-        const foundUser = userList.find(u => u.id === node.data?.userId);
-        if (foundUser && typeof foundUser.pos_x === 'number' && typeof foundUser.pos_y === 'number') {
-          return {
-            ...node,
-            position: { x: foundUser.pos_x, y: foundUser.pos_y }
-          };
-        }
-        return node;
-      });
-
-      const hasAnySavedPos = userList.some(u => typeof u.pos_x === 'number' && typeof u.pos_y === 'number');
-      if (!hasAnySavedPos) {
-        const layouted = getLayoutedElements(initialNodes, initialEdges, 'TB');
-        setFlowNodes([...layouted.nodes]);
-        setFlowEdges([...layouted.edges]);
-      } else {
-        setFlowNodes(nodesWithSavedPos);
-        setFlowEdges(initialEdges);
-      }
-    }
+    return data;
   };
 
   useEffect(() => {
-    if (activeTab === 'DAGRE' && users.length > 0) {
-      buildFlowData(users, false);
+    if (activeTab === 'DAGRE' && d3ContainerRef.current && users.length > 0) {
+      if (!chartRef.current) {
+        chartRef.current = new OrgChart();
+      }
+      
+      const chartData = buildHierarchy(users);
+
+      chartRef.current
+        .container(d3ContainerRef.current)
+        .data(chartData)
+        .nodeHeight((d: any) => d.data.type === 'user' ? 85 : 45)
+        .nodeWidth((d: any) => 220)
+        .childrenMargin((d: any) => 50)
+        .compactMarginBetween((d: any) => 25)
+        .compactMarginPair((d: any) => 25)
+        .nodeContent((d: any) => {
+          if (d.data.type === 'root') {
+            return `
+              <div style="background-color: #1F2937; color: white; border-radius: 8px; border: 2px solid #111827; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                ${d.data.name}
+              </div>`;
+          }
+          if (d.data.type === 'department') {
+            return `
+              <div style="background-color: #243B5A; color: white; border-radius: 8px; border: 2px solid #1e293b; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                ${d.data.name} 파트
+              </div>`;
+          }
+
+          const user = d.data.data;
+          const isLeader = user.job_title === '본부장' || user.job_title === '소장' || user.job_title === '팀장';
+          const bgColor = isLeader ? '#ffffff' : '#f8fafc';
+          const borderColor = isLeader ? '#4f46e5' : '#cbd5e1';
+          const borderWidth = isLeader ? '2px' : '1px';
+
+          return `
+            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 12px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+              <div style="font-size: 13px; font-weight: bold; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
+                <span>${isLeader ? '👑' : '👤'} ${user.name}</span>
+                <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isLeader ? '#e0e7ff' : '#e2e8f0'}; color: ${isLeader ? '#4f46e5' : '#475569'};">${user.position || ''}</span>
+              </div>
+              <div style="font-size: 10px; color: #64748b; margin-top: 8px;">
+                ${user.job_title || '팀원'} ${user.field ? `· ${user.field}` : ''}
+              </div>
+            </div>
+          `;
+        })
+        .render();
+
+      chartRef.current.expandAll();
     }
   }, [activeTab, users]);
 
@@ -503,44 +337,6 @@ export default function HRManagement({
       console.error('인사 정보 조회 실패:', err?.message || err);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleSaveNodePositions = async () => {
-    if (!isAdmin) {
-      alert('관리자 권한이 필요합니다.');
-      return;
-    }
-
-    setIsSavingPositions(true);
-    try {
-      const updates = flowNodes
-        .filter((node: any) => node.data?.userId)
-        .map(async (node: any) => {
-          const userId = node.data.userId;
-          const posX = Math.round(node.position.x);
-          const posY = Math.round(node.position.y);
-
-          return supabase
-            .from('app_users')
-            .update({ pos_x: posX, pos_y: posY })
-            .eq('id', userId);
-        });
-
-      await Promise.all(updates);
-      alert('조직도 배치 위치가 성공적으로 저장되었습니다!');
-      fetchUsers();
-    } catch (err: any) {
-      console.error('위치 저장 실패:', err);
-      alert('위치 저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
-    } finally {
-      setIsSavingPositions(false);
-    }
-  };
-
-  const handleResetAutoLayout = () => {
-    if (window.confirm('조직도를 기본 자동 정렬 상태로 되돌리시겠습니까? (저장된 커스텀 위치가 초기화됩니다)')) {
-      buildFlowData(users, true);
     }
   };
 
@@ -763,15 +559,6 @@ export default function HRManagement({
 
   return (
     <div className="w-full min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-3 space-y-3 font-sans box-border">
-      <style>{`
-        .pdf-export-mode .org-node-normal {
-          display: none !important;
-        }
-        .pdf-export-mode .org-node-pdf-only {
-          display: block !important;
-        }
-      `}</style>
-
       <div className="bg-white p-3 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
@@ -822,7 +609,7 @@ export default function HRManagement({
             </button>
           </div>
 
-          {activeTab === 'LIST' && (
+          {(activeTab === 'LIST' || activeTab === 'DAGRE') && (
             <button
               onClick={handleExportExcel}
               className="flex items-center space-x-1 bg-[#16A34A] hover:bg-[#15803d] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
@@ -830,17 +617,6 @@ export default function HRManagement({
             >
               <FileSpreadsheet className="h-3.5 w-3.5" />
               <span>엑셀 저장</span>
-            </button>
-          )}
-
-          {activeTab === 'DAGRE' && (
-            <button
-              onClick={handleExportPDF}
-              className="flex items-center space-x-1 bg-[#DC2626] hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-              title="인터랙티브 조직도를 고해상도 PDF로 저장합니다"
-            >
-              <FileText className="h-3.5 w-3.5" />
-              <span>PDF 저장</span>
             </button>
           )}
 
@@ -951,73 +727,33 @@ export default function HRManagement({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-1.5 font-bold text-[#64748B]">
               <Layers className="h-3.5 w-3.5 text-[#243B5A]" />
-              <span>인터랙티브 조직도 (Shift + 클릭 또는 드래그로 다중 선택하여 일괄 연결 가능)</span>
+              <span>인터랙티브 조직도</span>
             </div>
             
             <div className="flex items-center space-x-2">
               <button
-                onClick={handleResetAutoLayout}
+                onClick={() => chartRef.current?.fit()}
                 className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
-                title="기본 자동 정렬 상태로 되돌립니다"
+                title="조직도를 화면 중앙에 맞춥니다"
               >
-                <RotateCcw className="h-3 w-3" /> 자동 정렬 초기화
+                화면 맞춤
               </button>
-              
-              {isAdmin && (
-                <button
-                  onClick={handleSaveNodePositions}
-                  disabled={isSavingPositions}
-                  className="flex items-center gap-1 px-3 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white font-bold rounded-lg transition shadow-xs disabled:opacity-50 text-[11px]"
-                >
-                  <Save className="h-3 w-3" /> {isSavingPositions ? '저장 중...' : '조직도 위치 저장'}
-                </button>
-              )}
+              <button
+                onClick={() => chartRef.current?.expandAll()}
+                className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
+              >
+                모두 펴기
+              </button>
+              <button
+                onClick={() => chartRef.current?.collapseAll()}
+                className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
+              >
+                모두 접기
+              </button>
             </div>
           </div>
 
-          <div ref={dagreContainerRef} className="w-full h-[780px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
-            <ReactFlow
-              nodes={flowNodes}
-              edges={flowEdges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onSelectionChange={({ nodes }) => setSelectedFlowNodes(nodes)}
-              onNodeDragStop={(event, node) => {
-                setFlowNodes((nds: Node[]) =>
-                  nds.map((n) => (n.id === node.id ? { ...n, position: node.position } : n))
-                );
-              }}
-              fitView
-              fitViewOptions={{ padding: 0.2, minZoom: 0.5, maxZoom: 1.2 }}
-              minZoom={0.1}
-              maxZoom={3}
-              defaultEdgeOptions={{ type: 'smoothstep', style: { stroke: '#4f46e5', strokeWidth: 2 } }}
-            >
-              <Controls showInteractive={true} />
-              <MiniMap style={{ height: 120 }} zoomable pannable />
-              <Background gap={16} size={1} color="#e2e8f0" />
-            </ReactFlow>
-
-            {selectedFlowNodes.length > 0 && (
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#243B5A] text-white px-4 py-2 rounded-xl shadow-xl flex items-center space-x-3 text-xs border border-white/20 animate-fade-in">
-                <span className="font-semibold">
-                  선택됨: <span className="text-yellow-300 font-bold">{selectedFlowNodes.length}명</span>
-                </span>
-                <button
-                  onClick={handleBatchConnect}
-                  className="bg-white text-[#243B5A] px-2.5 py-1 rounded-lg font-bold hover:bg-slate-100 transition flex items-center gap-1 shadow-xs text-[11px]"
-                >
-                  <Link2 className="h-3 w-3" /> 첫 번째 선택자에 일괄 선 연결
-                </button>
-                <button
-                  onClick={() => setSelectedFlowNodes([])}
-                  className="text-slate-300 hover:text-white px-1 font-medium text-[11px]"
-                >
-                  선택 해제
-                </button>
-              </div>
-            )}
+          <div ref={d3ContainerRef} className="w-full h-[780px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
           </div>
         </div>
       ) : activeTab === 'ORG' ? (
