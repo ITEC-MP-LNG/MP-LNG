@@ -136,7 +136,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     category: '',
   });
 
-  // 개별 인원 목록 관리 (1명씩 추가 + Team 반영)
+  // 개별 인원 목록 관리
   const [assignedList, setAssignedList] = useState<string[]>([]);
   const [dayWorkerList, setDayWorkerList] = useState<string[]>([]);
   const [nightWorkerList, setNightWorkerList] = useState<string[]>([]);
@@ -152,7 +152,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         const names = data.map((u: any) => u.name?.trim()).filter(Boolean);
         setValidUserNames(names);
 
-        // 부서 목록 중복 제거 추출
         const depts = Array.from(
           new Set(data.map((u: any) => u.department?.trim()).filter(Boolean))
         ) as string[];
@@ -433,7 +432,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setIsModalOpen(true);
   };
 
-  // 인원 1명씩 추가 / Team 또는 Department 불러오기 반영 핸들러
+  // 인원 1명씩 추가 / Team 불러오기 반영 핸들러
   const handleAddWorkerSingle = (target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (!singleWorkerInput.trim()) return;
     const name = singleWorkerInput.trim();
@@ -443,6 +442,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSingleWorkerInput('');
   };
 
+  // 단순 app_users 기반으로 형성된 그룹 데이터 반영
   const handleApplyTeamOrDept = (value: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (!value) return;
     
@@ -539,7 +539,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   };
 
-  // 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수 (해당 일의 모든 업무 저장 가능)
+  // 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수 (해당 일의 모든 업무 N개 저장)
   const handleExportWeeklyExcel = () => {
     const [yearStr, monthStr] = selectedExportMonth.split('-');
     const year = parseInt(yearStr, 10);
@@ -574,9 +574,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         weekRowDates.push(isCurrentMonth ? `${dayNum}일` : `(${dayNum}일)`);
 
         if (isCurrentMonth) {
+          // 일치하는 일자의 모든 업무를 필터링하여 포함
           const matchedTasks = monthlyWeeklyTasks.filter(t => t.start_date === dateStr);
           if (matchedTasks.length > 0) {
-            // 해당 일자의 모든 업무를 개행(\n)으로 구분하여 모두 엑셀 셀에 포함
             const taskText = matchedTasks.map((t, idx) => {
               const statusStr = t.status === 'COMPLETED' ? '완료' : t.status === 'IN_PROGRESS' ? '진행중' : '대기';
               const assignees = t.assigned_names?.length ? `[${t.assigned_names.join(', ')}]` : '';
@@ -1202,7 +1202,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 1 & 2. Team (그룹) 수정 및 삭제 모달 - z-[60]으로 맨 앞으로 나오게 설정 */}
+        {/* Team 그룹 관리 모달 */}
         {isTeamManagerOpen && isAdmin && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
@@ -1214,7 +1214,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <button onClick={() => setIsTeamManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
               </div>
 
-              {/* 신규 Team 추가 (Supabase app_users의 department 연동) */}
+              {/* 신규 Team 추가 */}
               <div className="space-y-2 bg-[#F5F6F8] p-3 rounded-lg border">
                 <span className="text-xs font-bold text-[#243B5A]">신규 Team 추가</span>
                 
@@ -1226,9 +1226,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"
                 />
 
-                {/* 부서 선택 dropdown (app_users의 department 연동) */}
                 <div className="space-y-1">
-                  <label className="text-[10px] text-[#64748B] font-semibold">부서(Department) 선택 및 인원 불러오기</label>
+                  <label className="text-[10px] text-[#64748B] font-semibold">부서 선택 및 인원 불러오기</label>
                   <select
                     value={newTeamDept}
                     onChange={(e) => handleSelectDepartmentUsersToNewTeam(e.target.value)}
@@ -1359,7 +1358,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 업무 생성 및 수정 모달 (1명씩 추가 + Team 및 부서 불러오기 연동) */}
+        {/* 업무 생성 및 수정 모달 */}
         {isModalOpen && isAdmin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[90vh] overflow-y-auto">
@@ -1446,7 +1445,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     </div>
 
-                    {/* CABIN 주간/야간 인원 선택 및 Team/Department 반영 */}
+                    {/* CABIN 주간/야간 인원 선택 및 Team 불러오기 */}
                     <div className="space-y-3 pt-2">
                       <div>
                         <div className="flex justify-between items-center mb-1">
@@ -1458,17 +1457,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                             }}
                             className="text-[10px] bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5"
                           >
-                            <option value="">+ Team / 부서 불러오기</option>
-                            <optgroup label="Preset Teams">
-                              {presetTeams.map(team => (
-                                <option key={team.id} value={`TEAM_${team.id}`}>{team.name}</option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="app_users 부서">
-                              {departments.map(dept => (
-                                <option key={dept} value={`DEPT_${dept}`}>{dept} 전체</option>
-                              ))}
-                            </optgroup>
+                            <option value="">+ Team 불러오기</option>
+                            {presetTeams.map(team => (
+                              <option key={team.id} value={`TEAM_${team.id}`}>{team.name}</option>
+                            ))}
                           </select>
                         </div>
                         <div className="flex gap-2 mb-1.5">
@@ -1501,17 +1493,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                             }}
                             className="text-[10px] bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5"
                           >
-                            <option value="">+ Team / 부서 불러오기</option>
-                            <optgroup label="Preset Teams">
-                              {presetTeams.map(team => (
-                                <option key={team.id} value={`TEAM_${team.id}`}>{team.name}</option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="app_users 부서">
-                              {departments.map(dept => (
-                                <option key={dept} value={`DEPT_${dept}`}>{dept} 전체</option>
-                              ))}
-                            </optgroup>
+                            <option value="">+ Team 불러오기</option>
+                            {presetTeams.map(team => (
+                              <option key={team.id} value={`TEAM_${team.id}`}>{team.name}</option>
+                            ))}
                           </select>
                         </div>
                         <div className="flex gap-2 mb-1.5">
@@ -1572,7 +1557,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     </div>
 
-                    {/* 1 & 2. 인원 추가 (1명씩 또는 그룹) & Team / Department 불러오기 */}
+                    {/* 인원 추가 & Team 불러오기 */}
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-center">
                         <label className="block text-[11px] font-semibold">인원 추가 (1명씩 또는 그룹)</label>
@@ -1592,17 +1577,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                             }}
                             className="text-[10px] bg-slate-100 border rounded px-1.5 py-0.5"
                           >
-                            <option value="">+ Team / 부서 불러오기</option>
-                            <optgroup label="Preset Teams">
-                              {presetTeams.map(team => (
-                                <option key={team.id} value={`TEAM_${team.id}`}>{team.name}</option>
-                              ))}
-                            </optgroup>
-                            <optgroup label="app_users 부서">
-                              {departments.map(dept => (
-                                <option key={dept} value={`DEPT_${dept}`}>{dept} 전체</option>
-                              ))}
-                            </optgroup>
+                            <option value="">+ Team 불러오기</option>
+                            {presetTeams.map(team => (
+                              <option key={team.id} value={`TEAM_${team.id}`}>{team.name}</option>
+                            ))}
                           </select>
                         </div>
                       </div>
