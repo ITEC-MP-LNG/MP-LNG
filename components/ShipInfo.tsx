@@ -118,12 +118,12 @@ export interface ShipItem {
   ship_name: string;          // 선종 및 프로젝트명
   shipowner?: string;         // 선주사
   dock: string;               // 호선위치
-  launch_date?: string;       // 진수일
-  pt_mount_date?: string;     // P/T 탑재일
+  launch_date?: string | null;       // 진수일
+  pt_mount_date?: string | null;     // P/T 탑재일
   dwt?: string;               // DWT
   status: ShipStatus;         // 진행단계현황
   progress: number | null;    // 산출 공정률
-  delivery_date: string;      // 인도예정일
+  delivery_date: string | null;      // 인도예정일
   day_shift: string;          // 주간 근무자
   day_shift_user_ids?: string[];
   night_shift: string;        // 야간 근무자
@@ -1686,7 +1686,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </label>
                 <input
                   type="date"
-                  value={formData.delivery_date}
+                  value={formData.delivery_date ?? ''}
                   onChange={(e) => setFormData({ ...formData, delivery_date: e.target.value })}
                   className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                 />
@@ -1884,7 +1884,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     </label>
                     <input
                       type="date"
-                      value={statusCreateFormData.delivery_date}
+                      value={statusCreateFormData.delivery_date ?? ''}
                       onChange={(e) => setStatusCreateFormData({ ...statusCreateFormData, delivery_date: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                     />
