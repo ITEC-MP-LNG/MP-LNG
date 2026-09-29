@@ -14,6 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "통합 현장 관리",
+  manifest: '/manifest.json',
   description: "ITEC 목포 LNGC 통합 현장관리",
 };
 
