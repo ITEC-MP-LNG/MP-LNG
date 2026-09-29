@@ -88,8 +88,35 @@ export default function MainPage() {
 
   const [showExitModal, setShowExitModal] = useState(false);
 
+  // 모바일 종 모양 버튼 색상 제어용 (읽지 않은 새 공지 유무)
+  const [hasUnreadNotice, setHasUnreadNotice] = useState(false);
+
   const normalizedRole = String(currentUser?.role || '').trim().toUpperCase();
   const isAdmin = normalizedRole === 'ADMIN';
+
+  // 읽지 않은 공지 체크 함수
+  const checkUnreadNotices = async (userKey: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('notices')
+        .select('id')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      if (data && data.length > 0) {
+        const unreadExists = data.some((notice) => {
+          const isRead = localStorage.getItem(`notice_read_${userKey}_${notice.id}`);
+          return !isRead;
+        });
+        setHasUnreadNotice(unreadExists);
+      } else {
+        setHasUnreadNotice(false);
+      }
+    } catch (err) {
+      console.error('공지 읽음 상태 확인 실패:', err);
+    }
+  };
 
   useEffect(() => {
     let lastBackPressTime = 0;
@@ -173,6 +200,9 @@ export default function MainPage() {
 
         setCurrentUser(targetUser);
 
+        const userKey = targetUser.id || targetUser.email || targetUser.name || 'guest';
+        await checkUnreadNotices(String(userKey));
+
         await Promise.all([
           fetchTasks(targetUser),
           fetchInventory(),
@@ -190,6 +220,14 @@ export default function MainPage() {
 
     initAuthAndData();
   }, [router]);
+
+  // 탭이 변경될 때마다 게시판 탭일 경우 안 읽은 공지 상태 갱신
+  useEffect(() => {
+    if (currentUser) {
+      const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
+      checkUnreadNotices(String(userKey));
+    }
+  }, [mainTab, currentUser]);
 
   const fetchTasks = async (user: AppUser) => {
     setLoadingTasks(true);
@@ -327,7 +365,7 @@ export default function MainPage() {
   return (
     <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] flex flex-col pb-20 md:pb-0 font-sans relative">
       <header className="bg-white border-b border-[#E2E5E9] sticky top-0 z-30 shadow-2xs">
-        <div className="max-w-full mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+        <div className="max-w-full mx-auto px-2 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
             <div className="bg-[#243B5A] p-2 rounded-lg text-white shadow-xs">
               <Layers className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -340,7 +378,8 @@ export default function MainPage() {
             </div>
           </div>
 
-          <div className="flex items-center space-x-2 sm:space-x-3">
+          {/* 우측 유저 정보 및 모바일 버튼 영역 (찌그러짐 방지 간격 및 사이즈 최적화) */}
+          <div className="flex items-center space-x-1.5 sm:space-x-3">
             <div className="hidden lg:flex items-center space-x-2 text-xs">
               {companyCareer && (
                 <div className="flex items-center space-x-1.5 bg-[#F5F6F8] text-[#1F2937] px-2.5 py-1 rounded-md border border-[#E2E5E9]">
@@ -356,20 +395,26 @@ export default function MainPage() {
               )}
             </div>
 
+            {/* 모바일 전용 게시판 이동 종 모양 버튼 (새 글 유무에 따라 빨간색 / 옅은 파란색 동적 변경) */}
             <button
               type="button"
               onClick={() => setMainTab('NOTICE')}
-              className="md:hidden flex items-center justify-center p-2 bg-[#F5F6F8] text-[#243B5A] hover:bg-[#E2E5E9] rounded-lg border border-[#E2E5E9] transition"
-              title="게시판"
+              className={`md:hidden flex items-center justify-center p-2 rounded-lg border transition shrink-0 ${
+                hasUnreadNotice 
+                  ? 'bg-red-50 text-red-600 border-red-200' 
+                  : 'bg-sky-50 text-sky-400 border-sky-200'
+              }`}
+              title={hasUnreadNotice ? '읽지 않은 새 공지가 있습니다.' : '모든 공지를 확인했습니다.'}
               aria-label="게시판"
             >
               <Bell className="h-4 w-4" />
             </button>
 
-            <div className="flex items-center space-x-2 bg-[#F5F6F8] px-3 py-1 rounded-lg border border-[#E2E5E9]">
-              <ShieldCheck className="h-4 w-4 text-[#243B5A]" />
-              <span className="text-xs font-semibold text-[#1F2937]">{currentUser.name}</span>
-              <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
+            {/* 로그인 계정 영역 (사이즈 압축 및 유연한 뷰 적용으로 찌그러짐 방지) */}
+            <div className="flex items-center space-x-1.5 sm:space-x-2 bg-[#F5F6F8] px-2 sm:px-3 py-1 rounded-lg border border-[#E2E5E9] max-w-[130px] sm:max-w-none shrink">
+              <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#243B5A] shrink-0" />
+              <span className="text-xs font-semibold text-[#1F2937] truncate">{currentUser.name}</span>
+              <span className={`text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold shrink-0 ${
                 isAdmin ? 'bg-[#243B5A] text-white' : 'bg-[#E2E5E9] text-[#1F2937]'
               }`}>
                 {isAdmin ? 'ADMIN' : 'USER'}
@@ -378,7 +423,7 @@ export default function MainPage() {
             
             <button
               onClick={handleLogout}
-              className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg transition border border-transparent hover:border-red-200 cursor-pointer"
+              className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg transition border border-transparent hover:border-red-200 cursor-pointer shrink-0"
               title="로그아웃"
             >
               <LogOut className="h-4 w-4 sm:h-5 sm:w-5" />
@@ -416,7 +461,7 @@ export default function MainPage() {
           {mainTab === 'NOTICE' && (
             <NoticeBoard
               isAdmin={isAdmin}
-              currentUser={{ name: currentUser.name }}
+              currentUser={{ id: currentUser.id, name: currentUser.name, email: currentUser.email }}
             />
           )}
 
@@ -470,7 +515,7 @@ export default function MainPage() {
         </main>
       </div>
 
-      {/* 모바일 하단 네비게이션 (찌그러짐 방지 및 균등 분할 수정 적용) */}
+      {/* 모바일 하단 네비게이션 */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E5E9] z-40 px-1 py-1.5 flex justify-between items-center shadow-lg">
         {menuItems.map((item) => {
           const Icon = item.icon;
