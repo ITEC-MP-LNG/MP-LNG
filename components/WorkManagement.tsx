@@ -5,7 +5,7 @@ import {
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, Check, AlertCircle, PlayCircle, PlusCircle,
-  Download, Users, History, FileSpreadsheet
+  Download, Users, History, FileSpreadsheet, Layers
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
@@ -34,12 +34,11 @@ export interface CabinVessel {
   name: string;
 }
 
-// 사용자 정의 프리셋 그룹 목록
-const PRESET_GROUPS: { [key: string]: string[] } = {
-  'A조 (주간)': ['홍길동', '김철수'],
-  'B조 (야간)': ['이영희', '박민수'],
-  '시설 점검팀': ['홍길동', '이영희', '최반장'],
-};
+export interface PresetTeam {
+  id: string;
+  name: string;
+  members: string[];
+}
 
 const formatDateToYYYYMMDD = (d: Date) => {
   const year = d.getFullYear();
@@ -58,6 +57,7 @@ const getMonday = (d: Date) => {
 export default function WorkManagement({ currentUser }: { currentUser?: { id: string; name: string; role: string } | null }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [vessels, setVessels] = useState<CabinVessel[]>([]);
+  const [presetTeams, setPresetTeams] = useState<PresetTeam[]>([]);
   const [validUserNames, setValidUserNames] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -105,7 +105,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [newVesselName, setNewVesselName] = useState('');
   const [editingVessel, setEditingVessel] = useState<CabinVessel | null>(null);
 
-  // 업무 등록/수정 모달 & 담당자 개별 및 그룹 상태
+  // Team 관리 모달
+  const [isTeamManagerOpen, setIsTeamManagerOpen] = useState(false);
+  const [newTeamName, setNewTeamName] = useState('');
+  const [newTeamMembersText, setNewTeamMembersText] = useState('');
+  const [editingTeam, setEditingTeam] = useState<PresetTeam | null>(null);
+  const [editTeamMembersText, setEditTeamMembersText] = useState('');
+
+  // 업무 등록/수정 모달 & 인원 개별 및 그룹 상태
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   
@@ -119,7 +126,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     category: '',
   });
 
-  // 개별 담당자 목록 관리 (1명씩 추가 + 프리셋 그룹 반영)
+  // 개별 인원 목록 관리 (1명씩 추가 + Team 반영)
   const [assignedList, setAssignedList] = useState<string[]>([]);
   const [dayWorkerList, setDayWorkerList] = useState<string[]>([]);
   const [nightWorkerList, setNightWorkerList] = useState<string[]>([]);
@@ -149,6 +156,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }
     } catch (err) {
       console.error('vessels 로드 실패:', err);
+    }
+  };
+
+  // Preset Teams 조회
+  const fetchTeams = async () => {
+    try {
+      const { data, error } = await supabase.from('preset_teams').select('*').order('created_at', { ascending: true });
+      if (error) throw error;
+      if (data) {
+        setPresetTeams(data);
+      }
+    } catch (err) {
+      console.error('preset_teams 로드 실패:', err);
     }
   };
 
@@ -197,6 +217,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   useEffect(() => {
     fetchAppUsers();
     fetchVessels();
+    fetchTeams();
     fetchTasks();
   }, [currentUser]);
 
@@ -221,6 +242,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       if (error) throw error;
       setEditingVessel(null);
       fetchVessels();
+      showCustomAlert('성공', '호선 정보가 수정되었습니다.');
     } catch (err: any) { showCustomAlert('오류', `호선 수정 실패: ${err.message}`); }
   };
 
@@ -231,7 +253,62 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         const { error } = await supabase.from('cabin_vessels').delete().eq('id', id);
         if (error) throw error;
         fetchVessels();
+        showCustomAlert('완료', '호선이 삭제되었습니다.');
       } catch (err: any) { showCustomAlert('오류', `호선 삭제 실패: ${err.message}`); }
+    });
+  };
+
+  // Team 관리 관련 (추가 / 수정 / 삭제)
+  const handleAddTeam = async () => {
+    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
+    if (!newTeamName.trim()) { showCustomAlert('입력 오류', 'Team 이름을 입력해주세요.'); return; }
+    
+    const members = newTeamMembersText
+      .split(',')
+      .map(m => m.trim())
+      .filter(Boolean);
+
+    try {
+      const { error } = await supabase.from('preset_teams').insert([{ name: newTeamName.trim(), members }]);
+      if (error) throw error;
+      setNewTeamName('');
+      setNewTeamMembersText('');
+      fetchTeams();
+      showCustomAlert('성공', 'Team이 추가되었습니다.');
+    } catch (err: any) { showCustomAlert('오류', `Team 추가 실패: ${err.message}`); }
+  };
+
+  const handleUpdateTeam = async (id: string) => {
+    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
+    if (!editingTeam || !editingTeam.name.trim()) return;
+
+    const members = editTeamMembersText
+      .split(',')
+      .map(m => m.trim())
+      .filter(Boolean);
+
+    try {
+      const { error } = await supabase
+        .from('preset_teams')
+        .update({ name: editingTeam.name.trim(), members })
+        .eq('id', id);
+      if (error) throw error;
+      setEditingTeam(null);
+      setEditTeamMembersText('');
+      fetchTeams();
+      showCustomAlert('성공', 'Team 정보가 수정되었습니다.');
+    } catch (err: any) { showCustomAlert('오류', `Team 수정 실패: ${err.message}`); }
+  };
+
+  const handleDeleteTeam = async (id: string) => {
+    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
+    showCustomConfirm('Team 삭제', '해당 Team을 정말 삭제하시겠습니까?', async () => {
+      try {
+        const { error } = await supabase.from('preset_teams').delete().eq('id', id);
+        if (error) throw error;
+        fetchTeams();
+        showCustomAlert('완료', 'Team이 삭제되었습니다.');
+      } catch (err: any) { showCustomAlert('오류', `Team 삭제 실패: ${err.message}`); }
     });
   };
 
@@ -316,7 +393,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setIsModalOpen(true);
   };
 
-  // 1. 담당자 1명씩 추가 / 프리셋 그룹 반영 핸들러
+  // 인원 1명씩 추가 / Team 불러오기 반영 핸들러
   const handleAddWorkerSingle = (target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (!singleWorkerInput.trim()) return;
     const name = singleWorkerInput.trim();
@@ -326,11 +403,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSingleWorkerInput('');
   };
 
-  const handleApplyGroup = (groupName: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
-    const groupMembers = PRESET_GROUPS[groupName] || [];
-    if (target === 'ASSIGNED') setAssignedList(Array.from(new Set([...assignedList, ...groupMembers])));
-    if (target === 'DAY') setDayWorkerList(Array.from(new Set([...dayWorkerList, ...groupMembers])));
-    if (target === 'NIGHT') setNightWorkerList(Array.from(new Set([...nightWorkerList, ...groupMembers])));
+  const handleApplyTeam = (teamId: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
+    const targetTeam = presetTeams.find(t => t.id === teamId);
+    if (!targetTeam) return;
+    const teamMembers = targetTeam.members || [];
+
+    if (target === 'ASSIGNED') setAssignedList(Array.from(new Set([...assignedList, ...teamMembers])));
+    if (target === 'DAY') setDayWorkerList(Array.from(new Set([...dayWorkerList, ...teamMembers])));
+    if (target === 'NIGHT') setNightWorkerList(Array.from(new Set([...nightWorkerList, ...teamMembers])));
   };
 
   const handleRemoveWorker = (name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
@@ -405,17 +485,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   };
 
-  // 3. 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수
+  // 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수
   const handleExportWeeklyExcel = () => {
     const [yearStr, monthStr] = selectedExportMonth.split('-');
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
 
-    // 선택한 월의 시작 및 종료일
     const firstDayOfMonth = new Date(year, month - 1, 1);
     const lastDayOfMonth = new Date(year, month, 0);
 
-    // 해당 월의 전체 주간 업무 데이터 추출
     const monthlyWeeklyTasks = tasks.filter(t => {
       if (t.task_type !== 'WEEKLY') return false;
       const d = new Date(t.start_date);
@@ -427,7 +505,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     excelData.push([]);
     excelData.push(['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']);
 
-    // 달력 격자 생성 (월요일 시작 기준)
     let currentDayIter = getMonday(firstDayOfMonth);
     const endIter = new Date(lastDayOfMonth);
     
@@ -463,12 +540,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
       excelData.push(weekRowDates);
       excelData.push(weekRowTasksText);
-      excelData.push([]); // 주간 구분 빈 줄
+      excelData.push([]);
     }
 
     const worksheet = XLSX.utils.aoa_to_sheet(excelData);
     
-    // 컬럼 너비 지정
     worksheet['!cols'] = [
       { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 }
     ];
@@ -588,7 +664,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         </div>
 
-        {/* 2. 일일 업무 완료 이력 서브탭 (일요일 23시 자동 삭제 연동) */}
+        {/* 일일 업무 완료 이력 서브탭 */}
         {taskTab === 'DAILY' && (
           <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
             <div className="flex space-x-1">
@@ -705,7 +781,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             )}
           </div>
         ) : taskTab === 'WEEKLY' ? (
-          /* 3. 주간 업무 캘린더 & 달력 형태 엑셀 다운로드 컨트롤 */
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row items-center justify-between pb-2.5 border-b gap-2">
               <div className="flex items-center space-x-2">
@@ -814,7 +889,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                   <div className="font-bold text-[#1F2937]">{t.title}</div>
                                   {renderStatusBadge(t)}
                                 </div>
-                                <div className="text-[11px] text-[#64748B]">시간: {t.time_slot || '시간미정'} | 담당자: {t.assigned_names?.join(', ') || '미지정'}</div>
+                                <div className="text-[11px] text-[#64748B]">시간: {t.time_slot || '시간미정'} | 인원: {t.assigned_names?.join(', ') || '미지정'}</div>
                               </div>
                               <Eye className="h-4 w-4 text-[#64748B]" />
                             </div>
@@ -985,7 +1060,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
 
               <div className="space-y-1 text-xs">
-                <div className="font-bold text-[#1F2937]">담당자 목록:</div>
+                <div className="font-bold text-[#1F2937]">인원 목록:</div>
                 <div className="text-[#64748B]">
                   {selectedTaskForSheet.assigned_names?.join(', ') || 
                    [...(selectedTaskForSheet.day_workers || []), ...(selectedTaskForSheet.night_workers || [])].join(', ') || 
@@ -1071,7 +1146,129 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 1. 업무 생성 및 수정 모달 (1명씩 추가 + 프리셋 그룹 불러오기 연동) */}
+        {/* 3. Team (그룹) 수정 및 삭제 모달 */}
+        {isTeamManagerOpen && isAdmin && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center space-x-1.5 text-[#243B5A]">
+                  <Layers className="h-4 w-4" />
+                  <h3 className="text-sm font-bold">Team 그룹 관리</h3>
+                </div>
+                <button onClick={() => setIsTeamManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+              </div>
+
+              {/* 신규 Team 추가 */}
+              <div className="space-y-2 bg-[#F5F6F8] p-3 rounded-lg border">
+                <span className="text-xs font-bold text-[#243B5A]">신규 Team 추가</span>
+                <input
+                  type="text"
+                  placeholder="Team 이름 (예: C조)"
+                  value={newTeamName}
+                  onChange={(e) => setNewTeamName(e.target.value)}
+                  className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"
+                />
+                <input
+                  type="text"
+                  placeholder="구성원 이름 (쉼표 구분: 홍길동, 김철수)"
+                  value={newTeamMembersText}
+                  onChange={(e) => setNewTeamMembersText(e.target.value)}
+                  className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"
+                />
+                <button
+                  onClick={handleAddTeam}
+                  className="w-full py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg hover:bg-[#1a2b42] transition"
+                >
+                  Team 생성
+                </button>
+              </div>
+
+              {/* Team 목록 및 수정/삭제 */}
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-[#1F2937]">등록된 Team 목록 ({presetTeams.length})</span>
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                  {presetTeams.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-[#64748B]">등록된 Team이 없습니다.</div>
+                  ) : (
+                    presetTeams.map((team) => (
+                      <div key={team.id} className="p-2.5 border rounded-lg text-xs bg-white space-y-1.5">
+                        {editingTeam?.id === team.id ? (
+                          <div className="space-y-2">
+                            <input
+                              type="text"
+                              value={editingTeam.name}
+                              onChange={(e) => setEditingTeam({ ...editingTeam, name: e.target.value })}
+                              className="w-full px-2 py-1 border rounded text-xs font-bold"
+                            />
+                            <input
+                              type="text"
+                              value={editTeamMembersText}
+                              onChange={(e) => setEditTeamMembersText(e.target.value)}
+                              placeholder="인원 (쉼표로 구분)"
+                              className="w-full px-2 py-1 border rounded text-xs"
+                            />
+                            <div className="flex justify-end space-x-1 pt-1">
+                              <button
+                                onClick={() => setEditingTeam(null)}
+                                className="px-2 py-1 border rounded text-[11px]"
+                              >
+                                취소
+                              </button>
+                              <button
+                                onClick={() => handleUpdateTeam(team.id)}
+                                className="px-2 py-1 bg-blue-600 text-white rounded text-[11px] font-semibold"
+                              >
+                                저장
+                              </button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-start justify-between gap-2">
+                            <div>
+                              <div className="font-bold text-[#243B5A]">{team.name}</div>
+                              <div className="text-[11px] text-[#64748B] flex flex-wrap gap-1 mt-0.5">
+                                {team.members && team.members.length > 0 ? (
+                                  team.members.map((m) => (
+                                    <span key={m} className="bg-slate-100 border px-1.5 py-0.2 rounded text-[10px]">
+                                      {m}
+                                    </span>
+                                  ))
+                                ) : (
+                                  <span className="text-slate-400 italic">인원 없음</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center space-x-1 shrink-0">
+                              <button
+                                onClick={() => {
+                                  setEditingTeam(team);
+                                  setEditTeamMembersText(team.members ? team.members.join(', ') : '');
+                                }}
+                                className="p-1 text-[#64748B] hover:text-[#243B5A]"
+                                title="Team 수정"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteTeam(team.id)}
+                                className="p-1 text-[#64748B] hover:text-red-600"
+                                title="Team 삭제"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 업무 생성 및 수정 모달 (1명씩 추가 + Team 불러오기 연동) */}
         {isModalOpen && isAdmin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[90vh] overflow-y-auto">
@@ -1158,21 +1355,21 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     </div>
 
-                    {/* CABIN 주간/야간 담당자 선택 및 그룹 적용 */}
+                    {/* CABIN 주간/야간 인원 선택 및 Team 반영 */}
                     <div className="space-y-3 pt-2">
                       <div>
                         <div className="flex justify-between items-center mb-1">
-                          <label className="block text-[11px] font-semibold text-amber-800">주간 근무자 선택</label>
+                          <label className="block text-[11px] font-semibold text-amber-800">주간 인원 선택</label>
                           <select
                             onChange={(e) => {
-                              if (e.target.value) handleApplyGroup(e.target.value, 'DAY');
+                              if (e.target.value) handleApplyTeam(e.target.value, 'DAY');
                               e.target.value = '';
                             }}
                             className="text-[10px] bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5"
                           >
-                            <option value="">+ 그룹 선택 추가</option>
-                            {Object.keys(PRESET_GROUPS).map(g => (
-                              <option key={g} value={g}>{g}</option>
+                            <option value="">+ Team 불러오기</option>
+                            {presetTeams.map(team => (
+                              <option key={team.id} value={team.id}>{team.name}</option>
                             ))}
                           </select>
                         </div>
@@ -1198,17 +1395,17 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
                       <div>
                         <div className="flex justify-between items-center mb-1">
-                          <label className="block text-[11px] font-semibold text-indigo-800">야간 근무자 선택</label>
+                          <label className="block text-[11px] font-semibold text-indigo-800">야간 인원 선택</label>
                           <select
                             onChange={(e) => {
-                              if (e.target.value) handleApplyGroup(e.target.value, 'NIGHT');
+                              if (e.target.value) handleApplyTeam(e.target.value, 'NIGHT');
                               e.target.value = '';
                             }}
                             className="text-[10px] bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5"
                           >
-                            <option value="">+ 그룹 선택 추가</option>
-                            {Object.keys(PRESET_GROUPS).map(g => (
-                              <option key={g} value={g}>{g}</option>
+                            <option value="">+ Team 불러오기</option>
+                            {presetTeams.map(team => (
+                              <option key={team.id} value={team.id}>{team.name}</option>
                             ))}
                           </select>
                         </div>
@@ -1270,22 +1467,29 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     </div>
 
-                    {/* 1. 담당자 1명씩 추가 & 프리셋 그룹 선택 옵션 */}
+                    {/* 1 & 2. 인원 추가 (1명씩 또는 그룹) & Team 불러오기 */}
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-center">
-                        <label className="block text-[11px] font-semibold">담당자 추가 (1명씩 또는 그룹)</label>
-                        <div className="flex items-center gap-1">
-                          <Users className="h-3 w-3 text-[#243B5A]" />
+                        <label className="block text-[11px] font-semibold">인원 추가 (1명씩 또는 그룹)</label>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setIsTeamManagerOpen(true)}
+                            className="text-[10px] text-[#243B5A] hover:underline font-semibold flex items-center gap-0.5"
+                          >
+                            <Settings className="h-3 w-3" />
+                            Team 관리
+                          </button>
                           <select
                             onChange={(e) => {
-                              if (e.target.value) handleApplyGroup(e.target.value, 'ASSIGNED');
+                              if (e.target.value) handleApplyTeam(e.target.value, 'ASSIGNED');
                               e.target.value = '';
                             }}
                             className="text-[10px] bg-slate-100 border rounded px-1.5 py-0.5"
                           >
-                            <option value="">+ 그룹 불러오기</option>
-                            {Object.keys(PRESET_GROUPS).map(g => (
-                              <option key={g} value={g}>{g}</option>
+                            <option value="">+ Team 불러오기</option>
+                            {presetTeams.map(team => (
+                              <option key={team.id} value={team.id}>{team.name}</option>
                             ))}
                           </select>
                         </div>
@@ -1294,7 +1498,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <div className="flex gap-2">
                         <input
                           type="text"
-                          placeholder="담당자 이름 입력 후 [추가]"
+                          placeholder="인원 이름 입력 후 [추가]"
                           value={singleWorkerInput}
                           onChange={(e) => setSingleWorkerInput(e.target.value)}
                           className="flex-1 px-3 py-1.5 border rounded-lg text-xs"
@@ -1308,10 +1512,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         </button>
                       </div>
 
-                      {/* 추가된 담당자 태그 리스트 */}
+                      {/* 추가된 인원 태그 리스트 */}
                       <div className="flex flex-wrap gap-1 pt-1">
                         {assignedList.length === 0 ? (
-                          <span className="text-[11px] text-[#64748B]">지정된 담당자가 없습니다.</span>
+                          <span className="text-[11px] text-[#64748B]">지정된 인원이 없습니다.</span>
                         ) : (
                           assignedList.map(name => (
                             <span key={name} className="bg-slate-100 text-[#1F2937] border text-[11px] px-2 py-0.5 rounded-full flex items-center gap-1">
