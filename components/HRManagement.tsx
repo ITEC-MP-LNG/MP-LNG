@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { OrgChart } from 'd3-org-chart';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import {
+import { 
   Users, 
   Building2, 
   Briefcase, 
@@ -23,11 +23,7 @@ import {
   Network, 
   GitCommit,
   FileText,
-  Shield,
-  ZoomIn,
-  ZoomOut,
-  RotateCcw,
-  Printer
+  Shield
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -165,9 +161,36 @@ export default function HRManagement({
     birthDate: '' 
   });
 
-  // 고화질 PDF / 인쇄 저장 함수 (브라우저 프린트 다이얼로그 활용으로 누락 방지)
-  const handleExportPDF = () => {
-    window.print();
+  // 고화질 압축 PDF 저장 함수
+  const handleExportPDF = async () => {
+    const element = d3ContainerRef.current;
+    if (!element) {
+      alert('저장할 조직도 영역을 찾을 수 없습니다. 인터랙티브 조직도 탭에서 시도해주세요.');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const canvas = await html2canvas(element, {
+        scale: 2, // 고해상도 렌더링
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#F8FAFC'
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.85); // 고화질 압축 (JPEG 85%)
+      const pdf = new jsPDF('landscape', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'JPEG', 0, 10, pdfWidth, pdfHeight, undefined, 'FAST');
+      pdf.save(`조직도_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error('PDF 저장 실패:', err);
+      alert('PDF 저장 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const myRole = currentUserRole || currentUser?.role || '';
@@ -192,6 +215,7 @@ export default function HRManagement({
     setSelectedSubCategory('ALL');
   }, [subGroupType]);
 
+  // 전역 핸들러 등록 (D3 Org Chart 내부 버튼 인터랙션용)
   useEffect(() => {
     (window as any).handleChartEdit = (userId: string) => {
       const target = users.find(u => u.id === userId);
@@ -231,9 +255,9 @@ export default function HRManagement({
     };
   }, [users, isAdmin]);
 
-  // 최상단 '조직도' 루트 노드를 없애고 운영-관리-팀 순으로 파트별 멀티 루트 구성
   const buildHierarchy = (userList: HRUser[]) => {
     const data: any[] = [];
+    data.push({ id: 'root', parentId: '', name: '조직도', type: 'root' });
 
     const rawDepts = Array.from(new Set(userList.map((u) => u.department || '미지정 파트')));
     const sortedDepts = rawDepts.sort((a, b) => {
@@ -246,7 +270,7 @@ export default function HRManagement({
     });
 
     sortedDepts.forEach((dept) => {
-      data.push({ id: `dept_${dept}`, parentId: '', name: dept, type: 'department' });
+      data.push({ id: `dept_${dept}`, parentId: 'root', name: dept, type: 'department' });
     });
 
     const leaderMap: Record<string, string> = {};
@@ -293,12 +317,18 @@ export default function HRManagement({
       chartRef.current
         .container(d3ContainerRef.current)
         .data(chartData)
-        .nodeHeight((d: any) => d.data.type === 'department' ? 45 : 95)
+        .nodeHeight((d: any) => d.data.type === 'user' ? 95 : 45)
         .nodeWidth((d: any) => 230)
         .childrenMargin((d: any) => 50)
         .compactMarginBetween((d: any) => 25)
         .compactMarginPair((d: any) => 25)
         .nodeContent((d: any) => {
+          if (d.data.type === 'root') {
+            return `
+              <div style="background-color: #1F2937; color: white; border-radius: 8px; border: 2px solid #111827; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                ${d.data.name}
+              </div>`;
+          }
           if (d.data.type === 'department') {
             return `
               <div style="background-color: #243B5A; color: white; border-radius: 8px; border: 2px solid #1e293b; height: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-weight: bold; font-family: sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
@@ -632,10 +662,10 @@ export default function HRManagement({
             <button
               onClick={handleExportPDF}
               className="flex items-center space-x-1 bg-[#DC2626] hover:bg-[#b91c1c] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-              title="고화질 PDF 저장 및 인쇄"
+              title="현재 인터랙티브 조직도를 고화질 PDF로 저장합니다"
             >
-              <Printer className="h-3.5 w-3.5" />
-              <span>PDF / 인쇄</span>
+              <FileText className="h-3.5 w-3.5" />
+              <span>PDF 저장</span>
             </button>
           )}
 
@@ -746,30 +776,16 @@ export default function HRManagement({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-1.5 font-bold text-[#64748B]">
               <Layers className="h-3.5 w-3.5 text-[#243B5A]" />
-              <span>인터랙티브 조직도 (드래그하여 이동, 휠로 확대/축소 가능)</span>
+              <span>인터랙티브 조직도 (노드 내 ✏️ 수정 / 🗑️ 삭제 가능)</span>
             </div>
             
             <div className="flex items-center space-x-2">
               <button
-                onClick={() => chartRef.current?.zoomIn()}
-                className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
-                title="확대"
-              >
-                <ZoomIn className="h-3.5 w-3.5" /> 확대
-              </button>
-              <button
-                onClick={() => chartRef.current?.zoomOut()}
-                className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
-                title="축소"
-              >
-                <ZoomOut className="h-3.5 w-3.5" /> 축소
-              </button>
-              <button
                 onClick={() => chartRef.current?.fit()}
                 className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
-                title="화면 맞춤"
+                title="조직도를 화면 중앙에 맞춥니다"
               >
-                <RotateCcw className="h-3.5 w-3.5" /> 리셋
+                화면 맞춤
               </button>
               <button
                 onClick={() => chartRef.current?.expandAll()}
@@ -777,10 +793,16 @@ export default function HRManagement({
               >
                 모두 펴기
               </button>
+              <button
+                onClick={() => chartRef.current?.collapseAll()}
+                className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
+              >
+                모두 접기
+              </button>
             </div>
           </div>
 
-          <div ref={d3ContainerRef} className="w-full h-[780px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative cursor-grab active:cursor-grabbing">
+          <div ref={d3ContainerRef} className="w-full h-[780px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
           </div>
         </div>
       ) : activeTab === 'ORG' ? (
