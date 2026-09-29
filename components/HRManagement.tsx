@@ -279,6 +279,23 @@ export default function HRManagement({
         height: element.scrollHeight,
         windowWidth: element.scrollWidth,
         windowHeight: element.scrollHeight,
+        onclone: (clonedDoc) => {
+          const allElements = clonedDoc.querySelectorAll('*');
+          allElements.forEach((el) => {
+            const htmlEl = el as HTMLElement;
+            const computedStyle = window.getComputedStyle(htmlEl);
+
+            if (computedStyle.backgroundColor.includes('lab') || computedStyle.backgroundColor.includes('oklch')) {
+              htmlEl.style.backgroundColor = computedStyle.backgroundColor;
+            }
+            if (computedStyle.color.includes('lab') || computedStyle.color.includes('oklch')) {
+              htmlEl.style.color = computedStyle.color;
+            }
+            if (computedStyle.borderColor.includes('lab') || computedStyle.borderColor.includes('oklch')) {
+              htmlEl.style.borderColor = computedStyle.borderColor;
+            }
+          });
+        },
         ignoreElements: (el) => {
           if (
             el.classList.contains('react-flow__controls') || 
