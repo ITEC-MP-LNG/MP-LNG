@@ -34,7 +34,7 @@ export interface CabinVessel {
   name: string;
 }
 
-// 사용자 정의 그룹 예시
+// 사용자 정의 프리셋 그룹 목록
 const PRESET_GROUPS: { [key: string]: string[] } = {
   'A조 (주간)': ['홍길동', '김철수'],
   'B조 (야간)': ['이영희', '박민수'],
@@ -66,7 +66,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   // 탭 및 서브탭 상태
   const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN'>('DAILY');
-  const [dailySubTab, setDailySubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE'); // 일일업무 서브탭 (진행중 / 완료이력)
+  const [dailySubTab, setDailySubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE'); 
   const [cabinSubTab, setCabinSubTab] = useState<string>('ALL');
 
   // 주간 업무 뷰 & 월 선택 (엑셀 추출용)
@@ -105,7 +105,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [newVesselName, setNewVesselName] = useState('');
   const [editingVessel, setEditingVessel] = useState<CabinVessel | null>(null);
 
-  // 업무 등록/수정 모달 & 담당자 1명씩 추가 개별 상태
+  // 업무 등록/수정 모달 & 담당자 개별 및 그룹 상태
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   
@@ -119,7 +119,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     category: '',
   });
 
-  // 개별 담당자 목록 관리 (1명씩 추가/태그 형태)
+  // 개별 담당자 목록 관리 (1명씩 추가 + 프리셋 그룹 반영)
   const [assignedList, setAssignedList] = useState<string[]>([]);
   const [dayWorkerList, setDayWorkerList] = useState<string[]>([]);
   const [nightWorkerList, setNightWorkerList] = useState<string[]>([]);
@@ -316,7 +316,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setIsModalOpen(true);
   };
 
-  // 담당자 1명씩 추가 / 그룹 추가 핸들러
+  // 1. 담당자 1명씩 추가 / 프리셋 그룹 반영 핸들러
   const handleAddWorkerSingle = (target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (!singleWorkerInput.trim()) return;
     const name = singleWorkerInput.trim();
@@ -405,41 +405,78 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   };
 
-  // 4. 달력 형식 주간 업무 엑셀(Excel) 수출 로직
+  // 3. 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수
   const handleExportWeeklyExcel = () => {
     const [yearStr, monthStr] = selectedExportMonth.split('-');
-    const year = parseInt(yearStr);
-    const month = parseInt(monthStr);
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
 
-    // 해당 월의 모든 주간 업무 필터링
+    // 선택한 월의 시작 및 종료일
+    const firstDayOfMonth = new Date(year, month - 1, 1);
+    const lastDayOfMonth = new Date(year, month, 0);
+
+    // 해당 월의 전체 주간 업무 데이터 추출
     const monthlyWeeklyTasks = tasks.filter(t => {
       if (t.task_type !== 'WEEKLY') return false;
       const d = new Date(t.start_date);
       return d.getFullYear() === year && (d.getMonth() + 1) === month;
     });
 
-    // 엑셀 워크시트 생성용 달력 데이터 배열 제작
     const excelData: any[] = [];
-    excelData.push([`${year}년 ${month}월 주간 업무 달력 리스트`]);
+    excelData.push([`${year}년 ${month}월 주간 업무 달력`]);
     excelData.push([]);
-    excelData.push(['날짜', '시간대', '업무 제목', '담당자', '상태', '상세설명']);
+    excelData.push(['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']);
 
-    monthlyWeeklyTasks.sort((a, b) => a.start_date.localeCompare(b.start_date)).forEach(t => {
-      excelData.push([
-        t.start_date,
-        t.time_slot || '시간미정',
-        t.title,
-        (t.assigned_names || []).join(', '),
-        t.status === 'COMPLETED' ? '완료' : t.status === 'IN_PROGRESS' ? '진행중' : '대기',
-        t.description || ''
-      ]);
-    });
+    // 달력 격자 생성 (월요일 시작 기준)
+    let currentDayIter = getMonday(firstDayOfMonth);
+    const endIter = new Date(lastDayOfMonth);
+    
+    while (currentDayIter <= endIter || currentDayIter.getDay() !== 1) {
+      const weekRowDates: string[] = [];
+      const weekRowTasksText: string[] = [];
+
+      for (let i = 0; i < 7; i++) {
+        const dateStr = formatDateToYYYYMMDD(currentDayIter);
+        const dayNum = currentDayIter.getDate();
+        const isCurrentMonth = currentDayIter.getMonth() + 1 === month;
+
+        weekRowDates.push(isCurrentMonth ? `${dayNum}일` : `(${dayNum}일)`);
+
+        if (isCurrentMonth) {
+          const matchedTasks = monthlyWeeklyTasks.filter(t => t.start_date === dateStr);
+          if (matchedTasks.length > 0) {
+            const taskText = matchedTasks.map((t, idx) => {
+              const statusStr = t.status === 'COMPLETED' ? '완료' : t.status === 'IN_PROGRESS' ? '진행중' : '대기';
+              const assignees = t.assigned_names?.length ? `[${t.assigned_names.join(', ')}]` : '';
+              return `${idx + 1}. ${t.title} ${assignees} (${statusStr})`;
+            }).join('\n');
+            weekRowTasksText.push(taskText);
+          } else {
+            weekRowTasksText.push('-');
+          }
+        } else {
+          weekRowTasksText.push('');
+        }
+
+        currentDayIter.setDate(currentDayIter.getDate() + 1);
+      }
+
+      excelData.push(weekRowDates);
+      excelData.push(weekRowTasksText);
+      excelData.push([]); // 주간 구분 빈 줄
+    }
 
     const worksheet = XLSX.utils.aoa_to_sheet(excelData);
+    
+    // 컬럼 너비 지정
+    worksheet['!cols'] = [
+      { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 }, { wch: 25 }
+    ];
+
     const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, `${month}월 주간업무`);
+    XLSX.utils.book_append_sheet(workbook, worksheet, `${month}월 달력 업무`);
     XLSX.writeFile(workbook, `주간업무_달력_${year}_${month}월.xlsx`);
-    showCustomAlert('엑셀 다운로드', `${year}년 ${month}월 주간 업무가 엑셀로 추출되었습니다.`);
+    showCustomAlert('엑셀 다운로드', `${year}년 ${month}월 주간 업무 달력이 엑셀 파일로 추출되었습니다.`);
   };
 
   // 주간 날짜 계산
@@ -551,7 +588,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         </div>
 
-        {/* 2. 일일 업무 완료 이력 서브탭 */}
+        {/* 2. 일일 업무 완료 이력 서브탭 (일요일 23시 자동 삭제 연동) */}
         {taskTab === 'DAILY' && (
           <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
             <div className="flex space-x-1">
@@ -567,7 +604,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 transition ${dailySubTab === 'HISTORY' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}
               >
                 <History className="h-3.5 w-3.5" />
-                <span>완료 이력 보기</span>
+                <span>완료 이력 보기 (매주 일요일 23시 초기화)</span>
               </button>
             </div>
           </div>
@@ -652,7 +689,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         <span>상세</span>
                       </button>
 
-                      {/* 관리자 완료 이력 삭제 기능 */}
                       {dailySubTab === 'HISTORY' && isAdmin && (
                         <button
                           onClick={() => handleDeleteTask(t.id)}
@@ -669,7 +705,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             )}
           </div>
         ) : taskTab === 'WEEKLY' ? (
-          /* 주간 업무 캘린더 & 4. 엑셀 다운로드 추가 */
+          /* 3. 주간 업무 캘린더 & 달력 형태 엑셀 다운로드 컨트롤 */
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row items-center justify-between pb-2.5 border-b gap-2">
               <div className="flex items-center space-x-2">
@@ -679,7 +715,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <button onClick={() => setCurrentWeekMonday(getMonday(new Date()))} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2">오늘</button>
               </div>
 
-              {/* 4. 엑셀 추출 컨트롤 영역 */}
+              {/* 엑셀 추출 컨트롤 영역 */}
               <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
                 <input
                   type="month"
@@ -692,7 +728,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
                 >
                   <FileSpreadsheet className="h-3.5 w-3.5" />
-                  <span>엑셀 내보내기</span>
+                  <span>달력 엑셀 저장</span>
                 </button>
 
                 <div className="bg-[#F5F6F8] p-1 rounded-lg border flex space-x-1">
@@ -846,7 +882,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 6. 통일된 스타일의 커스텀 알림/확인 모달 */}
+        {/* 커스텀 알림/확인 모달 */}
         {customAlert.open && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-sm w-full p-4 shadow-2xl space-y-3 border animate-in fade-in zoom-in-95 duration-150">
@@ -1035,7 +1071,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 1. 업무 생성 및 수정 모달 (담당자 1명씩 추가 + 그룹 관리) */}
+        {/* 1. 업무 생성 및 수정 모달 (1명씩 추가 + 프리셋 그룹 불러오기 연동) */}
         {isModalOpen && isAdmin && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[90vh] overflow-y-auto">
@@ -1122,14 +1158,28 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     </div>
 
-                    {/* CABIN 주간/야간 담당자 선택 */}
+                    {/* CABIN 주간/야간 담당자 선택 및 그룹 적용 */}
                     <div className="space-y-3 pt-2">
                       <div>
-                        <label className="block text-[11px] font-semibold mb-1 text-amber-800">주간 근무자 선택</label>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-[11px] font-semibold text-amber-800">주간 근무자 선택</label>
+                          <select
+                            onChange={(e) => {
+                              if (e.target.value) handleApplyGroup(e.target.value, 'DAY');
+                              e.target.value = '';
+                            }}
+                            className="text-[10px] bg-amber-50 border border-amber-200 rounded px-1.5 py-0.5"
+                          >
+                            <option value="">+ 그룹 선택 추가</option>
+                            {Object.keys(PRESET_GROUPS).map(g => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                          </select>
+                        </div>
                         <div className="flex gap-2 mb-1.5">
                           <input
                             type="text"
-                            placeholder="이름 입력"
+                            placeholder="이름 입력 후 추가"
                             value={singleWorkerInput}
                             onChange={(e) => setSingleWorkerInput(e.target.value)}
                             className="flex-1 px-2.5 py-1 border rounded-lg text-xs"
@@ -1147,11 +1197,25 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-semibold mb-1 text-indigo-800">야간 근무자 선택</label>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="block text-[11px] font-semibold text-indigo-800">야간 근무자 선택</label>
+                          <select
+                            onChange={(e) => {
+                              if (e.target.value) handleApplyGroup(e.target.value, 'NIGHT');
+                              e.target.value = '';
+                            }}
+                            className="text-[10px] bg-indigo-50 border border-indigo-200 rounded px-1.5 py-0.5"
+                          >
+                            <option value="">+ 그룹 선택 추가</option>
+                            {Object.keys(PRESET_GROUPS).map(g => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                          </select>
+                        </div>
                         <div className="flex gap-2 mb-1.5">
                           <input
                             type="text"
-                            placeholder="이름 입력"
+                            placeholder="이름 입력 후 추가"
                             value={singleWorkerInput}
                             onChange={(e) => setSingleWorkerInput(e.target.value)}
                             className="flex-1 px-2.5 py-1 border rounded-lg text-xs"
@@ -1206,7 +1270,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     </div>
 
-                    {/* 1. 담당자 1명씩 추가 & 그룹 설정 */}
+                    {/* 1. 담당자 1명씩 추가 & 프리셋 그룹 선택 옵션 */}
                     <div className="space-y-1.5">
                       <div className="flex justify-between items-center">
                         <label className="block text-[11px] font-semibold">담당자 추가 (1명씩 또는 그룹)</label>
@@ -1219,7 +1283,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                             }}
                             className="text-[10px] bg-slate-100 border rounded px-1.5 py-0.5"
                           >
-                            <option value="">+ 프리셋 그룹 불러오기</option>
+                            <option value="">+ 그룹 불러오기</option>
                             {Object.keys(PRESET_GROUPS).map(g => (
                               <option key={g} value={g}>{g}</option>
                             ))}
