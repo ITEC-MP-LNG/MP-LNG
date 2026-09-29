@@ -459,9 +459,17 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
 
     try {
+      // 날짜 빈 문자열 → null 변환 (Supabase date 타입 오류 방지)
+      const sanitizedCreateData = {
+        ...statusCreateFormData,
+        launch_date: statusCreateFormData.launch_date || null,
+        pt_mount_date: statusCreateFormData.pt_mount_date || null,
+        delivery_date: statusCreateFormData.delivery_date || null,
+      };
+
       const { data, error } = await supabase
         .from(TABLE_NAME)
-        .insert([statusCreateFormData])
+        .insert([sanitizedCreateData])
         .select();
 
       if (error) {
@@ -526,10 +534,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         ship_name: statusEditFormData.ship_name,
         shipowner: statusEditFormData.shipowner,
         dock: statusEditFormData.dock,
-        launch_date: statusEditFormData.launch_date || undefined,
-        pt_mount_date: statusEditFormData.pt_mount_date || undefined,
+        launch_date: statusEditFormData.launch_date || null,
+        pt_mount_date: statusEditFormData.pt_mount_date || null,
         dwt: statusEditFormData.dwt,
-        delivery_date: statusEditFormData.delivery_date,
+        delivery_date: statusEditFormData.delivery_date || null,
         tank_status: statusEditFormData.tank_status,
       };
 
@@ -694,11 +702,19 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
 
     try {
+      // 날짜 빈 문자열 → null 변환 (Supabase date 타입 오류 방지)
+      const sanitizedFormData = {
+        ...formData,
+        launch_date: formData.launch_date || null,
+        pt_mount_date: formData.pt_mount_date || null,
+        delivery_date: formData.delivery_date || null,
+      };
+
       if (editingShip) {
         // 수정 (Update)
         const { error } = await supabase
           .from(TABLE_NAME)
-          .update(formData)
+          .update(sanitizedFormData)
           .eq('id', editingShip.id);
 
         if (error) {
@@ -706,7 +722,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           return;
         }
 
-        const updatedShip = { ...editingShip, ...formData };
+        const updatedShip = { ...editingShip, ...sanitizedFormData };
         setShips(prev => prev.map(s => s.id === editingShip.id ? updatedShip : s));
         if (selectedShip?.id === editingShip.id) {
           setSelectedShip(updatedShip);
@@ -716,7 +732,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         // 신규 등록 (Insert)
         const { data, error } = await supabase
           .from(TABLE_NAME)
-          .insert([formData])
+          .insert([sanitizedFormData])
           .select();
 
         if (error) {
