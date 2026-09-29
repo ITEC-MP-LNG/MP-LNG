@@ -146,7 +146,6 @@ const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
 
   const newNodes = nodes.map((node) => {
     const nodeWithPosition = dagreGraph.node(node.id);
-    // 에러 방어 코드: nodeWithPosition이 없거나 x, y가 undefined일 경우 기본값 부여
     if (!nodeWithPosition || typeof nodeWithPosition.x !== 'number' || typeof nodeWithPosition.y !== 'number') {
       return {
         ...node,
@@ -273,10 +272,19 @@ export default function HRManagement({
       const canvas = await html2canvas(element, {
         scale: 2,
         useCORS: true,
+        allowTaint: true,
         backgroundColor: '#F8FAFC',
         logging: false,
+        width: element.scrollWidth,
+        height: element.scrollHeight,
+        windowWidth: element.scrollWidth,
+        windowHeight: element.scrollHeight,
         ignoreElements: (el) => {
-          if (el.classList.contains('react-flow__controls') || el.classList.contains('react-flow__minimap')) {
+          if (
+            el.classList.contains('react-flow__controls') || 
+            el.classList.contains('react-flow__minimap') ||
+            el.classList.contains('react-flow__panel')
+          ) {
             return true;
           }
           return false;
@@ -285,7 +293,6 @@ export default function HRManagement({
 
       const imgData = canvas.toDataURL('image/png');
 
-      // A4 기준 (mm): landscape = 297 x 210
       const isLandscape = canvas.width > canvas.height;
       const pdf = new jsPDF({
         orientation: isLandscape ? 'landscape' : 'portrait',
@@ -295,7 +302,7 @@ export default function HRManagement({
 
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const margin = 10; // mm
+      const margin = 10;
       const availableWidth = pageWidth - margin * 2;
       const availableHeight = pageHeight - margin * 2;
 
@@ -320,7 +327,7 @@ export default function HRManagement({
       pdf.save(`조직도_이름직급경력_${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (err: any) {
       console.error('PDF 내보내기 실패:', err);
-      alert('PDF 내보내기 중 오류가 발생했습니다.');
+      alert(`PDF 내보내기 중 오류가 발생했습니다: ${err?.message || '알 수 없는 오류'}`);
     } finally {
       element.classList.remove('pdf-export-mode');
     }
