@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { OrgChart } from 'd3-org-chart';
-import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { 
   Users, 
   Building2, 
@@ -21,7 +22,7 @@ import {
   AtSign,
   Network, 
   GitCommit,
-  FileSpreadsheet,
+  FileText,
   Shield
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -160,34 +161,57 @@ export default function HRManagement({
     birthDate: '' 
   });
 
-  const handleExportExcel = () => {
-    const formattedData = filteredUsers.map(item => ({
-      '아이디': item.id,
-      '성명': item.name,
-      '파트(부서)': item.department || '',
-      '직급': item.position || '',
-      '직책': item.job_title || '',
-      '분야': item.field || '',
-      '주소': item.address || '',
-      '자사근속': calculateCareerDetails(item.join_date) || '',
-      '총경력': calculateCareerDetails(item.career_start_date) || '',
-      '사내자격': item.internal_certificates || '',
-      '국가자격': item.national_certificates || '',
-      '입사일': item.join_date || '',
-      '경력시작일': item.career_start_date || ''
-    }));
+  // 1. 고화질 압축 방식 PDF 저장 기능
+  const handleExportPDF = async () => {
+    const targetElement = d3ContainerRef.current;
+    if (!targetElement) {
+      alert('내보낼 조직도 영역이 없습니다. 인터랙티브 조직도 탭에서 시도해주세요.');
+      return;
+    }
 
-    const worksheet = XLSX.utils.json_to_sheet(formattedData);
-    // 컬럼 넓이 재조정 (연락처, 나이 제외 반영)
-    worksheet['!cols'] = [
-      { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
-      { wch: 12 }, { wch: 20 }, { wch: 12 }, { wch: 12 },
-      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
-    ];
+    try {
+      setLoading(true);
+      const canvas = await html2canvas(targetElement, {
+        scale: 2, // 고화질 렌더링
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#f8fafc'
+      });
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '인사관리목록');
-    XLSX.writeFile(workbook, `인사관리목록_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      const imgData = canvas.toDataURL('image/jpeg', 0.85); // 고화질 압축 (JPEG 85% 품질)
+      
+      const pdf = new jsPDF({
+        orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgWidth = pageWidth;
+      const imgHeight = (canvas.height * pageWidth) / canvas.width;
+
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft >= 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
+        heightLeft -= pageHeight;
+      }
+
+      pdf.save(`인사조직도_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err: any) {
+      console.error('PDF 저장 실패:', err);
+      alert('PDF 저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
+    } finally {
+      setLoading(false);
+    }
   };
 
   const myRole = currentUserRole || currentUser?.role || '';
@@ -212,12 +236,20 @@ export default function HRManagement({
     setSelectedSubCategory('ALL');
   }, [subGroupType]);
 
+  // 2. 인터랙티브 조직도 구조 변경: 운영파트 - 관리파트 - 팀파트 구성 (조직도 루트 없음)
   const buildHierarchy = (userList: HRUser[]) => {
     const data: any[] = [];
-    data.push({ id: 'root', parentId: '', name: '조직도', type: 'root' });
 
-    const rawDepts = Array.from(new Set(userList.map((u) => u.department || '미지정 파트')));
-    const sortedDepts = rawDepts.sort((a, b) => {
+    // 최상위 파트별 대분류 (조직도 루트 제거)
+    data.push({ id: 'dept_운영', parentId: '', name: '운영파트', type: 'department' });
+    data.push({ id: 'dept_관리', parentId: '', name: '관리파트', type: 'department' });
+    data.push({ id: 'group_팀파트', parentId: '', name: '팀파트', type: 'group' });
+
+    // 팀파트 하위에 속할 팀들 (1팀, 2팀, 3팀, 4팀 등)
+    const teamDepts = Array.from(new Set(userList.map((u) => u.department || '미지정 파트')))
+      .filter(d => d !== '운영' && d !== '관리');
+
+    const sortedTeams = teamDepts.sort((a, b) => {
       const indexA = DEPT_ORDER.indexOf(a);
       const indexB = DEPT_ORDER.indexOf(b);
       if (indexA !== -1 && indexB !== -1) return indexA - indexB;
@@ -226,26 +258,37 @@ export default function HRManagement({
       return a.localeCompare(b);
     });
 
-    sortedDepts.forEach((dept) => {
-      data.push({ id: `dept_${dept}`, parentId: 'root', name: dept, type: 'department' });
+    sortedTeams.forEach((team) => {
+      data.push({ 
+        id: `dept_${team}`, 
+        parentId: 'group_팀파트', 
+        name: team, 
+        type: 'department' 
+      });
     });
 
     const leaderMap: Record<string, string> = {};
     userList.forEach((u) => {
+      const dept = u.department || '미지정 파트';
       if (u.job_title === '본부장' || u.job_title === '소장' || u.job_title === '팀장') {
-        if (!leaderMap[u.department || '미지정 파트']) {
-          leaderMap[u.department || '미지정 파트'] = u.id;
+        if (!leaderMap[dept]) {
+          leaderMap[dept] = u.id;
         }
       }
     });
 
     userList.forEach((u) => {
-      const deptId = `dept_${u.department || '미지정 파트'}`;
-      let parentId = deptId;
+      const dept = u.department || '미지정 파트';
+      let parentId = `dept_${dept}`;
+      
+      if (!data.some(d => d.id === parentId)) {
+        parentId = 'group_팀파트';
+      }
+
       const isLeader = u.job_title === '본부장' || u.job_title === '소장' || u.job_title === '팀장';
 
-      if (!isLeader && leaderMap[u.department || '미지정 파트']) {
-        parentId = leaderMap[u.department || '미지정 파트'];
+      if (!isLeader && leaderMap[dept]) {
+        parentId = leaderMap[dept];
       }
 
       data.push({
@@ -279,17 +322,23 @@ export default function HRManagement({
         .childrenMargin((d: any) => 50)
         .compactMarginBetween((d: any) => 25)
         .compactMarginPair((d: any) => 25)
+        .onNodeClick((d: any) => {
+          // 3. 조직도 노드 클릭 시 상세 정보 및 수정 가능하도록 연결
+          if (d.data.type === 'user' && d.data.data) {
+            setDetailUser(d.data.data);
+          }
+        })
         .nodeContent((d: any) => {
-          if (d.data.type === 'root') {
+          if (d.data.type === 'group') {
             return `
               <div style="background-color: #1F2937; color: white; border-radius: 8px; border: 2px solid #111827; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                ${d.data.name}
+                📁 ${d.data.name}
               </div>`;
           }
           if (d.data.type === 'department') {
             return `
               <div style="background-color: #243B5A; color: white; border-radius: 8px; border: 2px solid #1e293b; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                ${d.data.name} 파트
+                🏢 ${d.data.name}
               </div>`;
           }
 
@@ -300,7 +349,7 @@ export default function HRManagement({
           const borderWidth = isLeader ? '2px' : '1px';
 
           return `
-            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 12px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 12px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: pointer;">
               <div style="font-size: 13px; font-weight: bold; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
                 <span>${isLeader ? '👑' : '👤'} ${user.name}</span>
                 <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isLeader ? '#e0e7ff' : '#e2e8f0'}; color: ${isLeader ? '#4f46e5' : '#475569'};">${user.position || ''}</span>
@@ -566,7 +615,7 @@ export default function HRManagement({
           </div>
           <div>
             <h1 className="text-sm font-bold text-[#1F2937]">인사 관리 및 조직도</h1>
-            <p className="text-[11px] text-[#64748B]">파트별·직급별 체계적인 조직도를 조회합니다.</p>
+            <p className="text-[11px] text-[#64748B]">운영·관리·팀파트 중심의 체계적인 조직도를 조회합니다.</p>
           </div>
         </div>
 
@@ -609,14 +658,14 @@ export default function HRManagement({
             </button>
           </div>
 
-          {(activeTab === 'LIST' || activeTab === 'DAGRE') && (
+          {activeTab === 'DAGRE' && (
             <button
-              onClick={handleExportExcel}
-              className="flex items-center space-x-1 bg-[#16A34A] hover:bg-[#15803d] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-              title="현재 목록을 엑셀 파일로 저장합니다"
+              onClick={handleExportPDF}
+              className="flex items-center space-x-1 bg-[#DC2626] hover:bg-[#B91C1C] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+              title="인터랙티브 조직도를 고화질 압축 PDF 파일로 저장합니다"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              <span>엑셀 저장</span>
+              <FileText className="h-3.5 w-3.5" />
+              <span>PDF 저장</span>
             </button>
           )}
 
@@ -727,7 +776,7 @@ export default function HRManagement({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-1.5 font-bold text-[#64748B]">
               <Layers className="h-3.5 w-3.5 text-[#243B5A]" />
-              <span>인터랙티브 조직도</span>
+              <span>인터랙티브 조직도 (운영파트 - 관리파트 - 팀파트)</span>
             </div>
             
             <div className="flex items-center space-x-2">
