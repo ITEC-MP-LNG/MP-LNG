@@ -13,7 +13,8 @@ import {
   Calendar,
   Briefcase,
   Anchor,
-  AlertCircle
+  AlertCircle,
+  Bell
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
@@ -31,6 +32,7 @@ import MaterialManagement from '@/components/MaterialManagement';
 import EducationManagement from '@/components/EducationManagement';
 import HRManagement from '@/components/HRManagement';
 import ShipInfo from '@/components/ShipInfo';
+import NoticeBoard from '@/components/NoticeBoard';
 
 function calculateCareerDetails(startDateStr?: string) {
   if (!startDateStr) return null;
@@ -67,7 +69,7 @@ interface ExtendedAppUser extends AppUser {
 export default function MainPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<ExtendedAppUser | null>(null);
-  const [mainTab, setMainTab] = useState<'TASKS' | 'INVENTORY' | 'SHIP' | 'EDUCATION' | 'HR'>('TASKS');
+  const [mainTab, setMainTab] = useState<'NOTICE' | 'TASKS' | 'INVENTORY' | 'SHIP' | 'EDUCATION' | 'HR'>('TASKS');
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
@@ -314,12 +316,15 @@ export default function MainPage() {
   const totalCareer = calculateCareerDetails(currentUser.career_start_date);
 
   const menuItems = [
+    { id: 'NOTICE', label: '게시판', icon: Bell },
     { id: 'TASKS', label: '업무 관리', icon: ListTodo },
     { id: 'INVENTORY', label: '자재/재고 관리', icon: Package },
     { id: 'SHIP', label: '호선 현황', icon: Anchor },
     { id: 'EDUCATION', label: '교육 관리', icon: GraduationCap },
     { id: 'HR', label: '인사 관리', icon: Users },
   ];
+
+  const mobileMenuItems = menuItems.filter((item) => item.id !== 'NOTICE');
 
   return (
     <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] flex flex-col pb-20 md:pb-0 font-sans relative">
@@ -353,8 +358,18 @@ export default function MainPage() {
               )}
             </div>
 
+            <button
+              type="button"
+              onClick={() => setMainTab('NOTICE')}
+              className="md:hidden flex items-center justify-center p-2 bg-[#F5F6F8] text-[#243B5A] hover:bg-[#E2E5E9] rounded-lg border border-[#E2E5E9] transition"
+              title="게시판"
+              aria-label="게시판"
+            >
+              <Bell className="h-4 w-4" />
+            </button>
+
             <div className="flex items-center space-x-2 bg-[#F5F6F8] px-3 py-1 rounded-lg border border-[#E2E5E9]">
-              <ShieldCheck className="h-4 w-4 text-[#243B5A]" />
+              <ShieldCheck className="h-4 w-4 text-[#243B5A]"/>
               <span className="text-xs font-semibold text-[#1F2937]">{currentUser.name}</span>
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                 isAdmin ? 'bg-[#243B5A] text-white' : 'bg-[#E2E5E9] text-[#1F2937]'
@@ -379,7 +394,7 @@ export default function MainPage() {
           <div className="px-3 py-2 text-[10px] font-bold text-[#64748B] uppercase tracking-wider">
             통합 현장관리 Navigation
           </div>
-          {menuItems.map((item) => {
+          {mobileMenuItems.map((item) => {
             const Icon = item.icon;
             const isActive = mainTab === item.id;
             return (
@@ -400,6 +415,13 @@ export default function MainPage() {
         </aside>
 
         <main className="flex-1 p-0 overflow-y-auto min-w-0">
+          {mainTab === 'NOTICE' && (
+            <NoticeBoard
+              isAdmin={isAdmin}
+              currentUser={{ name: currentUser.name }}
+            />
+          )}
+
           {mainTab === 'TASKS' && (
             <WorkManagement
               currentUser={currentUser}
