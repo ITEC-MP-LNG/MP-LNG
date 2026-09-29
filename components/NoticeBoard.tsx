@@ -9,6 +9,7 @@ import {
   Bell,
   Pin,
   Calendar,
+  AlertCircle,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -56,6 +57,10 @@ export default function NoticeBoard({
   const [showModal, setShowModal] = useState(false);
   const [editingNotice, setEditingNotice] =
     useState<NoticeItem | null>(null);
+
+  // 커스텀 삭제 확인 모달 상태
+  const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
+  const [targetDeleteId, setTargetDeleteId] = useState<number | string | null>(null);
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -207,7 +212,8 @@ export default function NoticeBoard({
     setShowModal(true);
   };
 
-  const handleDelete = async (
+  // 삭제 요청 시 커스텀 확인 모달 열기
+  const handleDeleteClick = (
     id: number | string,
     e?: React.MouseEvent
   ) => {
@@ -218,23 +224,29 @@ export default function NoticeBoard({
       return;
     }
 
-    if (!window.confirm('정말 이 공지를 삭제하시겠습니까?')) {
-      return;
-    }
+    setTargetDeleteId(id);
+    setShowDeleteConfirmModal(true);
+  };
+
+  // 커스텀 모달에서 확인 버튼을 눌렀을 때 실제 삭제 처리
+  const confirmDelete = async () => {
+    if (!targetDeleteId) return;
 
     try {
       const { error } = await supabase
         .from('notices')
         .delete()
-        .eq('id', id);
+        .eq('id', targetDeleteId);
 
       if (error) throw error;
 
-      if (selectedNotice?.id === id) {
+      if (selectedNotice?.id === targetDeleteId) {
         setSelectedNotice(null);
       }
 
       setShowModal(false);
+      setShowDeleteConfirmModal(false);
+      setTargetDeleteId(null);
 
       alert('공지사항이 삭제되었습니다.');
 
@@ -339,7 +351,7 @@ export default function NoticeBoard({
             </div>
           </div>
 
-          {/* 모바일 전용 종 모양 버튼 (신규 공지 유무에 따라 빨간색 / 옅은 파란색 전환) */}
+          {/* 모바일 전용 종 모양 버튼 */}
           <div className="sm:hidden flex items-center">
             <button
               onClick={() => {
@@ -363,7 +375,7 @@ export default function NoticeBoard({
         {isAdmin && (
           <button
             onClick={handleOpenCreate}
-            className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-4 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs"
+            className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-4 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             <span>공지 등록</span>
@@ -379,7 +391,7 @@ export default function NoticeBoard({
             <div className="p-5">
               <button
                 onClick={handleClosePopup}
-                className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937]"
+                className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -410,14 +422,14 @@ export default function NoticeBoard({
               <div className="flex justify-between items-center pt-3 border-t border-[#E2E5E9]">
                 <button
                   onClick={handleHideToday}
-                  className="text-xs text-[#64748B] hover:text-[#1F2937] font-medium underline"
+                  className="text-xs text-[#64748B] hover:text-[#1F2937] font-medium underline cursor-pointer"
                 >
                   오늘 하루 보지 않기
                 </button>
 
                 <button
                   onClick={handleClosePopup}
-                  className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold"
+                  className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer"
                 >
                   닫기
                 </button>
@@ -533,7 +545,7 @@ export default function NoticeBoard({
                             e
                           )
                         }
-                        className="p-1.5 text-[#64748B] hover:text-[#243B5A] hover:bg-[#F5F6F8] rounded-lg"
+                        className="p-1.5 text-[#64748B] hover:text-[#243B5A] hover:bg-[#F5F6F8] rounded-lg cursor-pointer"
                         title="공지 수정"
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -541,12 +553,12 @@ export default function NoticeBoard({
 
                       <button
                         onClick={(e) =>
-                          handleDelete(
+                          handleDeleteClick(
                             notice.id,
                             e
                           )
                         }
-                        className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg"
+                        className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg cursor-pointer"
                         title="공지 삭제"
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -578,7 +590,7 @@ export default function NoticeBoard({
                 onClick={() =>
                   setSelectedNotice(null)
                 }
-                className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937]"
+                className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -635,7 +647,7 @@ export default function NoticeBoard({
                           notice
                         );
                       }}
-                      className="px-3 py-1.5 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold flex items-center gap-1 border border-[#E2E5E9]"
+                      className="px-3 py-1.5 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold flex items-center gap-1 border border-[#E2E5E9] cursor-pointer"
                     >
                       <Pencil className="h-3 w-3" />
                       수정
@@ -648,7 +660,7 @@ export default function NoticeBoard({
                   onClick={() =>
                     setSelectedNotice(null)
                   }
-                  className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold"
+                  className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer"
                 >
                   닫기
                 </button>
@@ -673,7 +685,7 @@ export default function NoticeBoard({
               onClick={() =>
                 setShowModal(false)
               }
-              className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937]"
+              className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
             >
               <X className="h-4 w-4" />
             </button>
@@ -768,11 +780,11 @@ export default function NoticeBoard({
                   <button
                     type="button"
                     onClick={() =>
-                      handleDelete(
+                      handleDeleteClick(
                         editingNotice.id
                       )
                     }
-                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[#DC2626] bg-red-50 hover:bg-red-100 border border-red-200"
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[#DC2626] bg-red-50 hover:bg-red-100 border border-red-200 cursor-pointer"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                     삭제
@@ -788,14 +800,14 @@ export default function NoticeBoard({
                     onClick={() =>
                       setShowModal(false)
                     }
-                    className="px-3 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] rounded-lg text-xs"
+                    className="px-3 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] rounded-lg text-xs cursor-pointer"
                   >
                     취소
                   </button>
 
                   <button
                     type="submit"
-                    className="px-3 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold"
+                    className="px-3 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer"
                   >
                     {editingNotice
                       ? '수정 완료'
@@ -810,6 +822,43 @@ export default function NoticeBoard({
 
           </div>
 
+        </div>
+      )}
+
+      {/* 커스텀 삭제 확인 모달 */}
+      {showDeleteConfirmModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-xl border border-[#E2E5E9] space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 bg-red-50 rounded-xl text-red-600 border border-red-100">
+                <AlertCircle className="h-6 w-6" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#1F2937]">공지사항 삭제</h3>
+                <p className="text-xs text-[#64748B]">정말 이 공지를 삭제하시겠습니까?</p>
+              </div>
+            </div>
+
+            <div className="flex space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowDeleteConfirmModal(false);
+                  setTargetDeleteId(null);
+                }}
+                className="flex-1 py-2.5 px-4 bg-[#F5F6F8] text-[#1F2937] hover:bg-[#E2E5E9] text-xs font-semibold rounded-lg transition border border-[#E2E5E9] cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                className="flex-1 py-2.5 px-4 bg-[#DC2626] text-white hover:bg-red-700 text-xs font-bold rounded-lg transition shadow-xs cursor-pointer"
+              >
+                삭제하기
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
