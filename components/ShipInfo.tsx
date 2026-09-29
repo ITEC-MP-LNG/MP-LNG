@@ -411,6 +411,39 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const currentStatusShip = ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
 
   // =========================================================================
+  // Status 엑셀 다운로드 함수 추가
+  // =========================================================================
+  const handleDownloadExcel = () => {
+    if (!currentStatusShip) return;
+    
+    let csvContent = "\uFEFF";
+    csvContent += `Hull No,${currentStatusShip.ship_no}\n`;
+    csvContent += `Ship Name,${currentStatusShip.ship_name}\n`;
+    csvContent += `Dock,${currentStatusShip.dock}\n`;
+    csvContent += `DWT,${currentStatusShip.dwt || ''}\n`;
+    csvContent += `Launch Date,${currentStatusShip.launch_date || ''}\n`;
+    csvContent += `Delivery Date,${currentStatusShip.delivery_date || ''}\n\n`;
+    
+    csvContent += "Tank,Step,Status,Date,Value,Text\n";
+    TANKS.forEach(tk => {
+      const tankDetail = currentStatusShip.tank_status?.[tk] || getDefaultTankStatus()[tk];
+      TANK_STEPS.forEach(st => {
+        const stepInfo = tankDetail[st.key] || { date: '', status: '대기', value: '', text: '' };
+        csvContent += `${tk},${st.label},${stepInfo.status},${stepInfo.date || ''},${stepInfo.value || ''},${stepInfo.text || ''}\n`;
+      });
+    });
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Hull_${currentStatusShip.ship_no}_Status.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  // =========================================================================
   // Status 탭 전용 핸들러 (선택, 등록, 수정, 삭제)
   // =========================================================================
 
@@ -1188,6 +1221,15 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       </div>
                     );
                   })()}
+
+                  {/* 엑셀 다운로드 버튼 추가 */}
+                  <button
+                    onClick={handleDownloadExcel}
+                    className="flex items-center space-x-1 bg-white hover:bg-slate-50 text-[#243B5A] border border-[#243B5A] px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
+                    title="Status 엑셀 다운로드"
+                  >
+                    <span>엑셀 다운로드</span>
+                  </button>
 
                   {/* 관리자 권한 전용 액션: 수정 & 삭제 */}
                   {isAdmin && (
@@ -2422,7 +2464,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                           </div>
                         </div>
 
-                        {/* NH3 전용 텍스트 입력창 */}
+                        {/* NH3 전용 텍스트 입력창 추가 */}
                         {step.key === 'nh3' && (
                           <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
                             <span className="text-[11px] font-bold text-amber-800 shrink-0">
@@ -2430,7 +2472,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             </span>
                             <input
                               type="text"
-                              placeholder="NH3 검사 내용 / 특이사항 텍스트 입력 (예: Leak 미발생, 센서 검교정 완료 등)"
+                              placeholder="NH3 검사 내용 / 특이사항 텍스트 입력"
                               value={currentStepData.text || ''}
                               onChange={(e) => {
                                 const newText = e.target.value;
@@ -2470,7 +2512,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   type="submit"
                   className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
                 >
-                  저장
+                  수정 사항 저장
                 </button>
               </div>
             </form>
@@ -2479,35 +2521,38 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 7. 삭제 확인 모달 (공통) */}
+      {/* 7. 삭제 확인 모달 */}
       {/* ============================================================== */}
       {isDeleteModalOpen && targetDeleteShip && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full text-center shadow-xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="mx-auto h-10 w-10 bg-red-100 text-[#DC2626] rounded-full flex items-center justify-center">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center space-x-2 text-[#DC2626]">
               <AlertTriangle className="h-5 w-5" />
+              <h3 className="text-sm font-bold text-[#1F2937]">호선 및 Status 삭제 확인</h3>
             </div>
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-[#1F2937]">호선 및 Status 삭제</h3>
-              <p className="text-xs text-[#64748B]">
-                선택한 <strong className="text-[#DC2626]">[Hull #{targetDeleteShip.ship_no}]</strong> 호선 정보와 연결된 모든 Tank 공정 기록이 완전히 삭제됩니다. 계속하시겠습니까?
-              </p>
-            </div>
-            <div className="flex space-x-2 pt-2">
+
+            <p className="text-xs text-[#64748B] leading-relaxed">
+              정말로 <strong className="text-[#1F2937] font-bold">[Hull #{targetDeleteShip.ship_no}] {targetDeleteShip.ship_name}</strong> 호선과 관련된 모든 Status 데이터를 삭제하시겠습니까?<br />
+              <span className="text-[#DC2626] font-semibold">이 작업은 되돌릴 수 없습니다.</span>
+            </p>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-[#E2E5E9]">
               <button
+                type="button"
                 onClick={() => {
                   setIsDeleteModalOpen(false);
                   setTargetDeleteShip(null);
                 }}
-                className="flex-1 py-1.5 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                className="px-3 py-1.5 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
               >
                 취소
               </button>
               <button
+                type="button"
                 onClick={handleConfirmDelete}
-                className="flex-1 py-1.5 bg-[#DC2626] hover:bg-red-700 text-white rounded-lg text-xs font-semibold cursor-pointer"
+                className="px-4 py-1.5 bg-[#DC2626] hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
               >
-                삭제
+                삭제하기
               </button>
             </div>
           </div>
@@ -2515,35 +2560,28 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 8. 공통 알림(Notice/Alert) 모달 (기존 디자인 스타일 통일) */}
+      {/* 8. 통합 알림(Alert/Notice) 모달 */}
       {/* ============================================================== */}
       {alertInfo.isOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-3.5 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-start gap-3">
-              <div className={`p-2 rounded-full shrink-0 ${alertInfo.type === 'success'
-                  ? 'bg-emerald-100 text-emerald-600'
-                  : alertInfo.type === 'error'
-                    ? 'bg-red-100 text-red-600'
-                    : alertInfo.type === 'warning'
-                      ? 'bg-amber-100 text-amber-600'
-                      : 'bg-blue-100 text-blue-600'
-                }`}>
-                {alertInfo.type === 'success' && <CheckCircle2 className="h-5 w-5" />}
-                {alertInfo.type === 'error' && <AlertTriangle className="h-5 w-5" />}
-                {alertInfo.type === 'warning' && <AlertCircle className="h-5 w-5" />}
-                {alertInfo.type === 'info' && <Info className="h-5 w-5" />}
-              </div>
-              <div className="space-y-1 flex-1">
-                <h3 className="text-sm font-bold text-[#1F2937]">{alertInfo.title}</h3>
-                <p className="text-xs text-[#64748B] whitespace-pre-line leading-relaxed">{alertInfo.message}</p>
-              </div>
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center space-x-2">
+              {alertInfo.type === 'success' && <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />}
+              {alertInfo.type === 'warning' && <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />}
+              {alertInfo.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />}
+              {alertInfo.type === 'info' && <Info className="h-5 w-5 text-[#243B5A] shrink-0" />}
+              <h3 className="text-sm font-bold text-[#1F2937]">{alertInfo.title}</h3>
             </div>
 
-            <div className="flex justify-end pt-2">
+            <p className="text-xs text-[#64748B] whitespace-pre-line leading-relaxed">
+              {alertInfo.message}
+            </p>
+
+            <div className="flex justify-end pt-2 border-t border-[#E2E5E9]">
               <button
+                type="button"
                 onClick={() => setAlertInfo({ ...alertInfo, isOpen: false })}
-                className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white text-xs font-semibold rounded-lg shadow-2xs cursor-pointer"
+                className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
               >
                 확인
               </button>
