@@ -120,13 +120,19 @@ function calculateAge(birthStr?: string) {
   return isNaN(age) ? null : age;
 }
 
-const nodeWidth = 200;
-const nodeHeight = 65;
+const nodeWidth = 220;
+const nodeHeight = 70;
 
 const getLayoutedElements = (nodes: any[], edges: any[], direction = 'TB') => {
   const dagreGraph = new dagre.graphlib.Graph();
   dagreGraph.setDefaultEdgeLabel(() => ({}));
-  dagreGraph.setGraph({ rankdir: direction, nodesep: 50, ranksep: 80, align: 'UL' });
+  dagreGraph.setGraph({
+    rankdir: direction,
+    nodesep: 60,
+    ranksep: 100,
+    marginx: 40,
+    marginy: 40,
+  });
 
   nodes.forEach((node) => {
     dagreGraph.setNode(node.id, { width: nodeWidth, height: nodeHeight });
@@ -265,7 +271,7 @@ export default function HRManagement({
       element.classList.add('pdf-export-mode');
 
       const canvas = await html2canvas(element, {
-        scale: 3,
+        scale: 2,
         useCORS: true,
         backgroundColor: '#F8FAFC',
         logging: false,
@@ -277,14 +283,40 @@ export default function HRManagement({
         }
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.92);
+      const imgData = canvas.toDataURL('image/png');
+
+      // A4 기준 (mm): landscape = 297 x 210
+      const isLandscape = canvas.width > canvas.height;
       const pdf = new jsPDF({
-        orientation: canvas.width > canvas.height ? 'landscape' : 'portrait',
-        unit: 'px',
-        format: [canvas.width, canvas.height]
+        orientation: isLandscape ? 'landscape' : 'portrait',
+        unit: 'mm',
+        format: 'a4',
       });
 
-      pdf.addImage(imgData, 'JPEG', 0, 0, canvas.width, canvas.height);
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const margin = 10; // mm
+      const availableWidth = pageWidth - margin * 2;
+      const availableHeight = pageHeight - margin * 2;
+
+      const canvasAspect = canvas.width / canvas.height;
+      const pageAspect = availableWidth / availableHeight;
+
+      let imgWidth: number;
+      let imgHeight: number;
+
+      if (canvasAspect > pageAspect) {
+        imgWidth = availableWidth;
+        imgHeight = availableWidth / canvasAspect;
+      } else {
+        imgHeight = availableHeight;
+        imgWidth = availableHeight * canvasAspect;
+      }
+
+      const offsetX = margin + (availableWidth - imgWidth) / 2;
+      const offsetY = margin + (availableHeight - imgHeight) / 2;
+
+      pdf.addImage(imgData, 'PNG', offsetX, offsetY, imgWidth, imgHeight);
       pdf.save(`조직도_이름직급경력_${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (err: any) {
       console.error('PDF 내보내기 실패:', err);
@@ -387,8 +419,8 @@ export default function HRManagement({
           color: isHead ? '#fff' : '#1F2937',
           border: isHead ? '2px solid #1d3049' : isLeader ? '2px solid #4f46e5' : '1px solid #cbd5e1', 
           borderRadius: '10px', 
-          width: 200, 
-          height: 65 
+          width: nodeWidth, 
+          height: nodeHeight 
         }
       });
     });
@@ -919,7 +951,7 @@ export default function HRManagement({
             </div>
           </div>
 
-          <div ref={dagreContainerRef} className="w-full h-[720px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
+          <div ref={dagreContainerRef} className="w-full h-[780px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
             <ReactFlow
               nodes={flowNodes}
               edges={flowEdges}
@@ -933,10 +965,12 @@ export default function HRManagement({
                 );
               }}
               fitView
-              minZoom={0.2}
-              maxZoom={2}
+              fitViewOptions={{ padding: 0.2, minZoom: 0.5, maxZoom: 1.2 }}
+              minZoom={0.1}
+              maxZoom={3}
+              defaultEdgeOptions={{ type: 'smoothstep', style: { stroke: '#4f46e5', strokeWidth: 2 } }}
             >
-              <Controls />
+              <Controls showInteractive={true} />
               <MiniMap style={{ height: 120 }} zoomable pannable />
               <Background gap={16} size={1} color="#e2e8f0" />
             </ReactFlow>
