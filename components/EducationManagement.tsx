@@ -7,6 +7,7 @@ import {
   Trash2, 
   X, 
   GraduationCap, 
+  Calendar as CalendarIcon,
   ChevronLeft, 
   ChevronRight, 
   MapPin, 
@@ -16,6 +17,18 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Education, EducationRecord } from '@/lib/types';
+
+// 신규 EVENT 타입 정의
+interface EventItem {
+  id: number;
+  title: string;
+  event_date: string;
+  time_slot: string;
+  location: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+}
 
 interface EducationManagementProps {
   isAdmin: boolean;
@@ -43,6 +56,10 @@ export default function EducationManagement({
 }: EducationManagementProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
   
+  // 탭 상태 ('education' | 'event')
+  const [activeTab, setActiveTab] = useState<'education' | 'event'>('education');
+
+  // 교육 관련 모달 상태
   const [showEduModal, setShowEduModal] = useState(false);
   const [editingEdu, setEditingEdu] = useState<Education | null>(null);
   const [selectedEduForDetail, setSelectedEduForDetail] = useState<Education | null>(null);
@@ -58,6 +75,41 @@ export default function EducationManagement({
   const [assignedWorkersInput, setAssignedWorkersInput] = useState('');
   const [assignedWorkers, setAssignedWorkers] = useState<string[]>([]);
 
+  // EVENT 관련 상태 및 데이터
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
+  const [showEventModal, setShowEventModal] = useState(false);
+  const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
+  const [selectedEventForDetail, setSelectedEventForDetail] = useState<EventItem | null>(null);
+
+  const [eventTitle, setEventTitle] = useState('');
+  const [eventDate, setEventDate] = useState(getLocalDateString());
+  const [eventTimeSlot, setEventTimeSlot] = useState('14:00~15:00');
+  const [eventLocation, setEventLocation] = useState('');
+  const [eventDescription, setEventDescription] = useState('');
+
+  // 이벤트 데이터 불러오기
+  const fetchEvents = async () => {
+    try {
+      setLoadingEvents(true);
+      const { data, error } = await supabase
+        .from('events')
+        .select('*')
+        .order('event_date', { ascending: true });
+      if (error) throw error;
+      setEvents(data || []);
+    } catch (err: any) {
+      console.error('이벤트 불러오기 실패:', err?.message);
+    } finally {
+      setLoadingEvents(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  // 교육 당일 알림 기능 유지
   useEffect(() => {
     if (!currentUser?.name || educations.length === 0) return;
 
@@ -103,6 +155,7 @@ export default function EducationManagement({
     setAssignedWorkers(prev => prev.filter(name => name !== nameToRemove));
   };
 
+  // 교육 등록/수정 핸들러
   const handleOpenEduCreate = (dateStr?: string) => {
     if (!isAdmin) return alert('관리자만 교육을 등록할 수 있습니다.');
     setEditingEdu(null);
@@ -183,6 +236,76 @@ export default function EducationManagement({
     }
   };
 
+  // EVENT 등록/수정 핸들러 (관리자 또는 일반 사용자 허용 여부에 따라 조절 가능, 여기서는 교육과 동일하게 관리자 혹은 자유 등록 가능)
+  const handleOpenEventCreate = (dateStr?: string) => {
+    setEditingEvent(null);
+    setEventTitle('');
+    setEventDate(dateStr || getLocalDateString());
+    setEventTimeSlot('14:00~15:00');
+    setEventLocation('');
+    setEventDescription('');
+    setShowEventModal(true);
+  };
+
+  const handleOpenEventEdit = (ev: EventItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingEvent(ev);
+    setEventTitle(ev.title);
+    setEventDate(ev.event_date);
+    setEventTimeSlot(ev.time_slot || '');
+    setEventLocation(ev.location || '');
+    setEventDescription(ev.description || '');
+    setShowEventModal(true);
+  };
+
+  const handleDeleteEvent = async (id: number, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (!window.confirm('정말 이 EVENT를 삭제하시겠습니까?')) return;
+
+    try {
+      const { error } = await supabase.from('events').delete().eq('id', id);
+      if (error) throw error;
+
+      alert('EVENT가 삭제되었습니다.');
+      setShowEventModal(false);
+      setSelectedEventForDetail(null);
+      fetchEvents();
+    } catch (err: any) {
+      alert(`EVENT 삭제 실패: ${err?.message || '오류가 발생했습니다.'}`);
+    }
+  };
+
+  const handleSubmitEvent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!eventTitle.trim()) return alert('EVENT 제목을 입력해주세요.');
+
+    try {
+      const payload = {
+        title: eventTitle,
+        event_date: eventDate,
+        time_slot: eventTimeSlot,
+        location: eventLocation,
+        description: eventDescription,
+        updated_at: new Date().toISOString()
+      };
+
+      if (editingEvent) {
+        const { error } = await supabase.from('events').update(payload).eq('id', editingEvent.id);
+        if (error) throw error;
+        alert('EVENT가 수정되었습니다.');
+      } else {
+        const { error } = await supabase.from('events').insert([payload]);
+        if (error) throw error;
+        alert('신규 EVENT가 등록되었습니다.');
+      }
+
+      setShowEventModal(false);
+      fetchEvents();
+    } catch (err: any) {
+      alert('EVENT 저장 실패: ' + (err?.message || '오류가 발생했습니다.'));
+    }
+  };
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const firstDayOfMonth = new Date(year, month, 1).getDay();
@@ -200,16 +323,36 @@ export default function EducationManagement({
   return (
     <div className="w-full text-[#1F2937] p-4 sm:p-6 space-y-4 font-sans border-box">
       
-      {/* 🚀 상단 타이틀 영역 */}
+      {/* 🚀 상단 타이틀 영역 및 탭 전환 */}
       <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div className="flex items-center space-x-3">
           <div className="p-2.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
             <GraduationCap className="h-6 w-6" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-[#1F2937]">교육 일정 관리 시스템</h1>
-            <p className="text-xs text-[#64748B]">사내 정기 교육 및 교육 대상자 통합 관리</p>
+            <h1 className="text-base font-bold text-[#1F2937]">교육 및 EVENT 통합 캘린더</h1>
+            <p className="text-xs text-[#64748B]">사내 정기 교육 및 중요 EVENT 일정 관리</p>
           </div>
+        </div>
+
+        {/* 탭 버튼 */}
+        <div className="flex bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9]">
+          <button
+            onClick={() => setActiveTab('education')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+              activeTab === 'education' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
+            }`}
+          >
+            교육 일정 관리
+          </button>
+          <button
+            onClick={() => setActiveTab('event')}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
+              activeTab === 'event' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
+            }`}
+          >
+            EVENT 관리
+          </button>
         </div>
       </div>
 
@@ -239,22 +382,33 @@ export default function EducationManagement({
           </button>
         </div>
 
-        {isAdmin && (
-          <button
-            onClick={() => handleOpenEduCreate()}
-            className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-4 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs"
-          >
-            <Plus className="h-4 w-4" />
-            <span>신규 교육 일정 등록</span>
-          </button>
-        )}
+        <div className="flex items-center space-x-2">
+          {activeTab === 'education' && isAdmin && (
+            <button
+              onClick={() => handleOpenEduCreate()}
+              className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-3.5 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs"
+            >
+              <Plus className="h-4 w-4" />
+              <span>신규 교육 등록</span>
+            </button>
+          )}
+          {activeTab === 'event' && (
+            <button
+              onClick={() => handleOpenEventCreate()}
+              className="flex items-center justify-center space-x-1.5 bg-[#0D9488] text-white px-3.5 py-2 rounded-lg hover:bg-[#0f766e] transition shadow-xs font-medium text-xs"
+            >
+              <Plus className="h-4 w-4" />
+              <span>신규 EVENT 등록</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {loadingEdu ? (
-        <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-12 text-xs text-[#64748B]">교육 일정을 불러오는 중...</div>
+      {loadingEdu || loadingEvents ? (
+        <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-12 text-xs text-[#64748B]">일정을 불러오는 중...</div>
       ) : (
         <>
-          {/* 달력 뷰 */}
+          {/* 달력 뷰 (교육과 이벤트가 색상으로 구분되어 표시됨) */}
           <div className="bg-white rounded-xl border border-[#E2E5E9] overflow-hidden shadow-xs">
             <div className="grid grid-cols-7 bg-[#F5F6F8] border-b border-[#E2E5E9] text-center py-2.5 text-xs font-bold text-[#64748B]">
               <div className="text-red-600">일</div>
@@ -269,17 +423,18 @@ export default function EducationManagement({
             <div className="grid grid-cols-7 auto-rows-fr gap-px bg-[#E2E5E9]">
               {calendarDays.map((day, idx) => {
                 if (day === null) {
-                  return <div key={idx} className="bg-[#F5F6F8]/50 min-h-[100px]" />;
+                  return <div key={idx} className="bg-[#F5F6F8]/50 min-h-[110px]" />;
                 }
 
                 const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                 const dayEdus = educations.filter(e => e.edu_date === dateStr);
+                const dayEvts = events.filter(ev => ev.event_date === dateStr);
                 const isToday = todayStr === dateStr;
 
                 return (
                   <div
                     key={idx}
-                    className={`bg-white p-1.5 min-h-[100px] flex flex-col justify-between hover:bg-[#F5F6F8]/50 transition relative ${
+                    className={`bg-white p-1.5 min-h-[110px] flex flex-col justify-between hover:bg-[#F5F6F8]/50 transition relative ${
                       isToday ? 'bg-blue-50/30' : ''
                     }`}
                   >
@@ -290,25 +445,50 @@ export default function EducationManagement({
                         }`}>
                           {day}
                         </span>
-                        {isAdmin && (
-                          <button
-                            onClick={() => handleOpenEduCreate(dateStr)}
-                            className="text-[#64748B] hover:text-[#243B5A] p-0.5 rounded"
-                            title="이 날짜에 교육 추가"
-                          >
-                            <Plus className="h-3 w-3" />
-                          </button>
-                        )}
+                        
+                        {/* 날짜 칸에서 바로 교육 또는 이벤트 추가 버튼 */}
+                        <div className="flex items-center space-x-1">
+                          {activeTab === 'education' && isAdmin && (
+                            <button
+                              onClick={() => handleOpenEduCreate(dateStr)}
+                              className="text-[#64748B] hover:text-[#243B5A] p-0.5 rounded"
+                              title="이 날짜에 교육 추가"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          )}
+                          {activeTab === 'event' && (
+                            <button
+                              onClick={() => handleOpenEventCreate(dateStr)}
+                              className="text-[#64748B] hover:text-[#0D9488] p-0.5 rounded"
+                              title="이 날짜에 이벤트 추가"
+                            >
+                              <Plus className="h-3 w-3" />
+                            </button>
+                          )}
+                        </div>
                       </div>
 
-                      <div className="space-y-1 max-h-[75px] overflow-y-auto">
+                      {/* 일정 목록 (교육: 남색 계열, 이벤트: 청록색 계열로 구분) */}
+                      <div className="space-y-1 max-h-[85px] overflow-y-auto">
                         {dayEdus.map(edu => (
                           <div
-                            key={edu.id}
+                            key={`edu-${edu.id}`}
                             onClick={() => setSelectedEduForDetail(edu)}
-                            className="p-1 rounded text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] text-[#243B5A] cursor-pointer hover:bg-slate-100 transition truncate font-medium"
+                            className="p-1 rounded text-[10px] bg-slate-100 border border-slate-300 text-[#243B5A] cursor-pointer hover:bg-slate-200 transition truncate font-medium flex items-center gap-1"
                           >
-                            <span className="font-bold">[{edu.time_slot}]</span> {edu.title}
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#243B5A] shrink-0" />
+                            <span className="truncate"><strong className="font-semibold">[교육]</strong> {edu.title}</span>
+                          </div>
+                        ))}
+                        {dayEvts.map(ev => (
+                          <div
+                            key={`evt-${ev.id}`}
+                            onClick={() => setSelectedEventForDetail(ev)}
+                            className="p-1 rounded text-[10px] bg-teal-50 border border-teal-200 text-teal-900 cursor-pointer hover:bg-teal-100 transition truncate font-medium flex items-center gap-1"
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#0D9488] shrink-0" />
+                            <span className="truncate"><strong className="font-semibold">[EVENT]</strong> {ev.title}</span>
                           </div>
                         ))}
                       </div>
@@ -319,67 +499,121 @@ export default function EducationManagement({
             </div>
           </div>
 
-          {/* 전체 교육 목록 카드 */}
-          <div className="mt-6 space-y-3">
-            <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center gap-1.5">
-              <GraduationCap className="h-4 w-4 text-[#243B5A]" />
-              <span>전체 교육 목록</span>
-            </h3>
-            {educations.length === 0 ? (
-              <div className="bg-white rounded-xl p-8 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
-                등록된 교육 일정이 없습니다.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                {educations.map(edu => (
-                  <div 
-                    key={edu.id} 
-                    onClick={() => setSelectedEduForDetail(edu)}
-                    className="bg-white rounded-xl border border-[#E2E5E9] p-4 shadow-xs hover:border-slate-400 transition cursor-pointer flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-[#F5F6F8] text-[#243B5A] border border-[#E2E5E9]">
-                          {edu.edu_date} ({edu.time_slot})
-                        </span>
-                        
-                        {isAdmin && (
+          {/* 하단 목록 영역 (선택된 탭에 따라 교육 또는 이벤트 목록 표시) */}
+          {activeTab === 'education' ? (
+            <div className="mt-6 space-y-3">
+              <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center gap-1.5">
+                <GraduationCap className="h-4 w-4 text-[#243B5A]" />
+                <span>전체 교육 목록</span>
+              </h3>
+              {educations.length === 0 ? (
+                <div className="bg-white rounded-xl p-8 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
+                  등록된 교육 일정이 없습니다.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {educations.map(edu => (
+                    <div 
+                      key={edu.id} 
+                      onClick={() => setSelectedEduForDetail(edu)}
+                      className="bg-white rounded-xl border border-[#E2E5E9] p-4 shadow-xs hover:border-slate-400 transition cursor-pointer flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-[#243B5A] border border-slate-200">
+                            {edu.edu_date} ({edu.time_slot})
+                          </span>
+                          
+                          {isAdmin && (
+                            <div className="flex items-center space-x-1">
+                              <button
+                                onClick={(e) => handleOpenEduEdit(edu, e)}
+                                className="p-1 text-[#64748B] hover:text-[#243B5A] rounded hover:bg-slate-100"
+                                title="교육 수정"
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={(e) => handleDeleteEdu(edu.id, e)}
+                                className="p-1 text-[#64748B] hover:text-[#DC2626] rounded hover:bg-slate-100"
+                                title="교육 삭제"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        <h4 className="text-xs font-bold text-[#1F2937] mb-2">{edu.title}</h4>
+
+                        <div className="space-y-1 text-[11px] text-[#64748B] bg-slate-50 p-2.5 rounded-lg border border-[#E2E5E9]">
+                          <div>장소: <strong className="text-[#1F2937]">{edu.location}</strong></div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="mt-6 space-y-3">
+              <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center gap-1.5">
+                <CalendarIcon className="h-4 w-4 text-[#0D9488]" />
+                <span>전체 EVENT 목록</span>
+              </h3>
+              {events.length === 0 ? (
+                <div className="bg-white rounded-xl p-8 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
+                  등록된 EVENT가 없습니다.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {events.map(ev => (
+                    <div 
+                      key={ev.id} 
+                      onClick={() => setSelectedEventForDetail(ev)}
+                      className="bg-white rounded-xl border border-[#E2E5E9] p-4 shadow-xs hover:border-teal-400 transition cursor-pointer flex flex-col justify-between"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200">
+                            {ev.event_date} {ev.time_slot ? `(${ev.time_slot})` : ''}
+                          </span>
+                          
                           <div className="flex items-center space-x-1">
                             <button
-                              onClick={(e) => handleOpenEduEdit(edu, e)}
-                              className="p-1 text-[#64748B] hover:text-[#243B5A] rounded hover:bg-[#F5F6F8]"
-                              title="교육 수정"
+                              onClick={(e) => handleOpenEventEdit(ev, e)}
+                              className="p-1 text-[#64748B] hover:text-[#0D9488] rounded hover:bg-slate-100"
+                              title="EVENT 수정"
                             >
                               <Pencil className="h-3.5 w-3.5" />
                             </button>
                             <button
-                              onClick={(e) => handleDeleteEdu(edu.id, e)}
-                              className="p-1 text-[#64748B] hover:text-[#DC2626] rounded hover:bg-[#F5F6F8]"
-                              title="교육 삭제"
+                              onClick={(e) => handleDeleteEvent(ev.id, e)}
+                              className="p-1 text-[#64748B] hover:text-[#DC2626] rounded hover:bg-slate-100"
+                              title="EVENT 삭제"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           </div>
-                        )}
-                      </div>
+                        </div>
 
-                      <h4 className="text-xs font-bold text-[#1F2937] mb-2">{edu.title}</h4>
+                        <h4 className="text-xs font-bold text-[#1F2937] mb-2">{ev.title}</h4>
 
-                      <div className="space-y-1 text-[11px] text-[#64748B] bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9]">
-                        <div className="flex items-center justify-between">
-                          <span>장소: <strong className="text-[#1F2937]">{edu.location}</strong></span>
+                        <div className="space-y-1 text-[11px] text-[#64748B] bg-slate-50 p-2.5 rounded-lg border border-[#E2E5E9]">
+                          {ev.location && <div>장소: <strong className="text-[#1F2937]">{ev.location}</strong></div>}
+                          {ev.description && <div className="truncate">내용: {ev.description}</div>}
                         </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
 
-      {/* 접속자 배정 알림 팝업 모달 */}
+      {/* 접속자 교육 당일 배정 알림 팝업 모달 */}
       {showNoticeModal && assignedNoticeEdu && currentUser?.name && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-sm w-full p-5 shadow-xl relative text-[#1F2937]">
@@ -403,7 +637,7 @@ export default function EducationManagement({
               배정된 교육 일정을 확인해 주세요.
             </p>
 
-            <div className="bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-3 space-y-1.5 mb-4 text-xs">
+            <div className="bg-slate-50 border border-[#E2E5E9] rounded-lg p-3 space-y-1.5 mb-4 text-xs">
               <div className="font-bold text-[#243B5A] mb-1">
                 {assignedNoticeEdu.title}
               </div>
@@ -437,22 +671,22 @@ export default function EducationManagement({
             <form onSubmit={handleSubmitEdu} className="space-y-3 text-xs">
               <div>
                 <label className="block font-semibold text-[#64748B] mb-1">교육명</label>
-                <input type="text" required value={eduTitle} onChange={e => setEduTitle(e.target.value)} className="w-full bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" placeholder="예: 상반기 정기 안전교육" />
+                <input type="text" required value={eduTitle} onChange={e => setEduTitle(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" placeholder="예: 상반기 정기 안전교육" />
               </div>
 
               <div>
                 <label className="block font-semibold text-[#64748B] mb-1">교육 장소</label>
-                <input type="text" required value={eduLocation} onChange={e => setEduLocation(e.target.value)} className="w-full bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" placeholder="예: 대회의실" />
+                <input type="text" required value={eduLocation} onChange={e => setEduLocation(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" placeholder="예: 대회의실" />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
                   <label className="block font-semibold text-[#64748B] mb-1">교육 일자</label>
-                  <input type="date" required value={eduDate} onChange={e => setEduDate(e.target.value)} className="w-full bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" />
+                  <input type="date" required value={eduDate} onChange={e => setEduDate(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" />
                 </div>
                 <div>
                   <label className="block font-semibold text-[#64748B] mb-1">교육 시간대</label>
-                  <input type="text" required value={eduTimeSlot} onChange={e => setEduTimeSlot(e.target.value)} className="w-full bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="10:00~12:00" />
+                  <input type="text" required value={eduTimeSlot} onChange={e => setEduTimeSlot(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="10:00~12:00" />
                 </div>
               </div>
 
@@ -463,7 +697,7 @@ export default function EducationManagement({
                     type="text"
                     value={assignedWorkersInput}
                     onChange={e => setAssignedWorkersInput(e.target.value)}
-                    className="flex-1 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]"
+                    className="flex-1 bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]"
                     placeholder="홍길동, 이순신"
                   />
                   <button
@@ -475,7 +709,7 @@ export default function EducationManagement({
                   </button>
                 </div>
 
-                <div className="flex flex-wrap gap-1 p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg min-h-[36px] max-h-24 overflow-y-auto">
+                <div className="flex flex-wrap gap-1 p-2 bg-slate-50 border border-[#E2E5E9] rounded-lg min-h-[36px] max-h-24 overflow-y-auto">
                   {assignedWorkers.length === 0 ? (
                     <span className="text-[11px] text-[#64748B]">배정된 인원이 없습니다.</span>
                   ) : (
@@ -508,8 +742,64 @@ export default function EducationManagement({
                 ) : <div />}
 
                 <div className="flex space-x-2">
-                  <button type="button" onClick={() => setShowEduModal(false)} className="px-3 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] rounded-lg text-xs text-[#1F2937]">취소</button>
+                  <button type="button" onClick={() => setShowEduModal(false)} className="px-3 py-1.5 bg-white border border-[#E2E5E9] hover:bg-slate-50 rounded-lg text-xs text-[#1F2937]">취소</button>
                   <button type="submit" className="px-3 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold">{editingEdu ? '수정 완료' : '등록하기'}</button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EVENT 등록 및 수정 모달 */}
+      {showEventModal && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-md w-full p-5 shadow-xl relative text-[#1F2937]">
+            <button onClick={() => setShowEventModal(false)} className="absolute top-4 right-4 text-[#64748B]"><X className="h-4 w-4" /></button>
+            <h2 className="text-xs font-bold text-[#1F2937] mb-3">{editingEvent ? 'EVENT 수정' : '신규 EVENT 등록'}</h2>
+            
+            <form onSubmit={handleSubmitEvent} className="space-y-3 text-xs">
+              <div>
+                <label className="block font-semibold text-[#64748B] mb-1">EVENT 제목</label>
+                <input type="text" required value={eventTitle} onChange={e => setEventTitle(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="예: 사내 워크숍" />
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#64748B] mb-1">장소</label>
+                <input type="text" value={eventLocation} onChange={e => setEventLocation(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="예: 강당" />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block font-semibold text-[#64748B] mb-1">날짜</label>
+                  <input type="date" required value={eventDate} onChange={e => setEventDate(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" />
+                </div>
+                <div>
+                  <label className="block font-semibold text-[#64748B] mb-1">시간</label>
+                  <input type="text" value={eventTimeSlot} onChange={e => setEventTimeSlot(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="14:00~15:00" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-semibold text-[#64748B] mb-1">내용</label>
+                <textarea rows={3} value={eventDescription} onChange={e => setEventDescription(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="이벤트 상세 내용을 입력하세요." />
+              </div>
+
+              <div className="flex items-center justify-between pt-3 border-t border-[#E2E5E9]">
+                {editingEvent ? (
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteEvent(editingEvent.id)}
+                    className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[#DC2626] bg-red-50 hover:bg-red-100 border border-red-200"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    <span>삭제</span>
+                  </button>
+                ) : <div />}
+
+                <div className="flex space-x-2">
+                  <button type="button" onClick={() => setShowEventModal(false)} className="px-3 py-1.5 bg-white border border-[#E2E5E9] hover:bg-slate-50 rounded-lg text-xs text-[#1F2937]">취소</button>
+                  <button type="submit" className="px-3 py-1.5 bg-[#0D9488] hover:bg-[#0f766e] text-white rounded-lg text-xs font-semibold">{editingEvent ? '수정 완료' : '등록하기'}</button>
                 </div>
               </div>
             </form>
@@ -524,12 +814,12 @@ export default function EducationManagement({
             <button onClick={() => setSelectedEduForDetail(null)} className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937]"><X className="h-4 w-4" /></button>
             
             <div className="flex items-center space-x-1.5 text-xs font-bold text-[#243B5A] mb-1">
-              <span>{selectedEduForDetail.edu_date} ({selectedEduForDetail.time_slot})</span>
+              <span>[교육] {selectedEduForDetail.edu_date} ({selectedEduForDetail.time_slot})</span>
             </div>
 
             <h2 className="text-xs font-bold text-[#1F2937] mb-3">{selectedEduForDetail.title}</h2>
 
-            <div className="bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9] text-xs space-y-1.5 mb-3">
+            <div className="bg-slate-50 p-3 rounded-lg border border-[#E2E5E9] text-xs space-y-1.5 mb-3">
               <div className="flex items-center space-x-1.5 text-[#64748B]">
                 <MapPin className="h-3.5 w-3.5 text-[#243B5A]" />
                 <span>장소: <strong className="text-[#1F2937]">{selectedEduForDetail.location}</strong></span>
@@ -541,7 +831,7 @@ export default function EducationManagement({
                 <Users className="h-3 w-3 text-[#243B5A]" />
                 <span>교육 대상자 목록</span>
               </h3>
-              <div className="flex flex-wrap gap-1 p-2.5 bg-[#F5F6F8] rounded-lg border border-[#E2E5E9] min-h-[40px] max-h-32 overflow-y-auto">
+              <div className="flex flex-wrap gap-1 p-2.5 bg-slate-50 rounded-lg border border-[#E2E5E9] min-h-[40px] max-h-32 overflow-y-auto">
                 {selectedEduForDetail.assigned_workers && selectedEduForDetail.assigned_workers.length > 0 ? (
                   selectedEduForDetail.assigned_workers.map((worker, idx) => (
                     <span key={idx} className="bg-white text-[#243B5A] text-xs px-2 py-0.5 rounded border border-[#E2E5E9] font-medium">
@@ -564,7 +854,7 @@ export default function EducationManagement({
                         setSelectedEduForDetail(null);
                         handleOpenEduEdit(eduToEdit);
                       }}
-                      className="px-3 py-1.5 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold transition flex items-center space-x-1 border border-[#E2E5E9]"
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#1F2937] rounded-lg text-xs font-semibold transition flex items-center space-x-1 border border-[#E2E5E9]"
                     >
                       <Pencil className="h-3 w-3" />
                       <span>수정</span>
@@ -583,6 +873,67 @@ export default function EducationManagement({
               <button
                 onClick={() => setSelectedEduForDetail(null)}
                 className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold transition"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* EVENT 상세보기 팝업 모달 */}
+      {selectedEventForDetail && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-md w-full p-5 shadow-xl relative text-[#1F2937]">
+            <button onClick={() => setSelectedEventForDetail(null)} className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937]"><X className="h-4 w-4" /></button>
+            
+            <div className="flex items-center space-x-1.5 text-xs font-bold text-teal-700 mb-1">
+              <span>[EVENT] {selectedEventForDetail.event_date} {selectedEventForDetail.time_slot ? `(${selectedEventForDetail.time_slot})` : ''}</span>
+            </div>
+
+            <h2 className="text-xs font-bold text-[#1F2937] mb-3">{selectedEventForDetail.title}</h2>
+
+            <div className="bg-slate-50 p-3 rounded-lg border border-[#E2E5E9] text-xs space-y-1.5 mb-3">
+              {selectedEventForDetail.location && (
+                <div className="flex items-center space-x-1.5 text-[#64748B]">
+                  <MapPin className="h-3.5 w-3.5 text-teal-700" />
+                  <span>장소: <strong className="text-[#1F2937]">{selectedEventForDetail.location}</strong></span>
+                </div>
+              )}
+            </div>
+
+            <div className="mb-4">
+              <h3 className="text-[11px] font-bold text-[#64748B] mb-1.5">EVENT 내용</h3>
+              <div className="p-3 bg-slate-50 rounded-lg border border-[#E2E5E9] text-xs text-[#1F2937] min-h-[60px] whitespace-pre-wrap">
+                {selectedEventForDetail.description || '작성된 내용이 없습니다.'}
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-3 border-t border-[#E2E5E9]">
+              <div className="flex space-x-1.5">
+                <button
+                  onClick={() => {
+                    const evToEdit = selectedEventForDetail;
+                    setSelectedEventForDetail(null);
+                    handleOpenEventEdit(evToEdit);
+                  }}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#1F2937] rounded-lg text-xs font-semibold transition flex items-center space-x-1 border border-[#E2E5E9]"
+                >
+                  <Pencil className="h-3 w-3" />
+                  <span>수정</span>
+                </button>
+                <button
+                  onClick={() => handleDeleteEvent(selectedEventForDetail.id)}
+                  className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-[#DC2626] rounded-lg text-xs font-semibold transition flex items-center space-x-1 border border-red-200"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  <span>삭제</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => setSelectedEventForDetail(null)}
+                className="px-4 py-1.5 bg-[#0D9488] hover:bg-[#0f766e] text-white rounded-lg text-xs font-semibold transition"
               >
                 닫기
               </button>
