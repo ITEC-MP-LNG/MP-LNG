@@ -69,7 +69,7 @@ interface ExtendedAppUser extends AppUser {
 export default function MainPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<ExtendedAppUser | null>(null);
-  const [mainTab, setMainTab] = useState<'NOTICE' | 'TASKS' | 'INVENTORY' | 'SHIP' | 'EDUCATION' | 'HR'>('TASKS');
+  const [mainTab, setMainTab] = useState<'NOTICE' | 'TASKS' | 'INVENTORY' | 'SHIP' | 'EDUCATION' | 'HR'>('NOTICE');
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(true);
@@ -324,8 +324,6 @@ export default function MainPage() {
     { id: 'HR', label: '인사 관리', icon: Users },
   ];
 
-  const mobileMenuItems = menuItems.filter((item) => item.id !== 'NOTICE');
-
   return (
     <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] flex flex-col pb-20 md:pb-0 font-sans relative">
       <header className="bg-white border-b border-[#E2E5E9] sticky top-0 z-30 shadow-2xs">
@@ -369,7 +367,7 @@ export default function MainPage() {
             </button>
 
             <div className="flex items-center space-x-2 bg-[#F5F6F8] px-3 py-1 rounded-lg border border-[#E2E5E9]">
-              <ShieldCheck className="h-4 w-4 text-[#243B5A]"/>
+              <ShieldCheck className="h-4 w-4 text-[#243B5A]" />
               <span className="text-xs font-semibold text-[#1F2937]">{currentUser.name}</span>
               <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${
                 isAdmin ? 'bg-[#243B5A] text-white' : 'bg-[#E2E5E9] text-[#1F2937]'
@@ -394,7 +392,7 @@ export default function MainPage() {
           <div className="px-3 py-2 text-[10px] font-bold text-[#64748B] uppercase tracking-wider">
             통합 현장관리 Navigation
           </div>
-          {mobileMenuItems.map((item) => {
+          {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = mainTab === item.id;
             return (
