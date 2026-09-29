@@ -10,6 +10,7 @@ import {
   Pin,
   Calendar,
   AlertCircle,
+  CheckCircle2,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -61,6 +62,30 @@ export default function NoticeBoard({
   // 커스텀 삭제 확인 모달 상태
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [targetDeleteId, setTargetDeleteId] = useState<number | string | null>(null);
+
+  // 커스텀 알림(성공/오류) 모달 상태
+  const [alertModal, setAlertModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    type: 'success' | 'error' | 'info';
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'success',
+  });
+
+  const showAlert = (title: string, message: string, type: 'success' | 'error' | 'info' = 'success', onConfirm?: () => void) => {
+    setAlertModal({
+      isOpen: true,
+      title,
+      message,
+      type,
+      onConfirm,
+    });
+  };
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -123,9 +148,10 @@ export default function NoticeBoard({
       }
     } catch (err: any) {
       console.error('공지사항 불러오기 실패:', err);
-      alert(
-        '공지사항을 불러오지 못했습니다.\n' +
-          (err?.message || '오류가 발생했습니다.')
+      showAlert(
+        '불러오기 실패',
+        '공지사항을 불러오지 못했습니다.\n' + (err?.message || '오류가 발생했습니다.'),
+        'error'
       );
     } finally {
       setLoading(false);
@@ -183,7 +209,7 @@ export default function NoticeBoard({
 
   const handleOpenCreate = () => {
     if (!isAdmin) {
-      alert('관리자만 공지를 등록할 수 있습니다.');
+      showAlert('권한 없음', '관리자만 공지를 등록할 수 있습니다.', 'error');
       return;
     }
 
@@ -201,7 +227,7 @@ export default function NoticeBoard({
     if (e) e.stopPropagation();
 
     if (!isAdmin) {
-      alert('관리자만 공지를 수정할 수 있습니다.');
+      showAlert('권한 없음', '관리자만 공지를 수정할 수 있습니다.', 'error');
       return;
     }
 
@@ -220,7 +246,7 @@ export default function NoticeBoard({
     if (e) e.stopPropagation();
 
     if (!isAdmin) {
-      alert('삭제 권한이 없습니다.');
+      showAlert('권한 없음', '삭제 권한이 없습니다.', 'error');
       return;
     }
 
@@ -248,13 +274,14 @@ export default function NoticeBoard({
       setShowDeleteConfirmModal(false);
       setTargetDeleteId(null);
 
-      alert('공지사항이 삭제되었습니다.');
-
-      await fetchNotices();
+      showAlert('삭제 완료', '공지사항이 삭제되었습니다.', 'success', async () => {
+        await fetchNotices();
+      });
     } catch (err: any) {
-      alert(
-        '공지사항 삭제 실패: ' +
-          (err?.message || '오류가 발생했습니다.')
+      showAlert(
+        '삭제 실패',
+        '공지사항 삭제 실패: ' + (err?.message || '오류가 발생했습니다.'),
+        'error'
       );
     }
   };
@@ -265,17 +292,17 @@ export default function NoticeBoard({
     e.preventDefault();
 
     if (!isAdmin) {
-      alert('등록/수정 권한이 없습니다.');
+      showAlert('권한 없음', '등록/수정 권한이 없습니다.', 'error');
       return;
     }
 
     if (!title.trim()) {
-      alert('공지 제목을 입력해주세요.');
+      showAlert('입력 확인', '공지 제목을 입력해주세요.', 'info');
       return;
     }
 
     if (!content.trim()) {
-      alert('공지 내용을 입력해주세요.');
+      showAlert('입력 확인', '공지 내용을 입력해주세요.', 'info');
       return;
     }
 
@@ -297,7 +324,12 @@ export default function NoticeBoard({
 
         if (error) throw error;
 
-        alert('공지사항이 수정되었습니다.');
+        setShowModal(false);
+        setEditingNotice(null);
+
+        showAlert('수정 완료', '공지사항이 수정되었습니다.', 'success', async () => {
+          await fetchNotices();
+        });
       } else {
         const { error } = await supabase
           .from('notices')
@@ -311,17 +343,18 @@ export default function NoticeBoard({
 
         if (error) throw error;
 
-        alert('공지사항이 등록되었습니다.');
+        setShowModal(false);
+        setEditingNotice(null);
+
+        showAlert('등록 완료', '공지사항이 등록되었습니다.', 'success', async () => {
+          await fetchNotices();
+        });
       }
-
-      setShowModal(false);
-      setEditingNotice(null);
-
-      await fetchNotices();
     } catch (err: any) {
-      alert(
-        '공지사항 저장 실패: ' +
-          (err?.message || '오류가 발생했습니다.')
+      showAlert(
+        '저장 실패',
+        '공지사항 저장 실패: ' + (err?.message || '오류가 발생했습니다.'),
+        'error'
       );
     }
   };
@@ -856,6 +889,49 @@ export default function NoticeBoard({
                 className="flex-1 py-2.5 px-4 bg-[#DC2626] text-white hover:bg-red-700 text-xs font-bold rounded-lg transition shadow-xs cursor-pointer"
               >
                 삭제하기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 커스텀 알림/성공 모달 */}
+      {alertModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+          <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-xl border border-[#E2E5E9] space-y-4">
+            <div className="flex items-center space-x-3">
+              <div className={`p-2.5 rounded-xl border ${
+                alertModal.type === 'error' 
+                  ? 'bg-red-50 text-red-600 border-red-100' 
+                  : alertModal.type === 'info'
+                  ? 'bg-sky-50 text-sky-600 border-sky-100'
+                  : 'bg-[#243B5A]/10 text-[#243B5A] border-[#243B5A]/20'
+              }`}>
+                {alertModal.type === 'error' ? (
+                  <AlertCircle className="h-6 w-6" />
+                ) : alertModal.type === 'info' ? (
+                  <AlertCircle className="h-6 w-6" />
+                ) : (
+                  <CheckCircle2 className="h-6 w-6" />
+                )}
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#1F2937]">{alertModal.title}</h3>
+                <p className="text-xs text-[#64748B] whitespace-pre-wrap mt-0.5">{alertModal.message}</p>
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const callback = alertModal.onConfirm;
+                  setAlertModal((prev) => ({ ...prev, isOpen: false, onConfirm: undefined }));
+                  if (callback) callback();
+                }}
+                className="w-full py-2.5 px-4 bg-[#243B5A] text-white hover:bg-[#1a2d46] text-xs font-bold rounded-lg transition shadow-xs cursor-pointer"
+              >
+                확인
               </button>
             </div>
           </div>
