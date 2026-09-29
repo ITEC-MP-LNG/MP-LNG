@@ -355,10 +355,10 @@ export default function MainPage() {
 
   const menuItems = [
     { id: 'NOTICE', label: '게시판', icon: Bell },
-    { id: 'TASKS', label: '업무 관리', icon: ListTodo },
-    { id: 'INVENTORY', label: '자재/재고 관리', icon: Package },
+    { id: 'TASKS', label: '업무 현황', icon: ListTodo },
+    { id: 'INVENTORY', label: '기자재/소모성 자재', icon: Package },
     { id: 'SHIP', label: '호선 현황', icon: Anchor },
-    { id: 'EDUCATION', label: '교육 관리', icon: GraduationCap },
+    { id: 'EDUCATION', label: '교육 & EVENT', icon: GraduationCap },
     { id: 'HR', label: '인사 관리', icon: Users },
   ];
 
