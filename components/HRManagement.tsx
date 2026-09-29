@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { OrgChart } from 'd3-org-chart';
-import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { 
   Users, 
   Building2, 
@@ -21,7 +22,7 @@ import {
   AtSign,
   Network, 
   GitCommit,
-  FileSpreadsheet,
+  FileText,
   Shield
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
@@ -160,34 +161,36 @@ export default function HRManagement({
     birthDate: '' 
   });
 
-  const handleExportExcel = () => {
-    const formattedData = filteredUsers.map(item => ({
-      '아이디': item.id,
-      '성명': item.name,
-      '파트(부서)': item.department || '',
-      '직급': item.position || '',
-      '직책': item.job_title || '',
-      '분야': item.field || '',
-      '주소': item.address || '',
-      '자사근속': calculateCareerDetails(item.join_date) || '',
-      '총경력': calculateCareerDetails(item.career_start_date) || '',
-      '사내자격': item.internal_certificates || '',
-      '국가자격': item.national_certificates || '',
-      '입사일': item.join_date || '',
-      '경력시작일': item.career_start_date || ''
-    }));
+  // 고화질 압축 PDF 저장 함수
+  const handleExportPDF = async () => {
+    const element = d3ContainerRef.current;
+    if (!element) {
+      alert('저장할 조직도 영역을 찾을 수 없습니다. 인터랙티브 조직도 탭에서 시도해주세요.');
+      return;
+    }
 
-    const worksheet = XLSX.utils.json_to_sheet(formattedData);
-    // 컬럼 넓이 재조정 (연락처, 나이 제외 반영)
-    worksheet['!cols'] = [
-      { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
-      { wch: 12 }, { wch: 20 }, { wch: 12 }, { wch: 12 },
-      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }
-    ];
+    try {
+      setLoading(true);
+      const canvas = await html2canvas(element, {
+        scale: 2, // 고해상도 렌더링
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#F8FAFC'
+      });
 
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '인사관리목록');
-    XLSX.writeFile(workbook, `인사관리목록_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      const imgData = canvas.toDataURL('image/jpeg', 0.85); // 고화질 압축 (JPEG 85%)
+      const pdf = new jsPDF('landscape', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+
+      pdf.addImage(imgData, 'JPEG', 0, 10, pdfWidth, pdfHeight, undefined, 'FAST');
+      pdf.save(`조직도_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error('PDF 저장 실패:', err);
+      alert('PDF 저장 중 오류가 발생했습니다.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const myRole = currentUserRole || currentUser?.role || '';
@@ -212,6 +215,46 @@ export default function HRManagement({
     setSelectedSubCategory('ALL');
   }, [subGroupType]);
 
+  // 전역 핸들러 등록 (D3 Org Chart 내부 버튼 인터랙션용)
+  useEffect(() => {
+    (window as any).handleChartEdit = (userId: string) => {
+      const target = users.find(u => u.id === userId);
+      if (target) handleOpenEditModal(target);
+    };
+
+    (window as any).handleChartDelete = (userId: string) => {
+      const target = users.find(u => u.id === userId);
+      if (target) handleDeleteUser(target);
+    };
+
+    (window as any).handleChartAddSub = (dept: string) => {
+      if (!isAdmin) {
+        alert('관리자 권한이 필요합니다.');
+        return;
+      }
+      setSelectedUser(null);
+      setFormData({
+        inputId: '',
+        name: '',
+        email: '',
+        department: dept,
+        position: '매니저',
+        job_title: '팀원',
+        field: '안전',
+        role: 'USER',
+        phone: '',
+        address: '',
+        experience: '',
+        internal_certificates: '',
+        national_certificates: '',
+        join_date: new Date().toISOString().split('T')[0],
+        career_start_date: new Date().toISOString().split('T')[0],
+        birthDate: ''
+      });
+      setIsModalOpen(true);
+    };
+  }, [users, isAdmin]);
+
   const buildHierarchy = (userList: HRUser[]) => {
     const data: any[] = [];
     data.push({ id: 'root', parentId: '', name: '조직도', type: 'root' });
@@ -232,7 +275,7 @@ export default function HRManagement({
 
     const leaderMap: Record<string, string> = {};
     userList.forEach((u) => {
-      if (u.job_title === '본부장' || u.job_title === '소장' || u.job_title === '팀장') {
+      if (['본부장', '소장', '팀장'].includes(u.job_title || '')) {
         if (!leaderMap[u.department || '미지정 파트']) {
           leaderMap[u.department || '미지정 파트'] = u.id;
         }
@@ -242,7 +285,7 @@ export default function HRManagement({
     userList.forEach((u) => {
       const deptId = `dept_${u.department || '미지정 파트'}`;
       let parentId = deptId;
-      const isLeader = u.job_title === '본부장' || u.job_title === '소장' || u.job_title === '팀장';
+      const isLeader = ['본부장', '소장', '팀장'].includes(u.job_title || '');
 
       if (!isLeader && leaderMap[u.department || '미지정 파트']) {
         parentId = leaderMap[u.department || '미지정 파트'];
@@ -274,8 +317,8 @@ export default function HRManagement({
       chartRef.current
         .container(d3ContainerRef.current)
         .data(chartData)
-        .nodeHeight((d: any) => d.data.type === 'user' ? 85 : 45)
-        .nodeWidth((d: any) => 220)
+        .nodeHeight((d: any) => d.data.type === 'user' ? 95 : 45)
+        .nodeWidth((d: any) => 230)
         .childrenMargin((d: any) => 50)
         .compactMarginBetween((d: any) => 25)
         .compactMarginPair((d: any) => 25)
@@ -288,25 +331,31 @@ export default function HRManagement({
           }
           if (d.data.type === 'department') {
             return `
-              <div style="background-color: #243B5A; color: white; border-radius: 8px; border: 2px solid #1e293b; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                ${d.data.name} 파트
+              <div style="background-color: #243B5A; color: white; border-radius: 8px; border: 2px solid #1e293b; height: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-weight: bold; font-family: sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                <span>${d.data.name} 파트</span>
+                <button onclick="window.handleChartAddSub('${d.data.name}')" style="background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer;" title="구성원 추가">＋ 추가</button>
               </div>`;
           }
 
           const user = d.data.data;
-          const isLeader = user.job_title === '본부장' || user.job_title === '소장' || user.job_title === '팀장';
+          const isLeader = ['본부장', '소장', '팀장'].includes(user.job_title || '');
           const bgColor = isLeader ? '#ffffff' : '#f8fafc';
           const borderColor = isLeader ? '#4f46e5' : '#cbd5e1';
           const borderWidth = isLeader ? '2px' : '1px';
 
           return `
-            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 12px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 10px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
               <div style="font-size: 13px; font-weight: bold; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
                 <span>${isLeader ? '👑' : '👤'} ${user.name}</span>
-                <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isLeader ? '#e0e7ff' : '#e2e8f0'}; color: ${isLeader ? '#4f46e5' : '#475569'};">${user.position || ''}</span>
+                <div style="display: flex; gap: 4px; align-items: center;">
+                  <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isLeader ? '#e0e7ff' : '#e2e8f0'}; color: ${isLeader ? '#4f46e5' : '#475569'};">${user.position || ''}</span>
+                  <button onclick="window.handleChartEdit('${user.id}')" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 4px;" title="수정">✏️</button>
+                  <button onclick="window.handleChartDelete('${user.id}')" style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 4px; color: #dc2626;" title="삭제">🗑️</button>
+                </div>
               </div>
-              <div style="font-size: 10px; color: #64748b; margin-top: 8px;">
-                ${user.job_title || '팀원'} ${user.field ? `· ${user.field}` : ''}
+              <div style="font-size: 10px; color: #64748b; margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+                <span>${user.job_title || '팀원'} ${user.field ? `· ${user.field}` : ''}</span>
+                <span style="font-size: 9px; color: #2563eb; background: #eff6ff; padding: 1px 4px; border-radius: 3px;">${user.phone || '연락처 없음'}</span>
               </div>
             </div>
           `;
@@ -566,7 +615,7 @@ export default function HRManagement({
           </div>
           <div>
             <h1 className="text-sm font-bold text-[#1F2937]">인사 관리 및 조직도</h1>
-            <p className="text-[11px] text-[#64748B]">파트별·직급별 체계적인 조직도를 조회합니다.</p>
+            <p className="text-[11px] text-[#64748B]">파트별·직급별 체계적인 조직도를 조회하고 편집합니다.</p>
           </div>
         </div>
 
@@ -609,14 +658,14 @@ export default function HRManagement({
             </button>
           </div>
 
-          {(activeTab === 'LIST' || activeTab === 'DAGRE') && (
+          {activeTab === 'DAGRE' && (
             <button
-              onClick={handleExportExcel}
-              className="flex items-center space-x-1 bg-[#16A34A] hover:bg-[#15803d] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-              title="현재 목록을 엑셀 파일로 저장합니다"
+              onClick={handleExportPDF}
+              className="flex items-center space-x-1 bg-[#DC2626] hover:bg-[#b91c1c] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+              title="현재 인터랙티브 조직도를 고화질 PDF로 저장합니다"
             >
-              <FileSpreadsheet className="h-3.5 w-3.5" />
-              <span>엑셀 저장</span>
+              <FileText className="h-3.5 w-3.5" />
+              <span>PDF 저장</span>
             </button>
           )}
 
@@ -727,7 +776,7 @@ export default function HRManagement({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-1.5 font-bold text-[#64748B]">
               <Layers className="h-3.5 w-3.5 text-[#243B5A]" />
-              <span>인터랙티브 조직도</span>
+              <span>인터랙티브 조직도 (노드 내 ✏️ 수정 / 🗑️ 삭제 가능)</span>
             </div>
             
             <div className="flex items-center space-x-2">
@@ -778,8 +827,8 @@ export default function HRManagement({
               return dateA.localeCompare(dateB);
             };
 
-            const leaders = groupMembers.filter(u => u.job_title === '팀장').sort(sortMembers);
-            const members = groupMembers.filter(u => u.job_title !== '팀장').sort(sortMembers);
+            const leaders = groupMembers.filter(u => ['본부장', '소장', '팀장'].includes(u.job_title || '')).sort(sortMembers);
+            const members = groupMembers.filter(u => !['본부장', '소장', '팀장'].includes(u.job_title || '')).sort(sortMembers);
 
             const isCollapsed = !!collapsedGroups[catName];
 
@@ -803,10 +852,25 @@ export default function HRManagement({
                     </div>
                   </div>
 
-                  <button className="text-[#64748B] hover:text-[#1F2937] p-1 flex items-center gap-1 text-xs font-medium">
-                    <span>{isCollapsed ? '펼치기' : '접기'}</span>
-                    {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-                  </button>
+                  <div className="flex items-center space-x-2">
+                    {isAdmin && subGroupType === 'DEPT' && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedUser(null);
+                          setFormData(prev => ({ ...prev, department: catName }));
+                          setIsModalOpen(true);
+                        }}
+                        className="px-2 py-1 bg-[#243B5A] text-white rounded text-[11px] font-bold hover:bg-[#1d3049]"
+                      >
+                        + 구성원 추가
+                      </button>
+                    )}
+                    <button className="text-[#64748B] hover:text-[#1F2937] p-1 flex items-center gap-1 text-xs font-medium">
+                      <span>{isCollapsed ? '펼치기' : '접기'}</span>
+                      {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
                 </div>
 
                 {!isCollapsed && (
@@ -815,10 +879,10 @@ export default function HRManagement({
                       <div className="space-y-2">
                         <div className="flex items-center gap-1 text-[11px] font-bold text-[#243B5A] px-1">
                           <GitCommit className="h-3.5 w-3.5 text-[#243B5A]" />
-                          <span>파트 리더 (팀장)</span>
+                          <span>파트 리더 (본부장/소장/팀장)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf))}
+                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin))}
                         </div>
                       </div>
                     )}
@@ -836,7 +900,7 @@ export default function HRManagement({
                           <span>소속 구성원 ({members.length}명)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf))}
+                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin))}
                         </div>
                       </div>
                     )}
@@ -1366,7 +1430,11 @@ function renderMemberCard(
   member: HRUser, 
   isLeader: boolean, 
   setDetailUser: (user: HRUser) => void, 
-  isSelf: (user: HRUser) => boolean
+  isSelf: (user: HRUser) => boolean,
+  handleOpenEditModal: (user: HRUser) => void,
+  handleDeleteUser: (user: HRUser) => void,
+  canEditUser: (user: HRUser) => boolean,
+  isAdmin: boolean
 ) {
   const joinCareer = calculateCareerDetails(member.join_date);
   const totalCareer = calculateCareerDetails(member.career_start_date);
@@ -1375,15 +1443,17 @@ function renderMemberCard(
   return (
     <div 
       key={member.id} 
-      onClick={() => setDetailUser(member)}
-      className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between space-y-1.5 group cursor-pointer shadow-xs ${
+      className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between space-y-1.5 group shadow-xs ${
         isLeader 
           ? 'bg-white border-[#243B5A] ring-1 ring-[#243B5A]/20 shadow-sm' 
           : 'bg-white border-[#E2E5E9] hover:border-slate-400 hover:shadow-sm'
       }`}
     >
       <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-2 min-w-0">
+        <div 
+          onClick={() => setDetailUser(member)}
+          className="flex items-center space-x-2 min-w-0 cursor-pointer flex-1"
+        >
           <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
             isLeader ? 'bg-[#243B5A] text-white' : 'bg-slate-200 text-[#243B5A]'
           }`}>
@@ -1410,6 +1480,27 @@ function renderMemberCard(
               )}
             </div>
           </div>
+        </div>
+
+        <div className="flex items-center space-x-1 shrink-0">
+          {canEditUser(member) && (
+            <button
+              onClick={() => handleOpenEditModal(member)}
+              className="p-1 text-[#243B5A] hover:bg-slate-100 rounded border border-slate-200"
+              title="수정"
+            >
+              <Edit3 className="h-3 w-3" />
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => handleDeleteUser(member)}
+              className="p-1 text-red-600 hover:bg-red-50 rounded border border-red-200"
+              title="삭제"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
         </div>
       </div>
 
