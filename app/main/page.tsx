@@ -225,7 +225,7 @@ export default function MainPage() {
     initAuthAndData();
   }, [router]);
 
-  // 네비게이션별 새 업데이트 확인 (기존 created_at 기준, 별도 DB 컬럼 추가 불필요)
+  // 네비게이션별 새 업데이트 확인 (created_at + updated_at 기준)
   const checkNavigationUpdates = async (userKey: string) => {
     const updateSources: { id: string; table: string }[] = [
       { id: 'NOTICE', table: 'notices' },
@@ -240,13 +240,17 @@ export default function MainPage() {
       try {
         const { data, error } = await supabase
           .from(table)
-          .select('created_at')
+          .select('created_at, updated_at')
+          .order('updated_at', { ascending: false, nullsFirst: false })
           .order('created_at', { ascending: false })
           .limit(1);
 
         if (error) throw error;
 
-        const latest = data?.[0]?.created_at;
+        const latestRow = data?.[0];
+        const latest = [latestRow?.created_at, latestRow?.updated_at]
+          .filter(Boolean)
+          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
         if (!latest) {
           nextFlags[id] = false;
           return;
@@ -286,13 +290,17 @@ export default function MainPage() {
 
       const { data, error } = await supabase
         .from(table)
-        .select('created_at')
+        .select('created_at, updated_at')
+        .order('updated_at', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false })
         .limit(1);
 
       if (error) throw error;
 
-      const latest = data?.[0]?.created_at;
+      const latestRow = data?.[0];
+      const latest = [latestRow?.created_at, latestRow?.updated_at]
+        .filter(Boolean)
+        .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
       if (latest) {
         localStorage.setItem(`nav_seen_${userKey}_${tabId}`, latest);
       }
