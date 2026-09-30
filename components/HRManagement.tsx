@@ -1448,6 +1448,52 @@ export default function HRManagement({
           </div>
         </div>
       )}
+
+      {notice && (
+        <div className="fixed top-5 right-5 z-[100] w-[min(92vw,420px)]">
+          <div className={`rounded-xl border bg-white px-4 py-3 shadow-lg flex items-start gap-3 ${
+            notice.type === 'success' ? 'border-green-200' :
+            notice.type === 'error' ? 'border-red-200' :
+            notice.type === 'warning' ? 'border-amber-200' : 'border-blue-200'
+          }`}>
+            <div className={`mt-0.5 h-2.5 w-2.5 rounded-full shrink-0 ${
+              notice.type === 'success' ? 'bg-green-500' :
+              notice.type === 'error' ? 'bg-red-500' :
+              notice.type === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
+            }`} />
+            <p className="text-sm font-medium text-[#1F2937] flex-1">{notice.message}</p>
+            <button onClick={() => setNotice(null)} className="text-[#94A3B8] hover:text-[#475569]">×</button>
+          </div>
+        </div>
+      )}
+
+      {confirmUser && (
+        <div className="fixed inset-0 z-[110] bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-6">
+            <h3 className="text-lg font-bold text-[#1F2937]">구성원 삭제</h3>
+            <p className="mt-2 text-sm text-[#64748B] leading-6">
+              정말로 <span className="font-bold text-[#1F2937]">[{confirmUser.name}]</span> 님의 인사 정보를 삭제하시겠습니까?
+              <br />삭제 후에는 복구할 수 없습니다.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmUser(null)}
+                className="px-4 py-2 rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1544,51 +1590,6 @@ function renderMemberCard(
       </div>
     </div>
 
-      {notice && (
-        <div className="fixed top-5 right-5 z-[100] w-[min(92vw,420px)]">
-          <div className={`rounded-xl border bg-white px-4 py-3 shadow-lg flex items-start gap-3 ${
-            notice.type === 'success' ? 'border-green-200' :
-            notice.type === 'error' ? 'border-red-200' :
-            notice.type === 'warning' ? 'border-amber-200' : 'border-blue-200'
-          }`}>
-            <div className={`mt-0.5 h-2.5 w-2.5 rounded-full shrink-0 ${
-              notice.type === 'success' ? 'bg-green-500' :
-              notice.type === 'error' ? 'bg-red-500' :
-              notice.type === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
-            }`} />
-            <p className="text-sm font-medium text-[#1F2937] flex-1">{notice.message}</p>
-            <button onClick={() => setNotice(null)} className="text-[#94A3B8] hover:text-[#475569]">×</button>
-          </div>
-        </div>
-      )}
-
-      {confirmUser && (
-        <div className="fixed inset-0 z-[110] bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-6">
-            <h3 className="text-lg font-bold text-[#1F2937]">구성원 삭제</h3>
-            <p className="mt-2 text-sm text-[#64748B] leading-6">
-              정말로 <span className="font-bold text-[#1F2937]">[{confirmUser.name}]</span> 님의 인사 정보를 삭제하시겠습니까?
-              <br />삭제 후에는 복구할 수 없습니다.
-            </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmUser(null)}
-                className="px-4 py-2 rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC]"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
-              >
-                삭제
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
   );
 }
