@@ -127,7 +127,7 @@ export default function HRManagement({
 }: HRManagementProps) {
   const [users, setUsers] = useState<HRUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'ORG' | 'DAGRE' | 'LIST'>('ORG');
+  const [activeTab, setActiveTab] = useState<'ORG' | 'CHART' | 'LIST'>('ORG');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [subGroupType, setSubGroupType] = useState<'DEPT' | 'POS'>('DEPT');
@@ -139,8 +139,27 @@ export default function HRManagement({
   const [detailUser, setDetailUser] = useState<HRUser | null>(null);
   const [selectedUser, setSelectedUser] = useState<HRUser | null>(null);
 
-  const d3ContainerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<any>(null);
+  const [notice, setNotice] = useState<{
+    type: 'success' | 'error' | 'warning' | 'info';
+    message: string;
+  } | null>(null);
+  const [confirmUser, setConfirmUser] = useState<HRUser | null>(null);
+
+  const showNotice = (
+    message: string,
+    type: 'success' | 'error' | 'warning' | 'info' = 'info'
+  ) => {
+    setNotice({ message, type });
+  };
+
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const orgChartContainerRef = useRef<HTMLDivElement>(null);
+  const orgChartRef = useRef<any>(null);
   
   const [formData, setFormData] = useState({
     inputId: '', 
@@ -163,9 +182,9 @@ export default function HRManagement({
 
   // 고화질 압축 PDF 저장 함수
   const handleExportPDF = async () => {
-    const element = d3ContainerRef.current;
+    const element = orgChartContainerRef.current;
     if (!element) {
-      alert('저장할 조직도 영역을 찾을 수 없습니다. 인터랙티브 조직도 탭에서 시도해주세요.');
+      showNotice('저장할 조직도 영역을 찾을 수 없습니다. 조직도 탭에서 시도해주세요.', 'warning');
       return;
     }
 
@@ -187,7 +206,7 @@ export default function HRManagement({
       pdf.save(`조직도_${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (err) {
       console.error('PDF 저장 실패:', err);
-      alert('PDF 저장 중 오류가 발생했습니다.');
+      showNotice('PDF 저장 중 오류가 발생했습니다.', 'error');
     } finally {
       setLoading(false);
     }
@@ -229,7 +248,7 @@ export default function HRManagement({
 
     (window as any).handleChartAddSub = (dept: string) => {
       if (!isAdmin) {
-        alert('관리자 권한이 필요합니다.');
+        showNotice('관리자 권한이 필요합니다.', 'warning');
         return;
       }
       setSelectedUser(null);
@@ -307,15 +326,15 @@ export default function HRManagement({
   };
 
   useEffect(() => {
-    if (activeTab === 'DAGRE' && d3ContainerRef.current && users.length > 0) {
-      if (!chartRef.current) {
-        chartRef.current = new OrgChart();
+    if (activeTab === 'CHART' && orgChartContainerRef.current && users.length > 0) {
+      if (!orgChartRef.current) {
+        orgChartRef.current = new OrgChart();
       }
       
       const chartData = buildHierarchy(users);
 
-      chartRef.current
-        .container(d3ContainerRef.current)
+      orgChartRef.current
+        .container(orgChartContainerRef.current)
         .data(chartData)
         .nodeHeight((d: any) => d.data.type === 'user' ? 95 : 45)
         .nodeWidth((d: any) => 230)
@@ -362,7 +381,7 @@ export default function HRManagement({
         })
         .render();
 
-      chartRef.current.expandAll();
+      orgChartRef.current.expandAll();
     }
   }, [activeTab, users]);
 
@@ -406,7 +425,7 @@ export default function HRManagement({
 
   const handleOpenAddModal = () => {
     if (!isAdmin) {
-      alert('관리자 권한이 필요합니다.');
+      showNotice('관리자 권한이 필요합니다.', 'warning');
       return;
     }
     setSelectedUser(null);
@@ -433,7 +452,7 @@ export default function HRManagement({
 
   const handleOpenEditModal = (user: HRUser) => {
     if (!canEditUser(user)) {
-      alert('본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.');
+      showNotice('본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.', 'warning');
       return;
     }
     setSelectedUser(user);
@@ -458,19 +477,11 @@ export default function HRManagement({
     setIsModalOpen(true);
   };
 
-  const handleDeleteUser = async (user: HRUser) => {
-    if (!isAdmin) {
-      alert('관리자만 구성원을 삭제할 수 있습니다.');
-      return;
-    }
+  const handleConfirmDelete = async () => {
+    if (!confirmUser) return;
 
-    if (currentUser?.id === user.id) {
-      alert('현재 로그인되어 있는 본인 계정은 삭제할 수 없습니다.');
-      return;
-    }
-
-    const confirmDelete = window.confirm(`정말로 [${user.name}] 님의 인사 정보를 삭제하시겠습니까?`);
-    if (!confirmDelete) return;
+    const user = confirmUser;
+    setConfirmUser(null);
 
     try {
       const { error } = await supabase
@@ -480,29 +491,44 @@ export default function HRManagement({
 
       if (error) throw error;
 
-      alert(`${user.name} 님의 정보가 성공적으로 삭제되었습니다.`);
+      showNotice(`${user.name} 님의 정보가 성공적으로 삭제되었습니다.`, 'success');
       fetchUsers();
     } catch (err: any) {
       console.error('삭제 실패:', err);
-      alert('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'));
+      showNotice('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'), 'error');
     }
+  };
+
+  const handleDeleteUser = async (user: HRUser) => {
+    if (!isAdmin) {
+      showNotice('관리자만 구성원을 삭제할 수 있습니다.', 'warning');
+      return;
+    }
+
+    if (currentUser?.id === user.id) {
+      showNotice('현재 로그인되어 있는 본인 계정은 삭제할 수 없습니다.', 'warning');
+      return;
+    }
+
+    setConfirmUser(user);
+    return;
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (selectedUser && !canEditUser(selectedUser)) {
-      alert('본인 정보만 수정할 권한이 있습니다.');
+      showNotice('본인 정보만 수정할 권한이 있습니다.', 'warning');
       return;
     }
 
     if (!formData.inputId.trim()) {
-      alert('로그인에 사용할 아이디를 입력해주세요.');
+      showNotice('로그인에 사용할 아이디를 입력해주세요.', 'warning');
       return;
     }
 
     if (formData.birthDate && formData.birthDate.length !== 8) {
-      alert('생년월일은 8자리(YYYYMMDD)로 정확히 입력해주세요.');
+      showNotice('생년월일은 8자리(YYYYMMDD)로 정확히 입력해주세요.', 'warning');
       return;
     }
 
@@ -540,10 +566,10 @@ export default function HRManagement({
           .eq('id', selectedUser.id);
 
         if (error) throw error;
-        alert('인사 정보가 성공적으로 수정되었습니다.');
+        showNotice('인사 정보가 성공적으로 수정되었습니다.', 'success');
       } else {
         if (!formData.birthDate) {
-          alert('비밀번호로 사용할 생년월일 8자리를 입력해주세요.');
+          showNotice('비밀번호로 사용할 생년월일 8자리를 입력해주세요.', 'warning');
           return;
         }
 
@@ -555,14 +581,14 @@ export default function HRManagement({
         ]);
 
         if (error) throw error;
-        alert('새 구성원이 등록되었습니다.');
+        showNotice('새 구성원이 등록되었습니다.', 'success');
       }
 
       setIsModalOpen(false);
       fetchUsers();
     } catch (err: any) {
       console.error('저장 실패:', err);
-      alert('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
+      showNotice('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'), 'error');
     }
   };
 
@@ -641,12 +667,12 @@ export default function HRManagement({
               <Network className="h-3.5 w-3.5" /> 카드 뷰
             </button>
             <button
-              onClick={() => setActiveTab('DAGRE')}
+              onClick={() => setActiveTab('CHART')}
               className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 ${
-                activeTab === 'DAGRE' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
+                activeTab === 'CHART' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
               }`}
             >
-              <Layers className="h-3.5 w-3.5" /> 인터랙티브 조직도
+              <Layers className="h-3.5 w-3.5" /> 조직도
             </button>
             <button
               onClick={() => setActiveTab('LIST')}
@@ -658,11 +684,11 @@ export default function HRManagement({
             </button>
           </div>
 
-          {activeTab === 'DAGRE' && (
+          {activeTab === 'CHART' && (
             <button
               onClick={handleExportPDF}
               className="flex items-center space-x-1 bg-[#DC2626] hover:bg-[#b91c1c] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-              title="현재 인터랙티브 조직도를 고화질 PDF로 저장합니다"
+              title="현재 조직도를 고화질 PDF로 저장합니다"
             >
               <FileText className="h-3.5 w-3.5" />
               <span>PDF 저장</span>
@@ -771,30 +797,30 @@ export default function HRManagement({
 
       {loading ? (
         <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-16 text-xs text-[#64748B]">조직도를 구성하는 중...</div>
-      ) : activeTab === 'DAGRE' ? (
+      ) : activeTab === 'CHART' ? (
         <div className="bg-white border border-[#E2E5E9] rounded-xl p-3 shadow-xs space-y-2.5 relative">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-1.5 font-bold text-[#64748B]">
               <Layers className="h-3.5 w-3.5 text-[#243B5A]" />
-              <span>인터랙티브 조직도 (노드 내 ✏️ 수정 / 🗑️ 삭제 가능)</span>
+              <span>조직도 (노드 내 ✏️ 수정 / 🗑️ 삭제 가능)</span>
             </div>
             
             <div className="flex items-center space-x-2">
               <button
-                onClick={() => chartRef.current?.fit()}
+                onClick={() => orgChartRef.current?.fit()}
                 className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
                 title="조직도를 화면 중앙에 맞춥니다"
               >
                 화면 맞춤
               </button>
               <button
-                onClick={() => chartRef.current?.expandAll()}
+                onClick={() => orgChartRef.current?.expandAll()}
                 className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
               >
                 모두 펴기
               </button>
               <button
-                onClick={() => chartRef.current?.collapseAll()}
+                onClick={() => orgChartRef.current?.collapseAll()}
                 className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
               >
                 모두 접기
@@ -802,7 +828,7 @@ export default function HRManagement({
             </div>
           </div>
 
-          <div ref={d3ContainerRef} className="w-full h-[780px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
+          <div ref={orgChartContainerRef} className="w-full h-[780px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
           </div>
         </div>
       ) : activeTab === 'ORG' ? (
@@ -1517,5 +1543,52 @@ function renderMemberCard(
         </div>
       </div>
     </div>
+
+      {notice && (
+        <div className="fixed top-5 right-5 z-[100] w-[min(92vw,420px)]">
+          <div className={`rounded-xl border bg-white px-4 py-3 shadow-lg flex items-start gap-3 ${
+            notice.type === 'success' ? 'border-green-200' :
+            notice.type === 'error' ? 'border-red-200' :
+            notice.type === 'warning' ? 'border-amber-200' : 'border-blue-200'
+          }`}>
+            <div className={`mt-0.5 h-2.5 w-2.5 rounded-full shrink-0 ${
+              notice.type === 'success' ? 'bg-green-500' :
+              notice.type === 'error' ? 'bg-red-500' :
+              notice.type === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
+            }`} />
+            <p className="text-sm font-medium text-[#1F2937] flex-1">{notice.message}</p>
+            <button onClick={() => setNotice(null)} className="text-[#94A3B8] hover:text-[#475569]">×</button>
+          </div>
+        </div>
+      )}
+
+      {confirmUser && (
+        <div className="fixed inset-0 z-[110] bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-6">
+            <h3 className="text-lg font-bold text-[#1F2937]">구성원 삭제</h3>
+            <p className="mt-2 text-sm text-[#64748B] leading-6">
+              정말로 <span className="font-bold text-[#1F2937]">[{confirmUser.name}]</span> 님의 인사 정보를 삭제하시겠습니까?
+              <br />삭제 후에는 복구할 수 없습니다.
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setConfirmUser(null)}
+                className="px-4 py-2 rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
   );
 }
