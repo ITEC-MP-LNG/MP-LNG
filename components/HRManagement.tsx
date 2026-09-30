@@ -139,25 +139,6 @@ export default function HRManagement({
   const [detailUser, setDetailUser] = useState<HRUser | null>(null);
   const [selectedUser, setSelectedUser] = useState<HRUser | null>(null);
 
-  const [notice, setNotice] = useState<{
-    type: 'success' | 'error' | 'warning' | 'info';
-    message: string;
-  } | null>(null);
-  const [confirmUser, setConfirmUser] = useState<HRUser | null>(null);
-
-  const showNotice = (
-    message: string,
-    type: 'success' | 'error' | 'warning' | 'info' = 'info'
-  ) => {
-    setNotice({ message, type });
-  };
-
-  useEffect(() => {
-    if (!notice) return;
-    const timer = window.setTimeout(() => setNotice(null), 3000);
-    return () => window.clearTimeout(timer);
-  }, [notice]);
-
   const orgChartContainerRef = useRef<HTMLDivElement>(null);
   const orgChartRef = useRef<any>(null);
   
@@ -184,31 +165,33 @@ export default function HRManagement({
   const handleExportPDF = async () => {
     const element = orgChartContainerRef.current;
     if (!element) {
-      showNotice('저장할 조직도 영역을 찾을 수 없습니다. 조직도 탭에서 시도해주세요.', 'warning');
+      alert('저장할 조직도 영역을 찾을 수 없습니다. 조직도 탭에서 시도해주세요.');
       return;
     }
 
     try {
-      setLoading(true);
+      // PDF 캡처 중 전체 화면의 loading 상태를 바꾸지 않습니다.
+      // 기존에는 setLoading(true) 때문에 조직도 DOM 자체가 사라져 캡처 후 화면이 멈추는 문제가 있었습니다.
+      orgChartRef.current?.fit();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
       const canvas = await html2canvas(element, {
-        scale: 2, // 고해상도 렌더링
+        scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: '#F8FAFC'
       });
 
-      const imgData = canvas.toDataURL('image/jpeg', 0.85); // 고화질 압축 (JPEG 85%)
+      const imgData = canvas.toDataURL('image/jpeg', 0.85);
       const pdf = new jsPDF('landscape', 'mm', 'a4');
       const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
+      const pdfHeight = Math.min((canvas.height * pdfWidth) / canvas.width, pdf.internal.pageSize.getHeight() - 20);
 
       pdf.addImage(imgData, 'JPEG', 0, 10, pdfWidth, pdfHeight, undefined, 'FAST');
       pdf.save(`조직도_${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (err) {
       console.error('PDF 저장 실패:', err);
-      showNotice('PDF 저장 중 오류가 발생했습니다.', 'error');
-    } finally {
-      setLoading(false);
+      alert('PDF 저장 중 오류가 발생했습니다.');
     }
   };
 
@@ -248,7 +231,7 @@ export default function HRManagement({
 
     (window as any).handleChartAddSub = (dept: string) => {
       if (!isAdmin) {
-        showNotice('관리자 권한이 필요합니다.', 'warning');
+        alert('관리자 권한이 필요합니다.');
         return;
       }
       setSelectedUser(null);
@@ -276,50 +259,142 @@ export default function HRManagement({
 
   const buildHierarchy = (userList: HRUser[]) => {
     const data: any[] = [];
-    data.push({ id: 'root', parentId: '', name: '조직도', type: 'root' });
+    const usedIds = new Set<string>();
 
-    const rawDepts = Array.from(new Set(userList.map((u) => u.department || '미지정 파트')));
-    const sortedDepts = rawDepts.sort((a, b) => {
-      const indexA = DEPT_ORDER.indexOf(a);
-      const indexB = DEPT_ORDER.indexOf(b);
-      if (indexA !== -1 && indexB !== -1) return indexA - indexB;
-      if (indexA !== -1) return -1;
-      if (indexB !== -1) return 1;
+    const addNode = (node: any) => {
+      data.push(node);
+      if (node.id) usedIds.add(node.id);
+    };
+
+    addNode({ id: 'root', parentId: '', name: '조직도', type: 'root' });
+    addNode({ id: 'org_operating', parentId: 'root', name: '운영', type: 'department', level: 'main' });
+    addNode({ id: 'org_management', parentId: 'org_operating', name: '관리', type: 'department', level: 'main' });
+    addNode({ id: 'org_team', parentId: 'org_management', name: '팀', type: 'department', level: 'main' });
+
+    const addUserNode = (user: HRUser, parentId: string) => {
+      if (usedIds.has(user.id)) return;
+      addNode({
+        id: `user_${user.id}`,
+        parentId,
+        name: user.name,
+        position: user.position,
+        job_title: user.job_title,
+        department: user.department,
+        type: 'user',
+        data: user,
+      });
+    };
+
+    // 운영: 본부장 / 소장 / 사무 등의 직책별로 묶고 구성원을 배치합니다.
+    const operatingUsers = userList.filter((u) => (u.department || '').trim() === '운영');
+    const operatingTitleOrder = ['본부장', '소장', '사무'];
+    const otherOperatingTitles = Array.from(new Set(
+      operatingUsers
+        .map((u) => (u.job_title || '').trim())
+        .filter((title) => title && !operatingTitleOrder.includes(title))
+    ));
+    const operatingTitles = [...operatingTitleOrder, ...otherOperatingTitles];
+
+    operatingTitles.forEach((title) => {
+      const members = operatingUsers.filter((u) => (u.job_title || '없음').trim() === title);
+      if (members.length === 0) return;
+
+      const titleId = `operating_title_${title}`;
+      addNode({
+        id: titleId,
+        parentId: 'org_operating',
+        name: title,
+        type: 'group',
+        level: 'title',
+        department: '운영',
+      });
+      members.forEach((user) => addUserNode(user, titleId));
+    });
+
+    // 관리: 현재 app_users.department가 '관리'인 구성원을 field 기준으로 묶습니다.
+    const managementUsers = userList.filter((u) => (u.department || '').trim() === '관리');
+    const managementFields = Array.from(new Set(
+      managementUsers.map((u) => (u.field || '기타').trim() || '기타')
+    ));
+    const preferredFieldOrder = ['QA', '공정', '공정 및 스케쥴', '공정 및 스케줄', '안전', '캐빈', '사무', '기타'];
+    managementFields.sort((a, b) => {
+      const ia = preferredFieldOrder.indexOf(a);
+      const ib = preferredFieldOrder.indexOf(b);
+      if (ia !== -1 && ib !== -1) return ia - ib;
+      if (ia !== -1) return -1;
+      if (ib !== -1) return 1;
       return a.localeCompare(b);
     });
 
-    sortedDepts.forEach((dept) => {
-      data.push({ id: `dept_${dept}`, parentId: 'root', name: dept, type: 'department' });
-    });
+    managementFields.forEach((field) => {
+      const members = managementUsers.filter((u) => ((u.field || '기타').trim() || '기타') === field);
+      if (members.length === 0) return;
 
-    const leaderMap: Record<string, string> = {};
-    userList.forEach((u) => {
-      if (['본부장', '소장', '팀장'].includes(u.job_title || '')) {
-        if (!leaderMap[u.department || '미지정 파트']) {
-          leaderMap[u.department || '미지정 파트'] = u.id;
-        }
-      }
-    });
-
-    userList.forEach((u) => {
-      const deptId = `dept_${u.department || '미지정 파트'}`;
-      let parentId = deptId;
-      const isLeader = ['본부장', '소장', '팀장'].includes(u.job_title || '');
-
-      if (!isLeader && leaderMap[u.department || '미지정 파트']) {
-        parentId = leaderMap[u.department || '미지정 파트'];
-      }
-
-      data.push({
-        id: u.id,
-        parentId: parentId,
-        name: u.name,
-        position: u.position,
-        job_title: u.job_title,
-        department: u.department,
-        type: 'user',
-        data: u,
+      const fieldId = `management_field_${field}`;
+      addNode({
+        id: fieldId,
+        parentId: 'org_management',
+        name: field,
+        type: 'group',
+        level: 'field',
+        department: '관리',
       });
+      members.forEach((user) => addUserNode(user, fieldId));
+    });
+
+    // 팀: department에 저장된 1~4팀을 그대로 읽어 자동 구성합니다.
+    const teamDepartments = ['1팀', '2팀', '3팀', '4팀'];
+    const existingTeamDepartments = Array.from(new Set(
+      userList
+        .map((u) => (u.department || '').trim())
+        .filter((dept) => /^\d+팀$/.test(dept))
+    ));
+    const allTeams = Array.from(new Set([...teamDepartments, ...existingTeamDepartments]));
+    allTeams.sort((a, b) => {
+      const na = parseInt(a.replace('팀', ''), 10);
+      const nb = parseInt(b.replace('팀', ''), 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
+      if (!isNaN(na)) return -1;
+      if (!isNaN(nb)) return 1;
+      return a.localeCompare(b);
+    });
+
+    allTeams.forEach((team) => {
+      const members = userList.filter((u) => (u.department || '').trim() === team);
+      const teamId = `team_${team}`;
+      addNode({
+        id: teamId,
+        parentId: 'org_team',
+        name: team,
+        type: 'department',
+        level: 'team',
+        department: team,
+      });
+
+      // 팀 구성원은 department를 기준으로 자동 배치하며 직책은 카드에 표시합니다.
+      const sortedMembers = [...members].sort((a, b) => {
+        const rankA = JOB_TITLE_ORDER_IN_RANK[a.job_title || '없음'] || 99;
+        const rankB = JOB_TITLE_ORDER_IN_RANK[b.job_title || '없음'] || 99;
+        if (rankA !== rankB) return rankA - rankB;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+      sortedMembers.forEach((user) => addUserNode(user, teamId));
+    });
+
+    // 기존 DEPT_ORDER에 없는 부서도 데이터가 있으면 조직도에서 누락하지 않습니다.
+    const handledDepartments = new Set(['운영', '관리', ...allTeams]);
+    const otherDepartments = Array.from(new Set(
+      userList
+        .map((u) => (u.department || '').trim() || '미지정 파트')
+        .filter((dept) => !handledDepartments.has(dept))
+    ));
+
+    otherDepartments.forEach((dept) => {
+      const deptId = `other_dept_${dept}`;
+      addNode({ id: deptId, parentId: 'org_team', name: dept, type: 'department', level: 'other' });
+      userList
+        .filter((u) => ((u.department || '').trim() || '미지정 파트') === dept)
+        .forEach((user) => addUserNode(user, deptId));
     });
 
     return data;
@@ -330,17 +405,25 @@ export default function HRManagement({
       if (!orgChartRef.current) {
         orgChartRef.current = new OrgChart();
       }
-      
+
       const chartData = buildHierarchy(users);
 
       orgChartRef.current
         .container(orgChartContainerRef.current)
         .data(chartData)
-        .nodeHeight((d: any) => d.data.type === 'user' ? 95 : 45)
-        .nodeWidth((d: any) => 230)
-        .childrenMargin((d: any) => 50)
-        .compactMarginBetween((d: any) => 25)
-        .compactMarginPair((d: any) => 25)
+        .nodeHeight((d: any) => {
+          if (d.data.type === 'root') return 50;
+          if (d.data.type === 'user') return 92;
+          return d.data.level === 'main' ? 48 : 42;
+        })
+        .nodeWidth((d: any) => {
+          if (d.data.type === 'user') return 210;
+          if (d.data.level === 'main') return 180;
+          return 150;
+        })
+        .childrenMargin((d: any) => d.data.level === 'main' ? 32 : 22)
+        .compactMarginBetween((d: any) => 14)
+        .compactMarginPair((d: any) => 18)
         .nodeContent((d: any) => {
           if (d.data.type === 'root') {
             return `
@@ -348,11 +431,12 @@ export default function HRManagement({
                 ${d.data.name}
               </div>`;
           }
-          if (d.data.type === 'department') {
+
+          if (d.data.type === 'department' || d.data.type === 'group') {
+            const isMain = d.data.level === 'main';
             return `
-              <div style="background-color: #243B5A; color: white; border-radius: 8px; border: 2px solid #1e293b; height: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-weight: bold; font-family: sans-serif; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
-                <span>${d.data.name} 파트</span>
-                <button onclick="window.handleChartAddSub('${d.data.name}')" style="background: rgba(255,255,255,0.2); border: none; color: white; border-radius: 4px; padding: 2px 6px; font-size: 10px; cursor: pointer;" title="구성원 추가">＋ 추가</button>
+              <div style="background-color: ${isMain ? '#243B5A' : '#EAF0F7'}; color: ${isMain ? 'white' : '#243B5A'}; border-radius: 8px; border: 2px solid ${isMain ? '#1e293b' : '#CBD5E1'}; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0 10px; font-weight: bold; font-family: sans-serif; box-sizing: border-box; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+                ${d.data.name}
               </div>`;
           }
 
@@ -382,6 +466,7 @@ export default function HRManagement({
         .render();
 
       orgChartRef.current.expandAll();
+      requestAnimationFrame(() => orgChartRef.current?.fit());
     }
   }, [activeTab, users]);
 
@@ -425,7 +510,7 @@ export default function HRManagement({
 
   const handleOpenAddModal = () => {
     if (!isAdmin) {
-      showNotice('관리자 권한이 필요합니다.', 'warning');
+      alert('관리자 권한이 필요합니다.');
       return;
     }
     setSelectedUser(null);
@@ -452,7 +537,7 @@ export default function HRManagement({
 
   const handleOpenEditModal = (user: HRUser) => {
     if (!canEditUser(user)) {
-      showNotice('본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.', 'warning');
+      alert('본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.');
       return;
     }
     setSelectedUser(user);
@@ -477,11 +562,19 @@ export default function HRManagement({
     setIsModalOpen(true);
   };
 
-  const handleConfirmDelete = async () => {
-    if (!confirmUser) return;
+  const handleDeleteUser = async (user: HRUser) => {
+    if (!isAdmin) {
+      alert('관리자만 구성원을 삭제할 수 있습니다.');
+      return;
+    }
 
-    const user = confirmUser;
-    setConfirmUser(null);
+    if (currentUser?.id === user.id) {
+      alert('현재 로그인되어 있는 본인 계정은 삭제할 수 없습니다.');
+      return;
+    }
+
+    const confirmDelete = window.confirm(`정말로 [${user.name}] 님의 인사 정보를 삭제하시겠습니까?`);
+    if (!confirmDelete) return;
 
     try {
       const { error } = await supabase
@@ -491,44 +584,29 @@ export default function HRManagement({
 
       if (error) throw error;
 
-      showNotice(`${user.name} 님의 정보가 성공적으로 삭제되었습니다.`, 'success');
+      alert(`${user.name} 님의 정보가 성공적으로 삭제되었습니다.`);
       fetchUsers();
     } catch (err: any) {
       console.error('삭제 실패:', err);
-      showNotice('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'), 'error');
+      alert('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'));
     }
-  };
-
-  const handleDeleteUser = async (user: HRUser) => {
-    if (!isAdmin) {
-      showNotice('관리자만 구성원을 삭제할 수 있습니다.', 'warning');
-      return;
-    }
-
-    if (currentUser?.id === user.id) {
-      showNotice('현재 로그인되어 있는 본인 계정은 삭제할 수 없습니다.', 'warning');
-      return;
-    }
-
-    setConfirmUser(user);
-    return;
   };
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (selectedUser && !canEditUser(selectedUser)) {
-      showNotice('본인 정보만 수정할 권한이 있습니다.', 'warning');
+      alert('본인 정보만 수정할 권한이 있습니다.');
       return;
     }
 
     if (!formData.inputId.trim()) {
-      showNotice('로그인에 사용할 아이디를 입력해주세요.', 'warning');
+      alert('로그인에 사용할 아이디를 입력해주세요.');
       return;
     }
 
     if (formData.birthDate && formData.birthDate.length !== 8) {
-      showNotice('생년월일은 8자리(YYYYMMDD)로 정확히 입력해주세요.', 'warning');
+      alert('생년월일은 8자리(YYYYMMDD)로 정확히 입력해주세요.');
       return;
     }
 
@@ -566,10 +644,10 @@ export default function HRManagement({
           .eq('id', selectedUser.id);
 
         if (error) throw error;
-        showNotice('인사 정보가 성공적으로 수정되었습니다.', 'success');
+        alert('인사 정보가 성공적으로 수정되었습니다.');
       } else {
         if (!formData.birthDate) {
-          showNotice('비밀번호로 사용할 생년월일 8자리를 입력해주세요.', 'warning');
+          alert('비밀번호로 사용할 생년월일 8자리를 입력해주세요.');
           return;
         }
 
@@ -581,14 +659,14 @@ export default function HRManagement({
         ]);
 
         if (error) throw error;
-        showNotice('새 구성원이 등록되었습니다.', 'success');
+        alert('새 구성원이 등록되었습니다.');
       }
 
       setIsModalOpen(false);
       fetchUsers();
     } catch (err: any) {
       console.error('저장 실패:', err);
-      showNotice('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'), 'error');
+      alert('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
     }
   };
 
@@ -1448,52 +1526,6 @@ export default function HRManagement({
           </div>
         </div>
       )}
-
-      {notice && (
-        <div className="fixed top-5 right-5 z-[100] w-[min(92vw,420px)]">
-          <div className={`rounded-xl border bg-white px-4 py-3 shadow-lg flex items-start gap-3 ${
-            notice.type === 'success' ? 'border-green-200' :
-            notice.type === 'error' ? 'border-red-200' :
-            notice.type === 'warning' ? 'border-amber-200' : 'border-blue-200'
-          }`}>
-            <div className={`mt-0.5 h-2.5 w-2.5 rounded-full shrink-0 ${
-              notice.type === 'success' ? 'bg-green-500' :
-              notice.type === 'error' ? 'bg-red-500' :
-              notice.type === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
-            }`} />
-            <p className="text-sm font-medium text-[#1F2937] flex-1">{notice.message}</p>
-            <button onClick={() => setNotice(null)} className="text-[#94A3B8] hover:text-[#475569]">×</button>
-          </div>
-        </div>
-      )}
-
-      {confirmUser && (
-        <div className="fixed inset-0 z-[110] bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-6">
-            <h3 className="text-lg font-bold text-[#1F2937]">구성원 삭제</h3>
-            <p className="mt-2 text-sm text-[#64748B] leading-6">
-              정말로 <span className="font-bold text-[#1F2937]">[{confirmUser.name}]</span> 님의 인사 정보를 삭제하시겠습니까?
-              <br />삭제 후에는 복구할 수 없습니다.
-            </p>
-            <div className="mt-6 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setConfirmUser(null)}
-                className="px-4 py-2 rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC]"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDelete}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
-              >
-                삭제
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -1589,7 +1621,5 @@ function renderMemberCard(
         </div>
       </div>
     </div>
-
-
   );
 }
