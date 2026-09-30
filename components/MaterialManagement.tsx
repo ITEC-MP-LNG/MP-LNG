@@ -207,9 +207,9 @@ export default function MaterialManagement({
       try {
         const { data, error } = await supabase
           .from('inventory_subcategories')
-          .select('inventory_type, name')
+          .select('inventory_type, name, sort_order')
           .in('inventory_type', ['고정', '소모성'])
-          .order('name');
+          .order('sort_order', { ascending: true, nullsFirst: false });
         if (error) throw error;
         if (cancelled || !data || data.length === 0) return;
         const fixed = data.filter((row: any) => row.inventory_type === '고정').map((row: any) => row.name);
@@ -231,7 +231,7 @@ export default function MaterialManagement({
     return () => { cancelled = true; };
   }, []);
 
-  const persistSubCategories = async (type: '고정' | '소모성', categories: string[]) => {
+  const persistSubCategories = async (type: '고정' | '소모성' | 'CABIN', categories: string[]) => {
     const cleaned = Array.from(new Set(categories.map(value => value.trim()).filter(Boolean)));
     const { error: deleteError } = await supabase
       .from('inventory_subcategories')
@@ -241,7 +241,7 @@ export default function MaterialManagement({
     if (cleaned.length) {
       const { error: insertError } = await supabase
         .from('inventory_subcategories')
-        .insert(cleaned.map(name => ({ inventory_type: type, name })));
+        .insert(cleaned.map((name, index) => ({ inventory_type: type, name, sort_order: index })));
       if (insertError) throw insertError;
     }
   };
@@ -342,9 +342,25 @@ export default function MaterialManagement({
         return a.localeCompare(b);
       });
 
-      setCustomCabinSheets(sortedSheets);
-      if (sortedSheets.length > 0 && (!selectedCabinSheet || !sortedSheets.includes(selectedCabinSheet))) {
-        setSelectedCabinSheet(sortedSheets[0]);
+      let orderedSheets = sortedSheets;
+      try {
+        const { data: savedSheets, error: savedSheetError } = await supabase
+          .from('inventory_subcategories')
+          .select('name, sort_order')
+          .eq('inventory_type', 'CABIN')
+          .order('sort_order', { ascending: true, nullsFirst: false });
+        if (!savedSheetError && savedSheets && savedSheets.length > 0) {
+          const savedNames = savedSheets.map((row: any) => row.name).filter((name: string) => sortedSheets.includes(name));
+          const newSheets = sortedSheets.filter(name => !savedNames.includes(name));
+          orderedSheets = [...savedNames, ...newSheets];
+        }
+      } catch (savedOrderError) {
+        console.error('CABIN 서브탭 순서 불러오기 실패:', savedOrderError);
+      }
+
+      setCustomCabinSheets(orderedSheets);
+      if (orderedSheets.length > 0 && (!selectedCabinSheet || !orderedSheets.includes(selectedCabinSheet))) {
+        setSelectedCabinSheet(orderedSheets[0]);
       }
     } catch (err: any) {
       console.error('cabin_inventory 로드 실패:', err.message);
@@ -469,6 +485,34 @@ export default function MaterialManagement({
   const setCurrentSubCategories = (list: string[]) => {
     if (inventoryTab === '고정') setFixedSubCategories(list);
     else if (inventoryTab === '소모성') setConsumableSubCategories(list);
+  };
+
+  const moveCurrentSubCategory = async (index: number, direction: -1 | 1) => {
+    const list = [...getCurrentSubCategories()];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
+    try {
+      if (inventoryTab === '고정' || inventoryTab === '소모성') {
+        await persistSubCategories(inventoryTab, list);
+      }
+      setCurrentSubCategories(list);
+    } catch (error: any) {
+      alert('서브 카테고리 순서 저장 실패: ' + (error?.message || '알 수 없는 오류'));
+    }
+  };
+
+  const moveCabinSheet = async (index: number, direction: -1 | 1) => {
+    const list = [...customCabinSheets];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
+    [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
+    try {
+      await persistSubCategories('CABIN', list);
+      setCustomCabinSheets(list);
+    } catch (error: any) {
+      alert('CABIN 서브탭 순서 저장 실패: ' + (error?.message || '알 수 없는 오류') + '\nSupabase의 inventory_subcategories 테이블과 권한 설정을 확인해주세요.');
+    }
   };
 
   const getCurrentSelectedCategory = () => {
@@ -1307,13 +1351,18 @@ export default function MaterialManagement({
                   className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs" 
                 />
                 <button 
-                  onClick={() => {
+                  onClick={async () => {
                     if(!newSheetInput.trim()) return;
                     const cleaned = cleanSheetName(newSheetInput.trim());
                     if(!customCabinSheets.includes(cleaned)) {
                       const updated = [...customCabinSheets, cleaned];
-                      setCustomCabinSheets(updated);
-                      setSelectedCabinSheet(cleaned);
+                      try {
+                        await persistSubCategories('CABIN', updated);
+                        setCustomCabinSheets(updated);
+                        setSelectedCabinSheet(cleaned);
+                      } catch (error: any) {
+                        alert('CABIN 종류 저장 실패: ' + (error?.message || '알 수 없는 오류'));
+                      }
                     }
                     setNewSheetInput('');
                   }}
@@ -1338,16 +1387,43 @@ export default function MaterialManagement({
                     )}
 
                     <div className="flex items-center space-x-1 shrink-0 ml-1">
+                      <button
+                        type="button"
+                        onClick={() => moveCabinSheet(index, -1)}
+                        disabled={index === 0}
+                        className="px-1 py-0.5 bg-white border border-[#E2E5E9] text-[#64748B] rounded text-[10px] disabled:opacity-30"
+                        title="위로 이동"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveCabinSheet(index, 1)}
+                        disabled={index === customCabinSheets.length - 1}
+                        className="px-1 py-0.5 bg-white border border-[#E2E5E9] text-[#64748B] rounded text-[10px] disabled:opacity-30"
+                        title="아래로 이동"
+                      >
+                        ▼
+                      </button>
                       {editingSheetIndex === index ? (
                         <button 
-                          onClick={() => {
+                          onClick={async () => {
                             if (!editSheetInputValue.trim()) return;
                             const cleaned = cleanSheetName(editSheetInputValue.trim());
                             const updated = [...customCabinSheets];
                             updated[index] = cleaned;
-                            setCustomCabinSheets(updated);
-                            if (selectedCabinSheet === sheet) setSelectedCabinSheet(cleaned);
-                            setEditingSheetIndex(null);
+                            if (new Set(updated).size !== updated.length) {
+                              alert('이미 존재하는 CABIN 종류입니다.');
+                              return;
+                            }
+                            try {
+                              await persistSubCategories('CABIN', updated);
+                              setCustomCabinSheets(updated);
+                              if (selectedCabinSheet === sheet) setSelectedCabinSheet(cleaned);
+                              setEditingSheetIndex(null);
+                            } catch (error: any) {
+                              alert('CABIN 종류 수정 실패: ' + (error?.message || '알 수 없는 오류'));
+                            }
                           }}
                           className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px]"
                         >
@@ -1366,11 +1442,16 @@ export default function MaterialManagement({
                       )}
 
                       <button 
-                        onClick={() => {
+                        onClick={async () => {
                           if (confirm(`'${sheet}' Sheet를 삭제하시겠습니까?`)) {
                             const updated = customCabinSheets.filter(s => s !== sheet);
-                            setCustomCabinSheets(updated);
-                            if (selectedCabinSheet === sheet && updated.length > 0) setSelectedCabinSheet(updated[0]);
+                            try {
+                              await persistSubCategories('CABIN', updated);
+                              setCustomCabinSheets(updated);
+                              if (selectedCabinSheet === sheet && updated.length > 0) setSelectedCabinSheet(updated[0]);
+                            } catch (error: any) {
+                              alert('CABIN 종류 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
+                            }
                           }
                         }}
                         className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]"
@@ -1539,6 +1620,24 @@ export default function MaterialManagement({
                     )}
 
                     <div className="flex items-center space-x-1 shrink-0 ml-1">
+                      <button
+                        type="button"
+                        onClick={() => moveCurrentSubCategory(index, -1)}
+                        disabled={index === 0}
+                        className="px-1 py-0.5 bg-white border border-[#E2E5E9] text-[#64748B] rounded text-[10px] disabled:opacity-30"
+                        title="위로 이동"
+                      >
+                        ▲
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveCurrentSubCategory(index, 1)}
+                        disabled={index === getCurrentSubCategories().length - 1}
+                        className="px-1 py-0.5 bg-white border border-[#E2E5E9] text-[#64748B] rounded text-[10px] disabled:opacity-30"
+                        title="아래로 이동"
+                      >
+                        ▼
+                      </button>
                       {editingSubCatIndex === index ? (
                         <button 
                           onClick={async () => {
