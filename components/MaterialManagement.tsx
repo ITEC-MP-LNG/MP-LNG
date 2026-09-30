@@ -269,7 +269,7 @@ export default function MaterialManagement({
   const [editingSubCatIndex, setEditingSubCatIndex] = useState<number | null>(null);
   const [editSubCatInputValue, setEditSubCatInputValue] = useState<string>('');
 
-  const [isAlertBannerOpen, setIsAlertBannerOpen] = useState(true);
+  const [isAlertBannerOpen, setIsAlertBannerOpen] = useState(false);
   const [isHistorySectionOpen, setIsHistorySectionOpen] = useState(true);
   
   const [collapsedSubTabs, setCollapsedSubTabs] = useState<{ [key: string]: boolean }>({});
@@ -2031,7 +2031,8 @@ export default function MaterialManagement({
                 {inventoryLogs.map((log) => {
                   const isChecked = selectedLogIds.includes(String(log.id));
                   
-                  const matchedItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
+                  const matchedItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name) ||
+                    cabinInventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
                   const isConsumable = matchedItem?.type === '소모성';
 
                   return (
@@ -2051,6 +2052,9 @@ export default function MaterialManagement({
                           {log.type}
                         </span>
                         <div className="min-w-0 flex items-center space-x-1 flex-1">
+                          {(matchedItem?.code || matchedItem?.no) && (
+                            <span className="text-[10px] font-mono font-semibold text-[#64748B] shrink-0">[{matchedItem.code || matchedItem.no}]</span>
+                          )}
                           <span className="font-bold text-[#1F2937] truncate">{log.item_name}</span>
                           <span className="text-xs font-semibold text-[#243B5A] shrink-0">({log.quantity}개)</span>
                         </div>
