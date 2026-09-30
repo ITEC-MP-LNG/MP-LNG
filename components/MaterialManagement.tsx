@@ -199,6 +199,53 @@ export default function MaterialManagement({
   ]);
   const [selectedConsumableCategory, setSelectedConsumableCategory] = useState<string>('검사약품');
 
+
+  // 기자재/소모성 서브 카테고리를 Supabase에 영구 저장합니다.
+  useEffect(() => {
+    let cancelled = false;
+    const loadSubCategories = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('inventory_subcategories')
+          .select('inventory_type, name')
+          .in('inventory_type', ['고정', '소모성'])
+          .order('name');
+        if (error) throw error;
+        if (cancelled || !data || data.length === 0) return;
+        const fixed = data.filter((row: any) => row.inventory_type === '고정').map((row: any) => row.name);
+        const consumable = data.filter((row: any) => row.inventory_type === '소모성').map((row: any) => row.name);
+        if (fixed.length) {
+          setFixedSubCategories(fixed);
+          setSelectedFixedSubCategory(current => fixed.includes(current) ? current : fixed[0]);
+        }
+        if (consumable.length) {
+          setConsumableSubCategories(consumable);
+          setSelectedConsumableCategory(current => consumable.includes(current) ? current : consumable[0]);
+        }
+      } catch (error) {
+        // 테이블 생성 전에도 기존 기본 카테고리로 화면은 사용할 수 있도록 유지합니다.
+        console.error('서브 카테고리 불러오기 실패:', error);
+      }
+    };
+    loadSubCategories();
+    return () => { cancelled = true; };
+  }, []);
+
+  const persistSubCategories = async (type: '고정' | '소모성', categories: string[]) => {
+    const cleaned = Array.from(new Set(categories.map(value => value.trim()).filter(Boolean)));
+    const { error: deleteError } = await supabase
+      .from('inventory_subcategories')
+      .delete()
+      .eq('inventory_type', type);
+    if (deleteError) throw deleteError;
+    if (cleaned.length) {
+      const { error: insertError } = await supabase
+        .from('inventory_subcategories')
+        .insert(cleaned.map(name => ({ inventory_type: type, name })));
+      if (insertError) throw insertError;
+    }
+  };
+
   const [customCabinSheets, setCustomCabinSheets] = useState<string[]>([]);
   const [selectedCabinSheet, setSelectedCabinSheet] = useState<string>('');
 
@@ -442,6 +489,9 @@ export default function MaterialManagement({
     const codePrefix = inventoryTab === '고정' ? 'FIX-' : inventoryTab === '소모성' ? 'MAT-' : 'CBN-';
     setItemCode(codePrefix + String(Math.floor(Math.random() * 900) + 100));
     setItemName('');
+    setItemVbtType('');
+    setItemCalDate('');
+    setItemNextCalDate('');
     setItemCategory(inventoryTab === '고정' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : '일반');
     
     setCabinSheetName(selectedCabinSheet || 'C#1');
@@ -1451,14 +1501,22 @@ export default function MaterialManagement({
                   className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs" 
                 />
                 <button 
-                  onClick={() => {
-                    if(!newSubCatInput.trim()) return;
+                  onClick={async () => {
+                    const name = newSubCatInput.trim();
+                    if (!name) return;
                     const list = getCurrentSubCategories();
-                    if(!list.includes(newSubCatInput.trim())) {
-                      setCurrentSubCategories([...list, newSubCatInput.trim()]);
-                      setCurrentSelectedCategory(newSubCatInput.trim());
+                    if (list.includes(name)) { setNewSubCatInput(''); return; }
+                    const updated = [...list, name];
+                    try {
+                      if (inventoryTab === '고정' || inventoryTab === '소모성') {
+                        await persistSubCategories(inventoryTab, updated);
+                      }
+                      setCurrentSubCategories(updated);
+                      setCurrentSelectedCategory(name);
+                      setNewSubCatInput('');
+                    } catch (error: any) {
+                      alert('서브 카테고리 저장 실패: ' + (error?.message || '알 수 없는 오류') + '\nSupabase의 inventory_subcategories 테이블과 권한 설정을 확인해주세요.');
                     }
-                    setNewSubCatInput('');
                   }}
                   className="px-3 py-1.5 bg-[#243B5A] text-white rounded text-xs font-semibold shrink-0"
                 >
@@ -1483,13 +1541,25 @@ export default function MaterialManagement({
                     <div className="flex items-center space-x-1 shrink-0 ml-1">
                       {editingSubCatIndex === index ? (
                         <button 
-                          onClick={() => {
-                            if (!editSubCatInputValue.trim()) return;
+                          onClick={async () => {
+                            const newName = editSubCatInputValue.trim();
+                            if (!newName) return;
                             const list = [...getCurrentSubCategories()];
-                            list[index] = editSubCatInputValue.trim();
-                            setCurrentSubCategories(list);
-                            if (getCurrentSelectedCategory() === cat) setCurrentSelectedCategory(editSubCatInputValue.trim());
-                            setEditingSubCatIndex(null);
+                            if (list.some((value, i) => i !== index && value === newName)) {
+                              alert('이미 존재하는 서브 카테고리입니다.');
+                              return;
+                            }
+                            list[index] = newName;
+                            try {
+                              if (inventoryTab === '고정' || inventoryTab === '소모성') {
+                                await persistSubCategories(inventoryTab, list);
+                              }
+                              setCurrentSubCategories(list);
+                              if (getCurrentSelectedCategory() === cat) setCurrentSelectedCategory(newName);
+                              setEditingSubCatIndex(null);
+                            } catch (error: any) {
+                              alert('서브 카테고리 수정 실패: ' + (error?.message || '알 수 없는 오류'));
+                            }
                           }}
                           className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px]"
                         >
@@ -1508,11 +1578,18 @@ export default function MaterialManagement({
                       )}
 
                       <button 
-                        onClick={() => {
-                          if (confirm(`'${cat}' 카테고리를 삭제하시겠습니까?`)) {
-                            const list = getCurrentSubCategories().filter(c => c !== cat);
+                        onClick={async () => {
+                          if (!confirm(`'${cat}' 카테고리를 삭제하시겠습니까?`)) return;
+                          const list = getCurrentSubCategories().filter(c => c !== cat);
+                          try {
+                            if (inventoryTab === '고정' || inventoryTab === '소모성') {
+                              await persistSubCategories(inventoryTab, list);
+                            }
                             setCurrentSubCategories(list);
                             if (getCurrentSelectedCategory() === cat && list.length > 0) setCurrentSelectedCategory(list[0]);
+                            else if (getCurrentSelectedCategory() === cat) setCurrentSelectedCategory('');
+                          } catch (error: any) {
+                            alert('서브 카테고리 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
                           }
                         }}
                         className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]"
@@ -1875,6 +1952,11 @@ export default function MaterialManagement({
                         className="min-w-0 flex-1 cursor-pointer"
                       >
                         <h3 className="text-xs font-semibold text-[#1F2937] truncate">{item.name || item.item}</h3>
+                        {item.type === '고정' && item.category === 'VBT' && item.vbt_type && (
+                          <span className="inline-flex mt-0.5 px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-100 text-[10px] font-bold">
+                            규격: {item.vbt_type}
+                          </span>
+                        )}
                         <span className="text-[10px] text-[#64748B] block truncate">
                           위치: {item.location || item.location_or_section || '미지정'} {item.maker_model ? `| 모델: ${item.maker_model}` : ''} {item.cert_no ? `| 인증서: ${item.cert_no}` : ''} {item.serial_number ? `| S/N: ${item.serial_number}` : ''} {item.calibration_date ? `| 교정일: ${item.calibration_date}` : ''}
                         </span>
@@ -2051,6 +2133,13 @@ export default function MaterialManagement({
                   </div>
                 )}
               </div>
+
+              {selectedDetailItem.type === '고정' && selectedDetailItem.category === 'VBT' && (
+                <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200 flex justify-between items-center">
+                  <span className="text-blue-800 font-semibold">VBT 규격 / 사이즈</span>
+                  <span className="text-blue-900 font-bold">{selectedDetailItem.vbt_type || '미등록'}</span>
+                </div>
+              )}
 
               {selectedDetailItem.type === 'CABIN' ? (
                 <div className="bg-[#F5F6F8] p-2.5 rounded-md border border-[#E2E5E9] space-y-1">
