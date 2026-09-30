@@ -1,242 +1,261 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { useState, useEffect, useRef } from 'react';
 import { OrgChart } from 'd3-org-chart';
-import { jsPDF } from 'jspdf';
+import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
-import {
-  Search,
-  Plus,
-  Edit,
+import { 
+  Users, 
+  Building2, 
+  Briefcase, 
+  Search, 
+  Edit3, 
   Trash2,
-  X,
-  Save,
-  Users,
-  Building2,
+  UserPlus, 
+  X, 
+  Check,
+  Phone,
   Layers,
-  List,
-  FileDown,
-  Maximize2,
-  ChevronDown,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  AtSign,
+  Network, 
+  GitCommit,
+  FileText,
+  Shield
 } from 'lucide-react';
+import { supabase } from '@/lib/supabase';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-type HRUser = {
-  id: string;
+export interface HRUser {
+  id: string;          
   name: string;
-  email: string;
-  department: string;
-  position: string;
-  job_title: string;
-  field: string;
-  role: string;
-  phone: string;
-  address: string;
-  experience: string;
-  internal_certificates: string;
-  national_certificates: string;
+  email?: string;
+  department?: string; 
+  position?: string;   
+  job_title?: string;  
+  field?: string;      
+  role?: string;       
+  phone?: string;
+  address?: string;
+  experience?: string;
+  internal_certificates?: string;
+  national_certificates?: string; 
   certificates?: string;
-  join_date: string;
-  career_start_date: string;
-  password: string;
-  pos_x?: number;
-  pos_y?: number;
-  birthDate?: string;
-};
+  join_date?: string;          
+  career_start_date?: string;  
+  password?: string;           
+  pos_x?: number;              
+  pos_y?: number;              
+}
 
-const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
-
-const JOB_TITLE_ORDER_IN_RANK: Record<string, number> = {
-  본부장: 1,
-  소장: 2,
-  팀장: 3,
-  팀원: 4,
-  없음: 5,
-};
-
-// Props 타입 정의 추가
-export interface HRManagementProps {
+interface HRManagementProps {
   isAdmin?: boolean;
-  currentUserRole?: "SUPER_ADMIN" | "WORK_ADMIN" | "USER" | "TOP_ADMIN";
+  currentUserRole?: string;
   currentUser?: any;
 }
 
-export default function HRManagement({
-  isAdmin: propsIsAdmin,
-  currentUserRole: propsRole,
-  currentUser: propsUser,
-}: HRManagementProps = {}) {
+function calculateCareerDetails(startDateStr?: string) {
+  if (!startDateStr) return null;
+
+  const start = new Date(startDateStr);
+  const now = new Date();
+
+  if (isNaN(start.getTime())) return null;
+
+  let years = now.getFullYear() - start.getFullYear();
+
+  const isBeforeAnniversary =
+    now.getMonth() < start.getMonth() ||
+    (now.getMonth() === start.getMonth() && now.getDate() < start.getDate());
+
+  if (isBeforeAnniversary && years > 0) {
+    years -= 1;
+  }
+
+  const lastAnniversary = new Date(start);
+  lastAnniversary.setFullYear(start.getFullYear() + years);
+  const remainingDays = Math.floor(
+    (now.getTime() - lastAnniversary.getTime()) / (1000 * 60 * 60 * 24)
+  );
+
+  return `${years}년 ${remainingDays}일`;
+}
+
+function calculateAge(birthStr?: string) {
+  if (!birthStr) return null;
+  
+  let cleanStr = birthStr.replace(/[^0-9]/g, '');
+  if (cleanStr.length !== 8) return null;
+
+  const year = parseInt(cleanStr.substring(0, 4), 10);
+  const month = parseInt(cleanStr.substring(4, 6), 10) - 1;
+  const day = parseInt(cleanStr.substring(6, 8), 10);
+
+  const today = new Date();
+  let age = today.getFullYear() - year;
+  const m = today.getMonth() - month;
+  
+  if (m < 0 || (m === 0 && today.getDate() < day)) {
+    age--;
+  }
+
+  return isNaN(age) ? null : age;
+}
+
+const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
+
+const RANK_ORDER: Record<string, number> = {
+  '책임': 1,
+  '프로': 2,
+  '매니저': 3,
+  '사원': 4
+};
+
+const JOB_TITLE_ORDER_IN_RANK: Record<string, number> = {
+  '본부장': 1,
+  '소장': 2,
+  '팀장': 3,
+  '팀원': 4,
+  '없음': 5
+};
+
+export default function HRManagement({ 
+  isAdmin = false, 
+  currentUserRole = '',
+  currentUser = null 
+}: HRManagementProps) {
   const [users, setUsers] = useState<HRUser[]>([]);
-  const [loading, setLoading] = useState(false);
-
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'ORG' | 'CHART' | 'LIST'>('ORG');
-
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedDepartment, setSelectedDepartment] = useState('전체');
-  const [selectedField, setSelectedField] = useState('전체');
 
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<HRUser | null>(null);
+  const [subGroupType, setSubGroupType] = useState<'DEPT' | 'POS'>('DEPT');
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string>('ALL');
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
-  const [notice, setNotice] = useState<{
-    type: 'success' | 'error' | 'warning' | 'info';
-    message: string;
-  } | null>(null);
-
-  const [confirmUser, setConfirmUser] = useState<HRUser | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [detailUser, setDetailUser] = useState<HRUser | null>(null);
+  const [selectedUser, setSelectedUser] = useState<HRUser | null>(null);
 
   const orgChartContainerRef = useRef<HTMLDivElement>(null);
   const orgChartRef = useRef<any>(null);
+  
+  const [formData, setFormData] = useState({
+    inputId: '', 
+    name: '',
+    email: '',
+    department: '운영',
+    position: '매니저',
+    job_title: '팀원',
+    field: '안전',
+    role: 'USER',
+    phone: '',
+    address: '',
+    experience: '',
+    internal_certificates: '',
+    national_certificates: '',
+    join_date: '',
+    career_start_date: '',
+    birthDate: '' 
+  });
 
-  const currentUser = useMemo(() => {
-    if (propsUser) return propsUser;
-    if (typeof window === 'undefined') return null;
+  // 고화질 압축 PDF 저장 함수
+  const handleExportPDF = async () => {
+    const element = orgChartContainerRef.current;
+    if (!element) {
+      alert('저장할 조직도 영역을 찾을 수 없습니다. 조직도 탭에서 시도해주세요.');
+      return;
+    }
 
     try {
-      const stored = localStorage.getItem('user');
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
+      // PDF 캡처 중 전체 화면의 loading 상태를 바꾸지 않습니다.
+      // 기존에는 setLoading(true) 때문에 조직도 DOM 자체가 사라져 캡처 후 화면이 멈추는 문제가 있었습니다.
+      orgChartRef.current?.fit();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#F8FAFC'
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.85);
+      const pdf = new jsPDF('landscape', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = Math.min((canvas.height * pdfWidth) / canvas.width, pdf.internal.pageSize.getHeight() - 20);
+
+      pdf.addImage(imgData, 'JPEG', 0, 10, pdfWidth, pdfHeight, undefined, 'FAST');
+      pdf.save(`조직도_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
+      console.error('PDF 저장 실패:', err);
+      alert('PDF 저장 중 오류가 발생했습니다.');
     }
-  }, [propsUser]);
-
-  const isAdmin = useMemo(() => {
-    if (typeof propsIsAdmin === 'boolean') return propsIsAdmin;
-    return (
-      currentUser?.role === 'SUPER_ADMIN' ||
-      currentUser?.role === 'WORK_ADMIN'
-    );
-  }, [propsIsAdmin, currentUser]);
-
-  const showNotice = (
-    message: string,
-    type: 'success' | 'error' | 'warning' | 'info' = 'info'
-  ) => {
-    setNotice({ message, type });
   };
 
-  useEffect(() => {
-    if (!notice) return;
+  const myRole = currentUserRole || currentUser?.role || '';
+  const isSuperAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(myRole.toUpperCase());
 
-    const timer = window.setTimeout(() => {
-      setNotice(null);
-    }, 3000);
+  const isSelf = (targetUser: HRUser) => {
+    if (!currentUser) return false;
+    if (currentUser.id && targetUser.id && currentUser.id === targetUser.id) return true;
+    if (currentUser.name && targetUser.name && currentUser.name.trim() === targetUser.name.trim()) return true;
+    return false;
+  };
 
-    return () => window.clearTimeout(timer);
-  }, [notice]);
+  const canEditUser = (targetUser: HRUser) => {
+    return isAdmin || isSelf(targetUser);
+  };
 
   useEffect(() => {
     fetchUsers();
   }, []);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    setSelectedSubCategory('ALL');
+  }, [subGroupType]);
 
-    (window as any).handleChartEdit = (id: string) => {
-      const user = users.find((u) => u.id === id);
-      if (!user) return;
-
-      if (!isAdmin && currentUser?.id !== user.id) {
-        showNotice(
-          '본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.',
-          'warning'
-        );
-        return;
-      }
-
-      setEditingUser(user);
-      setIsModalOpen(true);
+  // 전역 핸들러 등록 (D3 Org Chart 내부 버튼 인터랙션용)
+  useEffect(() => {
+    (window as any).handleChartEdit = (userId: string) => {
+      const target = users.find(u => u.id === userId);
+      if (target) handleOpenEditModal(target);
     };
 
-    (window as any).handleChartDelete = (id: string) => {
-      const user = users.find((u) => u.id === id);
-      if (!user) return;
-
-      handleDeleteUser(user);
+    (window as any).handleChartDelete = (userId: string) => {
+      const target = users.find(u => u.id === userId);
+      if (target) handleDeleteUser(target);
     };
 
-    (window as any).handleChartAddSub = () => {
+    (window as any).handleChartAddSub = (dept: string) => {
       if (!isAdmin) {
-        showNotice('관리자 권한이 필요합니다.', 'warning');
+        alert('관리자 권한이 필요합니다.');
         return;
       }
-
-      setEditingUser(null);
+      setSelectedUser(null);
+      setFormData({
+        inputId: '',
+        name: '',
+        email: '',
+        department: dept,
+        position: '매니저',
+        job_title: '팀원',
+        field: '안전',
+        role: 'USER',
+        phone: '',
+        address: '',
+        experience: '',
+        internal_certificates: '',
+        national_certificates: '',
+        join_date: new Date().toISOString().split('T')[0],
+        career_start_date: new Date().toISOString().split('T')[0],
+        birthDate: ''
+      });
       setIsModalOpen(true);
     };
-
-    return () => {
-      delete (window as any).handleChartEdit;
-      delete (window as any).handleChartDelete;
-      delete (window as any).handleChartAddSub;
-    };
-  }, [users, isAdmin, currentUser]);
-
-  const handleExportPDF = async () => {
-    if (!orgChartContainerRef.current) {
-      showNotice(
-        '저장할 조직도 영역을 찾을 수 없습니다. 조직도 탭에서 시도해주세요.',
-        'warning'
-      );
-      return;
-    }
-
-    try {
-      const chartElement = orgChartContainerRef.current;
-
-      orgChartRef.current?.fit();
-
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const canvas = await html2canvas(chartElement, {
-        backgroundColor: '#ffffff',
-        scale: 2,
-        useCORS: true,
-        logging: false,
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-
-      const pdf = new jsPDF({
-        orientation: canvas.width >= canvas.height ? 'landscape' : 'portrait',
-        unit: 'mm',
-        format: 'a4',
-      });
-
-      const pageWidth = pdf.internal.pageSize.getWidth();
-      const pageHeight = pdf.internal.pageSize.getHeight();
-
-      const margin = 10;
-      const maxWidth = pageWidth - margin * 2;
-      const maxHeight = pageHeight - margin * 2;
-
-      const ratio = Math.min(
-        maxWidth / canvas.width,
-        maxHeight / canvas.height
-      );
-
-      const imgWidth = canvas.width * ratio;
-      const imgHeight = canvas.height * ratio;
-
-      const x = (pageWidth - imgWidth) / 2;
-      const y = (pageHeight - imgHeight) / 2;
-
-      pdf.addImage(imgData, 'PNG', x, y, imgWidth, imgHeight);
-      pdf.save('조직도.pdf');
-
-      showNotice('조직도가 PDF로 저장되었습니다.', 'success');
-    } catch (err) {
-      console.error('PDF 저장 오류:', err);
-      showNotice('PDF 저장 중 오류가 발생했습니다.', 'error');
-    }
-  };
+  }, [users, isAdmin]);
 
   const buildHierarchy = (userList: HRUser[]) => {
     const data: any[] = [];
@@ -244,68 +263,16 @@ export default function HRManagement({
 
     const addNode = (node: any) => {
       data.push(node);
-
-      if (node.id) {
-        usedIds.add(node.id);
-      }
+      if (node.id) usedIds.add(node.id);
     };
 
-    addNode({
-      id: 'root',
-      parentId: '',
-      name: '조직도',
-      type: 'root',
-      level: 'root',
-    });
+    addNode({ id: 'root', parentId: '', name: '조직도', type: 'root' });
+    addNode({ id: 'org_operating', parentId: 'root', name: '운영', type: 'department', level: 'main' });
+    addNode({ id: 'org_management', parentId: 'org_operating', name: '관리', type: 'department', level: 'main' });
+    addNode({ id: 'org_team', parentId: 'org_management', name: '팀', type: 'department', level: 'main' });
 
-    addNode({
-      id: 'org_operating',
-      parentId: 'root',
-      name: '운영',
-      type: 'department',
-      level: 'main',
-    });
-
-    addNode({
-      id: 'operating_team',
-      parentId: 'org_operating',
-      name: '운영팀',
-      type: 'group',
-      level: 'submain',
-      department: '운영',
-    });
-
-    addNode({
-      id: 'org_management',
-      parentId: 'operating_team',
-      name: '관리',
-      type: 'department',
-      level: 'main',
-    });
-
-    addNode({
-      id: 'management_team',
-      parentId: 'org_management',
-      name: '관리팀',
-      type: 'group',
-      level: 'submain',
-      department: '관리',
-    });
-
-    addNode({
-      id: 'org_team',
-      parentId: 'management_team',
-      name: 'TEAM',
-      type: 'department',
-      level: 'main',
-    });
-
-    const addUserNode = (
-      user: HRUser,
-      parentId: string
-    ) => {
+    const addUserNode = (user: HRUser, parentId: string) => {
       if (usedIds.has(user.id)) return;
-
       addNode({
         id: `user_${user.id}`,
         parentId,
@@ -318,194 +285,83 @@ export default function HRManagement({
       });
     };
 
-    const operatingUsers = userList.filter(
-      (u) => (u.department || '').trim() === '운영'
-    );
-
-    const operatingTitleOrder = [
-      '본부장',
-      '소장',
-      '사무',
-    ];
-
-    const otherOperatingTitles = Array.from(
-      new Set(
-        operatingUsers
-          .map((u) => (u.job_title || '').trim())
-          .filter(
-            (title) =>
-              title &&
-              !operatingTitleOrder.includes(title)
-          )
-      )
-    );
-
-    const operatingTitles = [
-      ...operatingTitleOrder,
-      ...otherOperatingTitles,
-    ];
+    // 운영: 본부장 / 소장 / 사무 등의 직책별로 묶고 구성원을 배치합니다.
+    const operatingUsers = userList.filter((u) => (u.department || '').trim() === '운영');
+    const operatingTitleOrder = ['본부장', '소장', '사무'];
+    const otherOperatingTitles = Array.from(new Set(
+      operatingUsers
+        .map((u) => (u.job_title || '').trim())
+        .filter((title) => title && !operatingTitleOrder.includes(title))
+    ));
+    const operatingTitles = [...operatingTitleOrder, ...otherOperatingTitles];
 
     operatingTitles.forEach((title) => {
-      const members = operatingUsers.filter(
-        (u) =>
-          ((u.job_title || '').trim() || '없음') ===
-          title
-      );
-
+      const members = operatingUsers.filter((u) => (u.job_title || '없음').trim() === title);
       if (members.length === 0) return;
 
       const titleId = `operating_title_${title}`;
-
       addNode({
         id: titleId,
-        parentId: 'operating_team',
+        parentId: 'org_operating',
         name: title,
         type: 'group',
         level: 'title',
         department: '운영',
       });
-
-      members.forEach((user) => {
-        addUserNode(user, titleId);
-      });
+      members.forEach((user) => addUserNode(user, titleId));
     });
 
-    const operatingUnassigned =
-      operatingUsers.filter(
-        (u) => !(u.job_title || '').trim()
-      );
-
-    if (operatingUnassigned.length > 0) {
-      const titleId = 'operating_title_none';
-
-      addNode({
-        id: titleId,
-        parentId: 'operating_team',
-        name: '기타',
-        type: 'group',
-        level: 'title',
-        department: '운영',
-      });
-
-      operatingUnassigned.forEach((user) => {
-        addUserNode(user, titleId);
-      });
-    }
-
-    const managementUsers = userList.filter(
-      (u) => (u.department || '').trim() === '관리'
-    );
-
-    const managementFields = Array.from(
-      new Set(
-        managementUsers.map(
-          (u) =>
-            (u.field || '기타').trim() || '기타'
-        )
-      )
-    );
-
-    const preferredFieldOrder = [
-      'QA',
-      '공정',
-      '공정 및 스케쥴',
-      '공정 및 스케줄',
-      '안전',
-      '캐빈',
-      '사무',
-      '기타',
-    ];
-
+    // 관리: 현재 app_users.department가 '관리'인 구성원을 field 기준으로 묶습니다.
+    const managementUsers = userList.filter((u) => (u.department || '').trim() === '관리');
+    const managementFields = Array.from(new Set(
+      managementUsers.map((u) => (u.field || '기타').trim() || '기타')
+    ));
+    const preferredFieldOrder = ['QA', '공정', '공정 및 스케쥴', '공정 및 스케줄', '안전', '캐빈', '사무', '기타'];
     managementFields.sort((a, b) => {
       const ia = preferredFieldOrder.indexOf(a);
       const ib = preferredFieldOrder.indexOf(b);
-
-      if (ia !== -1 && ib !== -1) {
-        return ia - ib;
-      }
-
+      if (ia !== -1 && ib !== -1) return ia - ib;
       if (ia !== -1) return -1;
       if (ib !== -1) return 1;
-
       return a.localeCompare(b);
     });
 
     managementFields.forEach((field) => {
-      const members = managementUsers.filter(
-        (u) =>
-          ((u.field || '기타').trim() || '기타') ===
-          field
-      );
-
+      const members = managementUsers.filter((u) => ((u.field || '기타').trim() || '기타') === field);
       if (members.length === 0) return;
 
       const fieldId = `management_field_${field}`;
-
       addNode({
         id: fieldId,
-        parentId: 'management_team',
+        parentId: 'org_management',
         name: field,
         type: 'group',
         level: 'field',
         department: '관리',
       });
-
-      members.forEach((user) => {
-        addUserNode(user, fieldId);
-      });
+      members.forEach((user) => addUserNode(user, fieldId));
     });
 
-    const teamDepartments = [
-      '1팀',
-      '2팀',
-      '3팀',
-      '4팀',
-    ];
-
-    const existingTeamDepartments = Array.from(
-      new Set(
-        userList
-          .map((u) => (u.department || '').trim())
-          .filter((dept) => /^\d+팀$/.test(dept))
-      )
-    );
-
-    const allTeams = Array.from(
-      new Set([
-        ...teamDepartments,
-        ...existingTeamDepartments,
-      ])
-    );
-
+    // 팀: department에 저장된 1~4팀을 그대로 읽어 자동 구성합니다.
+    const teamDepartments = ['1팀', '2팀', '3팀', '4팀'];
+    const existingTeamDepartments = Array.from(new Set(
+      userList
+        .map((u) => (u.department || '').trim())
+        .filter((dept) => /^\d+팀$/.test(dept))
+    ));
+    const allTeams = Array.from(new Set([...teamDepartments, ...existingTeamDepartments]));
     allTeams.sort((a, b) => {
-      const na = parseInt(
-        a.replace('팀', ''),
-        10
-      );
-
-      const nb = parseInt(
-        b.replace('팀', ''),
-        10
-      );
-
-      if (!isNaN(na) && !isNaN(nb)) {
-        return na - nb;
-      }
-
+      const na = parseInt(a.replace('팀', ''), 10);
+      const nb = parseInt(b.replace('팀', ''), 10);
+      if (!isNaN(na) && !isNaN(nb)) return na - nb;
       if (!isNaN(na)) return -1;
       if (!isNaN(nb)) return 1;
-
       return a.localeCompare(b);
     });
 
     allTeams.forEach((team) => {
-      const members = userList.filter(
-        (u) =>
-          (u.department || '').trim() === team
-      );
-
+      const members = userList.filter((u) => (u.department || '').trim() === team);
       const teamId = `team_${team}`;
-
       addNode({
         id: teamId,
         parentId: 'org_team',
@@ -515,86 +371,37 @@ export default function HRManagement({
         department: team,
       });
 
-      const sortedMembers = [...members].sort(
-        (a, b) => {
-          const rankA =
-            JOB_TITLE_ORDER_IN_RANK[
-              a.job_title || '없음'
-            ] || 99;
-
-          const rankB =
-            JOB_TITLE_ORDER_IN_RANK[
-              b.job_title || '없음'
-            ] || 99;
-
-          if (rankA !== rankB) {
-            return rankA - rankB;
-          }
-
-          return (a.name || '').localeCompare(
-            b.name || ''
-          );
-        }
-      );
-
-      sortedMembers.forEach((user) => {
-        addUserNode(user, teamId);
+      // 팀 구성원은 department를 기준으로 자동 배치하며 직책은 카드에 표시합니다.
+      const sortedMembers = [...members].sort((a, b) => {
+        const rankA = JOB_TITLE_ORDER_IN_RANK[a.job_title || '없음'] || 99;
+        const rankB = JOB_TITLE_ORDER_IN_RANK[b.job_title || '없음'] || 99;
+        if (rankA !== rankB) return rankA - rankB;
+        return (a.name || '').localeCompare(b.name || '');
       });
+      sortedMembers.forEach((user) => addUserNode(user, teamId));
     });
 
-    const handledDepartments = new Set([
-      '운영',
-      '관리',
-      ...allTeams,
-    ]);
-
-    const otherDepartments = Array.from(
-      new Set(
-        userList
-          .map(
-            (u) =>
-              (u.department || '').trim() ||
-              '미지정 파트'
-          )
-          .filter(
-            (dept) =>
-              !handledDepartments.has(dept)
-          )
-      )
-    );
+    // 기존 DEPT_ORDER에 없는 부서도 데이터가 있으면 조직도에서 누락하지 않습니다.
+    const handledDepartments = new Set(['운영', '관리', ...allTeams]);
+    const otherDepartments = Array.from(new Set(
+      userList
+        .map((u) => (u.department || '').trim() || '미지정 파트')
+        .filter((dept) => !handledDepartments.has(dept))
+    ));
 
     otherDepartments.forEach((dept) => {
       const deptId = `other_dept_${dept}`;
-
-      addNode({
-        id: deptId,
-        parentId: 'org_team',
-        name: dept,
-        type: 'department',
-        level: 'team',
-        department: dept,
-      });
-
+      addNode({ id: deptId, parentId: 'org_team', name: dept, type: 'department', level: 'other' });
       userList
-        .filter(
-          (u) =>
-            ((u.department || '').trim() ||
-              '미지정 파트') === dept
-        )
-        .forEach((user) => {
-          addUserNode(user, deptId);
-        });
+        .filter((u) => ((u.department || '').trim() || '미지정 파트') === dept)
+        .forEach((user) => addUserNode(user, deptId));
     });
 
     return data;
   };
 
   useEffect(() => {
-    if (
-      activeTab === 'CHART' &&
-      orgChartContainerRef.current &&
-      users.length > 0
-    ) {
+    if (activeTab === 'CHART' && orgChartContainerRef.current && users.length > 0) {
       if (!orgChartRef.current) {
         orgChartRef.current = new OrgChart();
       }
@@ -604,251 +411,54 @@ export default function HRManagement({
       orgChartRef.current
         .container(orgChartContainerRef.current)
         .data(chartData)
-        .layout('top')
-        .compact(false)
         .nodeHeight((d: any) => {
-          if (d.data.type === 'root') {
-            return 50;
-          }
-
-          if (d.data.type === 'user') {
-            return 92;
-          }
-
-          if (d.data.level === 'main') {
-            return 52;
-          }
-
-          if (d.data.level === 'submain') {
-            return 46;
-          }
-
-          return 42;
+          if (d.data.type === 'root') return 50;
+          if (d.data.type === 'user') return 92;
+          return d.data.level === 'main' ? 48 : 42;
         })
         .nodeWidth((d: any) => {
-          if (d.data.type === 'user') {
-            return 210;
-          }
-
-          if (d.data.level === 'main') {
-            return 150;
-          }
-
-          if (d.data.level === 'submain') {
-            return 135;
-          }
-
-          return 145;
+          if (d.data.type === 'user') return 210;
+          if (d.data.level === 'main') return 180;
+          return 150;
         })
-        .childrenMargin((d: any) => {
-          if (d.data.level === 'main') {
-            return 36;
-          }
-
-          if (d.data.level === 'submain') {
-            return 26;
-          }
-
-          return 20;
-        })
-        .siblingsMargin(() => 18)
-        .neighbourMargin(() => 12)
+        .childrenMargin((d: any) => d.data.level === 'main' ? 32 : 22)
+        .compactMarginBetween((d: any) => 14)
+        .compactMarginPair((d: any) => 18)
         .nodeContent((d: any) => {
           if (d.data.type === 'root') {
             return `
-              <div
-                style="
-                  background-color:#1F2937;
-                  color:white;
-                  border-radius:8px;
-                  border:2px solid #111827;
-                  height:100%;
-                  display:flex;
-                  align-items:center;
-                  justify-content:center;
-                  font-weight:bold;
-                  font-family:sans-serif;
-                  box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);
-                "
-              >
+              <div style="background-color: #1F2937; color: white; border-radius: 8px; border: 2px solid #111827; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
                 ${d.data.name}
-              </div>
-            `;
+              </div>`;
           }
 
-          if (
-            d.data.type === 'department' ||
-            d.data.type === 'group'
-          ) {
-            const isMain =
-              d.data.level === 'main' ||
-              d.data.level === 'submain';
-
+          if (d.data.type === 'department' || d.data.type === 'group') {
+            const isMain = d.data.level === 'main';
             return `
-              <div
-                style="
-                  background-color:${isMain ? '#243B5A' : '#EAF0F7'};
-                  color:${isMain ? 'white' : '#243B5A'};
-                  border-radius:8px;
-                  border:2px solid ${
-                    isMain
-                      ? '#1e293b'
-                      : '#CBD5E1'
-                  };
-                  height:100%;
-                  display:flex;
-                  align-items:center;
-                  justify-content:center;
-                  padding:0 10px;
-                  font-weight:bold;
-                  font-family:sans-serif;
-                  box-sizing:border-box;
-                  box-shadow:0 2px 4px rgba(0,0,0,0.05);
-                "
-              >
+              <div style="background-color: ${isMain ? '#243B5A' : '#EAF0F7'}; color: ${isMain ? 'white' : '#243B5A'}; border-radius: 8px; border: 2px solid ${isMain ? '#1e293b' : '#CBD5E1'}; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0 10px; font-weight: bold; font-family: sans-serif; box-sizing: border-box; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                 ${d.data.name}
-              </div>
-            `;
+              </div>`;
           }
 
           const user = d.data.data;
-
-          const isLeader = [
-            '본부장',
-            '소장',
-            '팀장',
-          ].includes(user.job_title || '');
-
-          const bgColor = isLeader
-            ? '#ffffff'
-            : '#f8fafc';
-
-          const borderColor = isLeader
-            ? '#4f46e5'
-            : '#cbd5e1';
-
-          const borderWidth = isLeader
-            ? '2px'
-            : '1px';
+          const isLeader = ['본부장', '소장', '팀장'].includes(user.job_title || '');
+          const bgColor = isLeader ? '#ffffff' : '#f8fafc';
+          const borderColor = isLeader ? '#4f46e5' : '#cbd5e1';
+          const borderWidth = isLeader ? '2px' : '1px';
 
           return `
-            <div
-              style="
-                font-family:sans-serif;
-                background-color:${bgColor};
-                border:${borderWidth} solid ${borderColor};
-                border-radius:8px;
-                padding:10px;
-                height:100%;
-                box-sizing:border-box;
-                box-shadow:0 1px 3px rgba(0,0,0,0.1);
-              "
-            >
-              <div
-                style="
-                  font-size:13px;
-                  font-weight:bold;
-                  color:#1e293b;
-                  display:flex;
-                  justify-content:space-between;
-                  align-items:center;
-                "
-              >
-                <span>
-                  ${isLeader ? '👑' : '👤'}
-                  ${user.name}
-                </span>
-
-                <div
-                  style="
-                    display:flex;
-                    gap:4px;
-                    align-items:center;
-                  "
-                >
-                  <span
-                    style="
-                      font-size:9px;
-                      padding:2px 4px;
-                      border-radius:4px;
-                      background-color:${
-                        isLeader
-                          ? '#e0e7ff'
-                          : '#e2e8f0'
-                      };
-                      color:${
-                        isLeader
-                          ? '#4f46e5'
-                          : '#475569'
-                      };
-                    "
-                  >
-                    ${user.position || ''}
-                  </span>
-
-                  <button
-                    onclick="window.handleChartEdit('${user.id}')"
-                    style="
-                      background:#f1f5f9;
-                      border:1px solid #cbd5e1;
-                      border-radius:4px;
-                      cursor:pointer;
-                      font-size:10px;
-                      padding:1px 4px;
-                    "
-                    title="수정"
-                  >
-                    ✏️
-                  </button>
-
-                  <button
-                    onclick="window.handleChartDelete('${user.id}')"
-                    style="
-                      background:#fee2e2;
-                      border:1px solid #fca5a5;
-                      border-radius:4px;
-                      cursor:pointer;
-                      font-size:10px;
-                      padding:1px 4px;
-                      color:#dc2626;
-                    "
-                    title="삭제"
-                  >
-                    🗑️
-                  </button>
+            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 10px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+              <div style="font-size: 13px; font-weight: bold; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
+                <span>${isLeader ? '👑' : '👤'} ${user.name}</span>
+                <div style="display: flex; gap: 4px; align-items: center;">
+                  <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isLeader ? '#e0e7ff' : '#e2e8f0'}; color: ${isLeader ? '#4f46e5' : '#475569'};">${user.position || ''}</span>
+                  <button onclick="window.handleChartEdit('${user.id}')" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 4px;" title="수정">✏️</button>
+                  <button onclick="window.handleChartDelete('${user.id}')" style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 4px; color: #dc2626;" title="삭제">🗑️</button>
                 </div>
               </div>
-
-              <div
-                style="
-                  font-size:10px;
-                  color:#64748b;
-                  margin-top:6px;
-                  display:flex;
-                  justify-content:space-between;
-                  align-items:center;
-                "
-              >
-                <span>
-                  ${user.job_title || '팀원'}
-                  ${
-                    user.field
-                      ? ` · ${user.field}`
-                      : ''
-                  }
-                </span>
-
-                <span
-                  style="
-                    font-size:9px;
-                    color:#2563eb;
-                    background:#eff6ff;
-                    padding:1px 4px;
-                    border-radius:3px;
-                  "
-                >
-                  ${user.phone || '연락처 없음'}
-                </span>
+              <div style="font-size: 10px; color: #64748b; margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
+                <span>${user.job_title || '팀원'} ${user.field ? `· ${user.field}` : ''}</span>
+                <span style="font-size: 9px; color: #2563eb; background: #eff6ff; padding: 1px 4px; border-radius: 3px;">${user.phone || '연락처 없음'}</span>
               </div>
             </div>
           `;
@@ -856,69 +466,60 @@ export default function HRManagement({
         .render();
 
       orgChartRef.current.expandAll();
-
-      requestAnimationFrame(() => {
-        orgChartRef.current?.fit();
-      });
+      requestAnimationFrame(() => orgChartRef.current?.fit());
     }
   }, [activeTab, users]);
 
   const fetchUsers = async () => {
     setLoading(true);
-
     try {
       const { data, error } = await supabase
         .from('app_users')
         .select('*')
-        .order('name', {
-          ascending: true,
-        });
+        .order('name', { ascending: true });
 
       if (error) throw error;
 
-      const formatted = (data || []).map(
-        (u: any) => ({
-          ...u,
-          national_certificates:
-            u.national_certificates ||
-            u.certificates ||
-            '',
-        })
-      );
+      const formatted = (data || []).map((u: any) => ({
+        ...u,
+        national_certificates: u.national_certificates || u.certificates || ''
+      }));
 
       setUsers(formatted);
     } catch (err: any) {
-      console.error(
-        '인사 정보 조회 실패:',
-        err?.message || err
-      );
+      console.error('인사 정보 조회 실패:', err?.message || err);
     } finally {
       setLoading(false);
     }
   };
 
   const toggleGroup = (groupName: string) => {
-    setCollapsedGroups((prev) => ({
+    setCollapsedGroups(prev => ({
       ...prev,
-      [groupName]: !prev[groupName],
+      [groupName]: !prev[groupName]
     }));
   };
 
-  const handleNewUser = () => {
+  const toggleAllGroups = (collapse: boolean) => {
+    const newStatus: Record<string, boolean> = {};
+    availableSubCategories.forEach(cat => {
+      newStatus[cat] = collapse;
+    });
+    setCollapsedGroups(newStatus);
+  };
+
+  const handleOpenAddModal = () => {
     if (!isAdmin) {
-      showNotice(
-        '관리자 권한이 필요합니다.',
-        'warning'
-      );
+      alert('관리자 권한이 필요합니다.');
       return;
     }
-
-    setEditingUser({
-      id: '',
+    setSelectedUser(null);
+    setFormData({
+      inputId: '',
       name: '',
       email: '',
       department: '운영',
-      position: '',
+      position: '매니저',
       job_title: '팀원',
       field: '안전',
       role: 'USER',
@@ -927,1402 +528,1098 @@ export default function HRManagement({
       experience: '',
       internal_certificates: '',
       national_certificates: '',
-      join_date:
-        new Date()
-          .toISOString()
-          .split('T')[0],
-      career_start_date:
-        new Date()
-          .toISOString()
-          .split('T')[0],
-      password: '',
-      birthDate: '',
+      join_date: new Date().toISOString().split('T')[0],
+      career_start_date: new Date().toISOString().split('T')[0],
+      birthDate: ''
     });
-
     setIsModalOpen(true);
   };
 
-  const handleEditUser = (
-    user: HRUser
-  ) => {
-    if (
-      !isAdmin &&
-      currentUser?.id !== user.id
-    ) {
-      showNotice(
-        '본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.',
-        'warning'
-      );
+  const handleOpenEditModal = (user: HRUser) => {
+    if (!canEditUser(user)) {
+      alert('본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.');
       return;
     }
-
-    setEditingUser(user);
+    setSelectedUser(user);
+    setFormData({ 
+      inputId: user.id || '',
+      name: user.name || '',
+      email: user.email || '',
+      department: user.department || '운영',
+      position: user.position || '매니저',
+      job_title: user.job_title || '팀원',
+      field: user.field || '안전',
+      role: user.role || 'USER',
+      phone: user.phone || '',
+      address: user.address || '',
+      experience: user.experience || '',
+      internal_certificates: user.internal_certificates || '',
+      national_certificates: user.national_certificates || user.certificates || '',
+      join_date: user.join_date || '',
+      career_start_date: user.career_start_date || '',
+      birthDate: user.password || '' 
+    });
     setIsModalOpen(true);
   };
 
-  const handleDeleteUser = (
-    user: HRUser
-  ) => {
+  const handleDeleteUser = async (user: HRUser) => {
     if (!isAdmin) {
-      showNotice(
-        '관리자만 구성원을 삭제할 수 있습니다.',
-        'warning'
-      );
+      alert('관리자만 구성원을 삭제할 수 있습니다.');
       return;
     }
 
-    if (
-      currentUser?.id === user.id
-    ) {
-      showNotice(
-        '현재 로그인되어 있는 본인 계정은 삭제할 수 없습니다.',
-        'warning'
-      );
+    if (currentUser?.id === user.id) {
+      alert('현재 로그인되어 있는 본인 계정은 삭제할 수 없습니다.');
       return;
     }
 
-    setConfirmUser(user);
-  };
-
-  const handleConfirmDelete = async () => {
-    if (!confirmUser) return;
-
-    const user = confirmUser;
-
-    setConfirmUser(null);
+    const confirmDelete = window.confirm(`정말로 [${user.name}] 님의 인사 정보를 삭제하시겠습니까?`);
+    if (!confirmDelete) return;
 
     try {
-      const { error } =
-        await supabase
-          .from('app_users')
-          .delete()
-          .eq('id', user.id);
+      const { error } = await supabase
+        .from('app_users')
+        .delete()
+        .eq('id', user.id);
 
       if (error) throw error;
 
-      showNotice(
-        `${user.name} 님의 정보가 성공적으로 삭제되었습니다.`,
-        'success'
-      );
-
+      alert(`${user.name} 님의 정보가 성공적으로 삭제되었습니다.`);
       fetchUsers();
     } catch (err: any) {
-      console.error(
-        '삭제 실패:',
-        err
-      );
-
-      showNotice(
-        '구성원 삭제 실패: ' +
-          (err.message ||
-            '알 수 없는 오류'),
-        'error'
-      );
+      console.error('삭제 실패:', err);
+      alert('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'));
     }
   };
 
-  const handleSaveUser = async (
-    e: React.FormEvent<HTMLFormElement>
-  ) => {
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!editingUser) return;
-
-    if (!isAdmin && editingUser.id !== currentUser?.id) {
-      showNotice(
-        '본인 정보만 수정할 권한이 있습니다.',
-        'warning'
-      );
+    if (selectedUser && !canEditUser(selectedUser)) {
+      alert('본인 정보만 수정할 권한이 있습니다.');
       return;
     }
 
-    if (!editingUser.email.trim()) {
-      showNotice(
-        '로그인에 사용할 아이디를 입력해주세요.',
-        'warning'
-      );
+    if (!formData.inputId.trim()) {
+      alert('로그인에 사용할 아이디를 입력해주세요.');
       return;
     }
 
-    if (
-      editingUser.password &&
-      !/^\d{8}$/.test(
-        editingUser.password
-      )
-    ) {
-      showNotice(
-        '비밀번호로 사용할 생년월일 8자리를 입력해주세요.',
-        'warning'
-      );
+    if (formData.birthDate && formData.birthDate.length !== 8) {
+      alert('생년월일은 8자리(YYYYMMDD)로 정확히 입력해주세요.');
       return;
     }
 
     try {
       const payload: any = {
-        name: editingUser.name,
-        email: editingUser.email,
-        department:
-          editingUser.department,
-        position:
-          editingUser.position,
-        job_title:
-          editingUser.job_title,
-        field: editingUser.field,
-        role: editingUser.role,
-        phone: editingUser.phone,
-        address: editingUser.address,
-        experience:
-          editingUser.experience,
-        internal_certificates:
-          editingUser.internal_certificates,
-        national_certificates:
-          editingUser.national_certificates,
-        join_date:
-          editingUser.join_date,
-        career_start_date:
-          editingUser.career_start_date,
+        id: formData.inputId.trim(), 
+        name: formData.name,
+        email: formData.email,
+        department: formData.department,
+        position: formData.position,
+        job_title: formData.job_title,
+        field: formData.field,
+        phone: formData.phone,
+        address: formData.address,
+        experience: formData.experience,
+        internal_certificates: formData.internal_certificates,
+        national_certificates: formData.national_certificates,
+        certificates: formData.national_certificates,
+        join_date: formData.join_date || null,
+        career_start_date: formData.career_start_date || null,
       };
 
-      if (editingUser.password) {
-        payload.password =
-          editingUser.password;
+      if (formData.birthDate) {
+        payload.password = formData.birthDate;
       }
 
-      if (editingUser.id) {
-        const { error } =
-          await supabase
-            .from('app_users')
-            .update(payload)
-            .eq('id', editingUser.id);
+      if (isSuperAdmin && formData.role) {
+        payload.role = formData.role;
+      }
+
+      if (selectedUser) {
+        const { error } = await supabase
+          .from('app_users')
+          .update(payload)
+          .eq('id', selectedUser.id);
 
         if (error) throw error;
-
-        showNotice(
-          '인사 정보가 성공적으로 수정되었습니다.',
-          'success'
-        );
+        alert('인사 정보가 성공적으로 수정되었습니다.');
       } else {
-        if (
-          !editingUser.password
-        ) {
-          showNotice(
-            '비밀번호로 사용할 생년월일 8자리를 입력해주세요.',
-            'warning'
-          );
+        if (!formData.birthDate) {
+          alert('비밀번호로 사용할 생년월일 8자리를 입력해주세요.');
           return;
         }
 
-        const { error } =
-          await supabase
-            .from('app_users')
-            .insert({
-              ...payload,
-              password:
-                editingUser.password,
-            });
+        const { error } = await supabase.from('app_users').insert([
+          {
+            ...payload,
+            role: isSuperAdmin ? (formData.role || 'USER') : 'USER',
+          },
+        ]);
 
         if (error) throw error;
-
-        showNotice(
-          '새 구성원이 등록되었습니다.',
-          'success'
-        );
+        alert('새 구성원이 등록되었습니다.');
       }
 
       setIsModalOpen(false);
-      setEditingUser(null);
-
-      await fetchUsers();
+      fetchUsers();
     } catch (err: any) {
-      console.error(
-        '저장 실패:',
-        err
-      );
-
-      showNotice(
-        '저장 중 오류가 발생했습니다: ' +
-          (err.message ||
-            '알 수 없는 오류'),
-        'error'
-      );
+      console.error('저장 실패:', err);
+      alert('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
     }
   };
 
-  const departments = useMemo(() => {
-    const values = Array.from(
-      new Set(
-        users
-          .map(
-            (u) =>
-              (u.department || '').trim()
-          )
-          .filter(Boolean)
-      )
-    );
-
-    return [
-      '전체',
-      ...DEPT_ORDER.filter((d) =>
-        values.includes(d)
-      ),
-      ...values.filter(
-        (d) =>
-          !DEPT_ORDER.includes(d)
-      ),
-    ];
-  }, [users]);
-
-  const fields = useMemo(() => {
-    const values = Array.from(
-      new Set(
-        users
-          .map(
-            (u) =>
-              (u.field || '').trim()
-          )
-          .filter(Boolean)
-      )
-    );
-
-    return [
-      '전체',
-      ...values.sort(
-        (a, b) =>
-          a.localeCompare(b)
-      ),
-    ];
-  }, [users]);
-
-  const filteredUsers = useMemo(() => {
-    const keyword =
-      searchTerm
-        .trim()
-        .toLowerCase();
-
-    return users.filter(
-      (user) => {
-        const matchesSearch =
-          !keyword ||
-          [
-            user.name,
-            user.email,
-            user.department,
-            user.position,
-            user.job_title,
-            user.field,
-            user.phone,
-          ]
-            .filter(Boolean)
-            .some((value) =>
-              String(value)
-                .toLowerCase()
-                .includes(keyword)
-            );
-
-        const matchesDepartment =
-          selectedDepartment ===
-            '전체' ||
-          user.department ===
-            selectedDepartment;
-
-        const matchesField =
-          selectedField ===
-            '전체' ||
-          user.field ===
-            selectedField;
-
-        return (
-          matchesSearch &&
-          matchesDepartment &&
-          matchesField
-        );
-      }
-    );
-  }, [
-    users,
-    searchTerm,
-    selectedDepartment,
-    selectedField,
-  ]);
-
-  const groupedUsers = useMemo(() => {
-    const groups: Record<
-      string,
-      HRUser[]
-    > = {};
-
-    filteredUsers.forEach(
-      (user) => {
-        const key =
-          user.department ||
-          '미지정';
-
-        if (!groups[key]) {
-          groups[key] = [];
-        }
-
-        groups[key].push(user);
-      }
-    );
-
-    return groups;
-  }, [filteredUsers]);
-
-  const renderMemberCard = (
-    user: HRUser
-  ) => {
-    const canEdit =
-      isAdmin ||
-      currentUser?.id === user.id;
-
+  const filteredUsers = users.filter((u) => {
+    const term = searchTerm.toLowerCase();
     return (
-      <div
-        key={user.id}
-        className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm transition hover:shadow-md"
-      >
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="truncate text-base font-bold text-slate-800">
-                {user.name}
-              </div>
-
-              {user.position && (
-                <span className="shrink-0 rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-                  {user.position}
-                </span>
-              )}
-            </div>
-
-            <div className="mt-1 text-sm text-slate-500">
-              {user.job_title ||
-                '팀원'}
-              {user.field
-                ? ` · ${user.field}`
-                : ''}
-            </div>
-          </div>
-
-          <div className="flex shrink-0 gap-1">
-            {canEdit && (
-              <button
-                type="button"
-                onClick={() =>
-                  handleEditUser(user)
-                }
-                className="rounded-md border border-slate-200 bg-slate-50 p-1.5 text-slate-600 hover:bg-slate-100"
-                title="수정"
-              >
-                <Edit
-                  size={14}
-                />
-              </button>
-            )}
-
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={() =>
-                  handleDeleteUser(
-                    user
-                  )
-                }
-                className="rounded-md border border-red-200 bg-red-50 p-1.5 text-red-600 hover:bg-red-100"
-                title="삭제"
-              >
-                <Trash2
-                  size={14}
-                />
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="mt-3 space-y-1 text-xs text-slate-500">
-          <div>
-            연락처:{' '}
-            {user.phone ||
-              '없음'}
-          </div>
-
-          <div>
-            이메일:{' '}
-            {user.email ||
-              '없음'}
-          </div>
-        </div>
-      </div>
+      (u.name || '').toLowerCase().includes(term) ||
+      (u.id || '').toLowerCase().includes(term) ||
+      (u.department || '').toLowerCase().includes(term) ||
+      (u.position || '').toLowerCase().includes(term) ||
+      (u.job_title || '').toLowerCase().includes(term) ||
+      (u.field || '').toLowerCase().includes(term) ||
+      (u.phone || '').toLowerCase().includes(term)
     );
-  };
+  });
+
+  const rawSubCategories = Array.from(
+    new Set(
+      filteredUsers
+        .map((u) => (subGroupType === 'DEPT' ? u.department || '미지정 파트' : u.position || '미지정 직급'))
+        .filter(Boolean)
+    )
+  );
+
+  const availableSubCategories = subGroupType === 'DEPT' 
+    ? rawSubCategories.sort((a, b) => {
+        const indexA = DEPT_ORDER.indexOf(a);
+        const indexB = DEPT_ORDER.indexOf(b);
+        if (indexA !== -1 && indexB !== -1) return indexA - indexB;
+        if (indexA !== -1) return -1;
+        if (indexB !== -1) return 1;
+        return a.localeCompare(b);
+      })
+    : rawSubCategories.sort((a, b) => {
+        const orderA = RANK_ORDER[a] || 99;
+        const orderB = RANK_ORDER[b] || 99;
+        return orderA - orderB;
+      });
+
+  const displayedCategories = selectedSubCategory === 'ALL' 
+    ? availableSubCategories 
+    : [selectedSubCategory];
 
   return (
-    <div className="min-h-full bg-slate-50">
-      {notice && (
-        <div className="fixed right-5 top-5 z-[100]">
-          <div
-            className={`min-w-[280px] rounded-xl border bg-white px-4 py-3 shadow-lg ${
-              notice.type ===
-              'success'
-                ? 'border-emerald-200'
-                : notice.type ===
-                  'error'
-                ? 'border-red-200'
-                : notice.type ===
-                  'warning'
-                ? 'border-amber-200'
-                : 'border-slate-200'
-            }`}
-          >
-            <div
-              className={`text-sm font-medium ${
-                notice.type ===
-                'success'
-                  ? 'text-emerald-700'
-                  : notice.type ===
-                    'error'
-                  ? 'text-red-700'
-                  : notice.type ===
-                    'warning'
-                  ? 'text-amber-700'
-                  : 'text-slate-700'
+    <div className="w-full min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-3 space-y-3 font-sans box-border">
+      <div className="bg-white p-3 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center space-x-3">
+          <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
+            <Users className="h-5 w-5" />
+          </div>
+          <div>
+            <h1 className="text-sm font-bold text-[#1F2937]">인사 관리 및 조직도</h1>
+            <p className="text-[11px] text-[#64748B]">파트별·직급별 체계적인 조직도를 조회하고 편집합니다.</p>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative flex-1 sm:w-56">
+            <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
+            <input
+              type="text"
+              placeholder="이름, 아이디, 파트 검색..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#E2E5E9] rounded-lg bg-[#F5F6F8] text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none transition"
+            />
+          </div>
+
+          <div className="flex bg-[#F5F6F8] border border-[#E2E5E9] p-0.5 rounded-lg">
+            <button
+              onClick={() => setActiveTab('ORG')}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+                activeTab === 'ORG' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
               }`}
             >
-              {notice.message}
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div className="border-b border-slate-200 bg-white px-5 py-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-          <div>
-            <div className="flex items-center gap-2">
-              <Users
-                size={22}
-                className="text-[#243B5A]"
-              />
-
-              <h1 className="text-xl font-bold text-slate-800">
-                인사관리
-              </h1>
-            </div>
-
-            <p className="mt-1 text-sm text-slate-500">
-              구성원 및 조직 정보를
-              관리합니다.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+              <Network className="h-3.5 w-3.5" /> 카드 뷰
+            </button>
             <button
-              type="button"
-              onClick={
-                handleNewUser
-              }
-              className="flex items-center gap-1.5 rounded-lg bg-[#243B5A] px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-[#1d3049]"
+              onClick={() => setActiveTab('CHART')}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition flex items-center gap-1 ${
+                activeTab === 'CHART' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
+              }`}
             >
-              <Plus
-                size={16}
-              />
-              구성원 등록
+              <Layers className="h-3.5 w-3.5" /> 조직도
+            </button>
+            <button
+              onClick={() => setActiveTab('LIST')}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
+                activeTab === 'LIST' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
+              }`}
+            >
+              목록 뷰
             </button>
           </div>
-        </div>
-      </div>
 
-      <div className="border-b border-slate-200 bg-white px-5">
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() =>
-              setActiveTab('ORG')
-            }
-            className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${
-              activeTab === 'ORG'
-                ? 'border-[#243B5A] text-[#243B5A]'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Building2
-              size={16}
-            />
-            인사정보
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              setActiveTab('CHART')
-            }
-            className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${
-              activeTab === 'CHART'
-                ? 'border-[#243B5A] text-[#243B5A]'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <Layers
-              size={16}
-            />
-            조직도
-          </button>
-
-          <button
-            type="button"
-            onClick={() =>
-              setActiveTab('LIST')
-            }
-            className={`flex items-center gap-2 border-b-2 px-4 py-3 text-sm font-semibold ${
-              activeTab === 'LIST'
-                ? 'border-[#243B5A] text-[#243B5A]'
-                : 'border-transparent text-slate-500 hover:text-slate-700'
-            }`}
-          >
-            <List
-              size={16}
-            />
-            목록
-          </button>
-
-          {activeTab ===
-            'CHART' && (
+          {activeTab === 'CHART' && (
             <button
-              type="button"
-              onClick={
-                handleExportPDF
-              }
-              className="ml-auto flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              onClick={handleExportPDF}
+              className="flex items-center space-x-1 bg-[#DC2626] hover:bg-[#b91c1c] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+              title="현재 조직도를 고화질 PDF로 저장합니다"
             >
-              <FileDown
-                size={16}
-              />
-              PDF 저장
+              <FileText className="h-3.5 w-3.5" />
+              <span>PDF 저장</span>
+            </button>
+          )}
+
+          {isAdmin && (
+            <button
+              onClick={handleOpenAddModal}
+              className="flex items-center space-x-1 bg-[#243B5A] hover:bg-[#1d3049] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+              <span>구성원 추가</span>
             </button>
           )}
         </div>
       </div>
 
-      {activeTab ===
-        'CHART' && (
-        <div className="border-b border-slate-200 bg-white px-5 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-slate-700">
-                조직도
-              </h2>
-
-              <p className="mt-1 text-xs text-slate-500">
-                운영 → 관리 →
-                TEAM 순서의 세로
-                조직 구조입니다.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() =>
-                  orgChartRef.current?.fit()
-                }
-                className="rounded-md border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50"
-                title="전체 맞춤"
-              >
-                <Maximize2
-                  size={15}
-                />
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  orgChartRef.current?.expandAll()
-                }
-                className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
-              >
-                전체 펼치기
-              </button>
-
-              <button
-                type="button"
-                onClick={() =>
-                  orgChartRef.current?.collapseAll()
-                }
-                className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-600 hover:bg-slate-50"
-              >
-                전체 접기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeTab ===
-        'CHART' && (
-        <div className="h-[calc(100vh-190px)] min-h-[650px] overflow-auto bg-white">
-          <div
-            ref={
-              orgChartContainerRef
-            }
-            className="min-h-full w-full"
-          />
-        </div>
-      )}
-
       {activeTab === 'ORG' && (
-        <div className="p-5">
-          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-              <div className="relative flex-1">
-                <Search
-                  size={17}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-                />
-
-                <input
-                  type="text"
-                  value={searchTerm}
-                  onChange={(e) =>
-                    setSearchTerm(
-                      e.target.value
-                    )
-                  }
-                  placeholder="이름, 부서, 직책, 연락처 검색"
-                  className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#243B5A]"
-                />
-              </div>
-
-              <select
-                value={
-                  selectedDepartment
-                }
-                onChange={(e) =>
-                  setSelectedDepartment(
-                    e.target.value
-                  )
-                }
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none"
+        <div className="bg-white border border-[#E2E5E9] rounded-xl p-3 shadow-xs space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E5E9] pb-2.5">
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-bold text-[#64748B] flex items-center gap-1 mr-1">
+                <Layers className="h-3.5 w-3.5 text-[#243B5A]" /> :
+              </span>
+              <button
+                onClick={() => setSubGroupType('DEPT')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                  subGroupType === 'DEPT'
+                    ? 'bg-[#243B5A] text-white border-[#243B5A] shadow-xs'
+                    : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
+                }`}
               >
-                {departments.map(
-                  (department) => (
-                    <option
-                      key={department}
-                      value={
-                        department
-                      }
-                    >
-                      {department}
-                    </option>
-                  )
-                )}
-              </select>
-
-              <select
-                value={
-                  selectedField
-                }
-                onChange={(e) =>
-                  setSelectedField(
-                    e.target.value
-                  )
-                }
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-700 outline-none"
+                <Building2 className="h-3.5 w-3.5" />
+                <span>파트별 조직도</span>
+              </button>
+              <button
+                onClick={() => setSubGroupType('POS')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                  subGroupType === 'POS'
+                    ? 'bg-[#243B5A] text-white border-[#243B5A] shadow-xs'
+                    : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
+                }`}
               >
-                {fields.map(
-                  (field) => (
-                    <option
-                      key={field}
-                      value={field}
-                    >
-                      {field}
-                    </option>
-                  )
-                )}
-              </select>
+                <Briefcase className="h-3.5 w-3.5" />
+                <span>직급별 조직도</span>
+              </button>
+            </div>
+
+            <div className="flex items-center space-x-2 text-xs">
+              <button
+                onClick={() => toggleAllGroups(false)}
+                className="px-2 py-1 text-[#64748B] bg-[#F5F6F8] hover:bg-[#E2E5E9] border border-[#E2E5E9] rounded-lg font-medium transition text-[11px]"
+              >
+                모두 펼치기
+              </button>
+              <button
+                onClick={() => toggleAllGroups(true)}
+                className="px-2 py-1 text-[#64748B] bg-[#F5F6F8] hover:bg-[#E2E5E9] border border-[#E2E5E9] rounded-lg font-medium transition text-[11px]"
+              >
+                모두 접기
+              </button>
             </div>
           </div>
 
-          <div className="space-y-4">
-            {Object.entries(
-              groupedUsers
-            ).map(
-              ([department, members]) => (
-                <div
-                  key={department}
-                  className="overflow-hidden rounded-xl border border-slate-200 bg-white"
+          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none">
+            <span className="text-xs font-bold text-[#64748B] shrink-0 flex items-center gap-0.5">
+              <ChevronRight className="h-3.5 w-3.5" />
+            </span>
+
+            <button
+              onClick={() => setSelectedSubCategory('ALL')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
+                selectedSubCategory === 'ALL'
+                  ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                  : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
+              }`}
+            >
+              전체 보기 ({filteredUsers.length}명)
+            </button>
+
+            {availableSubCategories.map((subCat) => {
+              const count = filteredUsers.filter((u) => 
+                subGroupType === 'DEPT' 
+                  ? (u.department || '미지정 파트') === subCat 
+                  : (u.position || '미지정 직급') === subCat
+              ).length;
+
+              return (
+                <button
+                  key={subCat}
+                  onClick={() => setSelectedSubCategory(subCat)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
+                    selectedSubCategory === subCat
+                      ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                      : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
+                  }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() =>
-                      toggleGroup(
-                        department
-                      )
-                    }
-                    className="flex w-full items-center justify-between bg-slate-50 px-4 py-3 text-left"
-                  >
-                    <div className="flex items-center gap-2">
-                      {collapsedGroups[
-                        department
-                      ] ? (
-                        <ChevronRight
-                          size={17}
-                        />
-                      ) : (
-                        <ChevronDown
-                          size={17}
-                        />
-                      )}
-
-                      <span className="font-bold text-slate-700">
-                        {department}
-                      </span>
-
-                      <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs text-slate-600">
-                        {members.length}
-                      </span>
-                    </div>
-                  </button>
-
-                  {!collapsedGroups[
-                    department
-                  ] && (
-                    <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
-                      {members.map(
-                        renderMemberCard
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            )}
+                  {subCat} ({count})
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
 
-      {activeTab ===
-        'LIST' && (
-        <div className="p-5">
-          <div className="mb-4 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-4 lg:flex-row lg:items-center">
-            <div className="relative flex-1">
-              <Search
-                size={17}
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
-              />
-
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) =>
-                  setSearchTerm(
-                    e.target.value
-                  )
-                }
-                placeholder="구성원 검색"
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#243B5A]"
-              />
+      {loading ? (
+        <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-16 text-xs text-[#64748B]">조직도를 구성하는 중...</div>
+      ) : activeTab === 'CHART' ? (
+        <div className="bg-white border border-[#E2E5E9] rounded-xl p-3 shadow-xs space-y-2.5 relative">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-1.5 font-bold text-[#64748B]">
+              <Layers className="h-3.5 w-3.5 text-[#243B5A]" />
+              <span>조직도 (노드 내 ✏️ 수정 / 🗑️ 삭제 가능)</span>
             </div>
-
-            <select
-              value={
-                selectedDepartment
-              }
-              onChange={(e) =>
-                setSelectedDepartment(
-                  e.target.value
-                )
-              }
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm"
-            >
-              {departments.map(
-                (department) => (
-                  <option
-                    key={department}
-                    value={department}
-                  >
-                    {department}
-                  </option>
-                )
-              )}
-            </select>
-
-            <select
-              value={
-                selectedField
-              }
-              onChange={(e) =>
-                setSelectedField(
-                  e.target.value
-                )
-              }
-              className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm"
-            >
-              {fields.map(
-                (field) => (
-                  <option
-                    key={field}
-                    value={field}
-                  >
-                    {field}
-                  </option>
-                )
-              )}
-            </select>
+            
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => orgChartRef.current?.fit()}
+                className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
+                title="조직도를 화면 중앙에 맞춥니다"
+              >
+                화면 맞춤
+              </button>
+              <button
+                onClick={() => orgChartRef.current?.expandAll()}
+                className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
+              >
+                모두 펴기
+              </button>
+              <button
+                onClick={() => orgChartRef.current?.collapseAll()}
+                className="flex items-center gap-1 px-2.5 py-1 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#64748B] border border-[#E2E5E9] font-bold rounded-lg transition text-[11px]"
+              >
+                모두 접기
+              </button>
+            </div>
           </div>
 
-          <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead className="bg-slate-50">
-                <tr className="border-b border-slate-200 text-left text-xs font-bold text-slate-600">
-                  <th className="px-4 py-3">
-                    이름
-                  </th>
-                  <th className="px-4 py-3">
-                    부서
-                  </th>
-                  <th className="px-4 py-3">
-                    직책
-                  </th>
-                  <th className="px-4 py-3">
-                    분야
-                  </th>
-                  <th className="px-4 py-3">
-                    연락처
-                  </th>
-                  <th className="px-4 py-3">
-                    이메일
-                  </th>
-                  <th className="px-4 py-3 text-right">
-                    관리
-                  </th>
+          <div ref={orgChartContainerRef} className="w-full h-[780px] bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl overflow-hidden relative">
+          </div>
+        </div>
+      ) : activeTab === 'ORG' ? (
+        <div className="space-y-3">
+          {displayedCategories.map((catName) => {
+            const groupMembers = filteredUsers.filter((u) =>
+              subGroupType === 'DEPT'
+                ? (u.department || '미지정 파트') === catName
+                : (u.position || '미지정 직급') === catName
+            );
+
+            const sortMembers = (a: HRUser, b: HRUser) => {
+              if (catName === '책임' || subGroupType === 'POS') {
+                const titleOrderA = JOB_TITLE_ORDER_IN_RANK[a.job_title || '팀원'] || 99;
+                const titleOrderB = JOB_TITLE_ORDER_IN_RANK[b.job_title || '팀원'] || 99;
+                if (titleOrderA !== titleOrderB) {
+                  return titleOrderA - titleOrderB;
+                }
+              }
+              const dateA = a.join_date || a.career_start_date || '9999-12-31';
+              const dateB = b.join_date || b.career_start_date || '9999-12-31';
+              return dateA.localeCompare(dateB);
+            };
+
+            const leaders = groupMembers.filter(u => ['본부장', '소장', '팀장'].includes(u.job_title || '')).sort(sortMembers);
+            const members = groupMembers.filter(u => !['본부장', '소장', '팀장'].includes(u.job_title || '')).sort(sortMembers);
+
+            const isCollapsed = !!collapsedGroups[catName];
+
+            return (
+              <div key={catName} className="bg-white border border-[#E2E5E9] rounded-xl overflow-hidden shadow-xs transition-all">
+                <div 
+                  onClick={() => toggleGroup(catName)}
+                  className="flex items-center justify-between p-3 bg-[#F5F6F8] hover:bg-[#E2E5E9]/50 cursor-pointer border-b border-[#E2E5E9] transition"
+                >
+                  <div className="flex items-center space-x-2">
+                    <div className="p-1.5 bg-[#243B5A] text-white rounded-lg">
+                      {subGroupType === 'DEPT' ? <Building2 className="h-3.5 w-3.5" /> : <Briefcase className="h-3.5 w-3.5" />}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-[#1F2937] text-xs flex items-center gap-2">
+                        {catName} 
+                        <span className="text-[10px] bg-white text-[#243B5A] font-bold px-2 py-0.2 rounded-full border border-[#E2E5E9]">
+                          총 {groupMembers.length}명
+                        </span>
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    {isAdmin && subGroupType === 'DEPT' && (
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedUser(null);
+                          setFormData(prev => ({ ...prev, department: catName }));
+                          setIsModalOpen(true);
+                        }}
+                        className="px-2 py-1 bg-[#243B5A] text-white rounded text-[11px] font-bold hover:bg-[#1d3049]"
+                      >
+                        + 구성원 추가
+                      </button>
+                    )}
+                    <button className="text-[#64748B] hover:text-[#1F2937] p-1 flex items-center gap-1 text-xs font-medium">
+                      <span>{isCollapsed ? '펼치기' : '접기'}</span>
+                      {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {!isCollapsed && (
+                  <div className="p-3 bg-gradient-to-b from-slate-50/50 to-white space-y-3">
+                    {leaders.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-[#243B5A] px-1">
+                          <GitCommit className="h-3.5 w-3.5 text-[#243B5A]" />
+                          <span>파트 리더 (본부장/소장/팀장)</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin))}
+                        </div>
+                      </div>
+                    )}
+
+                    {leaders.length > 0 && members.length > 0 && (
+                      <div className="relative flex justify-center my-1">
+                        <div className="h-3 w-0.5 bg-slate-300"></div>
+                      </div>
+                    )}
+
+                    {members.length > 0 && (
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1 text-[11px] font-bold text-[#64748B] px-1">
+                          <Users className="h-3.5 w-3.5 text-[#64748B]" />
+                          <span>소속 구성원 ({members.length}명)</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
+                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin))}
+                        </div>
+                      </div>
+                    )}
+
+                    {groupMembers.length === 0 && (
+                      <div className="text-center py-6 text-xs text-[#64748B]">소속된 구성원이 없습니다.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div>
+          <div className="block md:hidden space-y-2.5">
+            {filteredUsers.map((u) => {
+              const canEdit = canEditUser(u);
+              const joinCareer = calculateCareerDetails(u.join_date);
+              const totalCareer = calculateCareerDetails(u.career_start_date);
+              const age = calculateAge(u.password);
+
+              return (
+                <div key={u.id} className="bg-white p-3 border border-[#E2E5E9] rounded-xl shadow-xs space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-xs text-[#1F2937]">{u.name}</span>
+                        {age && <span className="text-[10px] text-[#243B5A] font-bold">({age}세)</span>}
+                        {u.id && <span className="text-[10px] text-[#64748B] font-mono">({u.id})</span>}
+                        {isSelf(u) && (
+                          <span className="text-[9px] bg-[#243B5A] text-white font-bold px-1.5 py-0.2 rounded shrink-0">
+                            나
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-[#64748B] flex items-center gap-1 flex-wrap">
+                        <span className="px-1.5 py-0.5 bg-[#F5F6F8] font-medium rounded border border-[#E2E5E9]">
+                          {u.department || '미지정'} · {u.position || '사원'} {u.job_title && u.job_title !== '없음' ? `(${u.job_title}${u.field ? `/${u.field}` : ''})` : ''}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-1 shrink-0">
+                      {canEdit && (
+                        <button
+                          onClick={() => handleOpenEditModal(u)}
+                          className="p-1.5 text-[#243B5A] hover:bg-[#F5F6F8] rounded-lg transition border border-[#E2E5E9]"
+                          title="수정"
+                        >
+                          <Edit3 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteUser(u)}
+                          className="p-1.5 text-[#DC2626] hover:bg-red-50 rounded-lg transition border border-red-200"
+                          title="삭제"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-[11px] bg-[#F5F6F8] p-2 rounded-lg border border-[#E2E5E9]">
+                    <div>
+                      <span className="text-[#64748B] block text-[10px]">연락처</span>
+                      {u.phone ? (
+                        <a href={`tel:${u.phone}`} className="font-medium text-[#243B5A] hover:underline flex items-center gap-1 truncate">
+                          <Phone className="h-3 w-3 shrink-0" /> <span className="truncate">{u.phone}</span>
+                        </a>
+                      ) : (
+                        <span className="font-medium text-[#1F2937]">-</span>
+                      )}
+                    </div>
+                    <div>
+                      <span className="text-[#64748B] block text-[10px]">권한</span>
+                      <span className={`font-bold ${u.role === 'ADMIN' ? 'text-[#243B5A]' : 'text-[#64748B]'}`}>
+                        {u.role === 'ADMIN' ? '관리자' : '일반 사용자'}
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-[#64748B] block text-[10px]">자사 근속</span>
+                      <span className="font-semibold text-[#16A34A]">{joinCareer || '-'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[#64748B] block text-[10px]">총 경력</span>
+                      <span className="font-semibold text-[#2563EB]">{totalCareer || '-'}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="hidden md:block bg-white border border-[#E2E5E9] rounded-xl overflow-hidden shadow-xs">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#F5F6F8] border-b border-[#E2E5E9] font-bold text-[#64748B]">
+                <tr>
+                  <th className="p-3">성명 (나이/아이디)</th>
+                  <th className="p-3">파트 / 직급(직책/분야)</th>
+                  <th className="p-3">연락처 / 주소</th>
+                  <th className="p-3">권한</th>
+                  <th className="p-3">자사 근속 (입사일)</th>
+                  <th className="p-3">총 경력 (시작일)</th>
+                  <th className="p-3">사내자격</th>
+                  <th className="p-3">국가자격</th>
+                  <th className="p-3 text-center">관리</th>
                 </tr>
               </thead>
-
-              <tbody>
-                {filteredUsers.map(
-                  (user) => (
-                    <tr
-                      key={user.id}
-                      className="border-b border-slate-100 last:border-0 hover:bg-slate-50"
-                    >
-                      <td className="px-4 py-3 font-semibold text-slate-800">
-                        {user.name}
+              <tbody className="divide-y divide-[#E2E5E9]">
+                {filteredUsers.map((u) => {
+                  const canEdit = canEditUser(u);
+                  const age = calculateAge(u.password);
+                  return (
+                    <tr key={u.id} className="hover:bg-[#F5F6F8]/60 transition">
+                      <td className="p-3 font-bold text-[#1F2937]">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span>{u.name}</span>
+                          {age && <span className="text-xs text-[#243B5A] font-bold">({age}세)</span>}
+                          {u.id && <span className="text-[10px] text-[#64748B] font-mono font-normal">({u.id})</span>}
+                          {isSelf(u) && (
+                            <span className="text-[10px] bg-[#243B5A] text-white font-bold px-1.5 py-0.2 rounded">
+                              나
+                            </span>
+                          )}
+                        </div>
                       </td>
-
-                      <td className="px-4 py-3 text-slate-600">
-                        {user.department ||
-                          '-'}
+                      <td className="p-3 text-[#1F2937]">
+                        {u.department} / {u.position} {u.job_title && u.job_title !== '없음' ? `(${u.job_title}${u.field ? `/${u.field}` : ''})` : ''}
                       </td>
-
-                      <td className="px-4 py-3 text-slate-600">
-                        {user.job_title ||
-                          user.position ||
-                          '-'}
+                      <td className="p-3 font-medium">
+                        <div>
+                          {u.phone ? (
+                            <a href={`tel:${u.phone}`} className="text-[#243B5A] hover:underline flex items-center gap-1">
+                              <Phone className="h-3 w-3" /> {u.phone}
+                            </a>
+                          ) : '-'}
+                        </div>
+                        <div className="text-[10px] text-[#64748B] mt-0.5 truncate max-w-[180px]">
+                          {u.address || '주소 미등록'}
+                        </div>
                       </td>
-
-                      <td className="px-4 py-3 text-slate-600">
-                        {user.field ||
-                          '-'}
+                      <td className="p-3">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                          u.role === 'ADMIN' ? 'bg-[#243B5A] text-white border-[#243B5A]' : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9]'
+                        }`}>
+                          {u.role === 'ADMIN' ? '관리자' : '일반 사용자'}
+                        </span>
                       </td>
-
-                      <td className="px-4 py-3 text-slate-600">
-                        {user.phone ||
-                          '-'}
+                      <td className="p-3">
+                        <div className="text-[#16A34A] font-semibold">{calculateCareerDetails(u.join_date) || '-'}</div>
+                        <div className="text-[10px] text-[#64748B]">{u.join_date || ''}</div>
                       </td>
-
-                      <td className="px-4 py-3 text-slate-600">
-                        {user.email ||
-                          '-'}
+                      <td className="p-3">
+                        <div className="text-[#2563EB] font-semibold">{calculateCareerDetails(u.career_start_date) || '-'}</div>
+                        <div className="text-[10px] text-[#64748B]">{u.career_start_date || ''}</div>
                       </td>
-
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-1">
-                          {(isAdmin ||
-                            currentUser?.id ===
-                              user.id) && (
+                      <td className="p-3 text-[#1F2937] font-medium">{u.internal_certificates || '-'}</td>
+                      <td className="p-3 text-[#1F2937] font-medium">{u.national_certificates || '-'}</td>
+                      <td className="p-3 text-center">
+                        <div className="flex items-center justify-center space-x-1">
+                          {canEdit && (
                             <button
-                              type="button"
-                              onClick={() =>
-                                handleEditUser(
-                                  user
-                                )
-                              }
-                              className="rounded-md border border-slate-200 bg-white p-1.5 text-slate-600 hover:bg-slate-50"
+                              onClick={() => handleOpenEditModal(u)}
+                              className="p-1.5 text-[#243B5A] hover:bg-[#F5F6F8] rounded-lg transition border border-[#E2E5E9]"
+                              title="정보 수정"
                             >
-                              <Edit
-                                size={14}
-                              />
+                              <Edit3 className="h-3.5 w-3.5" />
                             </button>
                           )}
-
                           {isAdmin && (
                             <button
-                              type="button"
-                              onClick={() =>
-                                handleDeleteUser(
-                                  user
-                                )
-                              }
-                              className="rounded-md border border-red-200 bg-red-50 p-1.5 text-red-600 hover:bg-red-100"
+                              onClick={() => handleDeleteUser(u)}
+                              className="p-1.5 text-[#DC2626] hover:bg-red-50 rounded-lg transition border border-red-200"
+                              title="삭제"
                             >
-                              <Trash2
-                                size={14}
-                              />
+                              <Trash2 className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
                       </td>
                     </tr>
-                  )
-                )}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {isModalOpen &&
-        editingUser && (
-          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
-            <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl">
-              <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                <div>
-                  <h2 className="text-lg font-bold text-slate-800">
-                    {editingUser.id
-                      ? '구성원 정보 수정'
-                      : '새 구성원 등록'}
-                  </h2>
+      {detailUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-3">
+          <div className="bg-white border-t sm:border border-[#E2E5E9] rounded-t-2xl sm:rounded-xl max-w-md w-full p-4 shadow-2xl space-y-3 text-[#1F2937] relative animate-in slide-in-from-bottom duration-200">
+            <div className="w-12 h-1.5 bg-slate-300 rounded-full mx-auto sm:hidden mb-1"></div>
 
-                  <p className="mt-1 text-xs text-slate-500">
-                    조직도에서는 저장된
-                    부서 정보가 자동으로
-                    반영됩니다.
+            <div className="flex items-start justify-between border-b border-[#E2E5E9] pb-2.5">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-9 h-9 rounded-full bg-[#243B5A] text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                  {detailUser.name?.[0] || '유'}
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h3 className="text-xs font-bold text-[#1F2937]">
+                      {detailUser.name} {calculateAge(detailUser.password) ? `(${calculateAge(detailUser.password)}세)` : ''}
+                    </h3>
+                    {detailUser.id && <span className="text-[10px] text-[#64748B] font-mono">({detailUser.id})</span>}
+                    {isSelf(detailUser) && (
+                      <span className="text-[10px] bg-[#243B5A] text-white font-bold px-1.5 py-0.2 rounded-full">
+                        나
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-[#64748B] font-medium">
+                    {detailUser.department || '미지정 파트'} · {detailUser.position || '사원'} {detailUser.job_title && detailUser.job_title !== '없음' ? `(${detailUser.job_title}${detailUser.field ? `/${detailUser.field}` : ''})` : ''}
                   </p>
                 </div>
+              </div>
+              <button 
+                onClick={() => setDetailUser(null)} 
+                className="text-[#64748B] hover:text-[#1F2937] p-1 rounded-lg hover:bg-[#F5F6F8] transition"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsModalOpen(
-                      false
-                    );
-                    setEditingUser(
-                      null
-                    );
-                  }}
-                  className="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-                >
-                  <X
-                    size={20}
-                  />
-                </button>
+            <div className="space-y-2.5 text-xs">
+              <div className="bg-[#F5F6F8] p-2.5 rounded-lg space-y-2 border border-[#E2E5E9]">
+                {detailUser.id && (
+                  <div className="flex items-center justify-between text-[#1F2937] pb-2 border-b border-[#E2E5E9]">
+                    <span className="font-semibold text-[#64748B] flex items-center gap-1.5">
+                      <AtSign className="h-3.5 w-3.5 text-[#243B5A]" /> 로그인 아이디
+                    </span>
+                    <span className="font-bold font-mono text-[#243B5A]">{detailUser.id}</span>
+                  </div>
+                )}
+                <div className="flex items-center justify-between text-[#1F2937] pb-2 border-b border-[#E2E5E9]">
+                  <span className="font-semibold text-[#64748B] flex items-center gap-1.5">
+                    <Phone className="h-3.5 w-3.5 text-[#243B5A]" /> 연락처
+                  </span>
+                  {detailUser.phone ? (
+                    <a href={`tel:${detailUser.phone}`} className="font-bold text-[#243B5A] hover:underline flex items-center gap-1">
+                      {detailUser.phone}
+                    </a>
+                  ) : (
+                    <span className="font-bold text-[#1F2937]">미등록</span>
+                  )}
+                </div>
+                <div className="flex items-start justify-between text-[#1F2937]">
+                  <span className="font-semibold text-[#64748B] shrink-0 pt-0.5">주소</span>
+                  <span className="font-medium text-right text-[#1F2937]">{detailUser.address || '미등록'}</span>
+                </div>
               </div>
 
-              <form
-                onSubmit={
-                  handleSaveUser
-                }
-                className="space-y-5 p-5"
-              >
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      이름
-                    </label>
-
-                    <input
-                      required
-                      value={
-                        editingUser.name
-                      }
-                      onChange={(e) =>
-                        setEditingUser(
-                          {
-                            ...editingUser,
-                            name: e
-                              .target
-                              .value,
-                          }
-                        )
-                      }
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      로그인 아이디
-                    </label>
-
-                    <input
-                      required
-                      value={
-                        editingUser.email
-                      }
-                      onChange={(e) =>
-                        setEditingUser(
-                          {
-                            ...editingUser,
-                            email: e
-                              .target
-                              .value,
-                          }
-                        )
-                      }
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      부서
-                    </label>
-
-                    <input
-                      value={
-                        editingUser.department
-                      }
-                      onChange={(e) =>
-                        setEditingUser(
-                          {
-                            ...editingUser,
-                            department:
-                              e.target
-                                .value,
-                          }
-                        )
-                      }
-                      placeholder="운영 / 관리 / 1팀 / 2팀 / 3팀 / 4팀"
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      직책
-                    </label>
-
-                    <input
-                      value={
-                        editingUser.job_title
-                      }
-                      onChange={(e) =>
-                        setEditingUser(
-                          {
-                            ...editingUser,
-                            job_title:
-                              e.target
-                                .value,
-                          }
-                        )
-                      }
-                      placeholder="본부장 / 소장 / 팀장 / 팀원"
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      직급
-                    </label>
-
-                    <input
-                      value={
-                        editingUser.position
-                      }
-                      onChange={(e) =>
-                        setEditingUser(
-                          {
-                            ...editingUser,
-                            position:
-                              e.target
-                                .value,
-                          }
-                        )
-                      }
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      분야
-                    </label>
-
-                    <input
-                      value={
-                        editingUser.field
-                      }
-                      onChange={(e) =>
-                        setEditingUser(
-                          {
-                            ...editingUser,
-                            field:
-                              e.target
-                                .value,
-                          }
-                        )
-                      }
-                      placeholder="QA / 공정 / 공정 및 스케줄 등"
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      연락처
-                    </label>
-
-                    <input
-                      value={
-                        editingUser.phone
-                      }
-                      onChange={(e) =>
-                        setEditingUser(
-                          {
-                            ...editingUser,
-                            phone:
-                              e.target
-                                .value,
-                          }
-                        )
-                      }
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      입사일
-                    </label>
-
-                    <input
-                      type="date"
-                      value={
-                        editingUser.join_date ||
-                        ''
-                      }
-                      onChange={(e) =>
-                        setEditingUser(
-                          {
-                            ...editingUser,
-                            join_date:
-                              e.target
-                                .value,
-                          }
-                        )
-                      }
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                      비밀번호
-                    </label>
-
-                    <input
-                      type="password"
-                      value={
-                        editingUser.password ||
-                        ''
-                      }
-                      onChange={(e) =>
-                        setEditingUser(
-                          {
-                            ...editingUser,
-                            password:
-                              e.target
-                                .value,
-                          }
-                        )
-                      }
-                      placeholder="생년월일 8자리"
-                      maxLength={8}
-                      className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                    />
-                  </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9]">
+                  <span className="text-[10px] text-[#16A34A] font-bold block mb-0.5">자사 근속</span>
+                  <span className="text-xs font-extrabold text-[#1F2937] block">
+                    {calculateCareerDetails(detailUser.join_date) || '-'}
+                  </span>
                 </div>
 
-                <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    주소
-                  </label>
-
-                  <input
-                    value={
-                      editingUser.address ||
-                      ''
-                    }
-                    onChange={(e) =>
-                      setEditingUser(
-                        {
-                          ...editingUser,
-                          address:
-                            e.target
-                              .value,
-                        }
-                      )
-                    }
-                    className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                  />
+                <div className="bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9]">
+                  <span className="text-[10px] text-[#2563EB] font-bold block mb-0.5">총 경력</span>
+                  <span className="text-xs font-extrabold text-[#1F2937] block">
+                    {calculateCareerDetails(detailUser.career_start_date) || '-'}
+                  </span>
                 </div>
+              </div>
 
-                <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    경력
-                  </label>
-
-                  <textarea
-                    value={
-                      editingUser.experience ||
-                      ''
-                    }
-                    onChange={(e) =>
-                      setEditingUser(
-                        {
-                          ...editingUser,
-                          experience:
-                            e.target
-                              .value,
-                        }
-                      )
-                    }
-                    rows={3}
-                    className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    사내 자격
-                  </label>
-
-                  <textarea
-                    value={
-                      editingUser.internal_certificates ||
-                      ''
-                    }
-                    onChange={(e) =>
-                      setEditingUser(
-                        {
-                          ...editingUser,
-                          internal_certificates:
-                            e.target
-                              .value,
-                        }
-                      )
-                    }
-                    rows={2}
-                    className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                  />
-                </div>
-
-                <div>
-                  <label className="mb-1.5 block text-sm font-semibold text-slate-700">
-                    국가 자격
-                  </label>
-
-                  <textarea
-                    value={
-                      editingUser.national_certificates ||
-                      ''
-                    }
-                    onChange={(e) =>
-                      setEditingUser(
-                        {
-                          ...editingUser,
-                          national_certificates:
-                            e.target
-                              .value,
-                        }
-                      )
-                    }
-                    rows={2}
-                    className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2.5 text-sm outline-none focus:border-[#243B5A]"
-                  />
-                </div>
-
-                <div className="flex justify-end gap-2 border-t border-slate-200 pt-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsModalOpen(
-                        false
-                      );
-                      setEditingUser(
-                        null
-                      );
-                    }}
-                    className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-                  >
-                    취소
-                  </button>
-
-                  <button
-                    type="submit"
-                    className="flex items-center gap-2 rounded-lg bg-[#243B5A] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#1d3049]"
-                  >
-                    <Save
-                      size={16}
-                    />
-                    저장
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-      {confirmUser && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl">
-            <div className="border-b border-slate-200 px-5 py-4">
-              <h3 className="text-lg font-bold text-slate-800">
-                구성원 삭제
-              </h3>
+              <div className="bg-[#F5F6F8] p-2.5 rounded-lg space-y-1 border border-[#E2E5E9]">
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격:</span> {detailUser.internal_certificates || '없음'}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">국가자격:</span> {detailUser.national_certificates || '없음'}</div>
+              </div>
             </div>
 
-            <div className="px-5 py-5">
-              <p className="text-sm leading-6 text-slate-600">
-                정말로{' '}
-                <strong className="font-bold text-slate-800">
-                  [{confirmUser.name}]
-                </strong>{' '}
-                님의 인사 정보를
-                삭제하시겠습니까?
-              </p>
-
-              <p className="mt-2 text-xs text-red-500">
-                삭제 후에는 해당
-                구성원의 인사 정보가
-                복구되지 않습니다.
-              </p>
-            </div>
-
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-5 py-4">
+            <div className="flex items-center justify-between pt-2.5 border-t border-[#E2E5E9]">
+              {canEditUser(detailUser) ? (
+                <button
+                  onClick={() => {
+                    const target = detailUser;
+                    setDetailUser(null);
+                    handleOpenEditModal(target);
+                  }}
+                  className="px-3 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white font-bold rounded-lg text-xs transition flex items-center space-x-1"
+                >
+                  <Edit3 className="h-3.5 w-3.5" />
+                  <span>정보 수정</span>
+                </button>
+              ) : <div />}
+              
               <button
-                type="button"
-                onClick={() =>
-                  setConfirmUser(
-                    null
-                  )
-                }
-                className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                onClick={() => setDetailUser(null)}
+                className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#1F2937] font-bold rounded-lg text-xs transition"
               >
-                취소
-              </button>
-
-              <button
-                type="button"
-                onClick={
-                  handleConfirmDelete
-                }
-                className="rounded-lg bg-red-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
-              >
-                삭제
+                닫기
               </button>
             </div>
           </div>
         </div>
       )}
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full p-4 shadow-xl space-y-3 max-h-[90vh] overflow-y-auto text-[#1F2937]">
+            <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2.5">
+              <h3 className="font-bold text-xs text-[#1F2937]">
+                {selectedUser 
+                  ? (isSelf(selectedUser) ? '내 인사 정보 수정' : '구성원 정보 수정') 
+                  : '신규 구성원 등록'}
+              </h3>
+              <button onClick={() => setIsModalOpen(false)} className="text-[#64748B] hover:text-[#1F2937] p-1">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} className="space-y-2.5 text-xs">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1 flex items-center gap-1">
+                    <AtSign className="h-3.5 w-3.5 text-[#243B5A]" /> 로그인 아이디 *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="예: w987654"
+                    value={formData.inputId}
+                    onChange={(e) => setFormData({ ...formData, inputId: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">성명 *</label>
+                  <input
+                    type="text"
+                    required
+                    value={formData.name}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#64748B] mb-1 flex items-center gap-1">
+                  생년월일 8자리 (나이 및 비밀번호) *
+                </label>
+                <input
+                  type="text"
+                  maxLength={8}
+                  placeholder="예: 19950101"
+                  value={formData.birthDate}
+                  onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+                  className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none font-mono"
+                />
+              </div>
+
+              {isSuperAdmin && (
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1 flex items-center gap-1">
+                    <Shield className="h-3.5 w-3.5 text-[#243B5A]" /> 시스템 권한 부여
+                  </label>
+                  <select
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer font-bold"
+                  >
+                    <option value="USER">일반 사용자 (USER)</option>
+                    <option value="ADMIN">관리자 (ADMIN)</option>
+                  </select>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">파트 (부서)</label>
+                  <select
+                    value={formData.department}
+                    onChange={(e) => setFormData({ ...formData, department: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
+                  >
+                    <option value="운영">운영</option>
+                    <option value="관리">관리</option>
+                    <option value="1팀">1팀</option>
+                    <option value="2팀">2팀</option>
+                    <option value="3팀">3팀</option>
+                    <option value="4팀">4팀</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">직급</label>
+                  <input
+                    type="text"
+                    placeholder="예: 책임, 프로 등"
+                    value={formData.position}
+                    onChange={(e) => setFormData({ ...formData, position: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">직책</label>
+                  <select
+                    value={formData.job_title}
+                    onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
+                  >
+                    <option value="본부장">본부장</option>
+                    <option value="소장">소장</option>
+                    <option value="팀장">팀장</option>
+                    <option value="팀원">팀원</option>
+                    <option value="없음">없음</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">분야</label>
+                  <select
+                    value={formData.field}
+                    onChange={(e) => setFormData({ ...formData, field: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
+                  >
+                    <option value="안전">안전</option>
+                    <option value="캐빈">캐빈</option>
+                    <option value="사무">사무</option>
+                    <option value="QA">QA</option>
+                    <option value="공정 및 스케쥴">공정 및 스케쥴</option>
+                    <option value="공정">공정</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">연락처</label>
+                  <input
+                    type="text"
+                    placeholder="예: 010-0000-0000"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">주소</label>
+                  <input
+                    type="text"
+                    placeholder="주소 입력"
+                    value={formData.address}
+                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">자사 근속 시작일 (입사일)</label>
+                  <input
+                    type="date"
+                    value={formData.join_date}
+                    onChange={(e) => setFormData({ ...formData, join_date: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">총 경력 시작일</label>
+                  <input
+                    type="date"
+                    value={formData.career_start_date}
+                    onChange={(e) => setFormData({ ...formData, career_start_date: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">사내 자격</label>
+                  <input
+                    type="text"
+                    placeholder="사내 자격 입력"
+                    value={formData.internal_certificates}
+                    onChange={(e) => setFormData({ ...formData, internal_certificates: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">국가 자격</label>
+                  <input
+                    type="text"
+                    placeholder="국가 자격 입력"
+                    value={formData.national_certificates}
+                    onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2.5 border-t border-[#E2E5E9]">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] rounded-lg text-xs text-[#1F2937]"
+                >
+                  취소
+                </button>
+                <button
+                  type="submit"
+                  className="px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  <span>저장</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function renderMemberCard(
+  member: HRUser, 
+  isLeader: boolean, 
+  setDetailUser: (user: HRUser) => void, 
+  isSelf: (user: HRUser) => boolean,
+  handleOpenEditModal: (user: HRUser) => void,
+  handleDeleteUser: (user: HRUser) => void,
+  canEditUser: (user: HRUser) => boolean,
+  isAdmin: boolean
+) {
+  const joinCareer = calculateCareerDetails(member.join_date);
+  const totalCareer = calculateCareerDetails(member.career_start_date);
+  const age = calculateAge(member.password);
+
+  return (
+    <div 
+      key={member.id} 
+      className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between space-y-1.5 group shadow-xs ${
+        isLeader 
+          ? 'bg-white border-[#243B5A] ring-1 ring-[#243B5A]/20 shadow-sm' 
+          : 'bg-white border-[#E2E5E9] hover:border-slate-400 hover:shadow-sm'
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div 
+          onClick={() => setDetailUser(member)}
+          className="flex items-center space-x-2 min-w-0 cursor-pointer flex-1"
+        >
+          <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
+            isLeader ? 'bg-[#243B5A] text-white' : 'bg-slate-200 text-[#243B5A]'
+          }`}>
+            {member.name?.[0] || '유'}
+          </div>
+          <div className="truncate">
+            <div className="flex items-center space-x-1.5 flex-wrap">
+              <span className="font-bold text-xs text-[#1F2937] group-hover:text-[#243B5A] transition-colors">{member.name}</span>
+              {age && <span className="text-[10px] text-[#243B5A] font-bold">({age}세)</span>}
+              {isSelf(member) && (
+                <span className="text-[9px] bg-[#243B5A] text-white font-bold px-1">
+                  나
+                </span>
+              )}
+            </div>
+            <div className="text-[10px] text-[#64748B] flex items-center gap-1 pt-0.5">
+              <span>{member.position || '사원'}</span>
+              {member.job_title && member.job_title !== '없음' && (
+                <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+                  isLeader ? 'bg-[#243B5A] text-white' : 'bg-sky-50 text-sky-700 border border-sky-200'
+                }`}>
+                  {member.job_title}{member.field ? `/${member.field}` : ''}
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-1 shrink-0">
+          {canEditUser(member) && (
+            <button
+              onClick={() => handleOpenEditModal(member)}
+              className="p-1 text-[#243B5A] hover:bg-slate-100 rounded border border-slate-200"
+              title="수정"
+            >
+              <Edit3 className="h-3 w-3" />
+            </button>
+          )}
+          {isAdmin && (
+            <button
+              onClick={() => handleDeleteUser(member)}
+              className="p-1 text-red-600 hover:bg-red-50 rounded border border-red-200"
+              title="삭제"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="pt-1.5 border-t border-[#E2E5E9] text-[10px] space-y-1">
+        <div className="flex items-center justify-between text-[#64748B]">
+          <span className="flex items-center gap-1 font-medium">
+            <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
+            {member.phone || '-'}
+          </span>
+          <div className="space-x-1.5">
+            <span className="font-semibold text-[#16A34A]">근속 {joinCareer || '-'}</span>
+            <span className="font-semibold text-[#2563EB]">총경력 {totalCareer || '-'}</span>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
