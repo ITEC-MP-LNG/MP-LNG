@@ -17,16 +17,11 @@ import {
   Layers,
   List,
   FileDown,
-  ZoomIn,
-  ZoomOut,
   Maximize2,
   ChevronDown,
   ChevronRight,
-  UserPlus,
 } from 'lucide-react';
 
-// Supabase 클라이언트 파일 경로 문제(Can't resolve '@/lib/supabaseClient')를 해결하기 위해
-// 환경 변수를 활용하여 파일 내부에서 직접 생성합니다.
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -64,7 +59,18 @@ const JOB_TITLE_ORDER_IN_RANK: Record<string, number> = {
   없음: 5,
 };
 
-export default function HRManagement() {
+// Props 타입 정의 추가
+export interface HRManagementProps {
+  isAdmin?: boolean;
+  currentUserRole?: "SUPER_ADMIN" | "WORK_ADMIN" | "USER" | "TOP_ADMIN";
+  currentUser?: any;
+}
+
+export default function HRManagement({
+  isAdmin: propsIsAdmin,
+  currentUserRole: propsRole,
+  currentUser: propsUser,
+}: HRManagementProps = {}) {
   const [users, setUsers] = useState<HRUser[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -90,6 +96,7 @@ export default function HRManagement() {
   const orgChartRef = useRef<any>(null);
 
   const currentUser = useMemo(() => {
+    if (propsUser) return propsUser;
     if (typeof window === 'undefined') return null;
 
     try {
@@ -98,11 +105,15 @@ export default function HRManagement() {
     } catch {
       return null;
     }
-  }, []);
+  }, [propsUser]);
 
-  const isAdmin =
-    currentUser?.role === 'SUPER_ADMIN' ||
-    currentUser?.role === 'WORK_ADMIN';
+  const isAdmin = useMemo(() => {
+    if (typeof propsIsAdmin === 'boolean') return propsIsAdmin;
+    return (
+      currentUser?.role === 'SUPER_ADMIN' ||
+      currentUser?.role === 'WORK_ADMIN'
+    );
+  }, [propsIsAdmin, currentUser]);
 
   const showNotice = (
     message: string,
@@ -893,23 +904,6 @@ export default function HRManagement() {
     }));
   };
 
-  const toggleAllGroups = (
-    collapse: boolean
-  ) => {
-    const newStatus: Record<
-      string,
-      boolean
-    > = {};
-
-    availableSubCategories.forEach(
-      (cat) => {
-        newStatus[cat] = collapse;
-      }
-    );
-
-    setCollapsedGroups(newStatus);
-  };
-
   const handleNewUser = () => {
     if (!isAdmin) {
       showNotice(
@@ -1198,18 +1192,6 @@ export default function HRManagement() {
       ),
     ];
   }, [users]);
-
-  const availableSubCategories =
-    useMemo(() => {
-      return Array.from(
-        new Set(
-          users.map(
-            (u) =>
-              `${u.department || '미지정'}`
-          )
-        )
-      );
-    }, [users]);
 
   const filteredUsers = useMemo(() => {
     const keyword =
