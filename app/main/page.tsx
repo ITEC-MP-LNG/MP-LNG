@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   LogOut, 
@@ -90,6 +90,10 @@ export default function MainPage() {
 
   // 모바일 종 모양 버튼 색상 제어용 (읽지 않은 새 공지 유무)
   const [hasUnreadNotice, setHasUnreadNotice] = useState(false);
+  const [navNewFlags, setNavNewFlags] = useState<Record<string, boolean>>({});
+  const isUserEditingRef = useRef(false);
+  const refreshPendingRef = useRef(false);
+  const lastInputAtRef = useRef(0);
 
   const normalizedRole = String(currentUser?.role || '').trim().toUpperCase();
   const isAdmin = normalizedRole === 'ADMIN';
@@ -221,13 +225,168 @@ export default function MainPage() {
     initAuthAndData();
   }, [router]);
 
-  // 탭이 변경될 때마다 게시판 탭일 경우 안 읽은 공지 상태 갱신
+  // 네비게이션별 새 업데이트 확인 (기존 created_at 기준, 별도 DB 컬럼 추가 불필요)
+  const checkNavigationUpdates = async (userKey: string) => {
+    const updateSources: { id: string; table: string }[] = [
+      { id: 'NOTICE', table: 'notices' },
+      { id: 'TASKS', table: 'tasks' },
+      { id: 'INVENTORY', table: 'inventory_logs' },
+      { id: 'EDUCATION', table: 'educations' },
+    ];
+
+    const nextFlags: Record<string, boolean> = {};
+
+    await Promise.all(updateSources.map(async ({ id, table }) => {
+      try {
+        const { data, error } = await supabase
+          .from(table)
+          .select('created_at')
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (error) throw error;
+
+        const latest = data?.[0]?.created_at;
+        if (!latest) {
+          nextFlags[id] = false;
+          return;
+        }
+
+        const storageKey = `nav_seen_${userKey}_${id}`;
+        const seenAt = localStorage.getItem(storageKey);
+
+        if (!seenAt) {
+          // 최초 진입 시 기존 데이터는 새 항목으로 표시하지 않고 기준 시점으로 저장
+          localStorage.setItem(storageKey, latest);
+          nextFlags[id] = false;
+        } else {
+          nextFlags[id] = new Date(latest).getTime() > new Date(seenAt).getTime();
+        }
+      } catch (err) {
+        console.error(`${id} 새 업데이트 확인 실패:`, err);
+      }
+    }));
+
+    setNavNewFlags(nextFlags);
+  };
+
+  const markNavigationAsRead = async (tabId: string) => {
+    if (!currentUser) return;
+    const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
+
+    try {
+      const tableMap: Record<string, string> = {
+        NOTICE: 'notices',
+        TASKS: 'tasks',
+        INVENTORY: 'inventory_logs',
+        EDUCATION: 'educations',
+      };
+      const table = tableMap[tabId];
+      if (!table) return;
+
+      const { data, error } = await supabase
+        .from(table)
+        .select('created_at')
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (error) throw error;
+
+      const latest = data?.[0]?.created_at;
+      if (latest) {
+        localStorage.setItem(`nav_seen_${userKey}_${tabId}`, latest);
+      }
+
+      setNavNewFlags((prev) => ({ ...prev, [tabId]: false }));
+    } catch (err) {
+      console.error(`${tabId} 읽음 기준 저장 실패:`, err);
+    }
+  };
+
+  // 탭이 변경될 때마다 게시판 탭의 안 읽은 공지 상태 갱신
   useEffect(() => {
     if (currentUser) {
       const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
       checkUnreadNotices(String(userKey));
     }
   }, [mainTab, currentUser]);
+
+  // 로그인 직후 네비게이션별 새 업데이트 기준을 확인
+  useEffect(() => {
+    if (currentUser) {
+      const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
+      checkNavigationUpdates(String(userKey));
+    }
+  }, [currentUser]);
+
+  // 20초 주기 데이터 갱신. 사용자가 입력 중이면 보류하고 작성이 끝나면 즉시 갱신.
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const refreshData = async () => {
+      if (isUserEditingRef.current || Date.now() - lastInputAtRef.current < 1500) {
+        refreshPendingRef.current = true;
+        return;
+      }
+
+      refreshPendingRef.current = false;
+      const user = currentUser;
+      const userKey = user.id || user.email || user.name || 'guest';
+
+      await Promise.all([
+        fetchTasks(user),
+        fetchInventory(),
+        fetchInventoryLogs(),
+        fetchEducations(),
+        fetchEducationRecords(),
+        checkUnreadNotices(String(userKey)),
+        checkNavigationUpdates(String(userKey)),
+      ]);
+    };
+
+    const intervalId = window.setInterval(refreshData, 20000);
+
+    const handleInput = () => {
+      isUserEditingRef.current = true;
+      refreshPendingRef.current = true;
+      lastInputAtRef.current = Date.now();
+    };
+
+    const handleFocusOut = (event: FocusEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+
+      const tagName = target.tagName;
+      const isEditable = tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || target.isContentEditable;
+      if (!isEditable) return;
+
+      window.setTimeout(async () => {
+        const active = document.activeElement as HTMLElement | null;
+        const stillEditing = !!active && (
+          active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          active.tagName === 'SELECT' ||
+          active.isContentEditable
+        );
+
+        if (!stillEditing) {
+          isUserEditingRef.current = false;
+          if (refreshPendingRef.current) {
+            await refreshData();
+          }
+        }
+      }, 0);
+    };
+
+    document.addEventListener('input', handleInput, true);
+    document.addEventListener('focusout', handleFocusOut, true);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('input', handleInput, true);
+      document.removeEventListener('focusout', handleFocusOut, true);
+    };
+  }, [currentUser]);
 
   const fetchTasks = async (user: AppUser) => {
     setLoadingTasks(true);
@@ -443,7 +602,7 @@ export default function MainPage() {
             return (
               <button
                 key={item.id}
-                onClick={() => setMainTab(item.id as any)}
+                onClick={() => { setMainTab(item.id as any); markNavigationAsRead(item.id); }}
                 className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
                   isActive
                     ? 'bg-[#243B5A] text-white shadow-2xs font-bold'
@@ -451,7 +610,10 @@ export default function MainPage() {
                 }`}
               >
                 <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-[#64748B]'}`} />
-                <span>{item.label}</span>
+                <span className="flex items-center gap-1.5">
+                  <span>{item.label}</span>
+                  {navNewFlags[item.id] && <span className="text-[9px] font-black text-red-600 leading-none">N</span>}
+                </span>
               </button>
             );
           })}
@@ -523,14 +685,17 @@ export default function MainPage() {
           return (
             <button
               key={item.id}
-              onClick={() => setMainTab(item.id as any)}
+              onClick={() => { setMainTab(item.id as any); markNavigationAsRead(item.id); }}
               className={`flex-1 flex flex-col items-center justify-center py-1.5 px-0.5 rounded-lg transition min-w-0 ${
                 isActive ? 'text-[#243B5A] font-bold' : 'text-[#64748B] font-medium'
               }`}
             >
               <Icon className={`h-5 w-5 mb-1 shrink-0 ${isActive ? 'text-[#243B5A]' : 'text-[#64748B]'}`} />
               <span className="text-[10px] sm:text-[11px] leading-tight tracking-tight truncate w-full text-center">
-                {item.label}
+                <span className="flex items-center justify-center gap-1">
+                  <span>{item.label}</span>
+                  {navNewFlags[item.id] && <span className="text-[8px] font-black text-red-600 leading-none">N</span>}
+                </span>
               </span>
             </button>
           );
