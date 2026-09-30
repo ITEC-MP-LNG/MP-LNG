@@ -27,7 +27,9 @@ import {
   Sparkles,
   Info,
   CheckCheck,
-  RotateCcw
+  RotateCcw,
+  ArrowLeft,
+  ArrowRight
 } from 'lucide-react';
 
 // Supabase 클라이언트 설정
@@ -49,11 +51,11 @@ export type ShipStatus =
   | 'Gas Trial';
 
 export const STATUS_PROGRESS_MAP: Record<ShipStatus, number | null> = {
-  'Sound Test 1St': 17,
-  'Sound Test 2nd': 33,
-  'Nh3 Test': 50,
-  'PBGT': 67,
-  'B/F SBTT': 83,
+  'Sound Test 1St': 14,
+  'Sound Test 2nd': 28,
+  'Nh3 Test': 42,
+  'PBGT': 57,
+  'B/F SBTT': 71,
   'A/T SBTT': 100,
   'Gas Trial': null,
 };
@@ -72,11 +74,13 @@ export const STATUS_LIST: ShipStatus[] = [
 export const TANKS = ['TK1', 'TK2', 'TK3', 'TK4'] as const;
 export type TankKey = typeof TANKS[number]; // 'TK1' | 'TK2' | 'TK3' | 'TK4'
 
+// Tank 공정 순서: S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT
 export const TANK_STEPS = [
   { key: 'st_1st', label: 'S/T 1ST' },
-  { key: 'st_2nd', label: '2nd' },
+  { key: 'st_2nd', label: 'S/T 2nd' },
   { key: 'pre_sbtt', label: 'Pre SBTT' },
   { key: 'nh3', label: 'NH3' },
+  { key: 'pbgt', label: 'PBGT' },
   { key: 'bf_sbtt', label: 'B/F SBTT' },
   { key: 'at_sbtt', label: 'A/T SBTT' },
 ] as const;
@@ -84,10 +88,13 @@ export const TANK_STEPS = [
 export type TankStepKey = typeof TANK_STEPS[number]['key'];
 
 export interface TankStepDetail {
-  date: string; // YYYY-MM-DD
+  date?: string;       // YYYY-MM-DD (일반 공정용)
+  startDate?: string;  // PBGT 전용 시작일
+  endDate?: string;    // PBGT 전용 종료일
   status: '대기' | '진행중' | '완료';
-  value?: string; // 측정값/검사값
-  text?: string;  // NH3 전용 텍스트/비고
+  value?: string;      // 일반 측정값/검사값 또는 PBGT Ref. 값
+  finalValue?: string; // PBGT 전용 Final 값
+  text?: string;       // NH3 전용 텍스트/비고
 }
 
 export type TankDetail = Record<TankStepKey, TankStepDetail>;
@@ -100,6 +107,7 @@ export function getDefaultTankStatus(): ShipTankStatus {
     st_2nd: { date: '', status: '대기', value: '' },
     pre_sbtt: { date: '', status: '대기', value: '' },
     nh3: { date: '', status: '대기', value: '', text: '' },
+    pbgt: { startDate: '', endDate: '', status: '대기', value: '', finalValue: '' },
     bf_sbtt: { date: '', status: '대기', value: '' },
     at_sbtt: { date: '', status: '대기', value: '' },
   });
@@ -114,13 +122,13 @@ export function getDefaultTankStatus(): ShipTankStatus {
 
 export interface ShipItem {
   id: string;
-  ship_no: string;            // 호선번호 (Hull No.)
+  ship_no: string;            // 호선번호 (Ship No.)
   ship_name: string;          // 선종 및 프로젝트명
   shipowner?: string;         // 선주사
   dock: string;               // 호선위치
   launch_date?: string | null;       // 진수일
   pt_mount_date?: string | null;     // P/T 탑재일
-  dwt?: string;               // DWT
+  dwt?: string;               // DWT (일자/텍스트 자유 형식)
   status: ShipStatus;         // 진행단계현황
   progress: number | null;    // 산출 공정률
   delivery_date: string | null;      // 인도예정일
@@ -143,10 +151,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   // 1. 메인 탭 상태: 'INFO'(호선 제원 정보) vs 'STATUS'(공정 현황)
   const [activeMainTab, setActiveMainTab] = useState<'INFO' | 'STATUS'>('INFO');
 
-  // 2. Status 탭 내 Hull No. 서브탭 상태 (선택)
+  // 2. Status 탭 내 Ship No. 서브탭 상태 (선택)
   const [selectedHullNo, setSelectedHullNo] = useState<string>('');
 
-  // Status 신규 등록 모달 상태 (Hull 기반 전체 템플릿)
+  // Status 신규 등록 모달 상태 (Ship 기반 전체 템플릿)
   const [isStatusCreateModalOpen, setIsStatusCreateModalOpen] = useState(false);
   const [statusCreateTankTab, setStatusCreateTankTab] = useState<TankKey>('TK1');
   const [statusCreateFormData, setStatusCreateFormData] = useState<Omit<ShipItem, 'id'>>({
@@ -158,7 +166,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     pt_mount_date: '',
     dwt: '',
     status: 'Sound Test 1St',
-    progress: 17,
+    progress: 14,
     delivery_date: new Date().toISOString().split('T')[0],
     day_shift: '',
     day_shift_user_ids: [],
@@ -228,7 +236,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     pt_mount_date: '',
     dwt: '',
     status: 'Sound Test 1St',
-    progress: 17,
+    progress: 14,
     delivery_date: '',
     day_shift: '',
     day_shift_user_ids: [],
@@ -264,8 +272,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           if (raw[tk][st.key] && typeof raw[tk][st.key] === 'object') {
             tankObj[st.key] = {
               date: raw[tk][st.key].date || '',
+              startDate: raw[tk][st.key].startDate || '',
+              endDate: raw[tk][st.key].endDate || '',
               status: raw[tk][st.key].status || '대기',
               value: raw[tk][st.key].value || '',
+              finalValue: raw[tk][st.key].finalValue || '',
               text: raw[tk][st.key].text || '',
             };
           }
@@ -300,6 +311,18 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     } catch (e) {
       console.error('호선 데이터 로딩 실패:', e);
     }
+  };
+
+  // 서브탭 순서 이동 기능 (좌/우 이동)
+  const handleMoveSubTab = (index: number, direction: 'left' | 'right') => {
+    const newShips = [...ships];
+    const targetIdx = direction === 'left' ? index - 1 : index + 1;
+    if (targetIdx < 0 || targetIdx >= newShips.length) return;
+
+    const temp = newShips[index];
+    newShips[index] = newShips[targetIdx];
+    newShips[targetIdx] = temp;
+    setShips(newShips);
   };
 
   // 사용자 유효성 검증
@@ -411,25 +434,29 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const currentStatusShip = ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
 
   // =========================================================================
-  // Status 엑셀 다운로드 함수 추가
+  // Status 엑셀 다운로드 함수
   // =========================================================================
   const handleDownloadExcel = () => {
     if (!currentStatusShip) return;
     
     let csvContent = "\uFEFF";
-    csvContent += `Hull No,${currentStatusShip.ship_no}\n`;
+    csvContent += `Ship No,${currentStatusShip.ship_no}\n`;
     csvContent += `Ship Name,${currentStatusShip.ship_name}\n`;
     csvContent += `Dock,${currentStatusShip.dock}\n`;
     csvContent += `DWT,${currentStatusShip.dwt || ''}\n`;
     csvContent += `Launch Date,${currentStatusShip.launch_date || ''}\n`;
     csvContent += `Delivery Date,${currentStatusShip.delivery_date || ''}\n\n`;
     
-    csvContent += "Tank,Step,Status,Date,Value,Text\n";
+    csvContent += "Tank,Step,Status,Date/Period,Ref Value/Value,Final Value,Text\n";
     TANKS.forEach(tk => {
       const tankDetail = currentStatusShip.tank_status?.[tk] || getDefaultTankStatus()[tk];
       TANK_STEPS.forEach(st => {
-        const stepInfo = tankDetail[st.key] || { date: '', status: '대기', value: '', text: '' };
-        csvContent += `${tk},${st.label},${stepInfo.status},${stepInfo.date || ''},${stepInfo.value || ''},${stepInfo.text || ''}\n`;
+        const stepInfo = tankDetail[st.key] || { status: '대기' };
+        let dateDisplay = stepInfo.date || '';
+        if (st.key === 'pbgt') {
+          dateDisplay = `${stepInfo.startDate || ''} ~ ${stepInfo.endDate || ''}`;
+        }
+        csvContent += `${tk},${st.label},${stepInfo.status},${dateDisplay},${stepInfo.value || ''},${stepInfo.finalValue || ''},${stepInfo.text || ''}\n`;
       });
     });
 
@@ -437,7 +464,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Hull_${currentStatusShip.ship_no}_Status.csv`);
+    link.setAttribute('download', `Ship_${currentStatusShip.ship_no}_Status.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -447,7 +474,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   // Status 탭 전용 핸들러 (선택, 등록, 수정, 삭제)
   // =========================================================================
 
-  // [등록] Status 탭에서 신규 Hull 등록 모달 열기
+  // [등록] Status 탭에서 신규 Ship 등록 모달 열기
   const handleOpenStatusCreateModal = () => {
     if (!isAdmin) {
       showAlert('권한 필요', '신규 등록은 관리자 권한만 가능합니다.', 'warning');
@@ -475,17 +502,17 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     setIsStatusCreateModalOpen(true);
   };
 
-  // [등록 처리] Status 탭에서 신규 Hull 생성 저장
+  // [등록 처리] Status 탭에서 신규 Ship 생성 저장
   const handleSaveStatusCreateModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) return;
 
     if (!statusCreateFormData.ship_no.trim() || !statusCreateFormData.ship_name.trim()) {
-      showAlert('입력 확인', '호선 번호(Hull No.)와 선종 및 프로젝트명을 입력해주세요.', 'warning');
+      showAlert('입력 확인', '호선 번호(Ship No.)와 선종 및 프로젝트명을 입력해주세요.', 'warning');
       return;
     }
 
-    // 중복 Hull No 검사
+    // 중복 Ship No 검사
     if (ships.some(s => s.ship_no.trim().toLowerCase() === statusCreateFormData.ship_no.trim().toLowerCase())) {
       showAlert('중복 안내', `이미 존재하는 호선 번호 [${statusCreateFormData.ship_no}] 입니다. 다른 번호를 입력하세요.`, 'warning');
       return;
@@ -509,7 +536,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         if (error.message.includes('column') && error.message.includes('does not exist')) {
           showAlert(
             '데이터베이스 컬럼 추가 필요',
-            `Supabase '${TABLE_NAME}' 테이블에 신규 컬럼(tank_status 등)이 아직 추가되지 않았습니다.\n안내해 드린 SQL 스크립트를 Supabase SQL Editor에서 실행해 주세요.\n\n오류: ${error.message}`,
+            `Supabase '${TABLE_NAME}' 테이블에 신규 컬럼(tank_status 등)이 아직 추가되지 않았습니다.\nSQL Editor에서 컬럼 추가 쿼리를 실행해 주세요.\n\n오류: ${error.message}`,
             'error'
           );
         } else {
@@ -524,18 +551,18 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           tank_status: normalizeTankStatus(data[0].tank_status),
         };
         setShips(prev => [newShip, ...prev]);
-        setSelectedHullNo(newShip.ship_no); // 새로 만든 Hull 서브탭으로 바로 선택!
+        setSelectedHullNo(newShip.ship_no); // 새로 만든 Ship 서브탭으로 바로 선택!
       }
 
       setIsStatusCreateModalOpen(false);
-      showAlert('등록 완료', `신규 호선 [Hull #${statusCreateFormData.ship_no}]의 Status가 성공적으로 등록되었습니다.`, 'success');
+      showAlert('등록 완료', `신규 호선 [Ship #${statusCreateFormData.ship_no}]의 Status가 성공적으로 등록되었습니다.`, 'success');
     } catch (e: any) {
-      console.error('신규 Hull 등록 중 예외 발생:', e);
+      console.error('신규 Ship 등록 중 예외 발생:', e);
       showAlert('오류', '처리 중 오류가 발생했습니다: ' + e?.message, 'error');
     }
   };
 
-  // [수정] Status 탭에서 선택된 Hull 수정 모달 열기
+  // [수정] Status 탭에서 선택된 Ship 수정 모달 열기
   const handleOpenStatusEditModal = (ship: ShipItem) => {
     if (!isAdmin) {
       showAlert('권한 필요', '수정은 관리자 권한만 가능합니다.', 'warning');
@@ -599,13 +626,13 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
       setShips(prev => prev.map(s => s.id === statusEditFormData.id ? updated : s));
       setIsStatusEditModalOpen(false);
-      showAlert('수정 완료', `[Hull #${statusEditFormData.ship_no}]의 Status 및 Tank 공정 일자가 수정되었습니다.`, 'success');
+      showAlert('수정 완료', `[Ship #${statusEditFormData.ship_no}]의 Status 및 Tank 공정 일자가 수정되었습니다.`, 'success');
     } catch (e: any) {
       showAlert('오류', '수정에 실패했습니다: ' + e?.message, 'error');
     }
   };
 
-  // [삭제] Status 탭에서 선택된 Hull 삭제 요청
+  // [삭제] Status 탭에서 선택된 Ship 삭제 요청
   const handleRequestDeleteStatusShip = (ship: ShipItem) => {
     if (!isAdmin) {
       showAlert('권한 필요', '삭제는 관리자 권한만 가능합니다.', 'warning');
@@ -647,7 +674,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       }
 
       setIsDeleteModalOpen(false);
-      showAlert('삭제 완료', `[Hull #${targetDeleteShip.ship_no}] 호선 및 Status 정보가 삭제되었습니다.`, 'success');
+      showAlert('삭제 완료', `[Ship #${targetDeleteShip.ship_no}] 호선 및 Status 정보가 삭제되었습니다.`, 'success');
       setTargetDeleteShip(null);
     } catch (e: any) {
       console.error('삭제 처리 실패:', e);
@@ -791,37 +818,61 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // Tank 전체 공정 완료율 통계 계산 (총 24개 검사 항목)
+  // Tank 전체 공정 완료율 통계 계산 (총 28개 검사 항목: 4 탱크 * 7 단계)
   const calculateTankStats = (tankStatus?: ShipTankStatus) => {
-    if (!tankStatus) return { completed: 0, total: 24, percent: 0 };
+    if (!tankStatus) return { completed: 0, total: 28, percent: 0 };
     let completed = 0;
     TANKS.forEach(tk => {
       TANK_STEPS.forEach(st => {
         const step = tankStatus[tk]?.[st.key];
-        if (step && (step.status === '완료' || step.date)) {
+        if (step && (step.status === '완료' || step.date || step.startDate)) {
           completed++;
         }
       });
     });
-    const percent = Math.round((completed / 24) * 100);
-    return { completed, total: 24, percent };
+    const percent = Math.round((completed / 28) * 100);
+    return { completed, total: 28, percent };
   };
 
-  // 각 Tank별 완료율 계산 (총 6개 검사 항목)
+  // 각 Tank별 완료율 계산 (총 7개 검사 항목)
   const calculateSingleTankStats = (tankDetail?: TankDetail) => {
-    if (!tankDetail) return { completed: 0, total: 6, percent: 0 };
+    if (!tankDetail) return { completed: 0, total: 7, percent: 0 };
     let completed = 0;
     TANK_STEPS.forEach(st => {
       const step = tankDetail[st.key];
-      if (step && (step.status === '완료' || step.date)) {
+      if (step && (step.status === '완료' || step.date || step.startDate)) {
         completed++;
       }
     });
-    return { completed, total: 6, percent: Math.round((completed / 6) * 100) };
+    return { completed, total: 7, percent: Math.round((completed / 7) * 100) };
   };
 
   return (
     <div className="space-y-4 font-sans text-[#1F2937]">
+      {/* 알림 Modal */}
+      {alertInfo.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-3">
+            <div className="flex items-center space-x-2">
+              {alertInfo.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600" />}
+              {alertInfo.type === 'warning' && <AlertTriangle className="h-5 w-5 text-amber-500" />}
+              {alertInfo.type === 'success' && <CheckCircle2 className="h-5 w-5 text-emerald-600" />}
+              {alertInfo.type === 'info' && <Info className="h-5 w-5 text-blue-600" />}
+              <h4 className="text-sm font-bold text-[#1F2937]">{alertInfo.title}</h4>
+            </div>
+            <p className="text-xs text-[#475569] whitespace-pre-line leading-relaxed">{alertInfo.message}</p>
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setAlertInfo({ ...alertInfo, isOpen: false })}
+                className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg text-xs font-semibold hover:bg-[#1d3049]"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 0. 대분류 메인 탭 네비게이션 (호선 정보 vs Status 공정 현황) */}
       <div className="bg-white p-2 rounded-xl border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2">
         <div className="flex items-center space-x-1.5">
@@ -873,7 +924,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       </div>
 
       {/* ============================================================== */}
-      {/* 탭 1: 호선 제원 정보 (기존 탭 + 추가 항목 DWT, 선주사, 진수일, P/T탑재일) */}
+      {/* 탭 1: 호선 제원 정보 */}
       {/* ============================================================== */}
       {activeMainTab === 'INFO' && (
         <>
@@ -1098,11 +1149,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 탭 2: Status (선택, 등록, 수정, 삭제 - 관리자 전용 액션 완비) */}
+      {/* 탭 2: Status (서브탭 순서 이동, PBGT 추가, DWT 일자 등록 가능) */}
       {/* ============================================================== */}
       {activeMainTab === 'STATUS' && (
         <div className="space-y-4">
-          {/* Status 컨트롤 바 (서브탭 & 관리자 등록 버튼) */}
+          {/* Status 컨트롤 바 (서브탭 순서 변경 및 관리자 등록 버튼) */}
           <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs space-y-3">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div className="flex items-center space-x-2">
@@ -1111,9 +1162,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
                 <div>
                   <h3 className="text-xs font-bold text-[#1F2937] flex items-center gap-1.5">
-                    Hull No. 선택 서브탭
+                    Ship No. 선택 서브탭
                   </h3>
-                  <p className="text-[11px] text-[#64748B]">호선을 선택하여 TK1~TK4의 6대 공정 및 날짜를 관리합니다.</p>
+                  <p className="text-[11px] text-[#64748B]">호선을 선택하여 TK1~TK4의 7대 공정 및 상세 데이터를 관리합니다. (◀ ▶ 로 순서 이동 가능)</p>
                 </div>
               </div>
 
@@ -1124,45 +1175,72 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   className="flex items-center space-x-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white px-3 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer shrink-0"
                 >
                   <Plus className="h-3.5 w-3.5" />
-                  <span>신규 Hull 등록</span>
+                  <span>신규 Ship 등록</span>
                 </button>
               )}
             </div>
 
-            {/* 서브탭 목록 (Hull No 별) */}
+            {/* 서브탭 목록 (Ship No 별 + 순서 이동 화살표) */}
             {ships.length === 0 ? (
               <div className="text-xs text-[#64748B] py-4 text-center border-t border-[#E2E5E9]">
-                등록된 호선이 없습니다. 우측 상단의 [신규 Hull 등록] 버튼을 눌러 등록을 시작하세요.
+                등록된 호선이 없습니다. 우측 상단의 [신규 Ship 등록] 버튼을 눌러 등록을 시작하세요.
               </div>
             ) : (
               <div className="flex items-center gap-2 overflow-x-auto pt-1 pb-1 scrollbar-thin">
-                {ships.map((ship) => {
+                {ships.map((ship, index) => {
                   const isSelected = (currentStatusShip?.ship_no === ship.ship_no);
                   const stats = calculateTankStats(ship.tank_status);
 
                   return (
-                    <button
-                      key={ship.id}
-                      onClick={() => setSelectedHullNo(ship.ship_no)}
-                      className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold whitespace-nowrap transition cursor-pointer ${isSelected
-                          ? 'bg-[#243B5A] text-white shadow-2xs ring-2 ring-[#243B5A]/25'
-                          : 'bg-[#F5F6F8] hover:bg-slate-200 text-[#475569] border border-[#E2E5E9]'
-                        }`}
-                    >
-                      <span className="font-bold">Hull {ship.ship_no}</span>
-                      <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-sans font-bold ${isSelected ? 'bg-white/20 text-white' : 'bg-white text-emerald-700 border border-emerald-200'
-                        }`}>
-                        {stats.completed}/{stats.total}
-                      </span>
-                    </button>
+                    <div key={ship.id} className="flex items-center space-x-0.5 shrink-0">
+                      {isAdmin && (
+                        <div className="flex flex-col gap-0.5 mr-0.5">
+                          <button
+                            disabled={index === 0}
+                            onClick={() => handleMoveSubTab(index, 'left')}
+                            className="p-0.5 text-slate-400 hover:text-[#243B5A] disabled:opacity-20 cursor-pointer"
+                            title="왼쪽으로 이동"
+                          >
+                            <ArrowLeft className="h-3 w-3" />
+                          </button>
+                        </div>
+                      )}
+
+                      <button
+                        onClick={() => setSelectedHullNo(ship.ship_no)}
+                        className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold whitespace-nowrap transition cursor-pointer ${isSelected
+                            ? 'bg-[#243B5A] text-white shadow-2xs ring-2 ring-[#243B5A]/25'
+                            : 'bg-[#F5F6F8] hover:bg-slate-200 text-[#475569] border border-[#E2E5E9]'
+                          }`}
+                      >
+                        <span className="font-bold">Ship {ship.ship_no}</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-sans font-bold ${isSelected ? 'bg-white/20 text-white' : 'bg-white text-emerald-700 border border-emerald-200'
+                          }`}>
+                          {stats.completed}/{stats.total}
+                        </span>
+                      </button>
+
+                      {isAdmin && (
+                        <div className="flex flex-col gap-0.5 ml-0.5">
+                          <button
+                            disabled={index === ships.length - 1}
+                            onClick={() => handleMoveSubTab(index, 'right')}
+                            className="p-0.5 text-slate-400 hover:text-[#243B5A] disabled:opacity-20 cursor-pointer"
+                            title="오른쪽으로 이동"
+                          >
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
 
                 {isAdmin && (
                   <button
                     onClick={handleOpenStatusCreateModal}
-                    className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-dashed border-[#243B5A] text-[#243B5A] hover:bg-[#243B5A]/5 whitespace-nowrap transition cursor-pointer"
-                    title="신규 Hull 추가 등록"
+                    className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-dashed border-[#243B5A] text-[#243B5A] hover:bg-[#243B5A]/5 whitespace-nowrap transition cursor-pointer ml-1"
+                    title="신규 Ship 추가 등록"
                   >
                     <Plus className="h-3 w-3" />
                     <span>추가</span>
@@ -1175,12 +1253,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           {/* 선택된 호선의 Status 대시보드 */}
           {currentStatusShip ? (
             <div className="space-y-4">
-              {/* 호선 상세 요약 카드 및 관리자 액션 버튼 (선택, 수정, 삭제) */}
+              {/* 호선 상세 요약 카드 및 관리자 액션 버튼 */}
               <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-2xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="bg-[#243B5A] text-white text-xs font-mono font-bold px-2 py-0.5 rounded">
-                      Hull #{currentStatusShip.ship_no}
+                      Ship #{currentStatusShip.ship_no}
                     </span>
                     <h3 className="text-base font-bold text-[#1F2937]">
                       {currentStatusShip.ship_name}
@@ -1195,7 +1273,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <div className="flex items-center gap-3 text-xs text-[#64748B] flex-wrap pt-0.5">
                     <span>위치: <strong className="text-[#1F2937]">{currentStatusShip.dock || '-'}</strong></span>
                     <span>•</span>
-                    <span>DWT: <strong className="text-[#1F2937]">{currentStatusShip.dwt || '-'}</strong></span>
+                    <span>DWT: <strong className="text-[#1F2937] font-mono">{currentStatusShip.dwt || '-'}</strong></span>
                     <span>•</span>
                     <span>진수일: <strong className="text-[#1F2937]">{currentStatusShip.launch_date || '-'}</strong></span>
                     <span>•</span>
@@ -1222,7 +1300,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     );
                   })()}
 
-                  {/* 엑셀 다운로드 버튼 추가 */}
+                  {/* 엑셀 다운로드 버튼 */}
                   <button
                     onClick={handleDownloadExcel}
                     className="flex items-center space-x-1 bg-white hover:bg-slate-50 text-[#243B5A] border border-[#243B5A] px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
@@ -1280,10 +1358,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                         </div>
                       </div>
 
-                      {/* 6개 공정 항목 목록 */}
+                      {/* 7개 공정 항목 목록 (PBGT 포함) */}
                       <div className="p-3 divide-y divide-[#E2E5E9]/60 flex-1 space-y-2.5">
                         {TANK_STEPS.map((step) => {
-                          const stepInfo = tankDetail[step.key] || { date: '', status: '대기', value: '', text: '' };
+                          const stepInfo = tankDetail[step.key] || { status: '대기' };
                           const isDone = stepInfo.status === '완료';
                           const isInProgress = stepInfo.status === '진행중';
 
@@ -1313,18 +1391,42 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     {stepInfo.status || '대기'}
                                   </span>
 
-                                  {stepInfo.value && (
+                                  {/* 일반 공정 값 */}
+                                  {step.key !== 'pbgt' && stepInfo.value && (
                                     <span className="font-mono text-[10px] font-bold text-[#243B5A] bg-blue-50/80 px-1.5 py-0.5 rounded border border-blue-200" title="입력값/측정값">
                                       값: {stepInfo.value}
                                     </span>
                                   )}
 
-                                  <span className="font-mono text-[11px] text-[#475569] flex items-center gap-0.5 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 min-w-[76px] justify-center">
-                                    <Calendar className="h-2.5 w-2.5 text-slate-400" />
-                                    {stepInfo.date ? stepInfo.date : '-'}
-                                  </span>
+                                  {/* 일반 공정 일자 */}
+                                  {step.key !== 'pbgt' && (
+                                    <span className="font-mono text-[11px] text-[#475569] flex items-center gap-0.5 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 min-w-[76px] justify-center">
+                                      <Calendar className="h-2.5 w-2.5 text-slate-400" />
+                                      {stepInfo.date ? stepInfo.date : '-'}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
+
+                              {/* PBGT 공정 전용 UI (시작일/종료일, Ref/Final 2개 값 입력) */}
+                              {step.key === 'pbgt' && (
+                                <div className="ml-5 text-[10.5px] bg-slate-50 border border-slate-200 rounded p-1.5 space-y-1">
+                                  <div className="flex items-center justify-between font-mono text-[#475569]">
+                                    <span className="font-semibold text-[#243B5A]">일자:</span>
+                                    <span>
+                                      {stepInfo.startDate || '-'} ~ {stepInfo.endDate || '-'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between font-mono">
+                                    <span className="bg-blue-50 text-[#243B5A] px-1 py-0.2 rounded border border-blue-200">
+                                      Ref: {stepInfo.value || '-'}
+                                    </span>
+                                    <span className="bg-emerald-50 text-emerald-800 px-1 py-0.2 rounded border border-emerald-200">
+                                      Final: {stepInfo.finalValue || '-'}
+                                    </span>
+                                  </div>
+                                </div>
+                              )}
 
                               {/* NH3 항목 전용 특이사항 / 텍스트 표시 */}
                               {step.key === 'nh3' && stepInfo.text && (
@@ -1347,9 +1449,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 <div className="p-3 bg-[#F5F6F8] border-b border-[#E2E5E9] flex justify-between items-center">
                   <h4 className="text-xs font-bold text-[#1F2937] flex items-center gap-1.5">
                     <Activity className="h-4 w-4 text-[#243B5A]" />
-                    Hull #{currentStatusShip.ship_no} 탱크별 공정 일자 종합 비교표
+                    Ship #{currentStatusShip.ship_no} 탱크별 공정 일자 종합 비교표
                   </h4>
-                  <span className="text-[11px] text-[#64748B]">S/T 1ST, 2nd, Pre SBTT, NH3, B/F SBTT, A/T SBTT</span>
+                  <span className="text-[11px] text-[#64748B]">S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT</span>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -1371,14 +1473,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             {step.label}
                           </td>
                           {TANKS.map((tkKey) => {
-                            const stepInfo = currentStatusShip.tank_status?.[tkKey]?.[step.key] || { date: '', status: '대기', value: '', text: '' };
+                            const stepInfo = currentStatusShip.tank_status?.[tkKey]?.[step.key] || { status: '대기' };
                             const isDone = stepInfo.status === '완료';
                             const isInProgress = stepInfo.status === '진행중';
 
                             return (
                               <td key={tkKey} className="py-3 px-4 text-center">
                                 <div className="inline-flex flex-col items-center gap-1">
-                                  <div className="flex items-center gap-1">
+                                  <div className="flex items-center gap-1 flex-wrap justify-center">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isDone
                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                         : isInProgress
@@ -1387,15 +1489,33 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                       }`}>
                                       {stepInfo.status}
                                     </span>
-                                    {stepInfo.value && (
+                                    {step.key !== 'pbgt' && stepInfo.value && (
                                       <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-50 text-[#243B5A] border border-blue-200">
                                         {stepInfo.value}
                                       </span>
                                     )}
                                   </div>
-                                  <span className="font-mono text-[11px] text-[#64748B]">
-                                    {stepInfo.date ? stepInfo.date : '일자 미입력'}
-                                  </span>
+
+                                  {/* 일자 표기 */}
+                                  {step.key === 'pbgt' ? (
+                                    <span className="font-mono text-[10.5px] text-[#64748B]">
+                                      {stepInfo.startDate || stepInfo.endDate ? `${stepInfo.startDate || '-'} ~ ${stepInfo.endDate || '-'}` : '일자 미입력'}
+                                    </span>
+                                  ) : (
+                                    <span className="font-mono text-[11px] text-[#64748B]">
+                                      {stepInfo.date ? stepInfo.date : '일자 미입력'}
+                                    </span>
+                                  )}
+
+                                  {/* PBGT Ref / Final 값 */}
+                                  {step.key === 'pbgt' && (stepInfo.value || stepInfo.finalValue) && (
+                                    <div className="flex gap-1 text-[9.5px] font-mono font-semibold">
+                                      <span className="bg-blue-50 text-[#243B5A] px-1 rounded border border-blue-200">Ref: {stepInfo.value || '-'}</span>
+                                      <span className="bg-emerald-50 text-emerald-800 px-1 rounded border border-emerald-200">Final: {stepInfo.finalValue || '-'}</span>
+                                    </div>
+                                  )}
+
+                                  {/* NH3 비고 */}
                                   {step.key === 'nh3' && stepInfo.text && (
                                     <span className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded max-w-[120px] truncate" title={stepInfo.text}>
                                       📝 {stepInfo.text}
@@ -1453,14 +1573,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </div>
             </div>
 
-            {/* 신규 제원 상세 그리드 */}
+            {/* 호선 기본 제원 */}
             <div className="bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9] text-xs space-y-2">
               <span className="text-[11px] font-bold text-[#243B5A] flex items-center gap-1 border-b border-[#E2E5E9] pb-1">
                 <Ship className="h-3.5 w-3.5" /> 호선 기본 제원
               </span>
               <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[11px]">
                 <div><span className="text-[#64748B]">선주사:</span> <strong className="text-[#1F2937]">{selectedShip.shipowner || '-'}</strong></div>
-                <div><span className="text-[#64748B]">DWT:</span> <strong className="text-[#1F2937]">{selectedShip.dwt || '-'}</strong></div>
+                <div><span className="text-[#64748B]">DWT:</span> <strong className="text-[#1F2937] font-mono">{selectedShip.dwt || '-'}</strong></div>
                 <div><span className="text-[#64748B]">진수일:</span> <span className="font-mono text-[#1F2937]">{selectedShip.launch_date || '-'}</span></div>
                 <div><span className="text-[#64748B]">P/T 탑재일:</span> <span className="font-mono text-[#1F2937]">{selectedShip.pt_mount_date || '-'}</span></div>
                 <div><span className="text-[#64748B]">인도예정일:</span> <span className="font-mono text-[#1F2937]">{selectedShip.delivery_date || '-'}</span></div>
@@ -1490,7 +1610,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <h4 className="text-xs font-bold text-[#1F2937] flex items-center gap-1">
-                  <Activity className="h-3.5 w-3.5 text-[#243B5A]" /> 시운전 공정 현황 (단계별 조작 가능)
+                  <Activity className="h-3.5 w-3.5 text-[#243B5A]" /> 시운전 공정 현황
                 </h4>
                 <span className="text-[11px] font-bold text-[#243B5A]">
                   {selectedShip.status === 'Gas Trial' ? '최종단계' : `공정률 ${selectedShip.progress}%`}
@@ -1576,7 +1696,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 4. 호선 정보 탭 전용: 등록 및 수정 모달 */}
+      {/* 4. 호선 정보 탭 전용: 등록 및 수정 모달 (DWT 일자/자유 형식) */}
       {/* ============================================================== */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
@@ -1597,7 +1717,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                    호선 번호 (Hull No.) *
+                    호선 번호 (Ship No.) *
                   </label>
                   <input
                     type="text"
@@ -1651,11 +1771,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                    DWT (재화중량톤수)
+                    DWT (일자/자유 형식 입력 가능)
                   </label>
                   <input
                     type="text"
-                    placeholder="예: 95,000 DWT"
+                    placeholder="예: 2026-10-15 또는 95,000 DWT"
                     value={formData.dwt || ''}
                     onChange={(e) => setFormData({ ...formData, dwt: e.target.value })}
                     className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -1815,7 +1935,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 5. Status 탭 전용 [신규 등록]: Hull 기반 신규 호선 & TK1~4 공정 세팅 모달 */}
+      {/* 5. Status 탭 전용 [신규 등록]: Ship 기반 신규 호선 & TK1~4 공정 모달 */}
       {/* ============================================================== */}
       {isStatusCreateModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
@@ -1824,9 +1944,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               <div>
                 <h3 className="text-sm font-bold text-[#1F2937] flex items-center gap-1.5">
                   <Plus className="h-4 w-4 text-[#243B5A]" />
-                  신규 Hull Status 등록 (호선 제원 & Tank 공정)
+                  신규 Ship Status 등록 (호선 제원 & Tank 공정)
                 </h3>
-                <p className="text-[11px] text-[#64748B]">Hull No 및 호선 정보와 함께 TK1~TK4의 초기 공정 상태 및 날짜를 설정합니다.</p>
+                <p className="text-[11px] text-[#64748B]">Ship No 및 호선 정보와 함께 TK1~TK4의 초기 공정 상태 및 날짜를 설정합니다.</p>
               </div>
               <button
                 onClick={() => setIsStatusCreateModalOpen(false)}
@@ -1846,7 +1966,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                      Hull No. (호선번호) *
+                      Ship No. (호선번호) *
                     </label>
                     <input
                       type="text"
@@ -1899,11 +2019,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                      DWT
+                      DWT (일자/자유 형식)
                     </label>
                     <input
                       type="text"
-                      placeholder="예: 95,000 DWT"
+                      placeholder="예: 2026-10-15"
                       value={statusCreateFormData.dwt || ''}
                       onChange={(e) => setStatusCreateFormData({ ...statusCreateFormData, dwt: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -1948,7 +2068,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                         setStatusCreateFormData(prev => {
                           const updated = { ...prev.tank_status };
                           TANK_STEPS.forEach(st => {
-                            updated[statusCreateTankTab][st.key] = { date: today, status: '완료' };
+                            if (st.key === 'pbgt') {
+                              updated[statusCreateTankTab][st.key] = { startDate: today, endDate: today, status: '완료' };
+                            } else {
+                              updated[statusCreateTankTab][st.key] = { date: today, status: '완료' };
+                            }
                           });
                           return { ...prev, tank_status: updated };
                         });
@@ -1965,7 +2089,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                         setStatusCreateFormData(prev => {
                           const updated = { ...prev.tank_status };
                           TANK_STEPS.forEach(st => {
-                            updated[statusCreateTankTab][st.key] = { date: '', status: '대기' };
+                            updated[statusCreateTankTab][st.key] = { date: '', startDate: '', endDate: '', status: '대기', value: '', finalValue: '', text: '' };
                           });
                           return { ...prev, tank_status: updated };
                         });
@@ -2004,18 +2128,18 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   })}
                 </div>
 
-                {/* 선택된 Tank의 6개 항목 리스트 (S/T 1ST, 2nd, Pre SBTT, NH3, B/F SBTT, A/T SBTT) */}
+                {/* 선택된 Tank의 7개 항목 리스트 (S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT) */}
                 <div className="bg-slate-50/80 p-3 rounded-xl border border-[#E2E5E9] space-y-2">
                   <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-1.5">
                     <span className="text-xs font-bold text-[#1F2937]">
-                      [{statusCreateTankTab}] 6대 검사 공정 항목
+                      [{statusCreateTankTab}] 7대 검사 공정 항목
                     </span>
                     <span className="text-[10px] text-[#64748B]">날짜를 선택하면 자동으로 완료 처리됩니다.</span>
                   </div>
 
                   <div className="grid grid-cols-1 gap-2.5">
                     {TANK_STEPS.map((step) => {
-                      const currentStepData = statusCreateFormData.tank_status[statusCreateTankTab]?.[step.key] || { date: '', status: '대기', value: '', text: '' };
+                      const currentStepData = statusCreateFormData.tank_status[statusCreateTankTab]?.[step.key] || { status: '대기' };
 
                       return (
                         <div
@@ -2044,7 +2168,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                         [step.key]: {
                                           ...prev.tank_status[statusCreateTankTab][step.key],
                                           status: newStatus,
-                                          date: (newStatus === '완료' && !currentStepData.date)
+                                          date: (newStatus === '완료' && step.key !== 'pbgt' && !currentStepData.date)
                                             ? new Date().toISOString().split('T')[0]
                                             : currentStepData.date
                                         }
@@ -2064,34 +2188,87 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 <option value="완료">완료</option>
                               </select>
 
-                              {/* 날짜 선택 */}
-                              <input
-                                type="date"
-                                value={currentStepData.date || ''}
-                                onChange={(e) => {
-                                  const newDate = e.target.value;
-                                  setStatusCreateFormData(prev => ({
-                                    ...prev,
-                                    tank_status: {
-                                      ...prev.tank_status,
-                                      [statusCreateTankTab]: {
-                                        ...prev.tank_status[statusCreateTankTab],
-                                        [step.key]: {
-                                          ...prev.tank_status[statusCreateTankTab][step.key],
-                                          date: newDate,
-                                          status: (newDate && currentStepData.status === '대기') ? '완료' : currentStepData.status
+                              {/* 일반 공정: 단일 날짜 선택 */}
+                              {step.key !== 'pbgt' && (
+                                <input
+                                  type="date"
+                                  value={currentStepData.date || ''}
+                                  onChange={(e) => {
+                                    const newDate = e.target.value;
+                                    setStatusCreateFormData(prev => ({
+                                      ...prev,
+                                      tank_status: {
+                                        ...prev.tank_status,
+                                        [statusCreateTankTab]: {
+                                          ...prev.tank_status[statusCreateTankTab],
+                                          [step.key]: {
+                                            ...prev.tank_status[statusCreateTankTab][step.key],
+                                            date: newDate,
+                                            status: (newDate && currentStepData.status === '대기') ? '완료' : currentStepData.status
+                                          }
                                         }
                                       }
-                                    }
-                                  }));
-                                }}
-                                className="px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono shrink-0"
-                              />
+                                    }));
+                                  }}
+                                  className="px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono shrink-0"
+                                />
+                              )}
 
-                              {/* 값(측정값/검사값) 입력 */}
+                              {/* PBGT 전용: 시작일/종료일 선택 */}
+                              {step.key === 'pbgt' && (
+                                <div className="flex items-center space-x-1 shrink-0">
+                                  <input
+                                    type="date"
+                                    title="시작일"
+                                    value={currentStepData.startDate || ''}
+                                    onChange={(e) => {
+                                      const sDate = e.target.value;
+                                      setStatusCreateFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusCreateTankTab]: {
+                                            ...prev.tank_status[statusCreateTankTab],
+                                            pbgt: {
+                                              ...prev.tank_status[statusCreateTankTab].pbgt,
+                                              startDate: sDate,
+                                            }
+                                          }
+                                        }
+                                      }));
+                                    }}
+                                    className="px-1.5 py-1 bg-white border border-[#E2E5E9] rounded text-[10px] text-[#1F2937] font-mono"
+                                  />
+                                  <span className="text-[10px] text-slate-400">~</span>
+                                  <input
+                                    type="date"
+                                    title="종료일"
+                                    value={currentStepData.endDate || ''}
+                                    onChange={(e) => {
+                                      const eDate = e.target.value;
+                                      setStatusCreateFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusCreateTankTab]: {
+                                            ...prev.tank_status[statusCreateTankTab],
+                                            pbgt: {
+                                              ...prev.tank_status[statusCreateTankTab].pbgt,
+                                              endDate: eDate,
+                                            }
+                                          }
+                                        }
+                                      }));
+                                    }}
+                                    className="px-1.5 py-1 bg-white border border-[#E2E5E9] rounded text-[10px] text-[#1F2937] font-mono"
+                                  />
+                                </div>
+                              )}
+
+                              {/* 값(측정값/검사값 또는 Ref 값) 입력 */}
                               <input
                                 type="text"
-                                placeholder="값 (예: 250 mbar)"
+                                placeholder={step.key === 'pbgt' ? "Ref. 값 입력" : "값 (예: 250 mbar)"}
                                 value={currentStepData.value || ''}
                                 onChange={(e) => {
                                   const val = e.target.value;
@@ -2109,12 +2286,38 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     }
                                   }));
                                 }}
-                                className="w-28 sm:w-32 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
+                                className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                               />
+
+                              {/* PBGT 전용: Final 값 입력 */}
+                              {step.key === 'pbgt' && (
+                                <input
+                                  type="text"
+                                  placeholder="Final 값 입력"
+                                  value={currentStepData.finalValue || ''}
+                                  onChange={(e) => {
+                                    const fVal = e.target.value;
+                                    setStatusCreateFormData(prev => ({
+                                      ...prev,
+                                      tank_status: {
+                                        ...prev.tank_status,
+                                        [statusCreateTankTab]: {
+                                          ...prev.tank_status[statusCreateTankTab],
+                                          pbgt: {
+                                            ...prev.tank_status[statusCreateTankTab].pbgt,
+                                            finalValue: fVal,
+                                          }
+                                        }
+                                      }
+                                    }));
+                                  }}
+                                  className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
+                                />
+                              )}
                             </div>
                           </div>
 
-                          {/* NH3 전용 텍스트 입력창 추가 */}
+                          {/* NH3 전용 텍스트 입력창 */}
                           {step.key === 'nh3' && (
                             <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
                               <span className="text-[11px] font-bold text-amber-800 shrink-0">
@@ -2122,7 +2325,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                               </span>
                               <input
                                 type="text"
-                                placeholder="NH3 검사 내용 / 특이사항 텍스트 입력 (예: Leak 미발생, 센서 검교정 완료 등)"
+                                placeholder="NH3 검사 내용 / 특이사항 텍스트 입력"
                                 value={currentStepData.text || ''}
                                 onChange={(e) => {
                                   const newText = e.target.value;
@@ -2151,11 +2354,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-2 pt-2 border-t border-[#E2E5E9]">
+              <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9]">
                 <button
                   type="button"
                   onClick={() => setIsStatusCreateModalOpen(false)}
-                  className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                  className="px-3 py-1.5 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   취소
                 </button>
@@ -2163,7 +2366,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   type="submit"
                   className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
                 >
-                  호선 및 Status 등록
+                  등록 완료
                 </button>
               </div>
             </form>
@@ -2172,7 +2375,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 6. Status 탭 전용 [수정]: 선택된 Hull 정보 및 TK1~4 공정 수정 모달 */}
+      {/* 6. Status 탭 전용 [수정]: 기존 호선 정보 & TK1~4 공정 수정 모달 */}
       {/* ============================================================== */}
       {isStatusEditModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
@@ -2181,9 +2384,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               <div>
                 <h3 className="text-sm font-bold text-[#1F2937] flex items-center gap-1.5">
                   <Edit3 className="h-4 w-4 text-[#243B5A]" />
-                  Hull #{statusEditFormData.ship_no} Status 및 Tank 공정 수정
+                  Ship Status 정보 수정 (Ship #{statusEditFormData.ship_no})
                 </h3>
-                <p className="text-[11px] text-[#64748B]">호선 제원과 TK1~TK4 공정 항목의 날짜와 상태를 수정합니다.</p>
+                <p className="text-[11px] text-[#64748B]">선종, DWT 등 기본 제원과 TK1~TK4 탱크별 공정을 수정합니다.</p>
               </div>
               <button
                 onClick={() => setIsStatusEditModalOpen(false)}
@@ -2195,21 +2398,21 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
             <form onSubmit={handleSaveStatusEditModal} className="space-y-4">
               {/* 호선 기본 정보 수정 */}
-              <div className="bg-[#F5F6F8] p-3.5 rounded-xl border border-[#E2E5E9] space-y-2.5">
+              <div className="bg-[#F5F6F8] p-3.5 rounded-xl border border-[#E2E5E9] space-y-3">
                 <span className="text-xs font-bold text-[#243B5A] flex items-center gap-1">
-                  <Ship className="h-3.5 w-3.5" /> 호선 기본 제원 수정
+                  <Ship className="h-3.5 w-3.5" /> 1단계: 호선 기본 제원 수정
                 </span>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                      Hull No. (호선번호)
+                      Ship No. (변경 불가)
                     </label>
                     <input
                       type="text"
                       disabled
                       value={statusEditFormData.ship_no}
-                      className="w-full px-2.5 py-1.5 bg-slate-100 border border-[#E2E5E9] rounded-lg text-xs font-mono font-bold text-[#64748B] cursor-not-allowed"
+                      className="w-full px-2.5 py-1.5 bg-slate-200/60 border border-[#E2E5E9] rounded-lg text-xs font-mono font-bold text-[#1F2937]"
                     />
                   </div>
                   <div>
@@ -2218,9 +2421,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     </label>
                     <input
                       type="text"
+                      required
                       value={statusEditFormData.ship_name}
                       onChange={(e) => setStatusEditFormData({ ...statusEditFormData, ship_name: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-semibold"
+                      className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
                     />
                   </div>
                   <div>
@@ -2229,7 +2433,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     </label>
                     <input
                       type="text"
-                      value={statusEditFormData.shipowner}
+                      value={statusEditFormData.shipowner || ''}
                       onChange={(e) => setStatusEditFormData({ ...statusEditFormData, shipowner: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
                     />
@@ -2239,7 +2443,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                      호선 위치 (도크)
+                      도크 위치
                     </label>
                     <input
                       type="text"
@@ -2250,11 +2454,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                      DWT
+                      DWT (일자/자유 형식)
                     </label>
                     <input
                       type="text"
-                      value={statusEditFormData.dwt}
+                      placeholder="예: 2026-10-15"
+                      value={statusEditFormData.dwt || ''}
                       onChange={(e) => setStatusEditFormData({ ...statusEditFormData, dwt: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                     />
@@ -2265,7 +2470,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     </label>
                     <input
                       type="date"
-                      value={statusEditFormData.launch_date}
+                      value={statusEditFormData.launch_date || ''}
                       onChange={(e) => setStatusEditFormData({ ...statusEditFormData, launch_date: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                     />
@@ -2276,7 +2481,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     </label>
                     <input
                       type="date"
-                      value={statusEditFormData.delivery_date}
+                      value={statusEditFormData.delivery_date ?? ''}
                       onChange={(e) => setStatusEditFormData({ ...statusEditFormData, delivery_date: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                     />
@@ -2284,48 +2489,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
               </div>
 
-              {/* Tank 선택 탭 (TK1, TK2, TK3, TK4) */}
-              <div className="space-y-2">
+              {/* Tank별 공정 수정 */}
+              <div className="space-y-3">
                 <div className="flex justify-between items-center">
-                  <label className="block text-xs font-bold text-[#1F2937]">
-                    수정할 Tank 선택
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const today = new Date().toISOString().split('T')[0];
-                        setStatusEditFormData(prev => {
-                          const updated = { ...prev.tank_status };
-                          TANK_STEPS.forEach(st => {
-                            updated[statusModalTankTab][st.key] = { date: today, status: '완료' };
-                          });
-                          return { ...prev, tank_status: updated };
-                        });
-                      }}
-                      className="text-[11px] text-[#243B5A] hover:underline flex items-center gap-0.5 cursor-pointer font-semibold"
-                    >
-                      <CheckCheck className="h-3 w-3" />
-                      현재 Tank 전 항목 오늘 완료로 설정
-                    </button>
-                    <span className="text-[#E2E5E9]">|</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStatusEditFormData(prev => {
-                          const updated = { ...prev.tank_status };
-                          TANK_STEPS.forEach(st => {
-                            updated[statusModalTankTab][st.key] = { date: '', status: '대기' };
-                          });
-                          return { ...prev, tank_status: updated };
-                        });
-                      }}
-                      className="text-[11px] text-[#64748B] hover:underline flex items-center gap-0.5 cursor-pointer"
-                    >
-                      <RotateCcw className="h-3 w-3" />
-                      초기화
-                    </button>
-                  </div>
+                  <span className="text-xs font-bold text-[#243B5A] flex items-center gap-1">
+                    <Layers className="h-3.5 w-3.5" /> 2단계: Tank별 공정 현황 수정
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-4 gap-2">
@@ -2352,159 +2521,235 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     );
                   })}
                 </div>
-              </div>
 
-              {/* 선택된 Tank의 6개 항목 리스트 (S/T 1ST, 2nd, Pre SBTT, NH3, B/F SBTT, A/T SBTT) */}
-              <div className="bg-slate-50/80 p-3.5 rounded-xl border border-[#E2E5E9] space-y-2">
-                <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-2">
-                  <span className="text-xs font-bold text-[#243B5A] font-mono">
-                    [{statusModalTankTab}] 공정 단계 및 날짜 수정
-                  </span>
-                  <span className="text-[10px] text-[#64748B]">날짜를 입력하면 상태가 완료로 변경됩니다.</span>
-                </div>
+                <div className="bg-slate-50/80 p-3 rounded-xl border border-[#E2E5E9] space-y-2">
+                  <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-1.5">
+                    <span className="text-xs font-bold text-[#1F2937]">
+                      [{statusModalTankTab}] 7대 검사 공정 항목
+                    </span>
+                  </div>
 
-                <div className="grid grid-cols-1 gap-2.5">
-                  {TANK_STEPS.map((step) => {
-                    const currentStepData = statusEditFormData.tank_status[statusModalTankTab]?.[step.key] || { date: '', status: '대기', value: '', text: '' };
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {TANK_STEPS.map((step) => {
+                      const currentStepData = statusEditFormData.tank_status[statusModalTankTab]?.[step.key] || { status: '대기' };
 
-                    return (
-                      <div
-                        key={step.key}
-                        className="bg-white p-2.5 rounded-lg border border-[#E2E5E9] shadow-2xs space-y-2"
-                      >
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                          <div className="w-24 shrink-0">
-                            <span className="text-xs font-bold text-[#1F2937] block">
-                              {step.label}
-                            </span>
+                      return (
+                        <div
+                          key={step.key}
+                          className="bg-white p-2.5 rounded-lg border border-[#E2E5E9] shadow-2xs space-y-2"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="w-24 shrink-0">
+                              <span className="text-xs font-bold text-[#1F2937] block">
+                                {step.label}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 flex-1 justify-end flex-wrap">
+                              <select
+                                value={currentStepData.status}
+                                onChange={(e) => {
+                                  const newStatus = e.target.value as '대기' | '진행중' | '완료';
+                                  setStatusEditFormData(prev => ({
+                                    ...prev,
+                                    tank_status: {
+                                      ...prev.tank_status,
+                                      [statusModalTankTab]: {
+                                        ...prev.tank_status[statusModalTankTab],
+                                        [step.key]: {
+                                          ...prev.tank_status[statusModalTankTab][step.key],
+                                          status: newStatus,
+                                          date: (newStatus === '완료' && step.key !== 'pbgt' && !currentStepData.date)
+                                            ? new Date().toISOString().split('T')[0]
+                                            : currentStepData.date
+                                        }
+                                      }
+                                    }
+                                  }));
+                                }}
+                                className={`px-2 py-1 border rounded text-[11px] font-semibold focus:outline-hidden shrink-0 ${currentStepData.status === '완료'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                    : currentStepData.status === '진행중'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-300'
+                                      : 'bg-slate-50 text-slate-600 border-slate-200'
+                                  }`}
+                              >
+                                <option value="대기">대기</option>
+                                <option value="진행중">진행중</option>
+                                <option value="완료">완료</option>
+                              </select>
+
+                              {/* 일반 공정 단일 날짜 */}
+                              {step.key !== 'pbgt' && (
+                                <input
+                                  type="date"
+                                  value={currentStepData.date || ''}
+                                  onChange={(e) => {
+                                    const newDate = e.target.value;
+                                    setStatusEditFormData(prev => ({
+                                      ...prev,
+                                      tank_status: {
+                                        ...prev.tank_status,
+                                        [statusModalTankTab]: {
+                                          ...prev.tank_status[statusModalTankTab],
+                                          [step.key]: {
+                                            ...prev.tank_status[statusModalTankTab][step.key],
+                                            date: newDate,
+                                            status: (newDate && currentStepData.status === '대기') ? '완료' : currentStepData.status
+                                          }
+                                        }
+                                      }
+                                    }));
+                                  }}
+                                  className="px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono shrink-0"
+                                />
+                              )}
+
+                              {/* PBGT 공정 전용 시작일/종료일 */}
+                              {step.key === 'pbgt' && (
+                                <div className="flex items-center space-x-1 shrink-0">
+                                  <input
+                                    type="date"
+                                    title="시작일"
+                                    value={currentStepData.startDate || ''}
+                                    onChange={(e) => {
+                                      const sDate = e.target.value;
+                                      setStatusEditFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusModalTankTab]: {
+                                            ...prev.tank_status[statusModalTankTab],
+                                            pbgt: {
+                                              ...prev.tank_status[statusModalTankTab].pbgt,
+                                              startDate: sDate,
+                                            }
+                                          }
+                                        }
+                                      }));
+                                    }}
+                                    className="px-1.5 py-1 bg-white border border-[#E2E5E9] rounded text-[10px] text-[#1F2937] font-mono"
+                                  />
+                                  <span className="text-[10px] text-slate-400">~</span>
+                                  <input
+                                    type="date"
+                                    title="종료일"
+                                    value={currentStepData.endDate || ''}
+                                    onChange={(e) => {
+                                      const eDate = e.target.value;
+                                      setStatusEditFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusModalTankTab]: {
+                                            ...prev.tank_status[statusModalTankTab],
+                                            pbgt: {
+                                              ...prev.tank_status[statusModalTankTab].pbgt,
+                                              endDate: eDate,
+                                            }
+                                          }
+                                        }
+                                      }));
+                                    }}
+                                    className="px-1.5 py-1 bg-white border border-[#E2E5E9] rounded text-[10px] text-[#1F2937] font-mono"
+                                  />
+                                </div>
+                              )}
+
+                              {/* 값/Ref. 값 입력 */}
+                              <input
+                                type="text"
+                                placeholder={step.key === 'pbgt' ? "Ref. 값" : "값"}
+                                value={currentStepData.value || ''}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setStatusEditFormData(prev => ({
+                                    ...prev,
+                                    tank_status: {
+                                      ...prev.tank_status,
+                                      [statusModalTankTab]: {
+                                        ...prev.tank_status[statusModalTankTab],
+                                        [step.key]: {
+                                          ...prev.tank_status[statusModalTankTab][step.key],
+                                          value: val,
+                                        }
+                                      }
+                                    }
+                                  }));
+                                }}
+                                className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
+                              />
+
+                              {/* PBGT Final 값 입력 */}
+                              {step.key === 'pbgt' && (
+                                <input
+                                  type="text"
+                                  placeholder="Final 값"
+                                  value={currentStepData.finalValue || ''}
+                                  onChange={(e) => {
+                                    const fVal = e.target.value;
+                                    setStatusEditFormData(prev => ({
+                                      ...prev,
+                                      tank_status: {
+                                        ...prev.tank_status,
+                                        [statusModalTankTab]: {
+                                          ...prev.tank_status[statusModalTankTab],
+                                          pbgt: {
+                                            ...prev.tank_status[statusModalTankTab].pbgt,
+                                            finalValue: fVal,
+                                          }
+                                        }
+                                      }
+                                    }));
+                                  }}
+                                  className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
+                                />
+                              )}
+                            </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5 flex-1 justify-end flex-wrap">
-                            {/* 상태 선택 */}
-                            <select
-                              value={currentStepData.status}
-                              onChange={(e) => {
-                                const newStatus = e.target.value as '대기' | '진행중' | '완료';
-                                setStatusEditFormData(prev => ({
-                                  ...prev,
-                                  tank_status: {
-                                    ...prev.tank_status,
-                                    [statusModalTankTab]: {
-                                      ...prev.tank_status[statusModalTankTab],
-                                      [step.key]: {
-                                        ...prev.tank_status[statusModalTankTab][step.key],
-                                        status: newStatus,
-                                        date: (newStatus === '완료' && !currentStepData.date)
-                                          ? new Date().toISOString().split('T')[0]
-                                          : currentStepData.date
+                          {/* NH3 텍스트 */}
+                          {step.key === 'nh3' && (
+                            <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                              <span className="text-[11px] font-bold text-amber-800 shrink-0">
+                                📝 NH3 텍스트:
+                              </span>
+                              <input
+                                type="text"
+                                placeholder="NH3 특이사항 텍스트 입력"
+                                value={currentStepData.text || ''}
+                                onChange={(e) => {
+                                  const newText = e.target.value;
+                                  setStatusEditFormData(prev => ({
+                                    ...prev,
+                                    tank_status: {
+                                      ...prev.tank_status,
+                                      [statusModalTankTab]: {
+                                        ...prev.tank_status[statusModalTankTab],
+                                        nh3: {
+                                          ...prev.tank_status[statusModalTankTab].nh3,
+                                          text: newText,
+                                        }
                                       }
                                     }
-                                  }
-                                }));
-                              }}
-                              className={`px-2 py-1 border rounded text-[11px] font-semibold focus:outline-hidden shrink-0 ${currentStepData.status === '완료'
-                                  ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                  : currentStepData.status === '진행중'
-                                    ? 'bg-amber-50 text-amber-800 border-amber-300'
-                                    : 'bg-slate-50 text-slate-600 border-slate-200'
-                                }`}
-                            >
-                              <option value="대기">대기</option>
-                              <option value="진행중">진행중</option>
-                              <option value="완료">완료</option>
-                            </select>
-
-                            {/* 날짜 선택 */}
-                            <input
-                              type="date"
-                              value={currentStepData.date || ''}
-                              onChange={(e) => {
-                                const newDate = e.target.value;
-                                setStatusEditFormData(prev => ({
-                                  ...prev,
-                                  tank_status: {
-                                    ...prev.tank_status,
-                                    [statusModalTankTab]: {
-                                      ...prev.tank_status[statusModalTankTab],
-                                      [step.key]: {
-                                        ...prev.tank_status[statusModalTankTab][step.key],
-                                        date: newDate,
-                                        status: (newDate && currentStepData.status === '대기') ? '완료' : currentStepData.status
-                                      }
-                                    }
-                                  }
-                                }));
-                              }}
-                              className="px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono shrink-0"
-                            />
-
-                            {/* 값(측정값/검사값) 입력 */}
-                            <input
-                              type="text"
-                              placeholder="값 (예: 250 mbar)"
-                              value={currentStepData.value || ''}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setStatusEditFormData(prev => ({
-                                  ...prev,
-                                  tank_status: {
-                                    ...prev.tank_status,
-                                    [statusModalTankTab]: {
-                                      ...prev.tank_status[statusModalTankTab],
-                                      [step.key]: {
-                                        ...prev.tank_status[statusModalTankTab][step.key],
-                                        value: val,
-                                      }
-                                    }
-                                  }
-                                }));
-                              }}
-                              className="w-28 sm:w-32 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                            />
-                          </div>
+                                  }));
+                                }}
+                                className="flex-1 px-2.5 py-1 bg-amber-50/60 border border-amber-200 rounded text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                              />
+                            </div>
+                          )}
                         </div>
-
-                        {/* NH3 전용 텍스트 입력창 추가 */}
-                        {step.key === 'nh3' && (
-                          <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
-                            <span className="text-[11px] font-bold text-amber-800 shrink-0">
-                              📝 NH3 텍스트:
-                            </span>
-                            <input
-                              type="text"
-                              placeholder="NH3 검사 내용 / 특이사항 텍스트 입력"
-                              value={currentStepData.text || ''}
-                              onChange={(e) => {
-                                const newText = e.target.value;
-                                setStatusEditFormData(prev => ({
-                                  ...prev,
-                                  tank_status: {
-                                    ...prev.tank_status,
-                                    [statusModalTankTab]: {
-                                      ...prev.tank_status[statusModalTankTab],
-                                      nh3: {
-                                        ...prev.tank_status[statusModalTankTab].nh3,
-                                        text: newText,
-                                      }
-                                    }
-                                  }
-                                }));
-                              }}
-                              className="flex-1 px-2.5 py-1 bg-amber-50/60 border border-amber-200 rounded text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex justify-end space-x-2 pt-2 border-t border-[#E2E5E9]">
+              <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9]">
                 <button
                   type="button"
                   onClick={() => setIsStatusEditModalOpen(false)}
-                  className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+                  className="px-3 py-1.5 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   취소
                 </button>
@@ -2512,7 +2757,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   type="submit"
                   className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
                 >
-                  수정 사항 저장
+                  수정 저장
                 </button>
               </div>
             </form>
@@ -2524,25 +2769,19 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* 7. 삭제 확인 모달 */}
       {/* ============================================================== */}
       {isDeleteModalOpen && targetDeleteShip && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
           <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center space-x-2 text-[#DC2626]">
-              <AlertTriangle className="h-5 w-5" />
-              <h3 className="text-sm font-bold text-[#1F2937]">호선 및 Status 삭제 확인</h3>
+            <div className="flex items-center space-x-2 text-red-600">
+              <AlertTriangle className="h-5 w-5 shrink-0" />
+              <h3 className="text-sm font-bold text-[#1F2937]">Ship 삭제 확인</h3>
             </div>
-
             <p className="text-xs text-[#64748B] leading-relaxed">
-              정말로 <strong className="text-[#1F2937] font-bold">[Hull #{targetDeleteShip.ship_no}] {targetDeleteShip.ship_name}</strong> 호선과 관련된 모든 Status 데이터를 삭제하시겠습니까?<br />
-              <span className="text-[#DC2626] font-semibold">이 작업은 되돌릴 수 없습니다.</span>
+              정말로 <strong className="text-[#1F2937]">[Ship #{targetDeleteShip.ship_no}]</strong> 호선 및 관련 Status 공정 데이터를 삭제하시겠습니까? 삭제된 정보는 복구할 수 없습니다.
             </p>
-
             <div className="flex justify-end space-x-2 pt-2 border-t border-[#E2E5E9]">
               <button
                 type="button"
-                onClick={() => {
-                  setIsDeleteModalOpen(false);
-                  setTargetDeleteShip(null);
-                }}
+                onClick={() => setIsDeleteModalOpen(false)}
                 className="px-3 py-1.5 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
               >
                 취소
@@ -2550,40 +2789,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="px-4 py-1.5 bg-[#DC2626] hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
               >
                 삭제하기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================== */}
-      {/* 8. 통합 알림(Alert/Notice) 모달 */}
-      {/* ============================================================== */}
-      {alertInfo.isOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <div className="flex items-center space-x-2">
-              {alertInfo.type === 'success' && <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0" />}
-              {alertInfo.type === 'warning' && <AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />}
-              {alertInfo.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600 shrink-0" />}
-              {alertInfo.type === 'info' && <Info className="h-5 w-5 text-[#243B5A] shrink-0" />}
-              <h3 className="text-sm font-bold text-[#1F2937]">{alertInfo.title}</h3>
-            </div>
-
-            <p className="text-xs text-[#64748B] whitespace-pre-line leading-relaxed">
-              {alertInfo.message}
-            </p>
-
-            <div className="flex justify-end pt-2 border-t border-[#E2E5E9]">
-              <button
-                type="button"
-                onClick={() => setAlertInfo({ ...alertInfo, isOpen: false })}
-                className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
-              >
-                확인
               </button>
             </div>
           </div>
