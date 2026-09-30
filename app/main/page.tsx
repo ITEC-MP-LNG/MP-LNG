@@ -85,6 +85,7 @@ export default function MainPage() {
   const [educations, setEducations] = useState<Education[]>([]);
   const [eduRecords, setEduRecords] = useState<EducationRecord[]>([]);
   const [loadingEdu, setLoadingEdu] = useState(false);
+  const [educationRefreshVersion, setEducationRefreshVersion] = useState(0);
 
   const [showExitModal, setShowExitModal] = useState(false);
 
@@ -231,7 +232,7 @@ export default function MainPage() {
     { id: 'NOTICE', tables: ['notices'] },
     { id: 'TASKS', tables: ['tasks'] },
     { id: 'INVENTORY', tables: ['inventory', 'inventory_logs'] },
-    { id: 'EDUCATION', tables: ['educations', 'education_records'] },
+    { id: 'EDUCATION', tables: ['educations', 'education_records', 'events'] },
   ];
 
   const getLatestUpdateTime = async (tables: string[]) => {
@@ -387,6 +388,9 @@ export default function MainPage() {
 
       if (changedTabs.EDUCATION) {
         refreshPromises.push(fetchEducations(), fetchEducationRecords());
+        // EVENT는 EducationManagement 내부에서 events를 직접 조회하므로
+        // 변경 시 컴포넌트를 재생성하여 최신 EVENT 목록을 다시 불러오게 한다.
+        setEducationRefreshVersion((prev) => prev + 1);
       }
 
       if (changedTabs.NOTICE) {
@@ -718,6 +722,7 @@ export default function MainPage() {
 
           {mainTab === 'EDUCATION' && (
             <EducationManagement
+              key={`education-${educationRefreshVersion}`}
               isAdmin={isAdmin}
               educations={educations}
               eduRecords={eduRecords}
