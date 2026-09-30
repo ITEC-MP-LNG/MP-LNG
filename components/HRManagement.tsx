@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { supabase } from '@/lib/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
 import { OrgChart } from 'd3-org-chart';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -24,6 +24,12 @@ import {
   ChevronRight,
   UserPlus,
 } from 'lucide-react';
+
+// Supabase 클라이언트 파일 경로 문제(Can't resolve '@/lib/supabaseClient')를 해결하기 위해
+// 환경 변수를 활용하여 파일 내부에서 직접 생성합니다.
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 type HRUser = {
   id: string;
@@ -233,28 +239,6 @@ export default function HRManagement() {
       }
     };
 
-    /*
-     * 핵심 구조
-     *
-     * 조직도
-     *   │
-     *  운영
-     *   │
-     * 운영팀
-     *   │
-     *  관리
-     *   │
-     * 관리팀
-     *   │
-     *  TEAM
-     *   ├─ 1팀
-     *   ├─ 2팀
-     *   ├─ 3팀
-     *   └─ 4팀
-     *
-     * 메인 조직 축을 하나의 세로 방향으로 유지합니다.
-     */
-
     addNode({
       id: 'root',
       parentId: '',
@@ -322,17 +306,6 @@ export default function HRManagement() {
         data: user,
       });
     };
-
-    /*
-     * 운영팀
-     *
-     * app_users.department = 운영
-     *
-     * 본부장
-     * 소장
-     * 사무
-     * 기타 직책
-     */
 
     const operatingUsers = userList.filter(
       (u) => (u.department || '').trim() === '운영'
@@ -408,18 +381,6 @@ export default function HRManagement() {
       });
     }
 
-    /*
-     * 관리팀
-     *
-     * app_users.department = 관리
-     *
-     * field:
-     * QA
-     * 공정
-     * 공정 및 스케줄
-     * 기타
-     */
-
     const managementUsers = userList.filter(
       (u) => (u.department || '').trim() === '관리'
     );
@@ -482,17 +443,6 @@ export default function HRManagement() {
         addUserNode(user, fieldId);
       });
     });
-
-    /*
-     * TEAM
-     *
-     * app_users.department
-     *
-     * 1팀
-     * 2팀
-     * 3팀
-     * 4팀
-     */
 
     const teamDepartments = [
       '1팀',
@@ -581,11 +531,6 @@ export default function HRManagement() {
       });
     });
 
-    /*
-     * 기존 팀 체계 밖의 부서가 있는 경우
-     * TEAM 아래에 추가하여 데이터 누락 방지
-     */
-
     const handledDepartments = new Set([
       '운영',
       '관리',
@@ -648,18 +593,8 @@ export default function HRManagement() {
       orgChartRef.current
         .container(orgChartContainerRef.current)
         .data(chartData)
-
-        /*
-         * 핵심:
-         * OrgChart의 방향을 위 → 아래로 고정합니다.
-         *
-         * compact(true)를 사용하면 노드가 좌우로
-         * 지나치게 압축되어 넓게 펼쳐지는 현상이 생길 수
-         * 있으므로 해제합니다.
-         */
         .layout('top')
         .compact(false)
-
         .nodeHeight((d: any) => {
           if (d.data.type === 'root') {
             return 50;
@@ -679,7 +614,6 @@ export default function HRManagement() {
 
           return 42;
         })
-
         .nodeWidth((d: any) => {
           if (d.data.type === 'user') {
             return 210;
@@ -695,7 +629,6 @@ export default function HRManagement() {
 
           return 145;
         })
-
         .childrenMargin((d: any) => {
           if (d.data.level === 'main') {
             return 36;
@@ -707,11 +640,8 @@ export default function HRManagement() {
 
           return 20;
         })
-
         .siblingsMargin(() => 18)
-
         .neighbourMargin(() => 12)
-
         .nodeContent((d: any) => {
           if (d.data.type === 'root') {
             return `
@@ -912,7 +842,6 @@ export default function HRManagement() {
             </div>
           `;
         })
-
         .render();
 
       orgChartRef.current.expandAll();
