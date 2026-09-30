@@ -344,6 +344,17 @@ export default function EducationManagement({
     }
   };
 
+  // 🕒 해당일 18:00 목록 자동 비노출(삭제) 판단 함수
+  const isExpired = (dateStr: string) => {
+    if (!dateStr) return false;
+    const now = new Date();
+    const targetCutoff = new Date(`${dateStr}T18:00:00`);
+    return now >= targetCutoff;
+  };
+
+  const visibleEducations = educations.filter(edu => !isExpired(edu.edu_date));
+  const visibleEvents = events.filter(ev => !isExpired(ev.event_date));
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
   const firstDayOfMonth = new Date(year, month, 1).getDay();
@@ -542,13 +553,13 @@ export default function EducationManagement({
                 <GraduationCap className="h-4 w-4 text-[#243B5A]" />
                 <span>전체 교육 목록</span>
               </h3>
-              {educations.length === 0 ? (
+              {visibleEducations.length === 0 ? (
                 <div className="bg-white rounded-xl p-8 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
                   등록된 교육 일정이 없습니다.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {educations.map(edu => (
+                  {visibleEducations.map(edu => (
                     <div 
                       key={edu.id} 
                       onClick={() => setSelectedEduForDetail(edu)}
@@ -597,13 +608,13 @@ export default function EducationManagement({
                 <CalendarIcon className="h-4 w-4 text-[#0D9488]" />
                 <span>전체 EVENT 목록</span>
               </h3>
-              {events.length === 0 ? (
+              {visibleEvents.length === 0 ? (
                 <div className="bg-white rounded-xl p-8 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
                   등록된 EVENT가 없습니다.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {events.map(ev => (
+                  {visibleEvents.map(ev => (
                     <div 
                       key={ev.id} 
                       onClick={() => setSelectedEventForDetail(ev)}
