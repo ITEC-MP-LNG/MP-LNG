@@ -226,48 +226,70 @@ export default function MainPage() {
   }, [router]);
 
   // 네비게이션별 새 업데이트 확인 (created_at + updated_at 기준)
-  const checkNavigationUpdates = async (userKey: string) => {
-    const updateSources: { id: string; table: string }[] = [
-      { id: 'NOTICE', table: 'notices' },
-      { id: 'TASKS', table: 'tasks' },
-      { id: 'INVENTORY', table: 'inventory_logs' },
-      { id: 'EDUCATION', table: 'educations' },
-    ];
+  // 교육 & EVENT는 educations + education_records를 함께 확인한다.
+  const updateSources: { id: string; tables: string[] }[] = [
+    { id: 'NOTICE', tables: ['notices'] },
+    { id: 'TASKS', tables: ['tasks'] },
+    { id: 'INVENTORY', tables: ['inventory', 'inventory_logs'] },
+    { id: 'EDUCATION', tables: ['educations', 'education_records'] },
+  ];
 
-    const nextFlags: Record<string, boolean> = {};
+  const getLatestUpdateTime = async (tables: string[]) => {
+    const timestamps: string[] = [];
 
-    await Promise.all(updateSources.map(async ({ id, table }) => {
+    for (const table of tables) {
       try {
-        const { data, error } = await supabase
-          .from(table)
-          .select('created_at, updated_at')
-          .order('updated_at', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false })
-          .limit(1);
+        const [createdResult, updatedResult] = await Promise.all([
+          supabase
+            .from(table)
+            .select('created_at')
+            .order('created_at', { ascending: false, nullsFirst: false })
+            .limit(1),
+          supabase
+            .from(table)
+            .select('updated_at')
+            .order('updated_at', { ascending: false, nullsFirst: false })
+            .limit(1),
+        ]);
 
-        if (error) throw error;
-
-        const latestRow = data?.[0];
-        const latest = [latestRow?.created_at, latestRow?.updated_at]
-          .filter(Boolean)
-          .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
-        if (!latest) {
-          nextFlags[id] = false;
-          return;
+        if (!createdResult.error && createdResult.data?.[0]?.created_at) {
+          timestamps.push(createdResult.data[0].created_at);
         }
 
-        const storageKey = `nav_seen_${userKey}_${id}`;
-        const seenAt = localStorage.getItem(storageKey);
-
-        if (!seenAt) {
-          // 최초 진입 시 기존 데이터는 새 항목으로 표시하지 않고 기준 시점으로 저장
-          localStorage.setItem(storageKey, latest);
-          nextFlags[id] = false;
-        } else {
-          nextFlags[id] = new Date(latest).getTime() > new Date(seenAt).getTime();
+        if (!updatedResult.error && updatedResult.data?.[0]?.updated_at) {
+          timestamps.push(updatedResult.data[0].updated_at);
         }
       } catch (err) {
-        console.error(`${id} 새 업데이트 확인 실패:`, err);
+        console.error(`${table} 업데이트 시간 확인 실패:`, err);
+      }
+    }
+
+    if (timestamps.length === 0) return null;
+
+    return timestamps.reduce((latest, current) =>
+      new Date(current).getTime() > new Date(latest).getTime() ? current : latest
+    );
+  };
+
+  const checkNavigationUpdates = async (userKey: string) => {
+    const nextFlags: Record<string, boolean> = {};
+
+    await Promise.all(updateSources.map(async ({ id, tables }) => {
+      const latest = await getLatestUpdateTime(tables);
+      if (!latest) {
+        nextFlags[id] = false;
+        return;
+      }
+
+      const storageKey = `nav_seen_${userKey}_${id}`;
+      const seenAt = localStorage.getItem(storageKey);
+
+      if (!seenAt) {
+        // 최초 진입 시 기존 데이터는 새 항목으로 표시하지 않고 기준 시점으로 저장
+        localStorage.setItem(storageKey, latest);
+        nextFlags[id] = false;
+      } else {
+        nextFlags[id] = new Date(latest).getTime() > new Date(seenAt).getTime();
       }
     }));
 
@@ -277,30 +299,11 @@ export default function MainPage() {
   const markNavigationAsRead = async (tabId: string) => {
     if (!currentUser) return;
     const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
+    const source = updateSources.find(item => item.id === tabId);
+    if (!source) return;
 
     try {
-      const tableMap: Record<string, string> = {
-        NOTICE: 'notices',
-        TASKS: 'tasks',
-        INVENTORY: 'inventory_logs',
-        EDUCATION: 'educations',
-      };
-      const table = tableMap[tabId];
-      if (!table) return;
-
-      const { data, error } = await supabase
-        .from(table)
-        .select('created_at, updated_at')
-        .order('updated_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (error) throw error;
-
-      const latestRow = data?.[0];
-      const latest = [latestRow?.created_at, latestRow?.updated_at]
-        .filter(Boolean)
-        .sort((a, b) => new Date(b).getTime() - new Date(a).getTime())[0];
+      const latest = await getLatestUpdateTime(source.tables);
       if (latest) {
         localStorage.setItem(`nav_seen_${userKey}_${tabId}`, latest);
       }
@@ -327,32 +330,81 @@ export default function MainPage() {
     }
   }, [currentUser]);
 
-  // 20초 주기 데이터 갱신. 사용자가 입력 중이면 보류하고 작성이 끝나면 즉시 갱신.
+  // 20초마다 변경 여부만 확인하고, 실제 데이터 갱신은 변경된 경우에만 수행한다.
+  // 사용자가 작성 중이면 변경 사실만 보류하고 작성 완료 후 실제 갱신한다.
   useEffect(() => {
     if (!currentUser) return;
 
-    const refreshData = async () => {
+    const checkForChangesAndRefresh = async () => {
+      const user = currentUser;
+      const userKey = user.id || user.email || user.name || 'guest';
+      const changedTabs: Record<string, boolean> = {};
+      const latestByTab: Record<string, string> = {};
+
+      await Promise.all(updateSources.map(async ({ id, tables }) => {
+        const latest = await getLatestUpdateTime(tables);
+        if (!latest) return;
+
+        latestByTab[id] = latest;
+
+        const refreshKey = `nav_refresh_${userKey}_${id}`;
+        const lastRefreshAt = localStorage.getItem(refreshKey);
+
+        if (!lastRefreshAt) {
+          // 최초 기준 시점은 저장만 하고 기존 데이터를 새 업데이트로 처리하지 않는다.
+          localStorage.setItem(refreshKey, latest);
+          return;
+        }
+
+        if (new Date(latest).getTime() > new Date(lastRefreshAt).getTime()) {
+          changedTabs[id] = true;
+        }
+      }));
+
+      if (Object.keys(changedTabs).length === 0) {
+        return;
+      }
+
+      // 새 항목/수정이 발생한 경우에만 N 상태를 먼저 반영한다.
+      await checkNavigationUpdates(String(userKey));
+
       if (isUserEditingRef.current || Date.now() - lastInputAtRef.current < 1500) {
         refreshPendingRef.current = true;
         return;
       }
 
       refreshPendingRef.current = false;
-      const user = currentUser;
-      const userKey = user.id || user.email || user.name || 'guest';
 
-      await Promise.all([
-        fetchTasks(user),
-        fetchInventory(),
-        fetchInventoryLogs(),
-        fetchEducations(),
-        fetchEducationRecords(),
-        checkUnreadNotices(String(userKey)),
-        checkNavigationUpdates(String(userKey)),
-      ]);
+      const refreshPromises: Promise<any>[] = [];
+
+      if (changedTabs.TASKS) {
+        refreshPromises.push(fetchTasks(user));
+      }
+
+      if (changedTabs.INVENTORY) {
+        refreshPromises.push(fetchInventory(), fetchInventoryLogs());
+      }
+
+      if (changedTabs.EDUCATION) {
+        refreshPromises.push(fetchEducations(), fetchEducationRecords());
+      }
+
+      if (changedTabs.NOTICE) {
+        refreshPromises.push(checkUnreadNotices(String(userKey)));
+      }
+
+      await Promise.all(refreshPromises);
+
+      // 이번 변경을 실제로 반영했으므로, 다음 20초 검사에서는 같은 변경을 다시 갱신하지 않는다.
+      Object.keys(changedTabs).forEach((id) => {
+        const latest = latestByTab[id];
+        if (latest) {
+          localStorage.setItem(`nav_refresh_${userKey}_${id}`, latest);
+        }
+      });
     };
 
-    const intervalId = window.setInterval(refreshData, 20000);
+    const intervalId = window.setInterval(checkForChangesAndRefresh, 20000);
 
     const handleInput = () => {
       isUserEditingRef.current = true;
@@ -380,7 +432,8 @@ export default function MainPage() {
         if (!stillEditing) {
           isUserEditingRef.current = false;
           if (refreshPendingRef.current) {
-            await refreshData();
+            refreshPendingRef.current = false;
+            await checkForChangesAndRefresh();
           }
         }
       }, 0);
