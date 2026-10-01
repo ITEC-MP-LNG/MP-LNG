@@ -26,7 +26,8 @@ import {
   Shield,
   UserX,
   PackageCheck,
-  Calendar
+  Calendar,
+  FolderTree
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -53,6 +54,8 @@ export interface HRUser {
   is_retired?: boolean;
   resignation_date?: string;
   returned_items?: string;
+  parent_id?: string | null;
+  display_order?: number;
 }
 
 interface HRManagementProps {
@@ -144,6 +147,12 @@ export default function HRManagement({
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [detailUser, setDetailUser] = useState<HRUser | null>(null);
   const [selectedUser, setSelectedUser] = useState<HRUser | null>(null);
+
+  // 조직도 구조 직접 변경을 위한 모달 상태
+  const [isOrgEditModalOpen, setIsOrgEditModalOpen] = useState(false);
+  const [targetOrgUser, setTargetOrgUser] = useState<HRUser | null>(null);
+  const [parentUserId, setParentUserId] = useState<string>('');
+  const [userDisplayOrder, setUserDisplayOrder] = useState<number>(0);
 
   const orgChartContainerRef = useRef<HTMLDivElement>(null);
   const orgChartRef = useRef<any>(null);
@@ -237,40 +246,28 @@ export default function HRManagement({
       if (target) handleDeleteUser(target);
     };
 
-    (window as any).handleChartAddSub = (dept: string) => {
+    (window as any).handleChartStructureEdit = (userId: string) => {
       if (!isAdmin) {
-        alert('관리자 권한이 필요합니다.');
+        alert('관리자만 조직도 구조를 수정할 수 있습니다.');
         return;
       }
-      setSelectedUser(null);
-      setFormData({
-        inputId: '',
-        name: '',
-        email: '',
-        department: dept,
-        position: '매니저',
-        job_title: '팀원',
-        field: '안전',
-        role: 'USER',
-        phone: '',
-        address: '',
-        experience: '',
-        internal_certificates: '',
-        national_certificates: '',
-        join_date: new Date().toISOString().split('T')[0],
-        career_start_date: new Date().toISOString().split('T')[0],
-        birthDate: '',
-        is_retired: false,
-        resignation_date: '',
-        returned_items: ''
-      });
-      setIsModalOpen(true);
+      const target = users.find(u => u.id === userId);
+      if (target) {
+        setTargetOrgUser(target);
+        setParentUserId(target.parent_id || '');
+        setUserDisplayOrder(target.display_order || 0);
+        setIsOrgEditModalOpen(true);
+      }
     };
   }, [users, isAdmin]);
 
+  // 조직도(d3-org-chart) 트리 생성 시 퇴사자 완전히 제외
   const buildHierarchy = (userList: HRUser[]) => {
     const data: any[] = [];
     const usedIds = new Set<string>();
+
+    // 1. 퇴사자 제외된 재직자 목록 필터링
+    const activeUserList = userList.filter(u => !u.is_retired && u.department !== '퇴사자');
 
     const addNode = (node: any) => {
       data.push(node);
@@ -281,13 +278,17 @@ export default function HRManagement({
     addNode({ id: 'org_operating', parentId: 'root', name: '운영', type: 'department', level: 'main' });
     addNode({ id: 'org_management', parentId: 'org_operating', name: '관리', type: 'department', level: 'main' });
     addNode({ id: 'org_team', parentId: 'org_management', name: '팀', type: 'department', level: 'main' });
-    addNode({ id: 'org_retired', parentId: 'root', name: '퇴사자', type: 'department', level: 'main' });
 
-    const addUserNode = (user: HRUser, parentId: string) => {
+    const addUserNode = (user: HRUser, defaultParentId: string) => {
       if (usedIds.has(user.id)) return;
+      // 수동으로 변경된 parent_id가 존재하면 적용
+      const actualParentId = (user.parent_id && user.parent_id !== user.id) 
+        ? `user_${user.parent_id}` 
+        : defaultParentId;
+
       addNode({
         id: `user_${user.id}`,
-        parentId,
+        parentId: actualParentId,
         name: user.name,
         position: user.position,
         job_title: user.job_title,
@@ -297,7 +298,7 @@ export default function HRManagement({
       });
     };
 
-    const operatingUsers = userList.filter((u) => (u.department || '').trim() === '운영' && !u.is_retired);
+    const operatingUsers = activeUserList.filter((u) => (u.department || '').trim() === '운영');
     const operatingTitleOrder = ['본부장', '소장', '사무'];
     const otherOperatingTitles = Array.from(new Set(
       operatingUsers
@@ -319,10 +320,11 @@ export default function HRManagement({
         level: 'title',
         department: '운영',
       });
-      members.forEach((user) => addUserNode(user, titleId));
+      members.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+             .forEach((user) => addUserNode(user, titleId));
     });
 
-    const managementUsers = userList.filter((u) => (u.department || '').trim() === '관리' && !u.is_retired);
+    const managementUsers = activeUserList.filter((u) => (u.department || '').trim() === '관리');
     const managementFields = Array.from(new Set(
       managementUsers.map((u) => (u.field || '기타').trim() || '기타')
     ));
@@ -349,13 +351,13 @@ export default function HRManagement({
         level: 'field',
         department: '관리',
       });
-      members.forEach((user) => addUserNode(user, fieldId));
+      members.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+             .forEach((user) => addUserNode(user, fieldId));
     });
 
     const teamDepartments = ['1팀', '2팀', '3팀', '4팀'];
     const existingTeamDepartments = Array.from(new Set(
-      userList
-        .filter(u => !u.is_retired && u.department !== '퇴사자')
+      activeUserList
         .map((u) => (u.department || '').trim())
         .filter((dept) => /^\d+팀$/.test(dept))
     ));
@@ -370,7 +372,7 @@ export default function HRManagement({
     });
 
     allTeams.forEach((team) => {
-      const members = userList.filter((u) => (u.department || '').trim() === team && !u.is_retired);
+      const members = activeUserList.filter((u) => (u.department || '').trim() === team);
       const teamId = `team_${team}`;
       addNode({
         id: teamId,
@@ -382,6 +384,9 @@ export default function HRManagement({
       });
 
       const sortedMembers = [...members].sort((a, b) => {
+        if ((a.display_order || 0) !== (b.display_order || 0)) {
+          return (a.display_order || 0) - (b.display_order || 0);
+        }
         const rankA = JOB_TITLE_ORDER_IN_RANK[a.job_title || '없음'] || 99;
         const rankB = JOB_TITLE_ORDER_IN_RANK[b.job_title || '없음'] || 99;
         if (rankA !== rankB) return rankA - rankB;
@@ -390,13 +395,9 @@ export default function HRManagement({
       sortedMembers.forEach((user) => addUserNode(user, teamId));
     });
 
-    const retiredUsers = userList.filter(u => u.is_retired || u.department === '퇴사자');
-    retiredUsers.forEach((user) => addUserNode(user, 'org_retired'));
-
-    const handledDepartments = new Set(['운영', '관리', '퇴사자', ...allTeams]);
+    const handledDepartments = new Set(['운영', '관리', ...allTeams]);
     const otherDepartments = Array.from(new Set(
-      userList
-        .filter(u => !u.is_retired && u.department !== '퇴사자')
+      activeUserList
         .map((u) => (u.department || '').trim() || '미지정 파트')
         .filter((dept) => !handledDepartments.has(dept))
     ));
@@ -404,8 +405,8 @@ export default function HRManagement({
     otherDepartments.forEach((dept) => {
       const deptId = `other_dept_${dept}`;
       addNode({ id: deptId, parentId: 'org_team', name: dept, type: 'department', level: 'other' });
-      userList
-        .filter((u) => !u.is_retired && ((u.department || '').trim() || '미지정 파트') === dept)
+      activeUserList
+        .filter((u) => ((u.department || '').trim() || '미지정 파트') === dept)
         .forEach((user) => addUserNode(user, deptId));
     });
 
@@ -425,11 +426,11 @@ export default function HRManagement({
         .data(chartData)
         .nodeHeight((d: any) => {
           if (d.data.type === 'root') return 50;
-          if (d.data.type === 'user') return 92;
+          if (d.data.type === 'user') return 96;
           return d.data.level === 'main' ? 48 : 42;
         })
         .nodeWidth((d: any) => {
-          if (d.data.type === 'user') return 210;
+          if (d.data.type === 'user') return 220;
           if (d.data.level === 'main') return 180;
           return 150;
         })
@@ -446,35 +447,34 @@ export default function HRManagement({
 
           if (d.data.type === 'department' || d.data.type === 'group') {
             const isMain = d.data.level === 'main';
-            const isRetiredGroup = d.data.name === '퇴사자';
-            const bg = isRetiredGroup ? '#475569' : (isMain ? '#243B5A' : '#EAF0F7');
-            const textColor = isRetiredGroup || isMain ? 'white' : '#243B5A';
+            const bg = isMain ? '#243B5A' : '#EAF0F7';
+            const textColor = isMain ? 'white' : '#243B5A';
             return `
-              <div style="background-color: ${bg}; color: ${textColor}; border-radius: 8px; border: 2px solid ${isMain || isRetiredGroup ? '#1e293b' : '#CBD5E1'}; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0 10px; font-weight: bold; font-family: sans-serif; box-sizing: border-box; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+              <div style="background-color: ${bg}; color: ${textColor}; border-radius: 8px; border: 2px solid ${isMain ? '#1e293b' : '#CBD5E1'}; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0 10px; font-weight: bold; font-family: sans-serif; box-sizing: border-box; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                 ${d.data.name}
               </div>`;
           }
 
           const user = d.data.data;
-          const isRetired = user.is_retired || user.department === '퇴사자';
-          const isLeader = !isRetired && ['본부장', '소장', '팀장'].includes(user.job_title || '');
-          const bgColor = isRetired ? '#f1f5f9' : (isLeader ? '#ffffff' : '#f8fafc');
-          const borderColor = isRetired ? '#cbd5e1' : (isLeader ? '#4f46e5' : '#cbd5e1');
+          const isLeader = ['본부장', '소장', '팀장'].includes(user.job_title || '');
+          const bgColor = isLeader ? '#ffffff' : '#f8fafc';
+          const borderColor = isLeader ? '#4f46e5' : '#cbd5e1';
           const borderWidth = isLeader ? '2px' : '1px';
 
           return `
-            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 10px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1); ${isRetired ? 'opacity: 0.8;' : ''}">
-              <div style="font-size: 13px; font-weight: bold; color: ${isRetired ? '#64748b' : '#1e293b'}; display: flex; justify-content: space-between; align-items: center;">
-                <span>${isRetired ? '🛑' : (isLeader ? '👑' : '👤')} ${user.name}</span>
-                <div style="display: flex; gap: 4px; align-items: center;">
-                  <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isRetired ? '#e2e8f0' : (isLeader ? '#e0e7ff' : '#e2e8f0')}; color: ${isRetired ? '#64748b' : (isLeader ? '#4f46e5' : '#475569')};">${isRetired ? '퇴사' : user.position || ''}</span>
-                  <button onclick="window.handleChartEdit('${user.id}')" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 4px;" title="수정">✏️</button>
-                  <button onclick="window.handleChartDelete('${user.id}')" style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 4px; color: #dc2626;" title="삭제">🗑️</button>
+            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 10px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+              <div style="font-size: 13px; font-weight: bold; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
+                <span>${isLeader ? '👑' : '👤'} ${user.name}</span>
+                <div style="display: flex; gap: 3px; align-items: center;">
+                  <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isLeader ? '#e0e7ff' : '#e2e8f0'}; color: ${isLeader ? '#4f46e5' : '#475569'};">${user.position || ''}</span>
+                  <button onclick="window.handleChartStructureEdit('${user.id}')" style="background: #e0f2fe; border: 1px solid #7dd3fc; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 3px; color: #0369a1;" title="구조 변경">🌿</button>
+                  <button onclick="window.handleChartEdit('${user.id}')" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 3px;" title="수정">✏️</button>
+                  <button onclick="window.handleChartDelete('${user.id}')" style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 3px; color: #dc2626;" title="삭제">🗑️</button>
                 </div>
               </div>
               <div style="font-size: 10px; color: #64748b; margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
-                <span>${isRetired ? `퇴사일: ${user.resignation_date || '-'}` : `${user.job_title || '팀원'} ${user.field ? `· ${user.field}` : ''}`}</span>
-                <span style="font-size: 9px; color: ${isRetired ? '#64748b' : '#2563eb'}; background: ${isRetired ? '#e2e8f0' : '#eff6ff'}; padding: 1px 4px; border-radius: 3px;">${user.phone || '연락처 없음'}</span>
+                <span>${user.job_title || '팀원'} ${user.field ? `· ${user.field}` : ''}</span>
+                <span style="font-size: 9px; color: #2563eb; background: #eff6ff; padding: 1px 4px; border-radius: 3px;">${user.phone || '연락처 없음'}</span>
               </div>
             </div>
           `;
@@ -621,6 +621,30 @@ export default function HRManagement({
     }
   };
 
+  // 조직도 직접 수정 저장 핸들러
+  const handleSaveOrgStructure = async () => {
+    if (!targetOrgUser) return;
+
+    try {
+      const { error } = await supabase
+        .from('app_users')
+        .update({
+          parent_id: parentUserId || null,
+          display_order: Number(userDisplayOrder) || 0
+        })
+        .eq('id', targetOrgUser.id);
+
+      if (error) throw error;
+
+      alert(`${targetOrgUser.name} 님의 조직도 위치 정보가 성공적으로 수정되었습니다.`);
+      setIsOrgEditModalOpen(false);
+      fetchUsers();
+    } catch (err: any) {
+      console.error('조직도 구조 변경 실패:', err);
+      alert('조직도 수정 실패: ' + (err.message || '알 수 없는 오류'));
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -664,7 +688,8 @@ export default function HRManagement({
         career_start_date: formData.career_start_date || null,
         is_retired: isRetired,
         resignation_date: isRetired ? (formData.resignation_date || new Date().toISOString().split('T')[0]) : null,
-        returned_items: isRetired ? formData.returned_items : null
+        returned_items: isRetired ? formData.returned_items : null,
+        ...(isRetired ? { parent_id: null } : {}) // 퇴사 시 상사 연결 해제
       };
 
       if (formData.birthDate) {
@@ -927,7 +952,7 @@ export default function HRManagement({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-1.5 font-bold text-[#64748B]">
               <Layers className="h-3.5 w-3.5 text-[#243B5A]" />
-              <span>조직도 (노드 내 ✏️ 수정 / 🗑️ 삭제 가능)</span>
+              <span>조직도 (노드 내 🌿 상시/순서 변경 / ✏️ 수정 / 🗑️ 삭제 가능 - 퇴사자 자동 제외)</span>
             </div>
             
             <div className="flex items-center space-x-2">
@@ -1289,6 +1314,71 @@ export default function HRManagement({
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* 조직도 구조 직접 수정 모달 */}
+      {isOrgEditModalOpen && targetOrgUser && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-sm w-full p-4 shadow-xl space-y-3 text-[#1F2937]">
+            <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
+              <h3 className="font-bold text-xs text-[#1F2937] flex items-center gap-1.5">
+                <FolderTree className="h-4 w-4 text-[#243B5A]" />
+                [{targetOrgUser.name}] 조직도 위치 변경
+              </h3>
+              <button onClick={() => setIsOrgEditModalOpen(false)} className="text-[#64748B] hover:text-[#1F2937] p-1">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-bold text-[#64748B] mb-1">직속 상사 선택 (부모 노드)</label>
+                <select
+                  value={parentUserId}
+                  onChange={(e) => setParentUserId(e.target.value)}
+                  className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
+                >
+                  <option value="">기본 (파트 그룹 자동 배치)</option>
+                  {users
+                    .filter(u => u.id !== targetOrgUser.id && !u.is_retired && u.department !== '퇴사자')
+                    .map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.department} · {u.position} {u.job_title})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block font-bold text-[#64748B] mb-1">동일 그룹 내 정렬 순서 (숫자가 낮을수록 앞)</label>
+                <input
+                  type="number"
+                  value={userDisplayOrder}
+                  onChange={(e) => setUserDisplayOrder(parseInt(e.target.value, 10) || 0)}
+                  className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-[#E2E5E9]">
+              <button
+                type="button"
+                onClick={() => setIsOrgEditModalOpen(false)}
+                className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] rounded-lg text-xs text-[#1F2937]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveOrgStructure}
+                className="px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition"
+              >
+                <Check className="h-3.5 w-3.5" />
+                <span>적용</span>
+              </button>
+            </div>
           </div>
         </div>
       )}
