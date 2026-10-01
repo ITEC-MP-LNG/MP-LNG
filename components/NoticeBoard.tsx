@@ -13,10 +13,8 @@ import {
   CheckCircle2,
   Lightbulb,
   MessageSquare,
-  EyeOff,
   Send,
   User,
-  ShieldAlert,
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -55,14 +53,6 @@ interface SuggestionComment {
   created_at: string;
 }
 
-interface AnonymousPostItem {
-  id: string;
-  title: string;
-  content: string;
-  author_id: string;
-  created_at: string;
-}
-
 const formatDate = (dateString: string) => {
   if (!dateString) return '';
 
@@ -98,11 +88,6 @@ export default function NoticeBoard({
   const [comments, setComments] = useState<SuggestionComment[]>([]);
   const [newComment, setNewComment] = useState('');
 
-  // 익명게시판 관련 상태
-  const [anonymousPosts, setAnonymousPosts] = useState<AnonymousPostItem[]>([]);
-  const [selectedAnonymousPost, setSelectedAnonymousPost] = useState<AnonymousPostItem | null>(null);
-  const [showAnonymousModal, setShowAnonymousModal] = useState(false);
-
   // 공통 폼 상태
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -112,7 +97,7 @@ export default function NoticeBoard({
   const [showDeleteConfirmModal, setShowDeleteConfirmModal] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: string | number;
-    type: 'notice' | 'suggestion' | 'anonymous' | 'comment';
+    type: 'notice' | 'suggestion' | 'comment';
   } | null>(null);
 
   // 알림 모달 상태
@@ -250,28 +235,11 @@ export default function NoticeBoard({
     }
   };
 
-  const fetchAnonymousPosts = async () => {
-    if (!isAdmin) return;
-    try {
-      const { data, error } = await supabase
-        .from('anonymous_posts')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setAnonymousPosts(data || []);
-    } catch (err: any) {
-      console.error('익명게시판 불러오기 실패:', err);
-      showAlert('불러오기 실패', '익명 게시글을 불러오지 못했습니다.', 'error');
-    }
-  };
-
   const fetchAllData = async () => {
     setLoading(true);
     await Promise.all([
       fetchNotices(),
       fetchSuggestions(),
-      isAdmin ? fetchAnonymousPosts() : Promise.resolve(),
     ]);
     setLoading(false);
   };
@@ -371,16 +339,10 @@ export default function NoticeBoard({
     setShowSuggestionModal(true);
   };
 
-  const handleOpenAnonymousCreate = () => {
-    setTitle('');
-    setContent('');
-    setShowAnonymousModal(true);
-  };
-
   // --- 삭제 모달 핸들러 ---
   const handleDeleteClick = (
     id: string | number,
-    type: 'notice' | 'suggestion' | 'anonymous' | 'comment',
+    type: 'notice' | 'suggestion' | 'comment',
     e?: React.MouseEvent,
     itemAuthorId?: string
   ) => {
@@ -393,10 +355,6 @@ export default function NoticeBoard({
     }
     if (type === 'suggestion' && !isAdmin && itemAuthorId !== userId) {
       showAlert('권한 없음', '작성자와 관리자만 삭제할 수 있습니다.', 'error');
-      return;
-    }
-    if (type === 'anonymous' && !isAdmin) {
-      showAlert('권한 없음', '관리자 계정만 삭제할 수 있습니다.', 'error');
       return;
     }
     if (type === 'comment' && !isAdmin && itemAuthorId !== userId) {
@@ -424,11 +382,6 @@ export default function NoticeBoard({
         if (error) throw error;
         if (selectedSuggestion?.id === id) setSelectedSuggestion(null);
         showAlert('삭제 완료', '개선/건의사항이 삭제되었습니다.', 'success', fetchSuggestions);
-      } else if (type === 'anonymous') {
-        const { error } = await supabase.from('anonymous_posts').delete().eq('id', id);
-        if (error) throw error;
-        if (selectedAnonymousPost?.id === id) setSelectedAnonymousPost(null);
-        showAlert('삭제 완료', '익명 게시글이 삭제되었습니다.', 'success', fetchAnonymousPosts);
       } else if (type === 'comment') {
         const { error } = await supabase.from('suggestion_comments').delete().eq('id', id);
         if (error) throw error;
@@ -517,33 +470,6 @@ export default function NoticeBoard({
     }
   };
 
-  const handleAnonymousSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim() || !content.trim()) {
-      showAlert('입력 확인', '제목과 내용을 모두 입력해주세요.', 'info');
-      return;
-    }
-
-    try {
-      const userId = getCurrentUserId();
-      const { error } = await supabase.from('anonymous_posts').insert([
-        {
-          title: title.trim(),
-          content: content.trim(),
-          author_id: userId,
-          created_at: new Date().toISOString(),
-        },
-      ]);
-
-      if (error) throw error;
-      showAlert('등록 완료', '익명 글이 등록되었습니다.', 'success');
-      setShowAnonymousModal(false);
-      if (isAdmin) fetchAnonymousPosts();
-    } catch (err: any) {
-      showAlert('저장 실패', '익명 글 저장 실패: ' + (err?.message || ''), 'error');
-    }
-  };
-
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) {
@@ -587,7 +513,7 @@ export default function NoticeBoard({
             <div>
               <h1 className="text-base font-bold text-[#1F2937]">소통 게시판</h1>
               <p className="text-xs text-[#64748B]">
-                사내 주요 공지, 개선/건의 및 익명 의견을 통합 관리하는 게시판입니다.
+                사내 주요 공지 및 개선/건의 의견을 통합 관리하는 게시판입니다.
               </p>
             </div>
           </div>
@@ -624,13 +550,6 @@ export default function NoticeBoard({
           >
             <Plus className="h-4 w-4" />
             <span>건의사항 작성</span>
-          </button>
-          <button
-            onClick={handleOpenAnonymousCreate}
-            className="flex items-center justify-center space-x-1 bg-[#243B5A] text-white px-3 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs cursor-pointer shrink-0"
-          >
-            <Plus className="h-4 w-4" />
-            <span>익명글 작성</span>
           </button>
         </div>
       </div>
@@ -785,65 +704,6 @@ export default function NoticeBoard({
           </div>
         )}
       </div>
-
-      {/* ---------------- 3. 익명 게시판 섹션 (관리자 전용 열람) ---------------- */}
-      {isAdmin && (
-        <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-xs overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#E2E5E9] bg-[#F5F6F8] flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <EyeOff className="h-4 w-4 text-[#243B5A]" />
-              <span className="text-xs font-bold text-[#1F2937]">익명 게시판 목록 (관리자 전용 열람)</span>
-              <span className="text-[10px] text-[#64748B]">총 {anonymousPosts.length}건</span>
-            </div>
-            <span className="text-[10px] font-semibold text-[#243B5A] bg-[#243B5A]/10 px-2 py-0.5 rounded border border-[#243B5A]/20">
-              작성자 숨김 처리됨
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="py-8 text-center text-xs text-[#64748B]">익명 게시글을 불러오는 중...</div>
-          ) : anonymousPosts.length === 0 ? (
-            <div className="py-10 text-center">
-              <EyeOff className="h-7 w-7 mx-auto mb-2 text-[#CBD5E1]" />
-              <p className="text-xs text-[#64748B]">등록된 익명 글이 없습니다.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-[#E2E5E9]">
-              {anonymousPosts.map((post) => (
-                <div
-                  key={post.id}
-                  onClick={() => setSelectedAnonymousPost(post)}
-                  className="px-4 py-3.5 hover:bg-[#F8FAFC] cursor-pointer transition"
-                >
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5 shrink-0 p-2 rounded-lg bg-[#F5F6F8] text-[#243B5A]">
-                      <EyeOff className="h-3.5 w-3.5" />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate mb-1">{post.title}</h3>
-                      <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
-                        <span className="font-semibold text-gray-500">작성자: 익명</span>
-                        <span>{formatDate(post.created_at)}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1 shrink-0">
-                      <button
-                        onClick={(e) => handleDeleteClick(post.id, 'anonymous', e)}
-                        className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg cursor-pointer"
-                        title="삭제 (관리자)"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ---------------- 모달 1: 공지 상세보기 ---------------- */}
       {selectedNotice && (
@@ -1020,63 +880,6 @@ export default function NoticeBoard({
         </div>
       )}
 
-      {/* ---------------- 모달 3: 익명글 상세보기 (관리자 전용) ---------------- */}
-      {selectedAnonymousPost && isAdmin && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full shadow-xl relative text-[#1F2937] overflow-hidden">
-            <div className="p-5">
-              <button
-                onClick={() => setSelectedAnonymousPost(null)}
-                className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-
-              <div className="flex items-center gap-2 mb-2">
-                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-gray-100 border border-gray-300 text-gray-700 font-bold">
-                  <EyeOff className="h-3 w-3" />
-                  익명 제보
-                </span>
-              </div>
-
-              <h2 className="text-sm sm:text-base font-bold text-[#1F2937] pr-6 mb-2">
-                {selectedAnonymousPost.title}
-              </h2>
-
-              <div className="flex items-center gap-3 text-[10px] text-[#64748B] pb-3 border-b border-[#E2E5E9]">
-                <span className="font-bold text-gray-500">작성자: 익명 (숨김 처리)</span>
-                <span className="flex items-center gap-1">
-                  <Calendar className="h-3 w-3" />
-                  {formatDate(selectedAnonymousPost.created_at)}
-                </span>
-              </div>
-
-              <div className="py-5 text-xs sm:text-sm text-[#1F2937] whitespace-pre-wrap leading-6 min-h-[120px]">
-                {selectedAnonymousPost.content}
-              </div>
-
-              <div className="flex justify-between items-center pt-3 border-t border-[#E2E5E9]">
-                <button
-                  type="button"
-                  onClick={() => handleDeleteClick(selectedAnonymousPost.id, 'anonymous')}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[#DC2626] bg-red-50 hover:bg-red-100 border border-red-200 cursor-pointer"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  삭제
-                </button>
-
-                <button
-                  onClick={() => setSelectedAnonymousPost(null)}
-                  className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer"
-                >
-                  닫기
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ---------------- 작성/수정 모달: 공지사항 ---------------- */}
       {showNoticeModal && isAdmin && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
@@ -1226,74 +1029,6 @@ export default function NoticeBoard({
                   className="px-3 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer"
                 >
                   {editingSuggestion ? '수정 완료' : '등록하기'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ---------------- 작성 모달: 익명 게시판 ---------------- */}
-      {showAnonymousModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full p-5 shadow-xl relative text-[#1F2937]">
-            <button
-              onClick={() => setShowAnonymousModal(false)}
-              className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
-            >
-              <X className="h-4 w-4" />
-            </button>
-
-            <div className="flex items-center gap-2 mb-4">
-              <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#243B5A]">
-                <EyeOff className="h-4 w-4" />
-              </div>
-              <h2 className="text-sm font-bold">익명 의견 작성</h2>
-            </div>
-
-            <form onSubmit={handleAnonymousSubmit} className="space-y-3">
-              <div className="p-2.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg flex items-center gap-2 text-[11px] text-[#243B5A]">
-                <ShieldAlert className="h-4 w-4 shrink-0" />
-                <span>작성된 글은 익명으로 안전하게 처리되며 관리자 계정만 열람할 수 있습니다.</span>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-[#64748B] mb-1 text-xs">제목</label>
-                <input
-                  type="text"
-                  required
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2.5 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
-                  placeholder="제목을 입력해 주세요."
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-[#64748B] mb-1 text-xs">내용</label>
-                <textarea
-                  required
-                  value={content}
-                  onChange={(e) => setContent(e.target.value)}
-                  rows={8}
-                  className="w-full bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2.5 text-xs text-[#1F2937] resize-none focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
-                  placeholder="익명으로 전달하고 싶은 의견을 입력해 주세요."
-                />
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t border-[#E2E5E9]">
-                <button
-                  type="button"
-                  onClick={() => setShowAnonymousModal(false)}
-                  className="px-3 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] rounded-lg text-xs cursor-pointer"
-                >
-                  취소
-                </button>
-                <button
-                  type="submit"
-                  className="px-3 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer"
-                >
-                  익명으로 등록
                 </button>
               </div>
             </form>
