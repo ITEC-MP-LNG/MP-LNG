@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
+import * as XLSX from 'xlsx';
 import {
   Anchor,
   Search,
@@ -128,7 +129,7 @@ export interface ShipItem {
   dock: string;               // 호선위치
   launch_date?: string | null;       // 진수일
   pt_mount_date?: string | null;     // P/T 탑재일
-  dwt?: string;               // DWT (일자/텍스트 자유 형식)
+  dwt?: string | null;         // DWT 일자 (YYYY-MM-DD)
   status: ShipStatus;         // 진행단계현황
   progress: number | null;    // 산출 공정률
   delivery_date: string | null;      // 인도예정일
@@ -434,40 +435,118 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const currentStatusShip = ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
 
   // =========================================================================
-  // Status 엑셀 다운로드 함수
+  // Status 탱크별 공정 일자 종합 비교표 엑셀 다운로드
   // =========================================================================
-  const handleDownloadExcel = () => {
-    if (!currentStatusShip) return;
-    
-    let csvContent = "\uFEFF";
-    csvContent += `Ship No,${currentStatusShip.ship_no}\n`;
-    csvContent += `Ship Name,${currentStatusShip.ship_name}\n`;
-    csvContent += `Dock,${currentStatusShip.dock}\n`;
-    csvContent += `DWT,${currentStatusShip.dwt || ''}\n`;
-    csvContent += `Launch Date,${currentStatusShip.launch_date || ''}\n`;
-    csvContent += `Delivery Date,${currentStatusShip.delivery_date || ''}\n\n`;
-    
-    csvContent += "Tank,Step,Status,Date/Period,Ref Value/Value,Final Value,Text\n";
-    TANKS.forEach(tk => {
-      const tankDetail = currentStatusShip.tank_status?.[tk] || getDefaultTankStatus()[tk];
-      TANK_STEPS.forEach(st => {
-        const stepInfo = tankDetail[st.key] || { status: '대기' };
-        let dateDisplay = stepInfo.date || '';
-        if (st.key === 'pbgt') {
-          dateDisplay = `${stepInfo.startDate || ''} ~ ${stepInfo.endDate || ''}`;
-        }
-        csvContent += `${tk},${st.label},${stepInfo.status},${dateDisplay},${stepInfo.value || ''},${stepInfo.finalValue || ''},${stepInfo.text || ''}\n`;
-      });
-    });
+  const handleDownloadExcel = async () => {
+    if (!currentStatusShip) {
+      showAlert('다운로드 안내', '선택된 호선이 없습니다.', 'warning');
+      return;
+    }
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `Ship_${currentStatusShip.ship_no}_Status.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const ship = currentStatusShip;
+
+      // 종합 비교표를 Excel 표 형태로 구성
+      const rows: (string | number)[][] = [
+        ['Ship No.', ship.ship_no],
+        ['선종 및 프로젝트명', ship.ship_name],
+        ['선주사', ship.shipowner || ''],
+        ['호선 위치', ship.dock || ''],
+        ['DWT', ship.dwt || ''],
+        ['진수일', ship.launch_date || ''],
+        ['인도예정일', ship.delivery_date || ''],
+        [],
+        ['검사 / 시험 공정', ...TANKS],
+      ];
+
+      TANK_STEPS.forEach((step) => {
+        const row: (string | number)[] = [step.label];
+
+        TANKS.forEach((tkKey) => {
+          const stepInfo = ship.tank_status?.[tkKey]?.[step.key] || { status: '대기' };
+
+          let dateText = '';
+          if (step.key === 'pbgt') {
+            dateText = stepInfo.startDate || stepInfo.endDate
+              ? `${stepInfo.startDate || '-'} ~ ${stepInfo.endDate || '-'}`
+              : '';
+          } else {
+            dateText = stepInfo.date || '';
+          }
+
+          const statusText = stepInfo.status || '대기';
+
+          let cellText = statusText;
+          if (dateText) cellText += `\n${dateText}`;
+
+          if (step.key === 'pbgt') {
+            if (stepInfo.value) cellText += `\nRef: ${stepInfo.value}`;
+            if (stepInfo.finalValue) cellText += `\nFinal: ${stepInfo.finalValue}`;
+          } else if (stepInfo.value) {
+            cellText += `\n${stepInfo.value}`;
+          }
+
+          if (step.key === 'nh3' && stepInfo.text) {
+            cellText += `\n비고: ${stepInfo.text}`;
+          }
+
+          row.push(cellText);
+        });
+
+        rows.push(row);
+      });
+
+      const worksheet = XLSX.utils.aoa_to_sheet(rows);
+
+      // 표가 읽기 쉽도록 열 너비 설정
+      worksheet['!cols'] = [
+        { wch: 22 },
+        { wch: 24 },
+        { wch: 24 },
+        { wch: 24 },
+        { wch: 24 },
+      ];
+
+      // 비교표 영역에 자동 필터 및 고정 행 설정
+      worksheet['!autofilter'] = { ref: 'A9:E16' };
+      worksheet['!freeze'] = { xSplit: 1, ySplit: 9 };
+
+      // 기본 셀 스타일 적용
+      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:E16');
+      for (let r = range.s.r; r <= range.e.r; r++) {
+        for (let c = range.s.c; c <= range.e.c; c++) {
+          const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
+          if (!cell) continue;
+
+          cell.s = {
+            alignment: {
+              vertical: 'center',
+              wrapText: true,
+              horizontal: c === 0 ? 'left' : 'center',
+            },
+            font: {
+              name: '맑은 고딕',
+              sz: 10,
+              bold: r === 8 || c === 0,
+            },
+          };
+        }
+      }
+
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, '공정일자 종합비교표');
+
+      const safeShipNo = ship.ship_no.replace(/[\\/:*?"<>|]/g, '_');
+      XLSX.writeFile(
+        workbook,
+        `Ship_${safeShipNo}_탱크별_공정일자_종합비교표.xlsx`
+      );
+
+      showAlert('다운로드 완료', '탱크별 공정 일자 종합 비교표를 Excel 파일로 다운로드했습니다.', 'success');
+    } catch (e: any) {
+      console.error('Excel 다운로드 실패:', e);
+      showAlert('다운로드 실패', 'Excel 파일 생성 중 오류가 발생했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
+    }
   };
 
   // =========================================================================
@@ -1200,6 +1279,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             onClick={() => handleMoveSubTab(index, 'left')}
                             className="p-0.5 text-slate-400 hover:text-[#243B5A] disabled:opacity-20 cursor-pointer"
                             title="왼쪽으로 이동"
+                            aria-label="왼쪽으로 이동"
                           >
                             <ArrowLeft className="h-3 w-3" />
                           </button>
@@ -1221,12 +1301,44 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       </button>
 
                       {isAdmin && (
+                        <div className="flex items-center gap-0.5 ml-0.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenStatusEditModal(ship);
+                            }}
+                            className="flex items-center gap-0.5 px-1.5 py-1 text-[#64748B] hover:text-[#243B5A] hover:bg-slate-100 rounded-md transition cursor-pointer whitespace-nowrap"
+                            title="Ship 위치 및 정보 수정"
+                            aria-label={`Ship ${ship.ship_no} 위치 및 정보 수정`}
+                          >
+                            <Edit3 className="h-3 w-3" />
+                            <span className="text-[10px] font-semibold">수정</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleRequestDeleteStatusShip(ship);
+                            }}
+                            className="flex items-center gap-0.5 px-1.5 py-1 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-md transition cursor-pointer whitespace-nowrap"
+                            title="Ship 삭제"
+                            aria-label={`Ship ${ship.ship_no} 삭제`}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span className="text-[10px] font-semibold">삭제</span>
+                          </button>
+                        </div>
+                      )}
+
+                      {isAdmin && (
                         <div className="flex flex-col gap-0.5 ml-0.5">
                           <button
                             disabled={index === ships.length - 1}
                             onClick={() => handleMoveSubTab(index, 'right')}
                             className="p-0.5 text-slate-400 hover:text-[#243B5A] disabled:opacity-20 cursor-pointer"
                             title="오른쪽으로 이동"
+                            aria-label="오른쪽으로 이동"
                           >
                             <ArrowRight className="h-3 w-3" />
                           </button>
@@ -1696,7 +1808,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 4. 호선 정보 탭 전용: 등록 및 수정 모달 (DWT 일자/자유 형식) */}
+      {/* 4. 호선 정보 탭 전용: 등록 및 수정 모달 (DWT 일자) */}
       {/* ============================================================== */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
@@ -1774,8 +1886,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     DWT 
                   </label>
                   <input
-                    type="text"
-                    placeholder="예: 2026-10-15 또는 95,000 DWT"
+                    type="date"
                     value={formData.dwt || ''}
                     onChange={(e) => setFormData({ ...formData, dwt: e.target.value })}
                     className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -2022,8 +2133,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       DWT 
                     </label>
                     <input
-                      type="text"
-                      placeholder="예: 2026-10-15"
+                      type="date"
                       value={statusCreateFormData.dwt || ''}
                       onChange={(e) => setStatusCreateFormData({ ...statusCreateFormData, dwt: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -2457,8 +2567,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       DWT 
                     </label>
                     <input
-                      type="text"
-                      placeholder="예: 2026-10-15"
+                      type="date"
                       value={statusEditFormData.dwt || ''}
                       onChange={(e) => setStatusEditFormData({ ...statusEditFormData, dwt: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
