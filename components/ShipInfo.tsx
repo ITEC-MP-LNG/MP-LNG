@@ -936,7 +936,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </div>
               <div>
                 <h2 className="text-sm font-bold text-[#1F2937]">호선 목록 및 제원 현황</h2>
-                <p className="text-[11px] text-[#64748B]">선종, 선주사, 건조위치 및 주요 탑재/인도 일정 관리</p>
+                <p className="text-[11px] text-[#64748B]">선종, 선주사, 호선위치 및 주요 탑재/인도 일정 관리</p>
               </div>
             </div>
 
@@ -1164,7 +1164,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <h3 className="text-xs font-bold text-[#1F2937] flex items-center gap-1.5">
                     Ship No. 선택 서브탭
                   </h3>
-                  <p className="text-[11px] text-[#64748B]">호선을 선택하여 TK1~TK4의 7대 공정 및 상세 데이터를 관리합니다. (◀ ▶ 로 순서 이동 가능)</p>
+                  <p className="text-[11px] text-[#64748B]">호선을 선택하여 TK1~TK4 공정 및 상세 데이터를 관리합니다. </p>
                 </div>
               </div>
 
@@ -1759,7 +1759,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                    호선 위치 (도크)
+                    호선 위치(도크)
                   </label>
                   <input
                     type="text"
@@ -1771,7 +1771,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                    DWT (일자/자유 형식 입력 가능)
+                    DWT 
                   </label>
                   <input
                     type="text"
@@ -2019,7 +2019,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                      DWT (일자/자유 형식)
+                      DWT 
                     </label>
                     <input
                       type="text"
@@ -2454,7 +2454,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
-                      DWT (일자/자유 형식)
+                      DWT 
                     </label>
                     <input
                       type="text"
@@ -2525,7 +2525,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 <div className="bg-slate-50/80 p-3 rounded-xl border border-[#E2E5E9] space-y-2">
                   <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-1.5">
                     <span className="text-xs font-bold text-[#1F2937]">
-                      [{statusModalTankTab}] 7대 검사 공정 항목
+                      [{statusModalTankTab}] 검사 공정 항목
                     </span>
                   </div>
 
@@ -2716,7 +2716,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                               </span>
                               <input
                                 type="text"
-                                placeholder="NH3 특이사항 텍스트 입력"
+                                placeholder="NH3 Leak 위치 입력"
                                 value={currentStepData.text || ''}
                                 onChange={(e) => {
                                   const newText = e.target.value;
