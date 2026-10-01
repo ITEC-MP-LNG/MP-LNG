@@ -99,7 +99,7 @@ export default function NoticeBoard({
   const [editingSuggestion, setEditingSuggestion] = useState<SuggestionItem | null>(null);
   const [comments, setComments] = useState<SuggestionComment[]>([]);
   const [newComment, setNewComment] = useState('');
-  const [commentSuccessMessage, setCommentSuccessMessage] = useState(''); // 댓글 작성 성공 녹색 메시지 상태
+  const [newlyAddedCommentId, setNewlyAddedCommentId] = useState<string | null>(null);
 
   // 익명게시판 관련 상태
   const [anonymousPosts, setAnonymousPosts] = useState<AnonymousPostItem[]>([]);
@@ -524,6 +524,7 @@ export default function NoticeBoard({
       if (error) throw error;
       showAlert('등록 완료', '익명 글이 등록되었습니다.', 'success');
       setShowAnonymousModal(false);
+      if (isAdmin) fetchAnonymousPosts();
     } catch (err: any) {
       showAlert('저장 실패', '익명 글 저장 실패: ' + (err?.message || ''), 'error');
     }
@@ -538,24 +539,31 @@ export default function NoticeBoard({
     if (!newComment.trim() || !selectedSuggestion) return;
 
     try {
-      const { error } = await supabase.from('suggestion_comments').insert([
-        {
-          suggestion_id: selectedSuggestion.id,
-          author_id: getCurrentUserId(),
-          author_name: currentUser?.name || '관리자',
-          content: newComment.trim(),
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      const { data, error } = await supabase
+        .from('suggestion_comments')
+        .insert([
+          {
+            suggestion_id: selectedSuggestion.id,
+            author_id: getCurrentUserId(),
+            author_name: currentUser?.name || '관리자',
+            content: newComment.trim(),
+            created_at: new Date().toISOString(),
+          },
+        ])
+        .select('*');
 
       if (error) throw error;
       setNewComment('');
-      setCommentSuccessMessage('댓글 등록.');
-      fetchComments(selectedSuggestion.id);
 
-      setTimeout(() => {
-        setCommentSuccessMessage('');
-      }, 3000);
+      if (data && data.length > 0) {
+        const commentId = data[0].id;
+        setNewlyAddedCommentId(commentId);
+        setTimeout(() => {
+          setNewlyAddedCommentId(null);
+        }, 3000);
+      }
+
+      fetchComments(selectedSuggestion.id);
     } catch (err: any) {
       showAlert('댓글 저장 실패', err?.message || '댓글 저장에 실패했습니다.', 'error');
     }
@@ -767,7 +775,6 @@ export default function NoticeBoard({
                     key={item.id}
                     onClick={() => {
                       setSelectedSuggestion(item);
-                      setCommentSuccessMessage('');
                       fetchComments(item.id);
                     }}
                     className="px-4 py-3.5 hover:bg-[#F8FAFC] cursor-pointer transition"
@@ -779,6 +786,7 @@ export default function NoticeBoard({
 
                       <div className="flex-1 min-w-0">
                         <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate mb-1">{item.title}</h3>
+                        <p className="text-xs text-[#64748B] line-clamp-1 mb-1.5">{item.content}</p>
                         <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
                           <span>작성자: {item.author_name}</span>
                           <span>{formatDate(item.created_at)}</span>
@@ -1006,10 +1014,18 @@ export default function NoticeBoard({
                     comments.map((c) => (
                       <div key={c.id} className="bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9] space-y-1">
                         <div className="flex justify-between items-center text-[10px] text-[#64748B]">
-                          <span className="font-bold text-[#243B5A] flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            {c.author_name}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-[#243B5A] flex items-center gap-1">
+                              <User className="h-3 w-3" />
+                              {c.author_name}
+                            </span>
+                            {newlyAddedCommentId === c.id && (
+                              <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded">
+                                댓글 등록
+                              </span>
+                            )}
+                          </div>
+
                           <div className="flex items-center gap-2">
                             <span>{formatDate(c.created_at)}</span>
                             {isAdmin && (
@@ -1030,30 +1046,22 @@ export default function NoticeBoard({
 
                 {/* 관리자 작성 폼 */}
                 {isAdmin ? (
-                  <div className="space-y-1.5">
-                    {/* 댓글 등록 성공 녹색 메시지 */}
-                    {commentSuccessMessage && (
-                      <p className="text-xs font-bold text-green-600 dark:text-green-400 pl-0.5">
-                        {commentSuccessMessage}
-                      </p>
-                    )}
-                    <form onSubmit={handleCommentSubmit} className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newComment}
-                        onChange={(e) => setNewComment(e.target.value)}
-                        placeholder="답변 코멘트를 입력하세요..."
-                        className="flex-1 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
-                      />
-                      <button
-                        type="submit"
-                        className="px-3 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-semibold hover:bg-[#1d3049] transition cursor-pointer flex items-center gap-1 shrink-0"
-                      >
-                        <Send className="h-3 w-3" />
-                        <span>등록</span>
-                      </button>
-                    </form>
-                  </div>
+                  <form onSubmit={handleCommentSubmit} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      placeholder="답변 코멘트를 입력하세요..."
+                      className="flex-1 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
+                    />
+                    <button
+                      type="submit"
+                      className="px-3 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-semibold hover:bg-[#1d3049] transition cursor-pointer flex items-center gap-1 shrink-0"
+                    >
+                      <Send className="h-3 w-3" />
+                      <span>등록</span>
+                    </button>
+                  </form>
                 ) : (
                   <p className="text-[10px] text-[#64748B] text-center pt-1">
                     * 답변 작성을 위한 권한은 관리자 계정에게만 부여됩니다.
