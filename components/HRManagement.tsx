@@ -505,7 +505,7 @@ export default function HRManagement({
       setUsers(formatted);
     } catch (err: any) {
       console.error('인사 정보 조회 실패:', err?.message || err);
-    } finally {
+    } fontally {
       setLoading(false);
     }
   };
