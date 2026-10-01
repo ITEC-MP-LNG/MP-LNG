@@ -71,7 +71,7 @@ export default function LoginPage() {
       }
 
       // 퇴사자 여부 검증 (is_retired 컬럼 또는 status 컬럼 체크)
-      if (data.is_retired === true || data.status === '퇴사' || data.status === 'RETIRED') {
+      if (data.is_retired === true || data.status === '퇴사자' || data.status === 'RETIRED') {
         setAlertMessage('퇴사 처리된 계정입니다. 로그인할 수 없습니다.');
         return;
       }
