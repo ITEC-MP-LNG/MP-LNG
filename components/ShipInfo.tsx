@@ -129,7 +129,7 @@ export interface ShipItem {
   dock: string;               // 호선위치
   launch_date?: string | null;       // 진수일
   pt_mount_date?: string | null;     // P/T 탑재일
-  dwt?: string | null;         // DWT 일자 (YYYY-MM-DD)
+  dwt?: string | null;        // DWT 일자 (YYYY-MM-DD)
   status: ShipStatus;         // 진행단계현황
   progress: number | null;    // 산출 공정률
   delivery_date: string | null;      // 인도예정일
@@ -435,21 +435,21 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const currentStatusShip = ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
 
   // =========================================================================
-  // Status 탱크별 공정 일자 종합 비교표 엑셀 다운로드
+  // Status 탱크별 공정 일자 종합 비교표 XLSX 다운로드
   // =========================================================================
-  const handleDownloadExcel = async () => {
+  const handleDownloadExcel = () => {
     if (!currentStatusShip) {
-      showAlert('다운로드 안내', '선택된 호선이 없습니다.', 'warning');
+      showAlert('다운로드 불가', '현재 선택된 호선이 없습니다.', 'warning');
       return;
     }
 
     try {
       const ship = currentStatusShip;
 
-      // 종합 비교표를 Excel 표 형태로 구성
+      // 화면의 "탱크별 공정 일자 종합 비교표"와 동일한 구조로 Excel 표 생성
       const rows: (string | number)[][] = [
         ['Ship No.', ship.ship_no],
-        ['선종 및 프로젝트명', ship.ship_name],
+        ['호선명 / 프로젝트명', ship.ship_name || ''],
         ['선주사', ship.shipowner || ''],
         ['호선 위치', ship.dock || ''],
         ['DWT', ship.dwt || ''],
@@ -462,32 +462,27 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       TANK_STEPS.forEach((step) => {
         const row: (string | number)[] = [step.label];
 
-        TANKS.forEach((tkKey) => {
-          const stepInfo = ship.tank_status?.[tkKey]?.[step.key] || { status: '대기' };
+        TANKS.forEach((tk) => {
+          const stepInfo = ship.tank_status?.[tk]?.[step.key] || { status: '대기' };
 
-          let dateText = '';
-          if (step.key === 'pbgt') {
-            dateText = stepInfo.startDate || stepInfo.endDate
+          const dateText = step.key === 'pbgt'
+            ? (stepInfo.startDate || stepInfo.endDate
               ? `${stepInfo.startDate || '-'} ~ ${stepInfo.endDate || '-'}`
-              : '';
-          } else {
-            dateText = stepInfo.date || '';
-          }
+              : '일자 미입력')
+            : (stepInfo.date || '일자 미입력');
 
-          const statusText = stepInfo.status || '대기';
-
-          let cellText = statusText;
-          if (dateText) cellText += `\n${dateText}`;
+          let cellText = `상태: ${stepInfo.status || '대기'}\n일자: ${dateText}`;
 
           if (step.key === 'pbgt') {
-            if (stepInfo.value) cellText += `\nRef: ${stepInfo.value}`;
-            if (stepInfo.finalValue) cellText += `\nFinal: ${stepInfo.finalValue}`;
+            if (stepInfo.value || stepInfo.finalValue) {
+              cellText += `\nRef: ${stepInfo.value || '-'}\nFinal: ${stepInfo.finalValue || '-'}`;
+            }
           } else if (stepInfo.value) {
-            cellText += `\n${stepInfo.value}`;
+            cellText += `\n값: ${stepInfo.value}`;
           }
 
           if (step.key === 'nh3' && stepInfo.text) {
-            cellText += `\n비고: ${stepInfo.text}`;
+            cellText += `\nNH3 비고: ${stepInfo.text}`;
           }
 
           row.push(cellText);
@@ -498,54 +493,65 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
       const worksheet = XLSX.utils.aoa_to_sheet(rows);
 
-      // 표가 읽기 쉽도록 열 너비 설정
+      // 화면의 표와 같은 5열 구조 및 가독성 확보
       worksheet['!cols'] = [
         { wch: 22 },
-        { wch: 24 },
-        { wch: 24 },
-        { wch: 24 },
-        { wch: 24 },
+        { wch: 27 },
+        { wch: 27 },
+        { wch: 27 },
+        { wch: 27 },
       ];
 
-      // 비교표 영역에 자동 필터 및 고정 행 설정
-      worksheet['!autofilter'] = { ref: 'A9:E16' };
+      worksheet['!rows'] = rows.map((_, index) => ({
+        hpt: index >= 9 ? 55 : 20,
+      }));
+
       worksheet['!freeze'] = { xSplit: 1, ySplit: 9 };
 
-      // 기본 셀 스타일 적용
-      const range = XLSX.utils.decode_range(worksheet['!ref'] || 'A1:E16');
-      for (let r = range.s.r; r <= range.e.r; r++) {
-        for (let c = range.s.c; c <= range.e.c; c++) {
-          const cell = worksheet[XLSX.utils.encode_cell({ r, c })];
-          if (!cell) continue;
+      // 비교표 영역에 테두리/정렬 스타일 적용
+      const tableStartRow = 8;
+      const tableEndRow = 8 + TANK_STEPS.length;
+      for (let r = tableStartRow; r <= tableEndRow; r++) {
+        for (let c = 0; c <= TANKS.length; c++) {
+          const cellAddress = XLSX.utils.encode_cell({ r, c });
+          if (!worksheet[cellAddress]) continue;
 
-          cell.s = {
+          worksheet[cellAddress].s = {
             alignment: {
               vertical: 'center',
-              wrapText: true,
               horizontal: c === 0 ? 'left' : 'center',
+              wrapText: true,
+            },
+            border: {
+              top: { style: 'thin' },
+              bottom: { style: 'thin' },
+              left: { style: 'thin' },
+              right: { style: 'thin' },
             },
             font: {
-              name: '맑은 고딕',
-              sz: 10,
-              bold: r === 8 || c === 0,
+              bold: r === tableStartRow || c === 0,
             },
           };
         }
       }
 
+      worksheet['!autofilter'] = {
+        ref: `A${tableStartRow + 1}:E${tableEndRow + 1}`,
+      };
+
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, '공정일자 종합비교표');
 
-      const safeShipNo = ship.ship_no.replace(/[\\/:*?"<>|]/g, '_');
+      const safeShipNo = String(ship.ship_no || 'Unknown').replace(/[\\/:*?"<>|]/g, '_');
       XLSX.writeFile(
         workbook,
         `Ship_${safeShipNo}_탱크별_공정일자_종합비교표.xlsx`
       );
 
-      showAlert('다운로드 완료', '탱크별 공정 일자 종합 비교표를 Excel 파일로 다운로드했습니다.', 'success');
-    } catch (e: any) {
-      console.error('Excel 다운로드 실패:', e);
-      showAlert('다운로드 실패', 'Excel 파일 생성 중 오류가 발생했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
+      showAlert('다운로드 완료', '탱크별 공정 일자 종합 비교표를 XLSX 파일로 다운로드했습니다.', 'success');
+    } catch (error: any) {
+      console.error('XLSX 다운로드 실패:', error);
+      showAlert('다운로드 실패', `Excel 파일 생성 중 오류가 발생했습니다: ${error?.message || '알 수 없는 오류'}`, 'error');
     }
   };
 
@@ -603,6 +609,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         ...statusCreateFormData,
         launch_date: statusCreateFormData.launch_date || null,
         pt_mount_date: statusCreateFormData.pt_mount_date || null,
+        dwt: statusCreateFormData.dwt || null,
         delivery_date: statusCreateFormData.delivery_date || null,
       };
 
@@ -663,6 +670,29 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     setIsStatusEditModalOpen(true);
   };
 
+  // [수정 모달] 현재 호선의 서브탭 위치를 좌/우로 이동
+  const handleMoveShipFromEditModal = (direction: 'left' | 'right') => {
+    if (!isAdmin || !statusEditFormData.id) return;
+
+    const currentIndex = ships.findIndex((ship) => ship.id === statusEditFormData.id);
+    if (currentIndex < 0) return;
+
+    const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= ships.length) return;
+
+    const newShips = [...ships];
+    const currentShip = newShips[currentIndex];
+    newShips[currentIndex] = newShips[targetIndex];
+    newShips[targetIndex] = currentShip;
+    setShips(newShips);
+
+    showAlert(
+      '호선 위치 변경',
+      `[Ship #${currentShip.ship_no}] 호선의 화면상 위치를 ${direction === 'left' ? '왼쪽' : '오른쪽'}으로 이동했습니다.`,
+      'success'
+    );
+  };
+
   // [수정 처리] Status 수정 모달 저장
   const handleSaveStatusEditModal = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -675,7 +705,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         dock: statusEditFormData.dock,
         launch_date: statusEditFormData.launch_date || null,
         pt_mount_date: statusEditFormData.pt_mount_date || null,
-        dwt: statusEditFormData.dwt,
+        dwt: statusEditFormData.dwt || null,
         delivery_date: statusEditFormData.delivery_date || null,
         tank_status: statusEditFormData.tank_status,
       };
@@ -846,6 +876,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         ...formData,
         launch_date: formData.launch_date || null,
         pt_mount_date: formData.pt_mount_date || null,
+        dwt: formData.dwt || null,
         delivery_date: formData.delivery_date || null,
       };
 
@@ -1259,88 +1290,63 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               )}
             </div>
 
-            {/* 서브탭 목록 (Ship No 별 + 순서 이동 화살표) */}
+            {/* 서브탭 목록 (Ship No 별 / 행 클릭 선택 / 관리자 수정·삭제) */}
             {ships.length === 0 ? (
               <div className="text-xs text-[#64748B] py-4 text-center border-t border-[#E2E5E9]">
                 등록된 호선이 없습니다. 우측 상단의 [신규 Ship 등록] 버튼을 눌러 등록을 시작하세요.
               </div>
             ) : (
               <div className="flex items-center gap-2 overflow-x-auto pt-1 pb-1 scrollbar-thin">
-                {ships.map((ship, index) => {
+                {ships.map((ship) => {
                   const isSelected = (currentStatusShip?.ship_no === ship.ship_no);
                   const stats = calculateTankStats(ship.tank_status);
 
                   return (
-                    <div key={ship.id} className="flex items-center space-x-0.5 shrink-0">
-                      {isAdmin && (
-                        <div className="flex flex-col gap-0.5 mr-0.5">
-                          <button
-                            disabled={index === 0}
-                            onClick={() => handleMoveSubTab(index, 'left')}
-                            className="p-0.5 text-slate-400 hover:text-[#243B5A] disabled:opacity-20 cursor-pointer"
-                            title="왼쪽으로 이동"
-                            aria-label="왼쪽으로 이동"
-                          >
-                            <ArrowLeft className="h-3 w-3" />
-                          </button>
-                        </div>
-                      )}
-
-                      <button
-                        onClick={() => setSelectedHullNo(ship.ship_no)}
-                        className={`flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-mono font-semibold whitespace-nowrap transition cursor-pointer ${isSelected
-                            ? 'bg-[#243B5A] text-white shadow-2xs ring-2 ring-[#243B5A]/25'
-                            : 'bg-[#F5F6F8] hover:bg-slate-200 text-[#475569] border border-[#E2E5E9]'
-                          }`}
-                      >
-                        <span className="font-bold">Ship {ship.ship_no}</span>
-                        <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-sans font-bold ${isSelected ? 'bg-white/20 text-white' : 'bg-white text-emerald-700 border border-emerald-200'
-                          }`}>
+                    <div
+                      key={ship.id}
+                      onClick={() => setSelectedHullNo(ship.ship_no)}
+                      className={`flex items-center gap-1.5 shrink-0 px-2 py-1 rounded-lg border transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#243B5A]/5 border-[#243B5A]/40 ring-1 ring-[#243B5A]/20'
+                          : 'bg-white border-[#E2E5E9] hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                      title={`Ship #${ship.ship_no} 선택`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className={`font-bold text-xs font-mono whitespace-nowrap ${
+                          isSelected ? 'text-[#243B5A]' : 'text-[#475569]'
+                        }`}>
+                          Ship {ship.ship_no}
+                        </span>
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-sans font-bold whitespace-nowrap ${
+                          isSelected
+                            ? 'bg-[#243B5A] text-white'
+                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                        }`}>
                           {stats.completed}/{stats.total}
                         </span>
-                      </button>
+                      </div>
 
                       {isAdmin && (
-                        <div className="flex items-center gap-0.5 ml-0.5">
+                        <div
+                          className="flex items-center gap-1 ml-1 pl-1.5 border-l border-[#E2E5E9]"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenStatusEditModal(ship);
-                            }}
-                            className="flex items-center gap-0.5 px-1.5 py-1 text-[#64748B] hover:text-[#243B5A] hover:bg-slate-100 rounded-md transition cursor-pointer whitespace-nowrap"
-                            title="Ship 위치 및 정보 수정"
-                            aria-label={`Ship ${ship.ship_no} 위치 및 정보 수정`}
+                            onClick={() => handleOpenStatusEditModal(ship)}
+                            className="px-2 py-1 rounded-md text-[10px] font-bold text-[#243B5A] bg-white border border-[#CBD5E1] hover:bg-[#F1F5F9] cursor-pointer whitespace-nowrap"
+                            title="호선 수정 및 위치 이동"
                           >
-                            <Edit3 className="h-3 w-3" />
-                            <span className="text-[10px] font-semibold">수정</span>
+                            수정
                           </button>
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleRequestDeleteStatusShip(ship);
-                            }}
-                            className="flex items-center gap-0.5 px-1.5 py-1 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-md transition cursor-pointer whitespace-nowrap"
-                            title="Ship 삭제"
-                            aria-label={`Ship ${ship.ship_no} 삭제`}
+                            onClick={() => handleRequestDeleteStatusShip(ship)}
+                            className="px-2 py-1 rounded-md text-[10px] font-bold text-red-600 bg-white border border-red-200 hover:bg-red-50 cursor-pointer whitespace-nowrap"
+                            title="호선 삭제"
                           >
-                            <Trash2 className="h-3 w-3" />
-                            <span className="text-[10px] font-semibold">삭제</span>
-                          </button>
-                        </div>
-                      )}
-
-                      {isAdmin && (
-                        <div className="flex flex-col gap-0.5 ml-0.5">
-                          <button
-                            disabled={index === ships.length - 1}
-                            onClick={() => handleMoveSubTab(index, 'right')}
-                            className="p-0.5 text-slate-400 hover:text-[#243B5A] disabled:opacity-20 cursor-pointer"
-                            title="오른쪽으로 이동"
-                            aria-label="오른쪽으로 이동"
-                          >
-                            <ArrowRight className="h-3 w-3" />
+                            삭제
                           </button>
                         </div>
                       )}
@@ -1350,6 +1356,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
                 {isAdmin && (
                   <button
+                    type="button"
                     onClick={handleOpenStatusCreateModal}
                     className="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold border border-dashed border-[#243B5A] text-[#243B5A] hover:bg-[#243B5A]/5 whitespace-nowrap transition cursor-pointer ml-1"
                     title="신규 Ship 추가 등록"
@@ -1563,7 +1570,18 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     <Activity className="h-4 w-4 text-[#243B5A]" />
                     Ship #{currentStatusShip.ship_no} 탱크별 공정 일자 종합 비교표
                   </h4>
-                  <span className="text-[11px] text-[#64748B]">S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT</span>
+                  <div className="flex items-center gap-2">
+                    <span className="hidden md:inline text-[11px] text-[#64748B]">S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT</span>
+                    <button
+                      type="button"
+                      onClick={handleDownloadExcel}
+                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#243B5A] hover:bg-[#1d3049] text-white text-[11px] font-bold transition cursor-pointer whitespace-nowrap"
+                      title="탱크별 공정 일자 종합 비교표를 Excel 파일로 다운로드"
+                    >
+                      <span className="font-mono">XLSX</span>
+                      <span>다운로드</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="overflow-x-auto">
@@ -1808,7 +1826,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 4. 호선 정보 탭 전용: 등록 및 수정 모달 (DWT 일자) */}
+      {/* 4. 호선 정보 탭 전용: 등록 및 수정 모달 (DWT 일자/자유 형식) */}
       {/* ============================================================== */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
@@ -2497,6 +2515,33 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   Ship Status 정보 수정 (Ship #{statusEditFormData.ship_no})
                 </h3>
                 <p className="text-[11px] text-[#64748B]">선종, DWT 등 기본 제원과 TK1~TK4 탱크별 공정을 수정합니다.</p>
+              </div>
+              <div className="flex items-center gap-1 mr-2">
+                {(() => {
+                  const currentIndex = ships.findIndex((ship) => ship.id === statusEditFormData.id);
+                  return (
+                    <>
+                      <button
+                        type="button"
+                        disabled={currentIndex <= 0}
+                        onClick={() => handleMoveShipFromEditModal('left')}
+                        className="px-2 py-1.5 rounded-lg border border-[#CBD5E1] bg-white text-[#243B5A] hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold cursor-pointer"
+                        title="왼쪽 호선으로 위치 이동"
+                      >
+                        ◀
+                      </button>
+                      <button
+                        type="button"
+                        disabled={currentIndex < 0 || currentIndex >= ships.length - 1}
+                        onClick={() => handleMoveShipFromEditModal('right')}
+                        className="px-2 py-1.5 rounded-lg border border-[#CBD5E1] bg-white text-[#243B5A] hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold cursor-pointer"
+                        title="오른쪽 호선으로 위치 이동"
+                      >
+                        ▶
+                      </button>
+                    </>
+                  );
+                })()}
               </div>
               <button
                 onClick={() => setIsStatusEditModalOpen(false)}
