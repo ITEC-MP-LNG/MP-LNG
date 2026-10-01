@@ -395,7 +395,7 @@ export default function MaterialManagement({
   const handleSelectCabinSheet = (sheetName: string) => {
     setSelectedCabinSheet(sheetName);
     setSelectedCabinIds([]);
-    setSelectedItemSubCategory('전체');
+    setSelectedItemSubCategory('');
     setItemSubPage(1);
   };
 
@@ -460,9 +460,12 @@ export default function MaterialManagement({
 
   // 자재명 기준 2차 서브탭(기자재/소모성/CABIN) 상태
   const [itemSubCategoryRows, setItemSubCategoryRows] = useState<any[]>([]);
-  const [selectedItemSubCategory, setSelectedItemSubCategory] = useState<string>('전체');
+  const [selectedItemSubCategory, setSelectedItemSubCategory] = useState<string>('');
   const [itemSubPage, setItemSubPage] = useState<number>(1);
   const ITEMS_PER_PAGE = 10;
+  const [isItemSubCatModalOpen, setIsItemSubCatModalOpen] = useState<boolean>(false);
+  const [editingItemSubCatName, setEditingItemSubCatName] = useState<string | null>(null);
+  const [editItemSubCatInputValue, setEditItemSubCatInputValue] = useState<string>('');
 
   // 품목별 서브탭은 실제 등록된 자재명을 기준으로 자동 구성하고,
   // Supabase의 inventory_item_subcategories에서 순서를 유지합니다.
@@ -472,7 +475,7 @@ export default function MaterialManagement({
       try {
         const { data, error } = await supabase
           .from('inventory_item_subcategories')
-          .select('inventory_type, parent_category, name, sort_order')
+          .select('id, inventory_type, parent_category, name, sort_order, is_active')
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('name', { ascending: true });
         if (error) throw error;
@@ -532,18 +535,29 @@ export default function MaterialManagement({
         ? selectedConsumableCategory
         : selectedCabinSheet;
 
-    const savedNames = itemSubCategoryRows
+    const savedRows = itemSubCategoryRows
       .filter(row => row.inventory_type === type && row.parent_category === parentCategory)
       .sort((a, b) => {
         const aOrder = Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : Number.MAX_SAFE_INTEGER;
         const bOrder = Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : Number.MAX_SAFE_INTEGER;
         return aOrder - bOrder || String(a.name).localeCompare(String(b.name));
-      })
+      });
+
+    const hiddenNames = new Set(
+      savedRows
+        .filter(row => row.is_active === false)
+        .map(row => String(row.name))
+    );
+
+    const savedNames = savedRows
+      .filter(row => row.is_active !== false)
       .map(row => String(row.name));
 
     const ordered = [
       ...savedNames.filter(name => uniqueNames.includes(name)),
-      ...uniqueNames.filter(name => !savedNames.includes(name)).sort((a, b) => a.localeCompare(b, 'ko'))
+      ...uniqueNames
+        .filter(name => !savedNames.includes(name) && !hiddenNames.has(name))
+        .sort((a, b) => a.localeCompare(b, 'ko'))
     ];
 
     return ordered;
@@ -561,19 +575,138 @@ export default function MaterialManagement({
 
   useEffect(() => {
     if (currentItemSubCategoryOptions.length === 0) {
-      setSelectedItemSubCategory('전체');
+      setSelectedItemSubCategory('');
       setItemSubPage(1);
       return;
     }
 
-    if (
-      selectedItemSubCategory !== '전체' &&
-      !currentItemSubCategoryOptions.includes(selectedItemSubCategory)
-    ) {
-      setSelectedItemSubCategory('전체');
+    if (!currentItemSubCategoryOptions.includes(selectedItemSubCategory)) {
+      setSelectedItemSubCategory(currentItemSubCategoryOptions[0]);
     }
     setItemSubPage(1);
-  }, [currentItemSubCategoryOptions]);
+  }, [currentItemSubCategoryOptions, selectedItemSubCategory]);
+
+  const getCurrentItemSubCategoryContext = () => {
+    const parentCategory = inventoryTab === '고정'
+      ? selectedFixedSubCategory
+      : inventoryTab === '소모성'
+        ? selectedConsumableCategory
+        : selectedCabinSheet;
+
+    return { type: inventoryTab, parentCategory };
+  };
+
+  const handleRenameItemSubCategory = async (oldName: string) => {
+    if (!isAdmin) return alert('관리자만 자재명 카테고리를 수정할 수 있습니다.');
+
+    const newName = editItemSubCatInputValue.trim();
+    if (!newName) {
+      alert('새로운 카테고리 이름을 입력해주세요.');
+      return;
+    }
+    if (newName === oldName) {
+      setEditingItemSubCatName(null);
+      setEditItemSubCatInputValue('');
+      return;
+    }
+    if (currentItemSubCategoryOptions.includes(newName)) {
+      alert('이미 존재하는 자재명 카테고리입니다.');
+      return;
+    }
+
+    const { type, parentCategory } = getCurrentItemSubCategoryContext();
+
+    try {
+      const targetRow = itemSubCategoryRows.find(
+        row => row.inventory_type === type && row.parent_category === parentCategory && row.name === oldName
+      );
+
+      if (targetRow) {
+        const { error } = await supabase
+          .from('inventory_item_subcategories')
+          .update({ name: newName, is_active: true })
+          .eq('id', targetRow.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from('inventory_item_subcategories')
+          .insert([{ inventory_type: type, parent_category: parentCategory, name: newName, sort_order: 0, is_active: true }]);
+        if (error) throw error;
+      }
+
+      // 자재명 카테고리의 제목을 실제 자재명에도 동일하게 반영합니다.
+      if (type === 'CABIN') {
+        const matchingIds = cabinInventoryList
+          .filter(item => cleanSheetName(item.sheet_name) === parentCategory && String(item.item || '').trim() === oldName)
+          .map(item => item.id)
+          .filter(Boolean);
+        if (matchingIds.length > 0) {
+          const { error } = await supabase
+            .from('cabin_inventory')
+            .update({ item: newName })
+            .in('id', matchingIds);
+          if (error) throw error;
+        }
+      } else {
+        const { error } = await supabase
+          .from('inventory')
+          .update({ name: newName })
+          .eq('type', type)
+          .eq('category', parentCategory)
+          .eq('name', oldName);
+        if (error) throw error;
+      }
+
+      setItemSubCategoryRows(prev => prev.map(row =>
+        row.inventory_type === type && row.parent_category === parentCategory && row.name === oldName
+          ? { ...row, name: newName, is_active: true }
+          : row
+      ));
+      setSelectedItemSubCategory(newName);
+      setEditingItemSubCatName(null);
+      setEditItemSubCatInputValue('');
+      showCenterToast('자재명 카테고리가 수정되었습니다.');
+
+      if (type === 'CABIN') await fetchCabinInventory();
+      else await fetchInventory();
+    } catch (error: any) {
+      alert('자재명 카테고리 수정 실패: ' + (error?.message || '알 수 없는 오류'));
+    }
+  };
+
+  const handleDeleteItemSubCategory = async (name: string) => {
+    if (!isAdmin) return alert('관리자만 자재명 카테고리를 삭제할 수 있습니다.');
+    if (!confirm(`'${name}' 자재명 카테고리를 삭제하시겠습니까?\n\n※ 실제 자재 데이터는 삭제되지 않습니다.`)) return;
+
+    const { type, parentCategory } = getCurrentItemSubCategoryContext();
+
+    try {
+      const targetRow = itemSubCategoryRows.find(
+        row => row.inventory_type === type && row.parent_category === parentCategory && row.name === name
+      );
+
+      if (targetRow) {
+        const { error } = await supabase
+          .from('inventory_item_subcategories')
+          .update({ is_active: false })
+          .eq('id', targetRow.id);
+        if (error) throw error;
+      }
+
+      setItemSubCategoryRows(prev => prev.map(row =>
+        row.inventory_type === type && row.parent_category === parentCategory && row.name === name
+          ? { ...row, is_active: false }
+          : row
+      ));
+
+      const remaining = currentItemSubCategoryOptions.filter(option => option !== name);
+      setSelectedItemSubCategory(remaining[0] || '');
+      setItemSubPage(1);
+      showCenterToast('자재명 카테고리가 삭제되었습니다.');
+    } catch (error: any) {
+      alert('자재명 카테고리 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
+    }
+  };
 
   const [itemType, setItemType] = useState<MainTab>('고정');
   const [itemCode, setItemCode] = useState('');
@@ -1212,7 +1345,7 @@ export default function MaterialManagement({
     }
 
     if (
-      selectedItemSubCategory !== '전체' &&
+      selectedItemSubCategory &&
       currentItemSubCategoryOptions.includes(selectedItemSubCategory)
     ) {
       result = result.filter(item => {
@@ -1721,6 +1854,70 @@ export default function MaterialManagement({
         </div>
       )}
 
+      {isItemSubCatModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center">
+              <h3 className="text-sm font-bold">자재명 카테고리 수정 / 삭제</h3>
+              <button onClick={() => { setIsItemSubCatModalOpen(false); setEditingItemSubCatName(null); }}><X className="h-4 w-4" /></button>
+            </div>
+            <p className="text-[11px] text-[#64748B]">현재 선택된 상위 카테고리의 자재명 서브탭을 관리합니다.</p>
+            <div className="max-h-64 overflow-y-auto space-y-1.5 pt-2 border-t border-[#E2E5E9]">
+              {currentItemSubCategoryOptions.map((name) => (
+                <div key={name} className="flex items-center justify-between bg-[#F5F6F8] px-2 py-1.5 rounded text-xs gap-1">
+                  {editingItemSubCatName === name ? (
+                    <input
+                      type="text"
+                      value={editItemSubCatInputValue}
+                      onChange={e => setEditItemSubCatInputValue(e.target.value)}
+                      className="min-w-0 flex-1 px-1.5 py-0.5 border border-[#E2E5E9] rounded text-xs bg-white"
+                      autoFocus
+                    />
+                  ) : (
+                    <span className="font-medium text-[#1F2937] truncate min-w-0">{name}</span>
+                  )}
+                  <div className="flex items-center space-x-1 shrink-0">
+                    {editingItemSubCatName === name ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => handleRenameItemSubCategory(name)}
+                          className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px]"
+                        >
+                          저장
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingItemSubCatName(null); setEditItemSubCatInputValue(''); }}
+                          className="px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded text-[10px]"
+                        >
+                          취소
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => { setEditingItemSubCatName(name); setEditItemSubCatInputValue(name); }}
+                        className="px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded text-[10px]"
+                      >
+                        수정
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteItemSubCategory(name)}
+                      className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {isSubCatModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
@@ -1913,7 +2110,7 @@ export default function MaterialManagement({
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2">
         <div className="flex bg-[#E2E5E9]/60 p-1 rounded-lg border border-[#E2E5E9] w-full sm:w-auto">
           <button
-            onClick={() => { setInventoryTab('고정'); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
+            onClick={() => { setInventoryTab('고정'); setSelectedItemSubCategory(''); setItemSubPage(1); }}
             className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
               inventoryTab === '고정' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
@@ -1922,7 +2119,7 @@ export default function MaterialManagement({
             <span>기자재</span>
           </button>
           <button
-            onClick={() => { setInventoryTab('소모성'); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
+            onClick={() => { setInventoryTab('소모성'); setSelectedItemSubCategory(''); setItemSubPage(1); }}
             className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
               inventoryTab === '소모성' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
@@ -1931,7 +2128,7 @@ export default function MaterialManagement({
             <span>소모성 자재</span>
           </button>
           <button
-            onClick={() => { setInventoryTab('CABIN'); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
+            onClick={() => { setInventoryTab('CABIN'); setSelectedItemSubCategory(''); setItemSubPage(1); }}
             className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
               inventoryTab === 'CABIN' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
@@ -1982,7 +2179,7 @@ export default function MaterialManagement({
 
           <div className="flex items-center space-x-1 shrink-0">
             <button
-              onClick={() => { setCabinCalibrationOnly(!cabinCalibrationOnly); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
+              onClick={() => { setCabinCalibrationOnly(!cabinCalibrationOnly); setSelectedItemSubCategory(''); setItemSubPage(1); }}
               className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1 ${
                 cabinCalibrationOnly 
                   ? 'bg-amber-600 text-white shadow-2xs' 
@@ -2019,7 +2216,7 @@ export default function MaterialManagement({
                   key={cat}
                   onClick={() => {
                     setCurrentSelectedCategory(cat);
-                    setSelectedItemSubCategory('전체');
+                    setSelectedItemSubCategory('');
                     setItemSubPage(1);
                     if (cat === 'VBT') setSelectedVbtSubCategory('1L');
                   }}
@@ -2064,7 +2261,7 @@ export default function MaterialManagement({
               return (
                 <button
                   key={tag}
-                  onClick={() => { setSelectedCabinTextSubTag(tag); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
+                  onClick={() => { setSelectedCabinTextSubTag(tag); setSelectedItemSubCategory(''); setItemSubPage(1); }}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
                     isSelected
                       ? 'bg-slate-700 text-white font-semibold shadow-2xs'
@@ -2094,7 +2291,7 @@ export default function MaterialManagement({
           {(['1L', '1S', '2L', '2S', 'FLAT', '기타'] as VbtSubCategory[]).map((subCat) => (
             <button
               key={subCat}
-              onClick={() => { setSelectedVbtSubCategory(subCat); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
+              onClick={() => { setSelectedVbtSubCategory(subCat); setSelectedItemSubCategory(''); setItemSubPage(1); }}
               className={`flex-1 min-w-[42px] py-1 rounded-md text-[11px] font-semibold transition shrink-0 ${
                 selectedVbtSubCategory === subCat ? 'bg-slate-700 text-white shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B]'
               }`}
@@ -2115,16 +2312,6 @@ export default function MaterialManagement({
             className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
             style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
           >
-            <button
-              onClick={() => { setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
-                selectedItemSubCategory === '전체'
-                  ? 'bg-slate-700 text-white font-semibold shadow-2xs'
-                  : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
-              }`}
-            >
-              전체
-            </button>
             {currentItemSubCategoryOptions.map((name) => {
               const isSelected = selectedItemSubCategory === name;
               return (
@@ -2143,6 +2330,15 @@ export default function MaterialManagement({
               );
             })}
           </div>
+          {isAdmin && (
+            <button
+              onClick={() => { setEditingItemSubCatName(null); setEditItemSubCatInputValue(''); setIsItemSubCatModalOpen(true); }}
+              className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
+              title="자재명 카테고리 수정/삭제"
+            >
+              <Settings className="h-4 w-4 shrink-0" />
+            </button>
+          )}
         </div>
       )}
 
@@ -2151,8 +2347,8 @@ export default function MaterialManagement({
           <Package className="h-4 w-4 text-[#243B5A] shrink-0" />
           <span className="truncate">
             {inventoryTab === 'CABIN'
-              ? `종류 [${selectedCabinSheet}] > 항목 [${selectedCabinTextSubTag || '전체'}]${selectedItemSubCategory !== '전체' ? ` > ${selectedItemSubCategory}` : ''} 목록`
-              : `서브탭 [${currentActiveSubCatName}]${selectedItemSubCategory !== '전체' ? ` > ${selectedItemSubCategory}` : ''} 목록`}
+              ? `종류 [${selectedCabinSheet}] > 항목 [${selectedCabinTextSubTag || '전체'}]${selectedItemSubCategory ? ` > ${selectedItemSubCategory}` : ''} 목록`
+              : `서브탭 [${currentActiveSubCatName}]${selectedItemSubCategory ? ` > ${selectedItemSubCategory}` : ''} 목록`}
           </span>
           <span className="text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-0.5 rounded-full text-[#64748B] shrink-0">
             총 {filteredInventory.length}건
