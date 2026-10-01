@@ -23,7 +23,10 @@ import {
   Network, 
   GitCommit,
   FileText,
-  Shield
+  Shield,
+  UserX,
+  PackageCheck,
+  Calendar
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -46,7 +49,10 @@ export interface HRUser {
   career_start_date?: string;  
   password?: string;           
   pos_x?: number;              
-  pos_y?: number;              
+  pos_y?: number;     
+  is_retired?: boolean;
+  resignation_date?: string;
+  returned_items?: string;
 }
 
 interface HRManagementProps {
@@ -103,7 +109,7 @@ function calculateAge(birthStr?: string) {
   return isNaN(age) ? null : age;
 }
 
-const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
+const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀', '퇴사자'];
 
 const RANK_ORDER: Record<string, number> = {
   '책임': 1,
@@ -158,10 +164,12 @@ export default function HRManagement({
     national_certificates: '',
     join_date: '',
     career_start_date: '',
-    birthDate: '' 
+    birthDate: '',
+    is_retired: false,
+    resignation_date: '',
+    returned_items: ''
   });
 
-  // 고화질 압축 PDF 저장 함수
   const handleExportPDF = async () => {
     const element = orgChartContainerRef.current;
     if (!element) {
@@ -170,8 +178,6 @@ export default function HRManagement({
     }
 
     try {
-      // PDF 캡처 중 전체 화면의 loading 상태를 바꾸지 않습니다.
-      // 기존에는 setLoading(true) 때문에 조직도 DOM 자체가 사라져 캡처 후 화면이 멈추는 문제가 있었습니다.
       orgChartRef.current?.fit();
       await new Promise((resolve) => requestAnimationFrame(resolve));
 
@@ -206,6 +212,9 @@ export default function HRManagement({
   };
 
   const canEditUser = (targetUser: HRUser) => {
+    if (targetUser.is_retired || targetUser.department === '퇴사자') {
+      return isAdmin;
+    }
     return isAdmin || isSelf(targetUser);
   };
 
@@ -217,7 +226,6 @@ export default function HRManagement({
     setSelectedSubCategory('ALL');
   }, [subGroupType]);
 
-  // 전역 핸들러 등록 (D3 Org Chart 내부 버튼 인터랙션용)
   useEffect(() => {
     (window as any).handleChartEdit = (userId: string) => {
       const target = users.find(u => u.id === userId);
@@ -251,7 +259,10 @@ export default function HRManagement({
         national_certificates: '',
         join_date: new Date().toISOString().split('T')[0],
         career_start_date: new Date().toISOString().split('T')[0],
-        birthDate: ''
+        birthDate: '',
+        is_retired: false,
+        resignation_date: '',
+        returned_items: ''
       });
       setIsModalOpen(true);
     };
@@ -270,6 +281,7 @@ export default function HRManagement({
     addNode({ id: 'org_operating', parentId: 'root', name: '운영', type: 'department', level: 'main' });
     addNode({ id: 'org_management', parentId: 'org_operating', name: '관리', type: 'department', level: 'main' });
     addNode({ id: 'org_team', parentId: 'org_management', name: '팀', type: 'department', level: 'main' });
+    addNode({ id: 'org_retired', parentId: 'root', name: '퇴사자', type: 'department', level: 'main' });
 
     const addUserNode = (user: HRUser, parentId: string) => {
       if (usedIds.has(user.id)) return;
@@ -285,8 +297,7 @@ export default function HRManagement({
       });
     };
 
-    // 운영: 본부장 / 소장 / 사무 등의 직책별로 묶고 구성원을 배치합니다.
-    const operatingUsers = userList.filter((u) => (u.department || '').trim() === '운영');
+    const operatingUsers = userList.filter((u) => (u.department || '').trim() === '운영' && !u.is_retired);
     const operatingTitleOrder = ['본부장', '소장', '사무'];
     const otherOperatingTitles = Array.from(new Set(
       operatingUsers
@@ -311,8 +322,7 @@ export default function HRManagement({
       members.forEach((user) => addUserNode(user, titleId));
     });
 
-    // 관리: 현재 app_users.department가 '관리'인 구성원을 field 기준으로 묶습니다.
-    const managementUsers = userList.filter((u) => (u.department || '').trim() === '관리');
+    const managementUsers = userList.filter((u) => (u.department || '').trim() === '관리' && !u.is_retired);
     const managementFields = Array.from(new Set(
       managementUsers.map((u) => (u.field || '기타').trim() || '기타')
     ));
@@ -342,10 +352,10 @@ export default function HRManagement({
       members.forEach((user) => addUserNode(user, fieldId));
     });
 
-    // 팀: department에 저장된 1~4팀을 그대로 읽어 자동 구성합니다.
     const teamDepartments = ['1팀', '2팀', '3팀', '4팀'];
     const existingTeamDepartments = Array.from(new Set(
       userList
+        .filter(u => !u.is_retired && u.department !== '퇴사자')
         .map((u) => (u.department || '').trim())
         .filter((dept) => /^\d+팀$/.test(dept))
     ));
@@ -360,7 +370,7 @@ export default function HRManagement({
     });
 
     allTeams.forEach((team) => {
-      const members = userList.filter((u) => (u.department || '').trim() === team);
+      const members = userList.filter((u) => (u.department || '').trim() === team && !u.is_retired);
       const teamId = `team_${team}`;
       addNode({
         id: teamId,
@@ -371,7 +381,6 @@ export default function HRManagement({
         department: team,
       });
 
-      // 팀 구성원은 department를 기준으로 자동 배치하며 직책은 카드에 표시합니다.
       const sortedMembers = [...members].sort((a, b) => {
         const rankA = JOB_TITLE_ORDER_IN_RANK[a.job_title || '없음'] || 99;
         const rankB = JOB_TITLE_ORDER_IN_RANK[b.job_title || '없음'] || 99;
@@ -381,10 +390,13 @@ export default function HRManagement({
       sortedMembers.forEach((user) => addUserNode(user, teamId));
     });
 
-    // 기존 DEPT_ORDER에 없는 부서도 데이터가 있으면 조직도에서 누락하지 않습니다.
-    const handledDepartments = new Set(['운영', '관리', ...allTeams]);
+    const retiredUsers = userList.filter(u => u.is_retired || u.department === '퇴사자');
+    retiredUsers.forEach((user) => addUserNode(user, 'org_retired'));
+
+    const handledDepartments = new Set(['운영', '관리', '퇴사자', ...allTeams]);
     const otherDepartments = Array.from(new Set(
       userList
+        .filter(u => !u.is_retired && u.department !== '퇴사자')
         .map((u) => (u.department || '').trim() || '미지정 파트')
         .filter((dept) => !handledDepartments.has(dept))
     ));
@@ -393,7 +405,7 @@ export default function HRManagement({
       const deptId = `other_dept_${dept}`;
       addNode({ id: deptId, parentId: 'org_team', name: dept, type: 'department', level: 'other' });
       userList
-        .filter((u) => ((u.department || '').trim() || '미지정 파트') === dept)
+        .filter((u) => !u.is_retired && ((u.department || '').trim() || '미지정 파트') === dept)
         .forEach((user) => addUserNode(user, deptId));
     });
 
@@ -434,31 +446,35 @@ export default function HRManagement({
 
           if (d.data.type === 'department' || d.data.type === 'group') {
             const isMain = d.data.level === 'main';
+            const isRetiredGroup = d.data.name === '퇴사자';
+            const bg = isRetiredGroup ? '#475569' : (isMain ? '#243B5A' : '#EAF0F7');
+            const textColor = isRetiredGroup || isMain ? 'white' : '#243B5A';
             return `
-              <div style="background-color: ${isMain ? '#243B5A' : '#EAF0F7'}; color: ${isMain ? 'white' : '#243B5A'}; border-radius: 8px; border: 2px solid ${isMain ? '#1e293b' : '#CBD5E1'}; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0 10px; font-weight: bold; font-family: sans-serif; box-sizing: border-box; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
+              <div style="background-color: ${bg}; color: ${textColor}; border-radius: 8px; border: 2px solid ${isMain || isRetiredGroup ? '#1e293b' : '#CBD5E1'}; height: 100%; display: flex; align-items: center; justify-content: center; padding: 0 10px; font-weight: bold; font-family: sans-serif; box-sizing: border-box; box-shadow: 0 2px 4px rgba(0,0,0,0.05);">
                 ${d.data.name}
               </div>`;
           }
 
           const user = d.data.data;
-          const isLeader = ['본부장', '소장', '팀장'].includes(user.job_title || '');
-          const bgColor = isLeader ? '#ffffff' : '#f8fafc';
-          const borderColor = isLeader ? '#4f46e5' : '#cbd5e1';
+          const isRetired = user.is_retired || user.department === '퇴사자';
+          const isLeader = !isRetired && ['본부장', '소장', '팀장'].includes(user.job_title || '');
+          const bgColor = isRetired ? '#f1f5f9' : (isLeader ? '#ffffff' : '#f8fafc');
+          const borderColor = isRetired ? '#cbd5e1' : (isLeader ? '#4f46e5' : '#cbd5e1');
           const borderWidth = isLeader ? '2px' : '1px';
 
           return `
-            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 10px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-              <div style="font-size: 13px; font-weight: bold; color: #1e293b; display: flex; justify-content: space-between; align-items: center;">
-                <span>${isLeader ? '👑' : '👤'} ${user.name}</span>
+            <div style="font-family: sans-serif; background-color: ${bgColor}; border: ${borderWidth} solid ${borderColor}; border-radius: 8px; padding: 10px; height: 100%; box-sizing: border-box; box-shadow: 0 1px 3px rgba(0,0,0,0.1); ${isRetired ? 'opacity: 0.8;' : ''}">
+              <div style="font-size: 13px; font-weight: bold; color: ${isRetired ? '#64748b' : '#1e293b'}; display: flex; justify-content: space-between; align-items: center;">
+                <span>${isRetired ? '🛑' : (isLeader ? '👑' : '👤')} ${user.name}</span>
                 <div style="display: flex; gap: 4px; align-items: center;">
-                  <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isLeader ? '#e0e7ff' : '#e2e8f0'}; color: ${isLeader ? '#4f46e5' : '#475569'};">${user.position || ''}</span>
+                  <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isRetired ? '#e2e8f0' : (isLeader ? '#e0e7ff' : '#e2e8f0')}; color: ${isRetired ? '#64748b' : (isLeader ? '#4f46e5' : '#475569')};">${isRetired ? '퇴사' : user.position || ''}</span>
                   <button onclick="window.handleChartEdit('${user.id}')" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 4px;" title="수정">✏️</button>
                   <button onclick="window.handleChartDelete('${user.id}')" style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 4px; color: #dc2626;" title="삭제">🗑️</button>
                 </div>
               </div>
               <div style="font-size: 10px; color: #64748b; margin-top: 6px; display: flex; justify-content: space-between; align-items: center;">
-                <span>${user.job_title || '팀원'} ${user.field ? `· ${user.field}` : ''}</span>
-                <span style="font-size: 9px; color: #2563eb; background: #eff6ff; padding: 1px 4px; border-radius: 3px;">${user.phone || '연락처 없음'}</span>
+                <span>${isRetired ? `퇴사일: ${user.resignation_date || '-'}` : `${user.job_title || '팀원'} ${user.field ? `· ${user.field}` : ''}`}</span>
+                <span style="font-size: 9px; color: ${isRetired ? '#64748b' : '#2563eb'}; background: ${isRetired ? '#e2e8f0' : '#eff6ff'}; padding: 1px 4px; border-radius: 3px;">${user.phone || '연락처 없음'}</span>
               </div>
             </div>
           `;
@@ -482,7 +498,8 @@ export default function HRManagement({
 
       const formatted = (data || []).map((u: any) => ({
         ...u,
-        national_certificates: u.national_certificates || u.certificates || ''
+        national_certificates: u.national_certificates || u.certificates || '',
+        is_retired: u.is_retired || u.department === '퇴사자'
       }));
 
       setUsers(formatted);
@@ -510,7 +527,7 @@ export default function HRManagement({
 
   const handleOpenAddModal = () => {
     if (!isAdmin) {
-      alert('관리자 권한이 필요합니다.');
+      alert('관리자만 신규 구성원을 등록할 수 있습니다.');
       return;
     }
     setSelectedUser(null);
@@ -530,16 +547,25 @@ export default function HRManagement({
       national_certificates: '',
       join_date: new Date().toISOString().split('T')[0],
       career_start_date: new Date().toISOString().split('T')[0],
-      birthDate: ''
+      birthDate: '',
+      is_retired: false,
+      resignation_date: '',
+      returned_items: ''
     });
     setIsModalOpen(true);
   };
 
   const handleOpenEditModal = (user: HRUser) => {
-    if (!canEditUser(user)) {
+    if (user.is_retired || user.department === '퇴사자') {
+      if (!isAdmin) {
+        alert('퇴사자 정보는 관리자만 수정할 수 있습니다.');
+        return;
+      }
+    } else if (!canEditUser(user)) {
       alert('본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.');
       return;
     }
+
     setSelectedUser(user);
     setFormData({ 
       inputId: user.id || '',
@@ -557,7 +583,10 @@ export default function HRManagement({
       national_certificates: user.national_certificates || user.certificates || '',
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
-      birthDate: user.password || '' 
+      birthDate: user.password || '',
+      is_retired: !!user.is_retired || user.department === '퇴사자',
+      resignation_date: user.resignation_date || '',
+      returned_items: user.returned_items || ''
     });
     setIsModalOpen(true);
   };
@@ -595,6 +624,11 @@ export default function HRManagement({
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (formData.is_retired && !isAdmin) {
+      alert('퇴사자 처리 및 관리는 관리자 권한만 가능합니다.');
+      return;
+    }
+
     if (selectedUser && !canEditUser(selectedUser)) {
       alert('본인 정보만 수정할 권한이 있습니다.');
       return;
@@ -611,11 +645,12 @@ export default function HRManagement({
     }
 
     try {
+      const isRetired = formData.is_retired;
       const payload: any = {
         id: formData.inputId.trim(), 
         name: formData.name,
         email: formData.email,
-        department: formData.department,
+        department: isRetired ? '퇴사자' : formData.department,
         position: formData.position,
         job_title: formData.job_title,
         field: formData.field,
@@ -627,6 +662,9 @@ export default function HRManagement({
         certificates: formData.national_certificates,
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
+        is_retired: isRetired,
+        resignation_date: isRetired ? (formData.resignation_date || new Date().toISOString().split('T')[0]) : null,
+        returned_items: isRetired ? formData.returned_items : null
       };
 
       if (formData.birthDate) {
@@ -686,7 +724,10 @@ export default function HRManagement({
   const rawSubCategories = Array.from(
     new Set(
       filteredUsers
-        .map((u) => (subGroupType === 'DEPT' ? u.department || '미지정 파트' : u.position || '미지정 직급'))
+        .map((u) => {
+          if (u.is_retired || u.department === '퇴사자') return '퇴사자';
+          return subGroupType === 'DEPT' ? u.department || '미지정 파트' : u.position || '미지정 직급';
+        })
         .filter(Boolean)
     )
   );
@@ -701,6 +742,8 @@ export default function HRManagement({
         return a.localeCompare(b);
       })
     : rawSubCategories.sort((a, b) => {
+        if (a === '퇴사자') return 1;
+        if (b === '퇴사자') return -1;
         const orderA = RANK_ORDER[a] || 99;
         const orderB = RANK_ORDER[b] || 99;
         return orderA - orderB;
@@ -849,11 +892,13 @@ export default function HRManagement({
             </button>
 
             {availableSubCategories.map((subCat) => {
-              const count = filteredUsers.filter((u) => 
-                subGroupType === 'DEPT' 
+              const count = filteredUsers.filter((u) => {
+                if (subCat === '퇴사자') return u.is_retired || u.department === '퇴사자';
+                if (u.is_retired || u.department === '퇴사자') return false;
+                return subGroupType === 'DEPT' 
                   ? (u.department || '미지정 파트') === subCat 
-                  : (u.position || '미지정 직급') === subCat
-              ).length;
+                  : (u.position || '미지정 직급') === subCat;
+              }).length;
 
               return (
                 <button
@@ -862,10 +907,12 @@ export default function HRManagement({
                   className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
                     selectedSubCategory === subCat
                       ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                      : subCat === '퇴사자'
+                      ? 'bg-slate-100 text-slate-600 border-slate-300 hover:bg-slate-200'
                       : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
                   }`}
                 >
-                  {subCat} ({count})
+                  {subCat === '퇴사자' ? '🛑 퇴사자' : subCat} ({count})
                 </button>
               );
             })}
@@ -912,13 +959,21 @@ export default function HRManagement({
       ) : activeTab === 'ORG' ? (
         <div className="space-y-3">
           {displayedCategories.map((catName) => {
-            const groupMembers = filteredUsers.filter((u) =>
-              subGroupType === 'DEPT'
+            const isRetiredCat = catName === '퇴사자';
+            const groupMembers = filteredUsers.filter((u) => {
+              if (isRetiredCat) return u.is_retired || u.department === '퇴사자';
+              if (u.is_retired || u.department === '퇴사자') return false;
+              return subGroupType === 'DEPT'
                 ? (u.department || '미지정 파트') === catName
-                : (u.position || '미지정 직급') === catName
-            );
+                : (u.position || '미지정 직급') === catName;
+            });
 
             const sortMembers = (a: HRUser, b: HRUser) => {
+              if (isRetiredCat) {
+                const dateA = a.resignation_date || '9999-12-31';
+                const dateB = b.resignation_date || '9999-12-31';
+                return dateB.localeCompare(dateA);
+              }
               if (catName === '책임' || subGroupType === 'POS') {
                 const titleOrderA = JOB_TITLE_ORDER_IN_RANK[a.job_title || '팀원'] || 99;
                 const titleOrderB = JOB_TITLE_ORDER_IN_RANK[b.job_title || '팀원'] || 99;
@@ -931,8 +986,8 @@ export default function HRManagement({
               return dateA.localeCompare(dateB);
             };
 
-            const leaders = groupMembers.filter(u => ['본부장', '소장', '팀장'].includes(u.job_title || '')).sort(sortMembers);
-            const members = groupMembers.filter(u => !['본부장', '소장', '팀장'].includes(u.job_title || '')).sort(sortMembers);
+            const leaders = isRetiredCat ? [] : groupMembers.filter(u => ['본부장', '소장', '팀장'].includes(u.job_title || '')).sort(sortMembers);
+            const members = isRetiredCat ? groupMembers.sort(sortMembers) : groupMembers.filter(u => !['본부장', '소장', '팀장'].includes(u.job_title || '')).sort(sortMembers);
 
             const isCollapsed = !!collapsedGroups[catName];
 
@@ -940,15 +995,17 @@ export default function HRManagement({
               <div key={catName} className="bg-white border border-[#E2E5E9] rounded-xl overflow-hidden shadow-xs transition-all">
                 <div 
                   onClick={() => toggleGroup(catName)}
-                  className="flex items-center justify-between p-3 bg-[#F5F6F8] hover:bg-[#E2E5E9]/50 cursor-pointer border-b border-[#E2E5E9] transition"
+                  className={`flex items-center justify-between p-3 cursor-pointer border-b border-[#E2E5E9] transition ${
+                    isRetiredCat ? 'bg-slate-100 hover:bg-slate-200/60' : 'bg-[#F5F6F8] hover:bg-[#E2E5E9]/50'
+                  }`}
                 >
                   <div className="flex items-center space-x-2">
-                    <div className="p-1.5 bg-[#243B5A] text-white rounded-lg">
-                      {subGroupType === 'DEPT' ? <Building2 className="h-3.5 w-3.5" /> : <Briefcase className="h-3.5 w-3.5" />}
+                    <div className={`p-1.5 text-white rounded-lg ${isRetiredCat ? 'bg-slate-600' : 'bg-[#243B5A]'}`}>
+                      {isRetiredCat ? <UserX className="h-3.5 w-3.5" /> : (subGroupType === 'DEPT' ? <Building2 className="h-3.5 w-3.5" /> : <Briefcase className="h-3.5 w-3.5" />)}
                     </div>
                     <div>
                       <h3 className="font-bold text-[#1F2937] text-xs flex items-center gap-2">
-                        {catName} 
+                        {isRetiredCat ? '퇴사자 목록' : catName} 
                         <span className="text-[10px] bg-white text-[#243B5A] font-bold px-2 py-0.2 rounded-full border border-[#E2E5E9]">
                           총 {groupMembers.length}명
                         </span>
@@ -957,7 +1014,7 @@ export default function HRManagement({
                   </div>
 
                   <div className="flex items-center space-x-2">
-                    {isAdmin && subGroupType === 'DEPT' && (
+                    {isAdmin && subGroupType === 'DEPT' && !isRetiredCat && (
                       <button 
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1000,8 +1057,8 @@ export default function HRManagement({
                     {members.length > 0 && (
                       <div className="space-y-2">
                         <div className="flex items-center gap-1 text-[11px] font-bold text-[#64748B] px-1">
-                          <Users className="h-3.5 w-3.5 text-[#64748B]" />
-                          <span>소속 구성원 ({members.length}명)</span>
+                          {isRetiredCat ? <UserX className="h-3.5 w-3.5 text-slate-500" /> : <Users className="h-3.5 w-3.5 text-[#64748B]" />}
+                          <span>{isRetiredCat ? `퇴사 처리된 구성원 (${members.length}명)` : `소속 구성원 (${members.length}명)`}</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
                           {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin))}
@@ -1026,16 +1083,21 @@ export default function HRManagement({
               const joinCareer = calculateCareerDetails(u.join_date);
               const totalCareer = calculateCareerDetails(u.career_start_date);
               const age = calculateAge(u.password);
+              const isRetired = u.is_retired || u.department === '퇴사자';
 
               return (
-                <div key={u.id} className="bg-white p-3 border border-[#E2E5E9] rounded-xl shadow-xs space-y-2">
+                <div key={u.id} className={`bg-white p-3 border rounded-xl shadow-xs space-y-2 ${isRetired ? 'border-slate-300 bg-slate-50/50' : 'border-[#E2E5E9]'}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="font-bold text-xs text-[#1F2937]">{u.name}</span>
                         {age && <span className="text-[10px] text-[#243B5A] font-bold">({age}세)</span>}
                         {u.id && <span className="text-[10px] text-[#64748B] font-mono">({u.id})</span>}
-                        {isSelf(u) && (
+                        {isRetired ? (
+                          <span className="text-[9px] bg-slate-500 text-white font-bold px-1.5 py-0.2 rounded shrink-0">
+                            퇴사자
+                          </span>
+                        ) : isSelf(u) && (
                           <span className="text-[9px] bg-[#243B5A] text-white font-bold px-1.5 py-0.2 rounded shrink-0">
                             나
                           </span>
@@ -1043,7 +1105,7 @@ export default function HRManagement({
                       </div>
                       <div className="text-[10px] text-[#64748B] flex items-center gap-1 flex-wrap">
                         <span className="px-1.5 py-0.5 bg-[#F5F6F8] font-medium rounded border border-[#E2E5E9]">
-                          {u.department || '미지정'} · {u.position || '사원'} {u.job_title && u.job_title !== '없음' ? `(${u.job_title}${u.field ? `/${u.field}` : ''})` : ''}
+                          {isRetired ? '퇴사자' : `${u.department || '미지정'} · ${u.position || '사원'} ${u.job_title && u.job_title !== '없음' ? `(${u.job_title}${u.field ? `/${u.field}` : ''})` : ''}`}
                         </span>
                       </div>
                     </div>
@@ -1071,30 +1133,45 @@ export default function HRManagement({
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 text-[11px] bg-[#F5F6F8] p-2 rounded-lg border border-[#E2E5E9]">
-                    <div>
-                      <span className="text-[#64748B] block text-[10px]">연락처</span>
-                      {u.phone ? (
-                        <a href={`tel:${u.phone}`} className="font-medium text-[#243B5A] hover:underline flex items-center gap-1 truncate">
-                          <Phone className="h-3 w-3 shrink-0" /> <span className="truncate">{u.phone}</span>
-                        </a>
-                      ) : (
-                        <span className="font-medium text-[#1F2937]">-</span>
-                      )}
-                    </div>
-                    <div>
-                      <span className="text-[#64748B] block text-[10px]">권한</span>
-                      <span className={`font-bold ${u.role === 'ADMIN' ? 'text-[#243B5A]' : 'text-[#64748B]'}`}>
-                        {u.role === 'ADMIN' ? '관리자' : '일반 사용자'}
-                      </span>
-                    </div>
-                    <div>
-                      <span className="text-[#64748B] block text-[10px]">자사 근속</span>
-                      <span className="font-semibold text-[#16A34A]">{joinCareer || '-'}</span>
-                    </div>
-                    <div>
-                      <span className="text-[#64748B] block text-[10px]">총 경력</span>
-                      <span className="font-semibold text-[#2563EB]">{totalCareer || '-'}</span>
-                    </div>
+                    {isRetired ? (
+                      <>
+                        <div className="col-span-2">
+                          <span className="text-[#64748B] block text-[10px]">퇴사일자</span>
+                          <span className="font-semibold text-slate-700">{u.resignation_date || '-'}</span>
+                        </div>
+                        <div className="col-span-2">
+                          <span className="text-[#64748B] block text-[10px]">반납 물품</span>
+                          <span className="font-medium text-slate-700">{u.returned_items || '-'}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div>
+                          <span className="text-[#64748B] block text-[10px]">연락처</span>
+                          {u.phone ? (
+                            <a href={`tel:${u.phone}`} className="font-medium text-[#243B5A] hover:underline flex items-center gap-1 truncate">
+                              <Phone className="h-3 w-3 shrink-0" /> <span className="truncate">{u.phone}</span>
+                            </a>
+                          ) : (
+                            <span className="font-medium text-[#1F2937]">-</span>
+                          )}
+                        </div>
+                        <div>
+                          <span className="text-[#64748B] block text-[10px]">권한</span>
+                          <span className={`font-bold ${u.role === 'ADMIN' ? 'text-[#243B5A]' : 'text-[#64748B]'}`}>
+                            {u.role === 'ADMIN' ? '관리자' : '일반 사용자'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-[#64748B] block text-[10px]">자사 근속</span>
+                          <span className="font-semibold text-[#16A34A]">{joinCareer || '-'}</span>
+                        </div>
+                        <div>
+                          <span className="text-[#64748B] block text-[10px]">총 경력</span>
+                          <span className="font-semibold text-[#2563EB]">{totalCareer || '-'}</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               );
@@ -1108,10 +1185,10 @@ export default function HRManagement({
                   <th className="p-3">성명 (나이/아이디)</th>
                   <th className="p-3">파트 / 직급(직책/분야)</th>
                   <th className="p-3">연락처 / 주소</th>
-                  <th className="p-3">권한</th>
-                  <th className="p-3">자사 근속 (입사일)</th>
+                  <th className="p-3">상태 / 권한</th>
+                  <th className="p-3">근속/퇴사일</th>
                   <th className="p-3">총 경력 (시작일)</th>
-                  <th className="p-3">사내자격</th>
+                  <th className="p-3">반납물품 / 사내자격</th>
                   <th className="p-3">국가자격</th>
                   <th className="p-3 text-center">관리</th>
                 </tr>
@@ -1120,14 +1197,20 @@ export default function HRManagement({
                 {filteredUsers.map((u) => {
                   const canEdit = canEditUser(u);
                   const age = calculateAge(u.password);
+                  const isRetired = u.is_retired || u.department === '퇴사자';
+
                   return (
-                    <tr key={u.id} className="hover:bg-[#F5F6F8]/60 transition">
+                    <tr key={u.id} className={`hover:bg-[#F5F6F8]/60 transition ${isRetired ? 'bg-slate-50/70 text-slate-500' : ''}`}>
                       <td className="p-3 font-bold text-[#1F2937]">
                         <div className="flex items-center gap-1.5 flex-wrap">
-                          <span>{u.name}</span>
+                          <span className={isRetired ? 'line-through text-slate-500' : ''}>{u.name}</span>
                           {age && <span className="text-xs text-[#243B5A] font-bold">({age}세)</span>}
                           {u.id && <span className="text-[10px] text-[#64748B] font-mono font-normal">({u.id})</span>}
-                          {isSelf(u) && (
+                          {isRetired ? (
+                            <span className="text-[10px] bg-slate-500 text-white font-bold px-1.5 py-0.2 rounded">
+                              퇴사
+                            </span>
+                          ) : isSelf(u) && (
                             <span className="text-[10px] bg-[#243B5A] text-white font-bold px-1.5 py-0.2 rounded">
                               나
                             </span>
@@ -1135,7 +1218,7 @@ export default function HRManagement({
                         </div>
                       </td>
                       <td className="p-3 text-[#1F2937]">
-                        {u.department} / {u.position} {u.job_title && u.job_title !== '없음' ? `(${u.job_title}${u.field ? `/${u.field}` : ''})` : ''}
+                        {isRetired ? '퇴사자' : `${u.department} / ${u.position} ${u.job_title && u.job_title !== '없음' ? `(${u.job_title}${u.field ? `/${u.field}` : ''})` : ''}`}
                       </td>
                       <td className="p-3 font-medium">
                         <div>
@@ -1151,20 +1234,33 @@ export default function HRManagement({
                       </td>
                       <td className="p-3">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
-                          u.role === 'ADMIN' ? 'bg-[#243B5A] text-white border-[#243B5A]' : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9]'
+                          isRetired 
+                            ? 'bg-slate-200 text-slate-700 border-slate-300' 
+                            : u.role === 'ADMIN' ? 'bg-[#243B5A] text-white border-[#243B5A]' : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9]'
                         }`}>
-                          {u.role === 'ADMIN' ? '관리자' : '일반 사용자'}
+                          {isRetired ? '퇴사' : (u.role === 'ADMIN' ? '관리자' : '일반 사용자')}
                         </span>
                       </td>
                       <td className="p-3">
-                        <div className="text-[#16A34A] font-semibold">{calculateCareerDetails(u.join_date) || '-'}</div>
-                        <div className="text-[10px] text-[#64748B]">{u.join_date || ''}</div>
+                        {isRetired ? (
+                          <>
+                            <div className="text-slate-700 font-semibold">{u.resignation_date || '-'}</div>
+                            <div className="text-[10px] text-slate-500">퇴사 완료</div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="text-[#16A34A] font-semibold">{calculateCareerDetails(u.join_date) || '-'}</div>
+                            <div className="text-[10px] text-[#64748B]">{u.join_date || ''}</div>
+                          </>
+                        )}
                       </td>
                       <td className="p-3">
                         <div className="text-[#2563EB] font-semibold">{calculateCareerDetails(u.career_start_date) || '-'}</div>
                         <div className="text-[10px] text-[#64748B]">{u.career_start_date || ''}</div>
                       </td>
-                      <td className="p-3 text-[#1F2937] font-medium">{u.internal_certificates || '-'}</td>
+                      <td className="p-3 text-[#1F2937] font-medium">
+                        {isRetired ? (u.returned_items || '-') : (u.internal_certificates || '-')}
+                      </td>
                       <td className="p-3 text-[#1F2937] font-medium">{u.national_certificates || '-'}</td>
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center space-x-1">
@@ -1204,7 +1300,9 @@ export default function HRManagement({
 
             <div className="flex items-start justify-between border-b border-[#E2E5E9] pb-2.5">
               <div className="flex items-center space-x-2.5">
-                <div className="w-9 h-9 rounded-full bg-[#243B5A] text-white flex items-center justify-center font-bold text-xs shadow-xs">
+                <div className={`w-9 h-9 rounded-full text-white flex items-center justify-center font-bold text-xs shadow-xs ${
+                  detailUser.is_retired || detailUser.department === '퇴사자' ? 'bg-slate-500' : 'bg-[#243B5A]'
+                }`}>
                   {detailUser.name?.[0] || '유'}
                 </div>
                 <div>
@@ -1213,14 +1311,20 @@ export default function HRManagement({
                       {detailUser.name} {calculateAge(detailUser.password) ? `(${calculateAge(detailUser.password)}세)` : ''}
                     </h3>
                     {detailUser.id && <span className="text-[10px] text-[#64748B] font-mono">({detailUser.id})</span>}
-                    {isSelf(detailUser) && (
+                    {(detailUser.is_retired || detailUser.department === '퇴사자') ? (
+                      <span className="text-[10px] bg-slate-500 text-white font-bold px-1.5 py-0.2 rounded-full">
+                        퇴사자
+                      </span>
+                    ) : isSelf(detailUser) && (
                       <span className="text-[10px] bg-[#243B5A] text-white font-bold px-1.5 py-0.2 rounded-full">
                         나
                       </span>
                     )}
                   </div>
                   <p className="text-[11px] text-[#64748B] font-medium">
-                    {detailUser.department || '미지정 파트'} · {detailUser.position || '사원'} {detailUser.job_title && detailUser.job_title !== '없음' ? `(${detailUser.job_title}${detailUser.field ? `/${detailUser.field}` : ''})` : ''}
+                    {(detailUser.is_retired || detailUser.department === '퇴사자') 
+                      ? '퇴사자' 
+                      : `${detailUser.department || '미지정 파트'} · ${detailUser.position || '사원'} ${detailUser.job_title && detailUser.job_title !== '없음' ? `(${detailUser.job_title}${detailUser.field ? `/${detailUser.field}` : ''})` : ''}`}
                   </p>
                 </div>
               </div>
@@ -1233,6 +1337,19 @@ export default function HRManagement({
             </div>
 
             <div className="space-y-2.5 text-xs">
+              {(detailUser.is_retired || detailUser.department === '퇴사자') && (
+                <div className="bg-slate-100 p-2.5 rounded-lg space-y-1.5 border border-slate-200">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span className="flex items-center gap-1"><Calendar className="h-3.5 w-3.5 text-slate-500" /> 퇴사일자</span>
+                    <span>{detailUser.resignation_date || '-'}</span>
+                  </div>
+                  <div className="text-[11px] pt-1 border-t border-slate-200">
+                    <span className="font-bold text-slate-600 block mb-0.5 flex items-center gap-1"><PackageCheck className="h-3.5 w-3.5 text-slate-500" /> 반납 물품</span>
+                    <p className="text-slate-800 bg-white p-2 rounded border border-slate-200 whitespace-pre-wrap">{detailUser.returned_items || '작성된 반납 물품이 없습니다.'}</p>
+                  </div>
+                </div>
+              )}
+
               <div className="bg-[#F5F6F8] p-2.5 rounded-lg space-y-2 border border-[#E2E5E9]">
                 {detailUser.id && (
                   <div className="flex items-center justify-between text-[#1F2937] pb-2 border-b border-[#E2E5E9]">
@@ -1323,6 +1440,60 @@ export default function HRManagement({
             </div>
 
             <form onSubmit={handleSave} className="space-y-2.5 text-xs">
+              {isAdmin && (
+                <div className="bg-slate-100 p-2.5 rounded-lg border border-slate-200 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer font-bold text-slate-800 text-xs">
+                    <input
+                      type="checkbox"
+                      checked={formData.is_retired}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setFormData({
+                          ...formData,
+                          is_retired: checked,
+                          resignation_date: checked && !formData.resignation_date 
+                            ? new Date().toISOString().split('T')[0] 
+                            : formData.resignation_date
+                        });
+                      }}
+                      className="w-4 h-4 text-slate-600 rounded focus:ring-slate-500 border-slate-300"
+                    />
+                    <span className="flex items-center gap-1">
+                      <UserX className="h-4 w-4 text-slate-600" /> 퇴사 처리 (체크 시 파트에서 자동 제외되며 퇴사자로 이전)
+                    </span>
+                  </label>
+
+                  {formData.is_retired && (
+                    <div className="space-y-2 pt-2 border-t border-slate-200">
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <Calendar className="h-3.5 w-3.5 text-slate-600" /> 퇴사일자 *
+                        </label>
+                        <input
+                          type="date"
+                          required={formData.is_retired}
+                          value={formData.resignation_date}
+                          onChange={(e) => setFormData({ ...formData, resignation_date: e.target.value })}
+                          className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs text-[#1F2937] focus:border-slate-500 outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block font-bold text-slate-700 mb-1 flex items-center gap-1">
+                          <PackageCheck className="h-3.5 w-3.5 text-slate-600" /> 반납 물품 목록
+                        </label>
+                        <textarea
+                          rows={2}
+                          placeholder="예: 사원증, 노트북, 보안키, 현장 자재 등"
+                          value={formData.returned_items}
+                          onChange={(e) => setFormData({ ...formData, returned_items: e.target.value })}
+                          className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs text-[#1F2937] focus:border-slate-500 outline-none resize-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1 flex items-center gap-1">
@@ -1383,9 +1554,10 @@ export default function HRManagement({
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">파트 (부서)</label>
                   <select
-                    value={formData.department}
+                    disabled={formData.is_retired}
+                    value={formData.is_retired ? '퇴사자' : formData.department}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer disabled:opacity-60"
                   >
                     <option value="운영">운영</option>
                     <option value="관리">관리</option>
@@ -1393,6 +1565,7 @@ export default function HRManagement({
                     <option value="2팀">2팀</option>
                     <option value="3팀">3팀</option>
                     <option value="4팀">4팀</option>
+                    <option value="퇴사자">퇴사자</option>
                   </select>
                 </div>
                 <div>
@@ -1543,12 +1716,15 @@ function renderMemberCard(
   const joinCareer = calculateCareerDetails(member.join_date);
   const totalCareer = calculateCareerDetails(member.career_start_date);
   const age = calculateAge(member.password);
+  const isRetired = member.is_retired || member.department === '퇴사자';
 
   return (
     <div 
       key={member.id} 
       className={`p-2.5 rounded-xl border transition-all flex flex-col justify-between space-y-1.5 group shadow-xs ${
-        isLeader 
+        isRetired
+          ? 'bg-slate-50/70 border-slate-300'
+          : isLeader 
           ? 'bg-white border-[#243B5A] ring-1 ring-[#243B5A]/20 shadow-sm' 
           : 'bg-white border-[#E2E5E9] hover:border-slate-400 hover:shadow-sm'
       }`}
@@ -1559,23 +1735,29 @@ function renderMemberCard(
           className="flex items-center space-x-2 min-w-0 cursor-pointer flex-1"
         >
           <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold text-xs shrink-0 ${
-            isLeader ? 'bg-[#243B5A] text-white' : 'bg-slate-200 text-[#243B5A]'
+            isRetired ? 'bg-slate-400 text-white' : isLeader ? 'bg-[#243B5A] text-white' : 'bg-slate-200 text-[#243B5A]'
           }`}>
             {member.name?.[0] || '유'}
           </div>
           <div className="truncate">
             <div className="flex items-center space-x-1.5 flex-wrap">
-              <span className="font-bold text-xs text-[#1F2937] group-hover:text-[#243B5A] transition-colors">{member.name}</span>
+              <span className={`font-bold text-xs group-hover:text-[#243B5A] transition-colors ${isRetired ? 'line-through text-slate-500' : 'text-[#1F2937]'}`}>
+                {member.name}
+              </span>
               {age && <span className="text-[10px] text-[#243B5A] font-bold">({age}세)</span>}
-              {isSelf(member) && (
+              {isRetired ? (
+                <span className="text-[9px] bg-slate-500 text-white font-bold px-1 rounded">
+                  퇴사
+                </span>
+              ) : isSelf(member) && (
                 <span className="text-[9px] bg-[#243B5A] text-white font-bold px-1">
                   나
                 </span>
               )}
             </div>
             <div className="text-[10px] text-[#64748B] flex items-center gap-1 pt-0.5">
-              <span>{member.position || '사원'}</span>
-              {member.job_title && member.job_title !== '없음' && (
+              <span>{isRetired ? '퇴사자' : member.position || '사원'}</span>
+              {!isRetired && member.job_title && member.job_title !== '없음' && (
                 <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
                   isLeader ? 'bg-[#243B5A] text-white' : 'bg-sky-50 text-sky-700 border border-sky-200'
                 }`}>
@@ -1609,16 +1791,23 @@ function renderMemberCard(
       </div>
 
       <div className="pt-1.5 border-t border-[#E2E5E9] text-[10px] space-y-1">
-        <div className="flex items-center justify-between text-[#64748B]">
-          <span className="flex items-center gap-1 font-medium">
-            <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
-            {member.phone || '-'}
-          </span>
-          <div className="space-x-1.5">
-            <span className="font-semibold text-[#16A34A]">근속 {joinCareer || '-'}</span>
-            <span className="font-semibold text-[#2563EB]">총경력 {totalCareer || '-'}</span>
+        {isRetired ? (
+          <div className="flex items-center justify-between text-slate-500">
+            <span className="font-medium text-slate-600">퇴사일: {member.resignation_date || '-'}</span>
+            <span className="truncate max-w-[100px]" title={member.returned_items}>반납: {member.returned_items || '-'}</span>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between text-[#64748B]">
+            <span className="flex items-center gap-1 font-medium">
+              <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
+              {member.phone || '-'}
+            </span>
+            <div className="space-x-1.5">
+              <span className="font-semibold text-[#16A34A]">근속 {joinCareer || '-'}</span>
+              <span className="font-semibold text-[#2563EB]">총경력 {totalCareer || '-'}</span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
