@@ -43,6 +43,7 @@ interface SuggestionItem {
   author_name: string;
   created_at: string;
   updated_at: string;
+  has_comment?: boolean;
 }
 
 interface SuggestionComment {
@@ -82,9 +83,6 @@ export default function NoticeBoard({
   isAdmin,
   currentUser,
 }: NoticeBoardProps) {
-  // 탭 상태: 'notice' | 'suggestion' | 'anonymous'
-  const [activeTab, setActiveTab] = useState<'notice' | 'suggestion' | 'anonymous'>('notice');
-
   // 공지사항 관련 상태
   const [notices, setNotices] = useState<NoticeItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -99,7 +97,6 @@ export default function NoticeBoard({
   const [editingSuggestion, setEditingSuggestion] = useState<SuggestionItem | null>(null);
   const [comments, setComments] = useState<SuggestionComment[]>([]);
   const [newComment, setNewComment] = useState('');
-  const [newlyAddedCommentId, setNewlyAddedCommentId] = useState<string | null>(null);
 
   // 익명게시판 관련 상태
   const [anonymousPosts, setAnonymousPosts] = useState<AnonymousPostItem[]>([]);
@@ -213,19 +210,28 @@ export default function NoticeBoard({
 
   const fetchSuggestions = async () => {
     try {
-      setLoading(true);
-      const { data, error } = await supabase
+      const { data: sugData, error: sugError } = await supabase
         .from('suggestions')
         .select('*')
         .order('created_at', { ascending: false });
 
-      if (error) throw error;
-      setSuggestions(data || []);
+      if (sugError) throw sugError;
+
+      const { data: commData } = await supabase
+        .from('suggestion_comments')
+        .select('suggestion_id');
+
+      const commentedSet = new Set((commData || []).map((c) => c.suggestion_id));
+
+      const formattedSuggestions = (sugData || []).map((item) => ({
+        ...item,
+        has_comment: commentedSet.has(item.id),
+      }));
+
+      setSuggestions(formattedSuggestions);
     } catch (err: any) {
       console.error('개선/건의사항 불러오기 실패:', err);
       showAlert('불러오기 실패', '개선/건의사항을 불러오지 못했습니다.', 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -247,7 +253,6 @@ export default function NoticeBoard({
   const fetchAnonymousPosts = async () => {
     if (!isAdmin) return;
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('anonymous_posts')
         .select('*')
@@ -258,16 +263,22 @@ export default function NoticeBoard({
     } catch (err: any) {
       console.error('익명게시판 불러오기 실패:', err);
       showAlert('불러오기 실패', '익명 게시글을 불러오지 못했습니다.', 'error');
-    } finally {
-      setLoading(false);
     }
   };
 
+  const fetchAllData = async () => {
+    setLoading(true);
+    await Promise.all([
+      fetchNotices(),
+      fetchSuggestions(),
+      isAdmin ? fetchAnonymousPosts() : Promise.resolve(),
+    ]);
+    setLoading(false);
+  };
+
   useEffect(() => {
-    if (activeTab === 'notice') fetchNotices();
-    if (activeTab === 'suggestion') fetchSuggestions();
-    if (activeTab === 'anonymous') fetchAnonymousPosts();
-  }, [activeTab]);
+    fetchAllData();
+  }, [isAdmin]);
 
   // --- 공지사항 팝업 처리 ---
   const handleClosePopup = () => {
@@ -421,7 +432,10 @@ export default function NoticeBoard({
       } else if (type === 'comment') {
         const { error } = await supabase.from('suggestion_comments').delete().eq('id', id);
         if (error) throw error;
-        if (selectedSuggestion) fetchComments(selectedSuggestion.id);
+        if (selectedSuggestion) {
+          await fetchComments(selectedSuggestion.id);
+          await fetchSuggestions();
+        }
         showAlert('삭제 완료', '댓글이 삭제되었습니다.', 'success');
       }
 
@@ -539,202 +553,226 @@ export default function NoticeBoard({
     if (!newComment.trim() || !selectedSuggestion) return;
 
     try {
-      const { data, error } = await supabase
-        .from('suggestion_comments')
-        .insert([
-          {
-            suggestion_id: selectedSuggestion.id,
-            author_id: getCurrentUserId(),
-            author_name: currentUser?.name || '관리자',
-            content: newComment.trim(),
-            created_at: new Date().toISOString(),
-          },
-        ])
-        .select('*');
+      const { error } = await supabase.from('suggestion_comments').insert([
+        {
+          suggestion_id: selectedSuggestion.id,
+          author_id: getCurrentUserId(),
+          author_name: currentUser?.name || '관리자',
+          content: newComment.trim(),
+          created_at: new Date().toISOString(),
+        },
+      ]);
 
       if (error) throw error;
       setNewComment('');
 
-      if (data && data.length > 0) {
-        const commentId = data[0].id;
-        setNewlyAddedCommentId(commentId);
-        setTimeout(() => {
-          setNewlyAddedCommentId(null);
-        }, 3000);
-      }
-
-      fetchComments(selectedSuggestion.id);
+      await fetchComments(selectedSuggestion.id);
+      await fetchSuggestions();
+      showAlert('성공', '댓글이 등록되었습니다.', 'success');
     } catch (err: any) {
       showAlert('댓글 저장 실패', err?.message || '댓글 저장에 실패했습니다.', 'error');
     }
   };
 
   return (
-    <div className="w-full text-[#1F2937] p-4 sm:p-6 space-y-4 font-sans border-box">
-      {/* 상단 Header & Tabs */}
+    <div className="w-full text-[#1F2937] p-4 sm:p-6 space-y-6 font-sans border-box">
+      {/* 상단 Header */}
       <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
           <div className="flex items-center space-x-3">
             <div className="p-2.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
-              {activeTab === 'notice' && <Bell className="h-6 w-6" />}
-              {activeTab === 'suggestion' && <Lightbulb className="h-6 w-6" />}
-              {activeTab === 'anonymous' && <EyeOff className="h-6 w-6" />}
+              <Bell className="h-6 w-6" />
             </div>
 
             <div>
               <h1 className="text-base font-bold text-[#1F2937]">소통 게시판</h1>
               <p className="text-xs text-[#64748B]">
-                {activeTab === 'notice' && '사내 주요 공지 및 안내사항을 확인할 수 있습니다.'}
-                {activeTab === 'suggestion' && '현장 개선 의견 및 건의사항을 공유해 주세요.'}
-                {activeTab === 'anonymous' && '익명으로 자유롭게 의견을 제출할 수 있습니다.'}
+                사내 주요 공지, 개선/건의 및 익명 의견을 통합 관리하는 게시판입니다.
               </p>
             </div>
           </div>
 
-          {activeTab === 'notice' && (
-            <div className="sm:hidden flex items-center">
-              <button
-                onClick={() => {
-                  if (notices.length > 0) handleSelectNotice(notices[0]);
-                }}
-                className={`p-2 rounded-full border transition ${
-                  hasUnreadNotice ? 'bg-red-50 text-red-600 border-red-200' : 'bg-sky-50 text-sky-400 border-sky-200'
-                }`}
-                title={hasUnreadNotice ? '읽지 않은 새 공지가 있습니다.' : '모든 공지를 확인했습니다.'}
-              >
-                <Bell className="h-5 w-5" />
-              </button>
-            </div>
-          )}
+          <div className="sm:hidden flex items-center">
+            <button
+              onClick={() => {
+                if (notices.length > 0) handleSelectNotice(notices[0]);
+              }}
+              className={`p-2 rounded-full border transition ${
+                hasUnreadNotice ? 'bg-red-50 text-red-600 border-red-200' : 'bg-sky-50 text-sky-400 border-sky-200'
+              }`}
+              title={hasUnreadNotice ? '읽지 않은 새 공지가 있습니다.' : '모든 공지를 확인했습니다.'}
+            >
+              <Bell className="h-5 w-5" />
+            </button>
+          </div>
         </div>
 
-        {/* Action Button */}
-        <div>
-          {activeTab === 'notice' && isAdmin && (
+        {/* Action Buttons */}
+        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto pb-1 sm:pb-0">
+          {isAdmin && (
             <button
               onClick={handleOpenNoticeCreate}
-              className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-4 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs cursor-pointer"
+              className="flex items-center justify-center space-x-1 bg-[#243B5A] text-white px-3 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs cursor-pointer shrink-0"
             >
               <Plus className="h-4 w-4" />
               <span>공지 등록</span>
             </button>
           )}
-          {activeTab === 'suggestion' && (
-            <button
-              onClick={handleOpenSuggestionCreate}
-              className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-4 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              <span>건의사항 작성</span>
-            </button>
-          )}
-          {activeTab === 'anonymous' && (
-            <button
-              onClick={handleOpenAnonymousCreate}
-              className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-4 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              <span>익명글 작성</span>
-            </button>
-          )}
+          <button
+            onClick={handleOpenSuggestionCreate}
+            className="flex items-center justify-center space-x-1 bg-[#243B5A] text-white px-3 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs cursor-pointer shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            <span>건의사항 작성</span>
+          </button>
+          <button
+            onClick={handleOpenAnonymousCreate}
+            className="flex items-center justify-center space-x-1 bg-[#243B5A] text-white px-3 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs cursor-pointer shrink-0"
+          >
+            <Plus className="h-4 w-4" />
+            <span>익명글 작성</span>
+          </button>
         </div>
       </div>
 
-      {/* 탭 네비게이션 */}
-      <div className="flex border-b border-[#E2E5E9] bg-white rounded-xl p-1 gap-1 border">
-        <button
-          onClick={() => setActiveTab('notice')}
-          className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
-            activeTab === 'notice' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:bg-[#F5F6F8]'
-          }`}
-        >
-          <Bell className="h-3.5 w-3.5" />
-          <span>공지사항</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('suggestion')}
-          className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
-            activeTab === 'suggestion' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:bg-[#F5F6F8]'
-          }`}
-        >
-          <Lightbulb className="h-3.5 w-3.5" />
-          <span>개선/건의사항</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('anonymous')}
-          className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition cursor-pointer flex items-center justify-center gap-1.5 ${
-            activeTab === 'anonymous' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:bg-[#F5F6F8]'
-          }`}
-        >
-          <EyeOff className="h-3.5 w-3.5" />
-          <span>익명 게시판</span>
-          {!isAdmin && <span className="text-[10px] opacity-75">(작성 전용)</span>}
-        </button>
+      {/* ---------------- 1. 공지사항 섹션 ---------------- */}
+      <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-xs overflow-hidden">
+        <div className="px-4 py-3 border-b border-[#E2E5E9] bg-[#F5F6F8] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-[#243B5A]" />
+            <span className="text-xs font-bold text-[#1F2937]">공지사항 목록</span>
+            <span className="text-[10px] text-[#64748B]">총 {notices.length}건</span>
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="py-8 text-center text-xs text-[#64748B]">공지사항을 불러오는 중...</div>
+        ) : notices.length === 0 ? (
+          <div className="py-10 text-center">
+            <Bell className="h-7 w-7 mx-auto mb-2 text-[#CBD5E1]" />
+            <p className="text-xs text-[#64748B]">등록된 공지사항이 없습니다.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#E2E5E9]">
+            {notices.map((notice) => (
+              <div
+                key={notice.id}
+                onClick={() => handleSelectNotice(notice)}
+                className="px-4 py-3 hover:bg-[#F8FAFC] cursor-pointer transition"
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`mt-0.5 shrink-0 p-2 rounded-lg ${
+                      notice.is_pinned ? 'bg-[#243B5A] text-white' : 'bg-[#F5F6F8] text-[#64748B]'
+                    }`}
+                  >
+                    {notice.is_pinned ? <Pin className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      {notice.is_pinned && (
+                        <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#243B5A] text-white font-bold shrink-0">
+                          중요
+                        </span>
+                      )}
+                      <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate">{notice.title}</h3>
+                    </div>
+                    <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
+                      <span>작성자: {notice.author_name}</span>
+                      <span>{formatDate(notice.created_at)}</span>
+                    </div>
+                  </div>
+
+                  {isAdmin && (
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={(e) => handleOpenNoticeEdit(notice, e)}
+                        className="p-1.5 text-[#64748B] hover:text-[#243B5A] hover:bg-[#F5F6F8] rounded-lg cursor-pointer"
+                        title="공지 수정"
+                      >
+                        <Pencil className="h-3.5 w-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => handleDeleteClick(notice.id, 'notice', e)}
+                        className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg cursor-pointer"
+                        title="공지 삭제"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* ---------------- 1. 공지사항 탭 ---------------- */}
-      {activeTab === 'notice' && (
-        <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-xs overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#E2E5E9] bg-[#F5F6F8]">
-            <div className="flex items-center gap-2">
-              <Bell className="h-4 w-4 text-[#243B5A]" />
-              <span className="text-xs font-bold text-[#1F2937]">전체 공지사항</span>
-              <span className="text-[10px] text-[#64748B]">총 {notices.length}건</span>
-            </div>
+      {/* ---------------- 2. 개선 및 건의 목록 섹션 ---------------- */}
+      <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-xs overflow-hidden">
+        <div className="px-4 py-3 border-b border-[#E2E5E9] bg-[#F5F6F8] flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Lightbulb className="h-4 w-4 text-[#243B5A]" />
+            <span className="text-xs font-bold text-[#1F2937]">개선 및 건의 목록</span>
+            <span className="text-[10px] text-[#64748B]">총 {suggestions.length}건</span>
           </div>
+        </div>
 
-          {loading ? (
-            <div className="py-12 text-center text-xs text-[#64748B]">공지사항을 불러오는 중...</div>
-          ) : notices.length === 0 ? (
-            <div className="py-14 text-center">
-              <Bell className="h-8 w-8 mx-auto mb-2 text-[#CBD5E1]" />
-              <p className="text-xs text-[#64748B]">등록된 공지사항이 없습니다.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-[#E2E5E9]">
-              {notices.map((notice) => (
+        {loading ? (
+          <div className="py-8 text-center text-xs text-[#64748B]">개선/건의사항을 불러오는 중...</div>
+        ) : suggestions.length === 0 ? (
+          <div className="py-10 text-center">
+            <Lightbulb className="h-7 w-7 mx-auto mb-2 text-[#CBD5E1]" />
+            <p className="text-xs text-[#64748B]">등록된 개선/건의사항이 없습니다.</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-[#E2E5E9]">
+            {suggestions.map((item) => {
+              const canModify = isAdmin || item.author_id === getCurrentUserId();
+              return (
                 <div
-                  key={notice.id}
-                  onClick={() => handleSelectNotice(notice)}
+                  key={item.id}
+                  onClick={() => {
+                    setSelectedSuggestion(item);
+                    fetchComments(item.id);
+                  }}
                   className="px-4 py-3.5 hover:bg-[#F8FAFC] cursor-pointer transition"
                 >
                   <div className="flex items-start gap-3">
-                    <div
-                      className={`mt-0.5 shrink-0 p-2 rounded-lg ${
-                        notice.is_pinned ? 'bg-[#243B5A] text-white' : 'bg-[#F5F6F8] text-[#64748B]'
-                      }`}
-                    >
-                      {notice.is_pinned ? <Pin className="h-3.5 w-3.5" /> : <Bell className="h-3.5 w-3.5" />}
+                    <div className="mt-0.5 shrink-0 p-2 rounded-lg bg-[#F5F6F8] text-[#243B5A]">
+                      <Lightbulb className="h-3.5 w-3.5" />
                     </div>
 
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
-                        {notice.is_pinned && (
-                          <span className="text-[9px] px-1.5 py-0.5 rounded bg-[#243B5A] text-white font-bold shrink-0">
-                            중요
+                        <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate">{item.title}</h3>
+                        {item.has_comment && (
+                          <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">
+                            댓글 등록 완료
                           </span>
                         )}
-                        <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate">{notice.title}</h3>
                       </div>
+                      <p className="text-xs text-[#64748B] line-clamp-1 mb-1.5">{item.content}</p>
                       <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
-                        <span>작성자: {notice.author_name}</span>
-                        <span>{formatDate(notice.created_at)}</span>
+                        <span>작성자: {item.author_name}</span>
+                        <span>{formatDate(item.created_at)}</span>
                       </div>
                     </div>
 
-                    {isAdmin && (
+                    {canModify && (
                       <div className="flex items-center gap-1 shrink-0">
                         <button
-                          onClick={(e) => handleOpenNoticeEdit(notice, e)}
+                          onClick={(e) => handleOpenSuggestionEdit(item, e)}
                           className="p-1.5 text-[#64748B] hover:text-[#243B5A] hover:bg-[#F5F6F8] rounded-lg cursor-pointer"
-                          title="공지 수정"
+                          title="수정"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
-                          onClick={(e) => handleDeleteClick(notice.id, 'notice', e)}
+                          onClick={(e) => handleDeleteClick(item.id, 'suggestion', e, item.author_id)}
                           className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg cursor-pointer"
-                          title="공지 삭제"
+                          title="삭제"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -742,164 +780,69 @@ export default function NoticeBoard({
                     )}
                   </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* ---------------- 3. 익명 게시판 섹션 (관리자 전용 열람) ---------------- */}
+      {isAdmin && (
+        <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-xs overflow-hidden">
+          <div className="px-4 py-3 border-b border-[#E2E5E9] bg-[#F5F6F8] flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <EyeOff className="h-4 w-4 text-[#243B5A]" />
+              <span className="text-xs font-bold text-[#1F2937]">익명 게시판 목록 (관리자 전용 열람)</span>
+              <span className="text-[10px] text-[#64748B]">총 {anonymousPosts.length}건</span>
+            </div>
+            <span className="text-[10px] font-semibold text-[#243B5A] bg-[#243B5A]/10 px-2 py-0.5 rounded border border-[#243B5A]/20">
+              작성자 숨김 처리됨
+            </span>
+          </div>
+
+          {loading ? (
+            <div className="py-8 text-center text-xs text-[#64748B]">익명 게시글을 불러오는 중...</div>
+          ) : anonymousPosts.length === 0 ? (
+            <div className="py-10 text-center">
+              <EyeOff className="h-7 w-7 mx-auto mb-2 text-[#CBD5E1]" />
+              <p className="text-xs text-[#64748B]">등록된 익명 글이 없습니다.</p>
+            </div>
+          ) : (
+            <div className="divide-y divide-[#E2E5E9]">
+              {anonymousPosts.map((post) => (
+                <div
+                  key={post.id}
+                  onClick={() => setSelectedAnonymousPost(post)}
+                  className="px-4 py-3.5 hover:bg-[#F8FAFC] cursor-pointer transition"
+                >
+                  <div className="flex items-start gap-3">
+                    <div className="mt-0.5 shrink-0 p-2 rounded-lg bg-[#F5F6F8] text-[#243B5A]">
+                      <EyeOff className="h-3.5 w-3.5" />
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate mb-1">{post.title}</h3>
+                      <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
+                        <span className="font-semibold text-gray-500">작성자: 익명</span>
+                        <span>{formatDate(post.created_at)}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button
+                        onClick={(e) => handleDeleteClick(post.id, 'anonymous', e)}
+                        className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg cursor-pointer"
+                        title="삭제 (관리자)"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               ))}
             </div>
           )}
         </div>
-      )}
-
-      {/* ---------------- 2. 개선/건의사항 탭 ---------------- */}
-      {activeTab === 'suggestion' && (
-        <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-xs overflow-hidden">
-          <div className="px-4 py-3 border-b border-[#E2E5E9] bg-[#F5F6F8]">
-            <div className="flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-[#243B5A]" />
-              <span className="text-xs font-bold text-[#1F2937]">개선 및 건의 목록</span>
-              <span className="text-[10px] text-[#64748B]">총 {suggestions.length}건</span>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="py-12 text-center text-xs text-[#64748B]">개선/건의사항을 불러오는 중...</div>
-          ) : suggestions.length === 0 ? (
-            <div className="py-14 text-center">
-              <Lightbulb className="h-8 w-8 mx-auto mb-2 text-[#CBD5E1]" />
-              <p className="text-xs text-[#64748B]">등록된 개선/건의사항이 없습니다.</p>
-            </div>
-          ) : (
-            <div className="divide-y divide-[#E2E5E9]">
-              {suggestions.map((item) => {
-                const canModify = isAdmin || item.author_id === getCurrentUserId();
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      setSelectedSuggestion(item);
-                      fetchComments(item.id);
-                    }}
-                    className="px-4 py-3.5 hover:bg-[#F8FAFC] cursor-pointer transition"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 shrink-0 p-2 rounded-lg bg-[#F5F6F8] text-[#243B5A]">
-                        <Lightbulb className="h-3.5 w-3.5" />
-                      </div>
-
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate mb-1">{item.title}</h3>
-                        <p className="text-xs text-[#64748B] line-clamp-1 mb-1.5">{item.content}</p>
-                        <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
-                          <span>작성자: {item.author_name}</span>
-                          <span>{formatDate(item.created_at)}</span>
-                        </div>
-                      </div>
-
-                      {canModify && (
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={(e) => handleOpenSuggestionEdit(item, e)}
-                            className="p-1.5 text-[#64748B] hover:text-[#243B5A] hover:bg-[#F5F6F8] rounded-lg cursor-pointer"
-                            title="수정"
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            onClick={(e) => handleDeleteClick(item.id, 'suggestion', e, item.author_id)}
-                            className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg cursor-pointer"
-                            title="삭제"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ---------------- 3. 익명 게시판 탭 ---------------- */}
-      {activeTab === 'anonymous' && (
-        <>
-          {!isAdmin ? (
-            <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-xs p-8 text-center space-y-3">
-              <div className="p-3 bg-slate-50 border border-[#E2E5E9] rounded-full w-12 h-12 mx-auto flex items-center justify-center text-[#243B5A]">
-                <EyeOff className="h-6 w-6" />
-              </div>
-              <h2 className="text-sm font-bold text-[#1F2937]">익명 게시판 (전용 작성 구역)</h2>
-              <p className="text-xs text-[#64748B] max-w-md mx-auto leading-5">
-                익명 게시판에 등록된 작성글 및 목록은 **관리자 계정만 확인 가능**합니다.
-                <br />
-                제출하신 의견은 작성자 정보가 전혀 공개되지 않으며, 상단 **[익명글 작성]** 버튼을 통해 의견을 남기실 수 있습니다.
-              </p>
-              <button
-                onClick={handleOpenAnonymousCreate}
-                className="mt-2 inline-flex items-center gap-1.5 bg-[#243B5A] text-white px-4 py-2 rounded-lg hover:bg-[#1d3049] transition text-xs font-semibold cursor-pointer"
-              >
-                <Plus className="h-4 w-4" />
-                <span>익명글 작성하기</span>
-              </button>
-            </div>
-          ) : (
-            <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-xs overflow-hidden">
-              <div className="px-4 py-3 border-b border-[#E2E5E9] bg-[#F5F6F8] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <EyeOff className="h-4 w-4 text-[#243B5A]" />
-                  <span className="text-xs font-bold text-[#1F2937]">익명 제보 및 의견 목록 (관리자 열람)</span>
-                  <span className="text-[10px] text-[#64748B]">총 {anonymousPosts.length}건</span>
-                </div>
-                <span className="text-[10px] font-semibold text-[#243B5A] bg-[#243B5A]/10 px-2 py-0.5 rounded border border-[#243B5A]/20">
-                  작성자 완전히 숨김 처리됨
-                </span>
-              </div>
-
-              {loading ? (
-                <div className="py-12 text-center text-xs text-[#64748B]">익명 게시글을 불러오는 중...</div>
-              ) : anonymousPosts.length === 0 ? (
-                <div className="py-14 text-center">
-                  <EyeOff className="h-8 w-8 mx-auto mb-2 text-[#CBD5E1]" />
-                  <p className="text-xs text-[#64748B]">등록된 익명 글이 없습니다.</p>
-                </div>
-              ) : (
-                <div className="divide-y divide-[#E2E5E9]">
-                  {anonymousPosts.map((post) => (
-                    <div
-                      key={post.id}
-                      onClick={() => setSelectedAnonymousPost(post)}
-                      className="px-4 py-3.5 hover:bg-[#F8FAFC] cursor-pointer transition"
-                    >
-                      <div className="flex items-start gap-3">
-                        <div className="mt-0.5 shrink-0 p-2 rounded-lg bg-[#F5F6F8] text-[#243B5A]">
-                          <EyeOff className="h-3.5 w-3.5" />
-                        </div>
-
-                        <div className="flex-1 min-w-0">
-                          <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate mb-1">{post.title}</h3>
-                          <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
-                            <span className="font-semibold text-gray-500">작성자: 익명</span>
-                            <span>{formatDate(post.created_at)}</span>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-1 shrink-0">
-                          <button
-                            onClick={(e) => handleDeleteClick(post.id, 'anonymous', e)}
-                            className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg cursor-pointer"
-                            title="삭제 (관리자)"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-        </>
       )}
 
       {/* ---------------- 모달 1: 공지 상세보기 ---------------- */}
@@ -1019,11 +962,6 @@ export default function NoticeBoard({
                               <User className="h-3 w-3" />
                               {c.author_name}
                             </span>
-                            {newlyAddedCommentId === c.id && (
-                              <span className="text-[10px] font-bold text-green-600 bg-green-50 border border-green-200 px-1.5 py-0.5 rounded">
-                                댓글 등록
-                              </span>
-                            )}
                           </div>
 
                           <div className="flex items-center gap-2">
