@@ -466,9 +466,12 @@ export default function MaterialManagement({
   const [isItemSubCatModalOpen, setIsItemSubCatModalOpen] = useState<boolean>(false);
   const [editingItemSubCatName, setEditingItemSubCatName] = useState<string | null>(null);
   const [editItemSubCatInputValue, setEditItemSubCatInputValue] = useState<string>('');
+  const [newItemSubCatInput, setNewItemSubCatInput] = useState<string>('');
+  const [newItemSubCatMaterialName, setNewItemSubCatMaterialName] = useState<string>('');
 
-  // 품목별 서브탭은 실제 등록된 자재명을 기준으로 자동 구성하고,
-  // Supabase의 inventory_item_subcategories에서 순서를 유지합니다.
+  // 공구 전용 자재코드 필터
+  const [selectedToolCode, setSelectedToolCode] = useState<string>('');
+
   useEffect(() => {
     let cancelled = false;
     const loadItemSubCategories = async () => {
@@ -481,7 +484,6 @@ export default function MaterialManagement({
         if (error) throw error;
         if (!cancelled) setItemSubCategoryRows(data || []);
       } catch (error) {
-        // 신규 테이블이 아직 없는 경우에도 자재명 기반 서브탭은 화면에서 자동 생성합니다.
         console.error('품목별 서브탭 불러오기 실패:', error);
         if (!cancelled) setItemSubCategoryRows([]);
       }
@@ -490,23 +492,21 @@ export default function MaterialManagement({
     return () => { cancelled = true; };
   }, []);
 
-  // 현재 선택된 대분류/서브카테고리에 해당하는 자재명 목록
-  const currentItemSubCategoryOptions = useMemo(() => {
-    if (inventoryTab === '고정' && selectedFixedSubCategory === 'VBT') {
-      // VBT는 기존 1L/1S/2L/2S/FLAT/기타 서브탭을 그대로 사용합니다.
-      return [];
-    }
-
+  // 현재 상위 카테고리에 실제로 존재하는 자재명 목록
+  const currentMaterialNames = useMemo(() => {
     let names: string[] = [];
 
     if (inventoryTab === '고정') {
-      const source = inventoryList.filter(item => {
-        const cat = item.category || '';
-        const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
-        if (selectedFixedSubCategory === '교정') return Boolean(calDate || nextCalDate);
-        return cat === selectedFixedSubCategory;
-      });
-      names = source.map(item => String(item.name || '').trim()).filter(Boolean);
+      names = inventoryList
+        .filter(item => {
+          const cat = item.category || '';
+          const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+          if (selectedFixedSubCategory === 'VBT') return false;
+          if (selectedFixedSubCategory === '교정') return Boolean(calDate || nextCalDate);
+          return cat === selectedFixedSubCategory;
+        })
+        .map(item => String(item.name || '').trim())
+        .filter(Boolean);
     } else if (inventoryTab === '소모성') {
       names = inventoryList
         .filter(item => item.type === '소모성' && item.category === selectedConsumableCategory)
@@ -527,7 +527,23 @@ export default function MaterialManagement({
         .filter(Boolean);
     }
 
-    const uniqueNames = Array.from(new Set(names));
+    return Array.from(new Set(names));
+  }, [
+    inventoryTab,
+    inventoryList,
+    cabinInventoryList,
+    selectedFixedSubCategory,
+    selectedConsumableCategory,
+    selectedCabinSheet,
+    selectedCabinTextSubTag,
+    cabinCalibrationOnly
+  ]);
+
+  // 카테고리명과 실제 자재명을 분리해서 관리합니다.
+  // 예: 카테고리 = '무전기', 실제 자재명 = '무전기 #4'
+  const currentItemSubCategoryEntries = useMemo(() => {
+    if (inventoryTab === '고정' && selectedFixedSubCategory === 'VBT') return [];
+
     const type = inventoryTab;
     const parentCategory = inventoryTab === '고정'
       ? selectedFixedSubCategory
@@ -540,47 +556,46 @@ export default function MaterialManagement({
       .sort((a, b) => {
         const aOrder = Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : Number.MAX_SAFE_INTEGER;
         const bOrder = Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : Number.MAX_SAFE_INTEGER;
-        return aOrder - bOrder || String(a.name).localeCompare(String(b.name));
+        return aOrder - bOrder || String(a.name || '').localeCompare(String(b.name || ''), 'ko');
       });
 
-    const hiddenNames = new Set(
-      savedRows
-        .filter(row => row.is_active === false)
-        .map(row => String(row.name))
-    );
+    const entries: { categoryName: string; materialNames: string[] }[] = [];
 
-    // 'name'은 화면에 표시되는 카테고리명이고, material_name은 실제 자재명입니다.
-    // 카테고리명을 수정해도 실제 자재명은 그대로 유지합니다.
-    const savedNames = savedRows
+    savedRows
       .filter(row => row.is_active !== false)
-      .map(row => String(row.name));
+      .forEach(row => {
+        const categoryName = String(row.name || '').trim();
+        if (!categoryName) return;
+        const materialName = String(row.material_name || '').trim();
+        const existing = entries.find(entry => entry.categoryName === categoryName);
+        if (existing) {
+          if (materialName && !existing.materialNames.includes(materialName)) existing.materialNames.push(materialName);
+        } else {
+          entries.push({ categoryName, materialNames: materialName ? [materialName] : [] });
+        }
+      });
 
-    const ordered = [
-      ...savedNames.filter(name => {
-        const row = savedRows.find(r => String(r.name) === name);
-        const materialName = String(row?.material_name || name).trim();
-        return uniqueNames.includes(materialName);
-      }),
-      ...uniqueNames
-        .filter(name => {
-          const matchingSavedRow = savedRows.find(row => String(row.material_name || '').trim() === name);
-          return !savedNames.includes(name) && !matchingSavedRow && !hiddenNames.has(name);
-        })
-        .sort((a, b) => a.localeCompare(b, 'ko'))
-    ];
+    // 아직 저장되지 않은 실제 자재명은 기존 동작처럼 자기 자신을 카테고리로 자동 표시합니다.
+    currentMaterialNames.forEach(materialName => {
+      if (!entries.some(entry => entry.materialNames.includes(materialName))) {
+        entries.push({ categoryName: materialName, materialNames: [materialName] });
+      }
+    });
 
-    return ordered;
+    return entries;
   }, [
     inventoryTab,
-    inventoryList,
-    cabinInventoryList,
     selectedFixedSubCategory,
     selectedConsumableCategory,
     selectedCabinSheet,
-    selectedCabinTextSubTag,
-    cabinCalibrationOnly,
-    itemSubCategoryRows
+    itemSubCategoryRows,
+    currentMaterialNames
   ]);
+
+  const currentItemSubCategoryOptions = useMemo(
+    () => currentItemSubCategoryEntries.map(entry => entry.categoryName),
+    [currentItemSubCategoryEntries]
+  );
 
   useEffect(() => {
     if (currentItemSubCategoryOptions.length === 0) {
@@ -595,6 +610,11 @@ export default function MaterialManagement({
     setItemSubPage(1);
   }, [currentItemSubCategoryOptions, selectedItemSubCategory]);
 
+  useEffect(() => {
+    setSelectedToolCode('');
+    setItemSubPage(1);
+  }, [inventoryTab, selectedFixedSubCategory]);
+
   const getCurrentItemSubCategoryContext = () => {
     const parentCategory = inventoryTab === '고정'
       ? selectedFixedSubCategory
@@ -603,6 +623,51 @@ export default function MaterialManagement({
         : selectedCabinSheet;
 
     return { type: inventoryTab, parentCategory };
+  };
+
+  const handleAddItemSubCategory = async () => {
+    if (!isAdmin) return alert('관리자만 자재명 카테고리를 추가할 수 있습니다.');
+
+    const categoryName = newItemSubCatInput.trim();
+    const materialName = newItemSubCatMaterialName.trim();
+    if (!categoryName) {
+      alert('새로운 카테고리 이름을 입력해주세요.');
+      return;
+    }
+    if (currentItemSubCategoryOptions.includes(categoryName)) {
+      alert('이미 존재하는 자재명 카테고리입니다.');
+      return;
+    }
+
+    const { type, parentCategory } = getCurrentItemSubCategoryContext();
+
+    try {
+      const { data, error } = await supabase
+        .from('inventory_item_subcategories')
+        .insert([{
+          inventory_type: type,
+          parent_category: parentCategory,
+          name: categoryName,
+          material_name: materialName || null,
+          sort_order: itemSubCategoryRows.filter(row => row.inventory_type === type && row.parent_category === parentCategory).length,
+          is_active: true
+        }])
+        .select('id, inventory_type, parent_category, name, material_name, sort_order, is_active')
+        .single();
+      if (error) throw error;
+
+      setItemSubCategoryRows(prev => [...prev, data]);
+      setSelectedItemSubCategory(categoryName);
+      setNewItemSubCatInput('');
+      setNewItemSubCatMaterialName('');
+      showCenterToast('자재명 카테고리가 추가되었습니다.');
+    } catch (error: any) {
+      if (String(error?.message || '').includes('inventory_item_subcategories_unique')) {
+        alert('같은 카테고리와 같은 자재명이 이미 등록되어 있습니다. 카테고리명 또는 연결 자재명을 확인해주세요.');
+      } else {
+        alert('자재명 카테고리 추가 실패: ' + (error?.message || '알 수 없는 오류'));
+      }
+    }
   };
 
   const handleRenameItemSubCategory = async (oldName: string) => {
@@ -626,48 +691,49 @@ export default function MaterialManagement({
     const { type, parentCategory } = getCurrentItemSubCategoryContext();
 
     try {
-      const targetRow = itemSubCategoryRows.find(
+      const targetRows = itemSubCategoryRows.filter(
         row => row.inventory_type === type && row.parent_category === parentCategory && row.name === oldName
       );
 
-      // 중요: 카테고리명만 수정합니다. 실제 inventory / cabin_inventory의 자재명은 수정하지 않습니다.
-      // 기존 행이라면 실제 자재명(material_name)을 그대로 보존하고,
-      // 기존 컬럼이 비어 있던 경우에는 현재 카테고리명(oldName)을 실제 자재명으로 기록합니다.
-      if (targetRow) {
-        const materialName = String(targetRow.material_name || oldName).trim();
-        const { error } = await supabase
-          .from('inventory_item_subcategories')
-          .update({ name: newName, material_name: materialName, is_active: true })
-          .eq('id', targetRow.id);
-        if (error) throw error;
+      if (targetRows.length > 0) {
+        for (const targetRow of targetRows) {
+          const { error } = await supabase
+            .from('inventory_item_subcategories')
+            .update({ name: newName, is_active: true })
+            .eq('id', targetRow.id);
+          if (error) throw error;
+        }
       } else {
+        const materialName = currentItemSubCategoryEntries.find(entry => entry.categoryName === oldName)?.materialNames[0] || oldName;
         const { error } = await supabase
           .from('inventory_item_subcategories')
           .insert([{
             inventory_type: type,
             parent_category: parentCategory,
             name: newName,
-            material_name: oldName,
+            material_name: materialName,
             sort_order: 0,
             is_active: true
           }]);
         if (error) throw error;
       }
 
+      // 중요: 카테고리명만 변경합니다. inventory/cabin_inventory의 실제 자재명은 수정하지 않습니다.
       setItemSubCategoryRows(prev => prev.map(row =>
         row.inventory_type === type && row.parent_category === parentCategory && row.name === oldName
-          ? { ...row, name: newName, material_name: row.material_name || oldName, is_active: true }
+          ? { ...row, name: newName, is_active: true }
           : row
       ));
       setSelectedItemSubCategory(newName);
       setEditingItemSubCatName(null);
       setEditItemSubCatInputValue('');
-      showCenterToast('자재명 카테고리가 수정되었습니다.');
-
-      if (type === 'CABIN') await fetchCabinInventory();
-      else await fetchInventory();
+      showCenterToast('자재명 카테고리가 수정되었습니다. 실제 자재명은 변경되지 않았습니다.');
     } catch (error: any) {
-      alert('자재명 카테고리 수정 실패: ' + (error?.message || '알 수 없는 오류'));
+      if (String(error?.message || '').includes('inventory_item_subcategories_unique')) {
+        alert('같은 카테고리와 자재명 조합이 이미 존재합니다. 다른 카테고리명을 입력해주세요.');
+      } else {
+        alert('자재명 카테고리 수정 실패: ' + (error?.message || '알 수 없는 오류'));
+      }
     }
   };
 
@@ -678,11 +744,11 @@ export default function MaterialManagement({
     const { type, parentCategory } = getCurrentItemSubCategoryContext();
 
     try {
-      const targetRow = itemSubCategoryRows.find(
+      const targetRows = itemSubCategoryRows.filter(
         row => row.inventory_type === type && row.parent_category === parentCategory && row.name === name
       );
 
-      if (targetRow) {
+      for (const targetRow of targetRows) {
         const { error } = await supabase
           .from('inventory_item_subcategories')
           .update({ is_active: false })
@@ -1290,6 +1356,20 @@ export default function MaterialManagement({
     );
   };
 
+  const currentSelectedItemSubCategoryEntry = useMemo(
+    () => currentItemSubCategoryEntries.find(entry => entry.categoryName === selectedItemSubCategory),
+    [currentItemSubCategoryEntries, selectedItemSubCategory]
+  );
+
+  const toolCodeOptions = useMemo(() => {
+    if (inventoryTab !== '고정' || selectedFixedSubCategory !== '공구') return [];
+    const codes = inventoryList
+      .filter(item => item.type === '고정' && item.category === '공구')
+      .map(item => String(item.code || '').trim())
+      .filter(Boolean);
+    return Array.from(new Set(codes)).sort((a, b) => a.localeCompare(b, 'ko'));
+  }, [inventoryList, inventoryTab, selectedFixedSubCategory]);
+
   const filteredInventory = useMemo(() => {
     let result: any[] = [];
 
@@ -1341,25 +1421,21 @@ export default function MaterialManagement({
       });
     }
 
-    if (
-      selectedItemSubCategory &&
-      currentItemSubCategoryOptions.includes(selectedItemSubCategory)
-    ) {
-      const { type, parentCategory } = getCurrentItemSubCategoryContext();
-      const selectedCategoryRow = itemSubCategoryRows.find(
-        row => row.inventory_type === type &&
-          row.parent_category === parentCategory &&
-          String(row.name) === selectedItemSubCategory &&
-          row.is_active !== false
-      );
+    // 자재명 카테고리 선택 시 실제 자재명(material_name)을 기준으로 필터링합니다.
+    // 따라서 카테고리명을 수정해도 실제 자재명은 변경되지 않습니다.
+    if (selectedItemSubCategory && currentSelectedItemSubCategoryEntry) {
+      const materialNames = currentSelectedItemSubCategoryEntry.materialNames;
+      if (materialNames.length > 0) {
+        result = result.filter(item => {
+          const itemName = inventoryTab === 'CABIN' ? item.item : item.name;
+          return materialNames.includes(String(itemName || '').trim());
+        });
+      }
+    }
 
-      // 카테고리명이 실제 자재명과 달라도, material_name을 기준으로 해당 자재를 필터링합니다.
-      const targetMaterialName = String(selectedCategoryRow?.material_name || selectedItemSubCategory).trim();
-
-      result = result.filter(item => {
-        const itemName = inventoryTab === 'CABIN' ? item.item : item.name;
-        return String(itemName || '').trim() === targetMaterialName;
-      });
+    // 기자재 > 공구에서는 자재코드를 추가로 선택해서 해당 코드의 목록만 볼 수 있습니다.
+    if (inventoryTab === '고정' && selectedFixedSubCategory === '공구' && selectedToolCode) {
+      result = result.filter(item => String(item.code || '').trim() === selectedToolCode);
     }
 
     return result;
@@ -1374,8 +1450,8 @@ export default function MaterialManagement({
     selectedCabinTextSubTag,
     cabinCalibrationOnly,
     selectedItemSubCategory,
-    currentItemSubCategoryOptions,
-    itemSubCategoryRows
+    currentSelectedItemSubCategoryEntry,
+    selectedToolCode
   ]);
 
   const totalItemPages = Math.max(1, Math.ceil(filteredInventory.length / ITEMS_PER_PAGE));
@@ -1867,11 +1943,45 @@ export default function MaterialManagement({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
             <div className="flex justify-between items-center">
-              <h3 className="text-sm font-bold">자재명 카테고리 수정 / 삭제</h3>
+              <h3 className="text-sm font-bold">자재명 카테고리 추가 / 수정 / 삭제</h3>
               <button onClick={() => { setIsItemSubCatModalOpen(false); setEditingItemSubCatName(null); }}><X className="h-4 w-4" /></button>
             </div>
-            <p className="text-[11px] text-[#64748B]">현재 선택된 상위 카테고리의 자재명 서브탭을 관리합니다.</p>
-            <div className="max-h-64 overflow-y-auto space-y-1.5 pt-2 border-t border-[#E2E5E9]">
+            <p className="text-[11px] text-[#64748B]">
+              카테고리명과 실제 자재명은 별도로 관리됩니다. 카테고리를 수정해도 실제 자재명은 변경되지 않습니다.
+            </p>
+
+            <div className="space-y-2 pb-2 border-b border-[#E2E5E9]">
+              <div className="text-[11px] font-bold text-[#243B5A]">새 카테고리 추가</div>
+              <div className="flex gap-1">
+                <input
+                  type="text"
+                  placeholder="새로운 카테고리 이름"
+                  value={newItemSubCatInput}
+                  onChange={e => setNewItemSubCatInput(e.target.value)}
+                  className="min-w-0 flex-1 px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs bg-white"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddItemSubCategory}
+                  className="px-3 py-1.5 bg-[#243B5A] text-white rounded text-xs font-semibold shrink-0"
+                >
+                  추가
+                </button>
+              </div>
+              <select
+                value={newItemSubCatMaterialName}
+                onChange={e => setNewItemSubCatMaterialName(e.target.value)}
+                className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded text-xs bg-white text-[#1F2937]"
+              >
+                <option value="">연결할 실제 자재명 선택 (선택사항)</option>
+                {currentMaterialNames.map(materialName => (
+                  <option key={materialName} value={materialName}>{materialName}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="text-[11px] font-bold text-[#243B5A]">현재 카테고리 관리</div>
+            <div className="max-h-64 overflow-y-auto space-y-1.5 pt-1">
               {currentItemSubCategoryOptions.map((name) => (
                 <div key={name} className="flex items-center justify-between bg-[#F5F6F8] px-2 py-1.5 rounded text-xs gap-1">
                   {editingItemSubCatName === name ? (
@@ -1922,6 +2032,9 @@ export default function MaterialManagement({
                   </div>
                 </div>
               ))}
+              {currentItemSubCategoryOptions.length === 0 && (
+                <div className="text-center text-[11px] text-[#94A3B8] py-4">등록된 카테고리가 없습니다.</div>
+              )}
             </div>
           </div>
         </div>
@@ -2348,6 +2461,46 @@ export default function MaterialManagement({
               <Settings className="h-4 w-4 shrink-0" />
             </button>
           )}
+        </div>
+      )}
+
+      {inventoryTab === '고정' && selectedFixedSubCategory === '공구' && toolCodeOptions.length > 0 && (
+        <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
+            <Package className="h-3.5 w-3.5 text-[#243B5A]" />
+            <span>자재코드:</span>
+          </div>
+          <div
+            className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
+          >
+            <button
+              type="button"
+              onClick={() => { setSelectedToolCode(''); setItemSubPage(1); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
+                selectedToolCode === ''
+                  ? 'bg-slate-700 text-white font-semibold shadow-2xs'
+                  : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
+              }`}
+            >
+              전체 코드
+            </button>
+            {toolCodeOptions.map(code => (
+              <button
+                key={code}
+                type="button"
+                onClick={() => { setSelectedToolCode(code); setItemSubPage(1); }}
+                className={`px-3 py-1.5 rounded-md text-xs font-mono font-medium whitespace-nowrap transition shrink-0 ${
+                  selectedToolCode === code
+                    ? 'bg-slate-700 text-white font-semibold shadow-2xs'
+                    : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
+                }`}
+                title={`자재코드 ${code} 품목 보기`}
+              >
+                {code}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
