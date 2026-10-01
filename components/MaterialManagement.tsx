@@ -25,9 +25,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// 페이지네이션 및 데이터 로딩 로직을 올바르게 반영한 전체 코드
-import React, { useState, useEffect } from 'react';
-
 // ... 기존 상단 Import 및 타입 정의 유지 ...
 
 export default function Component() {
