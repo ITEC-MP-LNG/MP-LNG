@@ -179,6 +179,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   // Status 수정 모달 상태
   const [isStatusEditModalOpen, setIsStatusEditModalOpen] = useState(false);
   const [statusModalTankTab, setStatusModalTankTab] = useState<TankKey>('TK1');
+
+  // Ship No. 서브탭 제목(Ship No.) 전용 수정 모달
+  const [isShipNoTitleEditModalOpen, setIsShipNoTitleEditModalOpen] = useState(false);
+  const [shipNoTitleEditId, setShipNoTitleEditId] = useState('');
+  const [shipNoTitleEditValue, setShipNoTitleEditValue] = useState('');
   const [statusEditFormData, setStatusEditFormData] = useState<{
     id: string;
     ship_no: string;
@@ -668,6 +673,95 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     });
     setStatusModalTankTab('TK1');
     setIsStatusEditModalOpen(true);
+  };
+
+  // Ship No. 서브탭의 TITLE(Ship No.)만 수정
+  const handleOpenShipNoTitleEdit = (ship: ShipItem) => {
+    if (!isAdmin) {
+      showAlert('권한 필요', '수정은 관리자 권한만 가능합니다.', 'warning');
+      return;
+    }
+
+    setShipNoTitleEditId(ship.id);
+    setShipNoTitleEditValue(ship.ship_no);
+    setIsShipNoTitleEditModalOpen(true);
+  };
+
+  const handleSaveShipNoTitleEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !shipNoTitleEditId) return;
+
+    const newShipNo = shipNoTitleEditValue.trim();
+    if (!newShipNo) {
+      showAlert('입력 확인', 'Ship No.를 입력해주세요.', 'warning');
+      return;
+    }
+
+    const duplicate = ships.some(
+      (ship) =>
+        ship.id !== shipNoTitleEditId &&
+        ship.ship_no.trim().toLowerCase() === newShipNo.toLowerCase()
+    );
+
+    if (duplicate) {
+      showAlert('중복 안내', `이미 존재하는 Ship No. [${newShipNo}] 입니다. 다른 번호를 입력하세요.`, 'warning');
+      return;
+    }
+
+    try {
+      const targetShip = ships.find((ship) => ship.id === shipNoTitleEditId);
+      if (!targetShip) {
+        showAlert('수정 실패', '수정할 호선을 찾을 수 없습니다.', 'error');
+        return;
+      }
+
+      const { error } = await supabase
+        .from(TABLE_NAME)
+        .update({ ship_no: newShipNo })
+        .eq('id', shipNoTitleEditId);
+
+      if (error) {
+        showAlert('수정 실패', 'Ship No. 수정 중 오류가 발생했습니다: ' + error.message, 'error');
+        return;
+      }
+
+      setShips((prev) =>
+        prev.map((ship) =>
+          ship.id === shipNoTitleEditId
+            ? { ...ship, ship_no: newShipNo }
+            : ship
+        )
+      );
+
+      if (selectedHullNo === targetShip.ship_no) {
+        setSelectedHullNo(newShipNo);
+      }
+
+      setIsShipNoTitleEditModalOpen(false);
+      showAlert('수정 완료', `[Ship #${targetShip.ship_no}]의 Ship No.가 [${newShipNo}]로 수정되었습니다.`, 'success');
+    } catch (e: any) {
+      showAlert('수정 실패', 'Ship No. 수정 중 오류가 발생했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
+    }
+  };
+
+  // Ship No. 서브탭의 ▲▼ 위치 이동
+  const handleMoveShipPosition = (shipId: string, direction: 'up' | 'down') => {
+    if (!isAdmin) {
+      showAlert('권한 필요', '위치 변경은 관리자 권한만 가능합니다.', 'warning');
+      return;
+    }
+
+    const currentIndex = ships.findIndex((ship) => ship.id === shipId);
+    if (currentIndex < 0) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= ships.length) return;
+
+    const newShips = [...ships];
+    const currentShip = newShips[currentIndex];
+    newShips[currentIndex] = newShips[targetIndex];
+    newShips[targetIndex] = currentShip;
+    setShips(newShips);
   };
 
   // [수정 모달] 현재 호선의 서브탭 위치를 좌/우로 이동
@@ -1290,14 +1384,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               )}
             </div>
 
-            {/* 서브탭 목록 (Ship No 별 / 행 클릭 선택 / 관리자 수정·삭제) */}
+            {/* 서브탭 목록: Ship No. TITLE / ▲▼ 위치 / 수정 / 삭제 */}
             {ships.length === 0 ? (
               <div className="text-xs text-[#64748B] py-4 text-center border-t border-[#E2E5E9]">
                 등록된 호선이 없습니다. 우측 상단의 [신규 Ship 등록] 버튼을 눌러 등록을 시작하세요.
               </div>
             ) : (
               <div className="flex items-center gap-2 overflow-x-auto pt-1 pb-1 scrollbar-thin">
-                {ships.map((ship) => {
+                {ships.map((ship, index) => {
                   const isSelected = (currentStatusShip?.ship_no === ship.ship_no);
                   const stats = calculateTankStats(ship.tank_status);
 
@@ -1312,39 +1406,64 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       }`}
                       title={`Ship #${ship.ship_no} 선택`}
                     >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className={`font-bold text-xs font-mono whitespace-nowrap ${
-                          isSelected ? 'text-[#243B5A]' : 'text-[#475569]'
-                        }`}>
-                          Ship {ship.ship_no}
-                        </span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-sans font-bold whitespace-nowrap ${
-                          isSelected
-                            ? 'bg-[#243B5A] text-white'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        }`}>
-                          {stats.completed}/{stats.total}
-                        </span>
-                      </div>
+                      {/* TITLE: Ship No. */}
+                      <span className={`font-bold text-xs font-mono whitespace-nowrap ${
+                        isSelected ? 'text-[#243B5A]' : 'text-[#475569]'
+                      }`}>
+                        Ship {ship.ship_no}
+                      </span>
+
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-sans font-bold whitespace-nowrap ${
+                        isSelected
+                          ? 'bg-[#243B5A] text-white'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      }`}>
+                        {stats.completed}/{stats.total}
+                      </span>
 
                       {isAdmin && (
                         <div
                           className="flex items-center gap-1 ml-1 pl-1.5 border-l border-[#E2E5E9]"
                           onClick={(e) => e.stopPropagation()}
                         >
+                          {/* 위치 이동: ▲ / ▼ */}
                           <button
                             type="button"
-                            onClick={() => handleOpenStatusEditModal(ship)}
+                            onClick={() => handleMoveShipPosition(ship.id, 'up')}
+                            disabled={index === 0}
+                            className="w-6 h-6 rounded-md text-[11px] font-bold text-[#64748B] bg-white border border-[#CBD5E1] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                            title="위로 이동"
+                            aria-label={`${ship.ship_no} 위로 이동`}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveShipPosition(ship.id, 'down')}
+                            disabled={index === ships.length - 1}
+                            className="w-6 h-6 rounded-md text-[11px] font-bold text-[#64748B] bg-white border border-[#CBD5E1] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                            title="아래로 이동"
+                            aria-label={`${ship.ship_no} 아래로 이동`}
+                          >
+                            ▼
+                          </button>
+
+                          {/* TITLE 수정 */}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenShipNoTitleEdit(ship)}
                             className="px-2 py-1 rounded-md text-[10px] font-bold text-[#243B5A] bg-white border border-[#CBD5E1] hover:bg-[#F1F5F9] cursor-pointer whitespace-nowrap"
-                            title="호선 수정 및 위치 이동"
+                            title="Ship No. TITLE 수정"
                           >
                             수정
                           </button>
+
+                          {/* TITLE 삭제 */}
                           <button
                             type="button"
                             onClick={() => handleRequestDeleteStatusShip(ship)}
                             className="px-2 py-1 rounded-md text-[10px] font-bold text-red-600 bg-white border border-red-200 hover:bg-red-50 cursor-pointer whitespace-nowrap"
-                            title="호선 삭제"
+                            title="Ship No. TITLE 삭제"
                           >
                             삭제
                           </button>
@@ -2920,7 +3039,66 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 7. 삭제 확인 모달 */}
+      {/* 7. Ship No. TITLE 수정 모달 */}
+      {/* ============================================================== */}
+      {isShipNoTitleEditModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
+          <form
+            onSubmit={handleSaveShipNoTitleEdit}
+            className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-[#1F2937]">Ship No. TITLE 수정</h3>
+                <p className="text-[11px] text-[#64748B] mt-1">
+                  서브탭에 표시되는 Ship No.만 수정합니다.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsShipNoTitleEditModalOpen(false)}
+                className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100 cursor-pointer"
+                aria-label="닫기"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#475569]">
+                Ship No.
+              </label>
+              <input
+                type="text"
+                value={shipNoTitleEditValue}
+                onChange={(e) => setShipNoTitleEditValue(e.target.value)}
+                autoFocus
+                className="w-full px-3 py-2 bg-white border border-[#CBD5E1] rounded-lg text-sm text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                placeholder="Ship No. 입력"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-[#E2E5E9]">
+              <button
+                type="button"
+                onClick={() => setIsShipNoTitleEditModalOpen(false)}
+                className="px-3 py-1.5 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
+              >
+                수정 저장
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 8. 삭제 확인 모달 */}
       {/* ============================================================== */}
       {isDeleteModalOpen && targetDeleteShip && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
