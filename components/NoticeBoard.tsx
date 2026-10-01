@@ -99,6 +99,7 @@ export default function NoticeBoard({
   const [editingSuggestion, setEditingSuggestion] = useState<SuggestionItem | null>(null);
   const [comments, setComments] = useState<SuggestionComment[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [commentSuccessMessage, setCommentSuccessMessage] = useState(''); // 댓글 작성 성공 녹색 메시지 상태
 
   // 익명게시판 관련 상태
   const [anonymousPosts, setAnonymousPosts] = useState<AnonymousPostItem[]>([]);
@@ -549,7 +550,12 @@ export default function NoticeBoard({
 
       if (error) throw error;
       setNewComment('');
+      setCommentSuccessMessage('댓글 등록.');
       fetchComments(selectedSuggestion.id);
+
+      setTimeout(() => {
+        setCommentSuccessMessage('');
+      }, 3000);
     } catch (err: any) {
       showAlert('댓글 저장 실패', err?.message || '댓글 저장에 실패했습니다.', 'error');
     }
@@ -761,6 +767,7 @@ export default function NoticeBoard({
                     key={item.id}
                     onClick={() => {
                       setSelectedSuggestion(item);
+                      setCommentSuccessMessage('');
                       fetchComments(item.id);
                     }}
                     className="px-4 py-3.5 hover:bg-[#F8FAFC] cursor-pointer transition"
@@ -1023,22 +1030,30 @@ export default function NoticeBoard({
 
                 {/* 관리자 작성 폼 */}
                 {isAdmin ? (
-                  <form onSubmit={handleCommentSubmit} className="flex gap-2">
-                    <input
-                      type="text"
-                      value={newComment}
-                      onChange={(e) => setNewComment(e.target.value)}
-                      placeholder="답변 코멘트를 입력하세요..."
-                      className="flex-1 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
-                    />
-                    <button
-                      type="submit"
-                      className="px-3 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-semibold hover:bg-[#1d3049] transition cursor-pointer flex items-center gap-1 shrink-0"
-                    >
-                      <Send className="h-3 w-3" />
-                      <span>등록</span>
-                    </button>
-                  </form>
+                  <div className="space-y-1.5">
+                    {/* 댓글 등록 성공 녹색 메시지 */}
+                    {commentSuccessMessage && (
+                      <p className="text-xs font-bold text-green-600 dark:text-green-400 pl-0.5">
+                        {commentSuccessMessage}
+                      </p>
+                    )}
+                    <form onSubmit={handleCommentSubmit} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        placeholder="답변 코멘트를 입력하세요..."
+                        className="flex-1 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
+                      />
+                      <button
+                        type="submit"
+                        className="px-3 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-semibold hover:bg-[#1d3049] transition cursor-pointer flex items-center gap-1 shrink-0"
+                      >
+                        <Send className="h-3 w-3" />
+                        <span>등록</span>
+                      </button>
+                    </form>
+                  </div>
                 ) : (
                   <p className="text-[10px] text-[#64748B] text-center pt-1">
                     * 답변 작성을 위한 권한은 관리자 계정에게만 부여됩니다.
