@@ -25,57 +25,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// ... 기존 상단 Import 및 타입 정의 유지 ...
-
-export default function Component() {
-  // 기존 상태 값 유지
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(10);
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(false);
-
-  // 페이지 전환 처리 함수 (페이지 상태 반영)
-  const handlePageChange = (newPage: number) => {
-    if (newPage < 1 || newPage > totalPages) return;
-    setCurrentPage(newPage);
-  };
-
-  // currentPage 변경 시 데이터를 다시 로드하거나 슬라이싱하는 효과
-  useEffect(() => {
-    // 페이지 이동 시 실행할 데이터 페칭 또는 상태 업데이트 로직
-    // (현재 currentPage 상태값이 정상적으로 바뀐 데이터/리스트를 렌더링하도록 보장)
-  }, [currentPage]);
-
-  return (
-    <div className="w-full h-full">
-      {/* 기존 UI 렌더링 코드 유지 */}
-
-      {/* 페이지네이션 컨트롤 영역 */}
-      <div className="flex items-center justify-between mt-4">
-        <button
-          onClick={() => handlePageChange(currentPage - 1)}
-          disabled={currentPage === 1}
-          className="px-3 py-1 text-sm border rounded disabled:opacity-50"
-        >
-          이전
-        </button>
-        
-        <span className="text-sm">
-          {currentPage} / {totalPages}
-        </span>
-
-        <button
-          onClick={() => handlePageChange(currentPage + 1)}
-          disabled={currentPage === totalPages}
-          className="px-3 py-1 text-sm border rounded disabled:opacity-50"
-        >
-          다음
-        </button>
-      </div>
-    </div>
-  );
-}
 // 자체 정의된 타입 (에러 방지용)
 export interface AppUser {
   id: string | number;
