@@ -199,7 +199,6 @@ export default function MaterialManagement({
   ]);
   const [selectedConsumableCategory, setSelectedConsumableCategory] = useState<string>('검사약품');
 
-
   // 기자재/소모성 서브 카테고리를 Supabase에 영구 저장합니다.
   useEffect(() => {
     let cancelled = false;
@@ -396,6 +395,8 @@ export default function MaterialManagement({
   const handleSelectCabinSheet = (sheetName: string) => {
     setSelectedCabinSheet(sheetName);
     setSelectedCabinIds([]);
+    setSelectedItemSubCategory('전체');
+    setItemSubPage(1);
   };
 
   useEffect(() => {
@@ -456,6 +457,123 @@ export default function MaterialManagement({
     }
     return { calDate: subEquipment, nextCalDate: '' };
   };
+
+  // 자재명 기준 2차 서브탭(기자재/소모성/CABIN) 상태
+  const [itemSubCategoryRows, setItemSubCategoryRows] = useState<any[]>([]);
+  const [selectedItemSubCategory, setSelectedItemSubCategory] = useState<string>('전체');
+  const [itemSubPage, setItemSubPage] = useState<number>(1);
+  const ITEMS_PER_PAGE = 10;
+
+  // 품목별 서브탭은 실제 등록된 자재명을 기준으로 자동 구성하고,
+  // Supabase의 inventory_item_subcategories에서 순서를 유지합니다.
+  useEffect(() => {
+    let cancelled = false;
+    const loadItemSubCategories = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('inventory_item_subcategories')
+          .select('inventory_type, parent_category, name, sort_order')
+          .order('sort_order', { ascending: true, nullsFirst: false })
+          .order('name', { ascending: true });
+        if (error) throw error;
+        if (!cancelled) setItemSubCategoryRows(data || []);
+      } catch (error) {
+        // 신규 테이블이 아직 없는 경우에도 자재명 기반 서브탭은 화면에서 자동 생성합니다.
+        console.error('품목별 서브탭 불러오기 실패:', error);
+        if (!cancelled) setItemSubCategoryRows([]);
+      }
+    };
+    loadItemSubCategories();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 현재 선택된 대분류/서브카테고리에 해당하는 자재명 목록
+  const currentItemSubCategoryOptions = useMemo(() => {
+    if (inventoryTab === '고정' && selectedFixedSubCategory === 'VBT') {
+      // VBT는 기존 1L/1S/2L/2S/FLAT/기타 서브탭을 그대로 사용합니다.
+      return [];
+    }
+
+    let names: string[] = [];
+
+    if (inventoryTab === '고정') {
+      const source = inventoryList.filter(item => {
+        const cat = item.category || '';
+        const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+        if (selectedFixedSubCategory === '교정') return Boolean(calDate || nextCalDate);
+        return cat === selectedFixedSubCategory;
+      });
+      names = source.map(item => String(item.name || '').trim()).filter(Boolean);
+    } else if (inventoryTab === '소모성') {
+      names = inventoryList
+        .filter(item => item.type === '소모성' && item.category === selectedConsumableCategory)
+        .map(item => String(item.name || '').trim())
+        .filter(Boolean);
+    } else {
+      names = cabinInventoryList
+        .filter(item => {
+          if (cleanSheetName(item.sheet_name) !== selectedCabinSheet) return false;
+          if (cabinCalibrationOnly && !item.calibration_date) return false;
+          if (selectedCabinTextSubTag) {
+            const itemNameLower = String(item.item || '').toLowerCase();
+            if (!itemNameLower.includes(selectedCabinTextSubTag.toLowerCase())) return false;
+          }
+          return true;
+        })
+        .map(item => String(item.item || '').trim())
+        .filter(Boolean);
+    }
+
+    const uniqueNames = Array.from(new Set(names));
+    const type = inventoryTab;
+    const parentCategory = inventoryTab === '고정'
+      ? selectedFixedSubCategory
+      : inventoryTab === '소모성'
+        ? selectedConsumableCategory
+        : selectedCabinSheet;
+
+    const savedNames = itemSubCategoryRows
+      .filter(row => row.inventory_type === type && row.parent_category === parentCategory)
+      .sort((a, b) => {
+        const aOrder = Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : Number.MAX_SAFE_INTEGER;
+        const bOrder = Number.isFinite(Number(b.sort_order)) ? Number(b.sort_order) : Number.MAX_SAFE_INTEGER;
+        return aOrder - bOrder || String(a.name).localeCompare(String(b.name));
+      })
+      .map(row => String(row.name));
+
+    const ordered = [
+      ...savedNames.filter(name => uniqueNames.includes(name)),
+      ...uniqueNames.filter(name => !savedNames.includes(name)).sort((a, b) => a.localeCompare(b, 'ko'))
+    ];
+
+    return ordered;
+  }, [
+    inventoryTab,
+    inventoryList,
+    cabinInventoryList,
+    selectedFixedSubCategory,
+    selectedConsumableCategory,
+    selectedCabinSheet,
+    selectedCabinTextSubTag,
+    cabinCalibrationOnly,
+    itemSubCategoryRows
+  ]);
+
+  useEffect(() => {
+    if (currentItemSubCategoryOptions.length === 0) {
+      setSelectedItemSubCategory('전체');
+      setItemSubPage(1);
+      return;
+    }
+
+    if (
+      selectedItemSubCategory !== '전체' &&
+      !currentItemSubCategoryOptions.includes(selectedItemSubCategory)
+    ) {
+      setSelectedItemSubCategory('전체');
+    }
+    setItemSubPage(1);
+  }, [currentItemSubCategoryOptions]);
 
   const [itemType, setItemType] = useState<MainTab>('고정');
   const [itemCode, setItemCode] = useState('');
@@ -1043,8 +1161,10 @@ export default function MaterialManagement({
   };
 
   const filteredInventory = useMemo(() => {
+    let result: any[] = [];
+
     if (inventoryTab === 'CABIN') {
-      return cabinInventoryList.filter(item => {
+      result = cabinInventoryList.filter(item => {
         const itemCleanSheet = cleanSheetName(item.sheet_name);
         const matchesSheet = itemCleanSheet === selectedCabinSheet;
         if (!matchesSheet) return false;
@@ -1053,47 +1173,83 @@ export default function MaterialManagement({
           return false;
         }
 
-        if (!selectedCabinTextSubTag) return true;
+        if (selectedCabinTextSubTag) {
+          const itemNameLower = (item.item || '').toLowerCase();
+          if (!itemNameLower.includes(selectedCabinTextSubTag.toLowerCase())) return false;
+        }
 
-        const itemNameLower = (item.item || '').toLowerCase();
-        return itemNameLower.includes(selectedCabinTextSubTag.toLowerCase());
+        return true;
+      });
+    } else if (inventoryTab === '소모성') {
+      const consumables = inventoryList.filter(i => i.type === '소모성');
+      result = consumables.filter(item => item.category === selectedConsumableCategory);
+    } else {
+      const baseFixed = inventoryList.filter(i => i.type === '고정');
+
+      result = baseFixed.filter(item => {
+        const cat = item.category || '';
+        const name = item.name || '';
+        const vbtType = item.vbt_type || '';
+        const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+
+        if (selectedFixedSubCategory === '교정') {
+          return Boolean(calDate || nextCalDate);
+        }
+
+        if (selectedFixedSubCategory === 'VBT') {
+          if (cat !== 'VBT') return false;
+          const fullText = `${vbtType} ${name} ${item.sub_equipment || ''}`.toUpperCase();
+          const knownVbtTypes = ['1L', '1S', '2L', '2S', 'FLAT'];
+
+          if (selectedVbtSubCategory === '기타') {
+            return !knownVbtTypes.some(type => fullText.includes(type));
+          }
+          return fullText.includes(selectedVbtSubCategory);
+        }
+
+        return cat === selectedFixedSubCategory;
       });
     }
 
-    if (inventoryTab === '소모성') {
-      const consumables = inventoryList.filter(i => i.type === '소모성');
-      return consumables.filter(item => item.category === selectedConsumableCategory);
+    if (
+      selectedItemSubCategory !== '전체' &&
+      currentItemSubCategoryOptions.includes(selectedItemSubCategory)
+    ) {
+      result = result.filter(item => {
+        const itemName = inventoryTab === 'CABIN' ? item.item : item.name;
+        return String(itemName || '').trim() === selectedItemSubCategory;
+      });
     }
 
-    const baseFixed = inventoryList.filter(i => i.type === '고정');
+    return result;
+  }, [
+    inventoryTab,
+    inventoryList,
+    cabinInventoryList,
+    selectedConsumableCategory,
+    selectedFixedSubCategory,
+    selectedVbtSubCategory,
+    selectedCabinSheet,
+    selectedCabinTextSubTag,
+    cabinCalibrationOnly,
+    selectedItemSubCategory,
+    currentItemSubCategoryOptions
+  ]);
 
-    return baseFixed.filter(item => {
-      const cat = item.category || '';
-      const name = item.name || '';
-      const vbtType = item.vbt_type || '';
-      const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+  const totalItemPages = Math.max(1, Math.ceil(filteredInventory.length / ITEMS_PER_PAGE));
+  const safeItemPage = Math.min(itemSubPage, totalItemPages);
+  const paginatedInventory = useMemo(() => {
+    const startIndex = (safeItemPage - 1) * ITEMS_PER_PAGE;
+    return filteredInventory.slice(startIndex, startIndex + ITEMS_PER_PAGE);
+  }, [filteredInventory, safeItemPage]);
 
-      if (selectedFixedSubCategory === '교정') {
-        return Boolean(calDate || nextCalDate);
-      }
-
-      if (selectedFixedSubCategory === 'VBT') {
-        if (cat !== 'VBT') return false;
-        const fullText = `${vbtType} ${name} ${item.sub_equipment || ''}`.toUpperCase();
-        const knownVbtTypes = ['1L', '1S', '2L', '2S', 'FLAT'];
-
-        if (selectedVbtSubCategory === '기타') {
-          return !knownVbtTypes.some(type => fullText.includes(type));
-        }
-        return fullText.includes(selectedVbtSubCategory);
-      }
-
-      return cat === selectedFixedSubCategory;
-    });
-  }, [inventoryTab, inventoryList, cabinInventoryList, selectedConsumableCategory, selectedFixedSubCategory, selectedVbtSubCategory, selectedCabinSheet, selectedCabinTextSubTag, cabinCalibrationOnly]);
+  useEffect(() => {
+    if (itemSubPage > totalItemPages) setItemSubPage(totalItemPages);
+  }, [itemSubPage, totalItemPages]);
 
   const currentActiveSubCatName = getCurrentSelectedCategory();
-  const isCurrentSubCatCollapsed = !!collapsedSubTabs[currentActiveSubCatName];
+  const currentItemSubCategoryKey = `${inventoryTab}:${currentActiveSubCatName}:${selectedCabinTextSubTag || ''}`;
+  const isCurrentSubCatCollapsed = !!collapsedSubTabs[currentItemSubCategoryKey];
 
   return (
     <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
@@ -1757,7 +1913,7 @@ export default function MaterialManagement({
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2">
         <div className="flex bg-[#E2E5E9]/60 p-1 rounded-lg border border-[#E2E5E9] w-full sm:w-auto">
           <button
-            onClick={() => setInventoryTab('고정')}
+            onClick={() => { setInventoryTab('고정'); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
             className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
               inventoryTab === '고정' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
@@ -1766,7 +1922,7 @@ export default function MaterialManagement({
             <span>기자재</span>
           </button>
           <button
-            onClick={() => setInventoryTab('소모성')}
+            onClick={() => { setInventoryTab('소모성'); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
             className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
               inventoryTab === '소모성' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
@@ -1775,7 +1931,7 @@ export default function MaterialManagement({
             <span>소모성 자재</span>
           </button>
           <button
-            onClick={() => setInventoryTab('CABIN')}
+            onClick={() => { setInventoryTab('CABIN'); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
             className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
               inventoryTab === 'CABIN' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
@@ -1826,7 +1982,7 @@ export default function MaterialManagement({
 
           <div className="flex items-center space-x-1 shrink-0">
             <button
-              onClick={() => setCabinCalibrationOnly(!cabinCalibrationOnly)}
+              onClick={() => { setCabinCalibrationOnly(!cabinCalibrationOnly); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
               className={`px-2.5 py-1.5 rounded-md text-xs font-semibold transition flex items-center gap-1 ${
                 cabinCalibrationOnly 
                   ? 'bg-amber-600 text-white shadow-2xs' 
@@ -1863,6 +2019,8 @@ export default function MaterialManagement({
                   key={cat}
                   onClick={() => {
                     setCurrentSelectedCategory(cat);
+                    setSelectedItemSubCategory('전체');
+                    setItemSubPage(1);
                     if (cat === 'VBT') setSelectedVbtSubCategory('1L');
                   }}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
@@ -1906,7 +2064,7 @@ export default function MaterialManagement({
               return (
                 <button
                   key={tag}
-                  onClick={() => setSelectedCabinTextSubTag(tag)}
+                  onClick={() => { setSelectedCabinTextSubTag(tag); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
                   className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
                     isSelected
                       ? 'bg-slate-700 text-white font-semibold shadow-2xs'
@@ -1936,7 +2094,7 @@ export default function MaterialManagement({
           {(['1L', '1S', '2L', '2S', 'FLAT', '기타'] as VbtSubCategory[]).map((subCat) => (
             <button
               key={subCat}
-              onClick={() => setSelectedVbtSubCategory(subCat)}
+              onClick={() => { setSelectedVbtSubCategory(subCat); setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
               className={`flex-1 min-w-[42px] py-1 rounded-md text-[11px] font-semibold transition shrink-0 ${
                 selectedVbtSubCategory === subCat ? 'bg-slate-700 text-white shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B]'
               }`}
@@ -1947,13 +2105,54 @@ export default function MaterialManagement({
         </div>
       )}
 
+      {currentItemSubCategoryOptions.length > 0 && !(inventoryTab === '고정' && selectedFixedSubCategory === 'VBT') && (
+        <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
+            <Package className="h-3.5 w-3.5 text-[#243B5A]" />
+            <span>자재명:</span>
+          </div>
+          <div
+            className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
+          >
+            <button
+              onClick={() => { setSelectedItemSubCategory('전체'); setItemSubPage(1); }}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
+                selectedItemSubCategory === '전체'
+                  ? 'bg-slate-700 text-white font-semibold shadow-2xs'
+                  : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
+              }`}
+            >
+              전체
+            </button>
+            {currentItemSubCategoryOptions.map((name) => {
+              const isSelected = selectedItemSubCategory === name;
+              return (
+                <button
+                  key={name}
+                  onClick={() => { setSelectedItemSubCategory(name); setItemSubPage(1); }}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
+                    isSelected
+                      ? 'bg-slate-700 text-white font-semibold shadow-2xs'
+                      : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
+                  }`}
+                  title={name}
+                >
+                  {name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-lg border border-[#E2E5E9] p-3 flex items-center justify-between gap-2 shadow-2xs">
         <div className="flex items-center space-x-2 text-xs font-bold text-[#1F2937] min-w-0 truncate">
           <Package className="h-4 w-4 text-[#243B5A] shrink-0" />
           <span className="truncate">
-            {inventoryTab === 'CABIN' 
-              ? `종류 [${selectedCabinSheet}] > 항목 [${selectedCabinTextSubTag}] 목록`
-              : `서브탭 [${currentActiveSubCatName}] 목록`}
+            {inventoryTab === 'CABIN'
+              ? `종류 [${selectedCabinSheet}] > 항목 [${selectedCabinTextSubTag || '전체'}]${selectedItemSubCategory !== '전체' ? ` > ${selectedItemSubCategory}` : ''} 목록`
+              : `서브탭 [${currentActiveSubCatName}]${selectedItemSubCategory !== '전체' ? ` > ${selectedItemSubCategory}` : ''} 목록`}
           </span>
           <span className="text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-0.5 rounded-full text-[#64748B] shrink-0">
             총 {filteredInventory.length}건
@@ -1983,7 +2182,7 @@ export default function MaterialManagement({
           )}
 
           <button
-            onClick={() => toggleSubTabContent(currentActiveSubCatName)}
+            onClick={() => toggleSubTabContent(currentItemSubCategoryKey)}
             className="flex items-center space-x-1 text-xs font-semibold text-[#243B5A] bg-[#F5F6F8] hover:bg-[#E2E5E9] px-2.5 py-1 rounded border border-[#E2E5E9] transition shrink-0"
           >
             <span>{isCurrentSubCatCollapsed ? '펼치기' : '접기'}</span>
@@ -2016,7 +2215,7 @@ export default function MaterialManagement({
                 </div>
               )}
 
-              {filteredInventory.map((item, idx) => {
+              {paginatedInventory.map((item, idx) => {
                 const isLowStock = item.type === '소모성' && item.quantity <= (item.min_quantity || 0);
                 const isCabinSelected = selectedCabinIds.includes(String(item.id));
                 
@@ -2077,6 +2276,30 @@ export default function MaterialManagement({
               })}
             </div>
           )}
+        </div>
+      )}
+
+      {filteredInventory.length > ITEMS_PER_PAGE && (
+        <div className="flex items-center justify-center gap-2 pt-2">
+          <button
+            type="button"
+            onClick={() => setItemSubPage(prev => Math.max(1, prev - 1))}
+            disabled={safeItemPage === 1}
+            className="px-3 py-1.5 bg-white border border-[#E2E5E9] text-[#64748B] rounded-md text-[11px] font-semibold disabled:opacity-30 hover:bg-[#F5F6F8]"
+          >
+            ◀ 이전
+          </button>
+          <span className="px-2 text-[11px] font-semibold text-[#64748B]">
+            {safeItemPage} / {totalItemPages} 페이지
+          </span>
+          <button
+            type="button"
+            onClick={() => setItemSubPage(prev => Math.min(totalItemPages, prev + 1))}
+            disabled={safeItemPage === totalItemPages}
+            className="px-3 py-1.5 bg-white border border-[#E2E5E9] text-[#64748B] rounded-md text-[11px] font-semibold disabled:opacity-30 hover:bg-[#F5F6F8]"
+          >
+            다음 ▶
+          </button>
         </div>
       )}
 
