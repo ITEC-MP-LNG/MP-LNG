@@ -70,6 +70,12 @@ export default function LoginPage() {
         return;
       }
 
+      // 퇴사자 여부 검증 (is_retired 컬럼 또는 status 컬럼 체크)
+      if (data.is_retired === true || data.status === '퇴사' || data.status === 'RETIRED') {
+        setAlertMessage('퇴사 처리된 계정입니다. 로그인할 수 없습니다.');
+        return;
+      }
+
       // 2. 비밀번호(생년월일) 검증
       const userPassword = data.password || data.birth_date || data.birthdate || '';
       if (String(userPassword).trim() !== cleanPassword) {
