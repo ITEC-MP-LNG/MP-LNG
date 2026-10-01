@@ -564,7 +564,7 @@ export default function MaterialManagement({
     try {
       const rows = newItemSubCatMaterialNames.length > 0
         ? newItemSubCatMaterialNames.map((materialName, index) => ({ inventory_type:type, parent_category:parentCategory, name, material_name:materialName, sort_order:index, is_active:true }))
-        : [{ inventory_type:type, parent_category:parentCategory, name, material_name:null, sort_order:0, is_active:true }];
+        : [{ inventory_type:type, parent_category:parentCategory, name, material_name:'', sort_order:0, is_active:true }];
       const { error } = await supabase.from('inventory_item_subcategories').insert(rows);
       if (error) throw error;
       await refreshItemSubCategoryRows();
@@ -2023,7 +2023,7 @@ export default function MaterialManagement({
             className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
             style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
           >
-            {inventoryTab !== 'CABIN' && (
+            {(inventoryTab === '고정' || inventoryTab === '소모성') && (
               <button
                 onClick={() => { setCurrentSelectedCategory('전체 보기'); setSelectedItemSubCategory('전체 보기'); setItemSubPage(1); }}
                 className={`px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition shrink-0 ${getCurrentSelectedCategory() === '전체 보기' ? 'bg-[#243B5A] text-white shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9]'}`}
