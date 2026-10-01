@@ -475,7 +475,7 @@ export default function MaterialManagement({
       try {
         const { data, error } = await supabase
           .from('inventory_item_subcategories')
-          .select('id, inventory_type, parent_category, name, sort_order, is_active')
+          .select('id, inventory_type, parent_category, name, material_name, sort_order, is_active')
           .order('sort_order', { ascending: true, nullsFirst: false })
           .order('name', { ascending: true });
         if (error) throw error;
@@ -549,14 +549,23 @@ export default function MaterialManagement({
         .map(row => String(row.name))
     );
 
+    // 'name'은 화면에 표시되는 카테고리명이고, material_name은 실제 자재명입니다.
+    // 카테고리명을 수정해도 실제 자재명은 그대로 유지합니다.
     const savedNames = savedRows
       .filter(row => row.is_active !== false)
       .map(row => String(row.name));
 
     const ordered = [
-      ...savedNames.filter(name => uniqueNames.includes(name)),
+      ...savedNames.filter(name => {
+        const row = savedRows.find(r => String(r.name) === name);
+        const materialName = String(row?.material_name || name).trim();
+        return uniqueNames.includes(materialName);
+      }),
       ...uniqueNames
-        .filter(name => !savedNames.includes(name) && !hiddenNames.has(name))
+        .filter(name => {
+          const matchingSavedRow = savedRows.find(row => String(row.material_name || '').trim() === name);
+          return !savedNames.includes(name) && !matchingSavedRow && !hiddenNames.has(name);
+        })
         .sort((a, b) => a.localeCompare(b, 'ko'))
     ];
 
@@ -621,45 +630,33 @@ export default function MaterialManagement({
         row => row.inventory_type === type && row.parent_category === parentCategory && row.name === oldName
       );
 
+      // 중요: 카테고리명만 수정합니다. 실제 inventory / cabin_inventory의 자재명은 수정하지 않습니다.
+      // 기존 행이라면 실제 자재명(material_name)을 그대로 보존하고,
+      // 기존 컬럼이 비어 있던 경우에는 현재 카테고리명(oldName)을 실제 자재명으로 기록합니다.
       if (targetRow) {
+        const materialName = String(targetRow.material_name || oldName).trim();
         const { error } = await supabase
           .from('inventory_item_subcategories')
-          .update({ name: newName, is_active: true })
+          .update({ name: newName, material_name: materialName, is_active: true })
           .eq('id', targetRow.id);
         if (error) throw error;
       } else {
         const { error } = await supabase
           .from('inventory_item_subcategories')
-          .insert([{ inventory_type: type, parent_category: parentCategory, name: newName, sort_order: 0, is_active: true }]);
-        if (error) throw error;
-      }
-
-      // 자재명 카테고리의 제목을 실제 자재명에도 동일하게 반영합니다.
-      if (type === 'CABIN') {
-        const matchingIds = cabinInventoryList
-          .filter(item => cleanSheetName(item.sheet_name) === parentCategory && String(item.item || '').trim() === oldName)
-          .map(item => item.id)
-          .filter(Boolean);
-        if (matchingIds.length > 0) {
-          const { error } = await supabase
-            .from('cabin_inventory')
-            .update({ item: newName })
-            .in('id', matchingIds);
-          if (error) throw error;
-        }
-      } else {
-        const { error } = await supabase
-          .from('inventory')
-          .update({ name: newName })
-          .eq('type', type)
-          .eq('category', parentCategory)
-          .eq('name', oldName);
+          .insert([{
+            inventory_type: type,
+            parent_category: parentCategory,
+            name: newName,
+            material_name: oldName,
+            sort_order: 0,
+            is_active: true
+          }]);
         if (error) throw error;
       }
 
       setItemSubCategoryRows(prev => prev.map(row =>
         row.inventory_type === type && row.parent_category === parentCategory && row.name === oldName
-          ? { ...row, name: newName, is_active: true }
+          ? { ...row, name: newName, material_name: row.material_name || oldName, is_active: true }
           : row
       ));
       setSelectedItemSubCategory(newName);
@@ -1348,9 +1345,20 @@ export default function MaterialManagement({
       selectedItemSubCategory &&
       currentItemSubCategoryOptions.includes(selectedItemSubCategory)
     ) {
+      const { type, parentCategory } = getCurrentItemSubCategoryContext();
+      const selectedCategoryRow = itemSubCategoryRows.find(
+        row => row.inventory_type === type &&
+          row.parent_category === parentCategory &&
+          String(row.name) === selectedItemSubCategory &&
+          row.is_active !== false
+      );
+
+      // 카테고리명이 실제 자재명과 달라도, material_name을 기준으로 해당 자재를 필터링합니다.
+      const targetMaterialName = String(selectedCategoryRow?.material_name || selectedItemSubCategory).trim();
+
       result = result.filter(item => {
         const itemName = inventoryTab === 'CABIN' ? item.item : item.name;
-        return String(itemName || '').trim() === selectedItemSubCategory;
+        return String(itemName || '').trim() === targetMaterialName;
       });
     }
 
@@ -1366,7 +1374,8 @@ export default function MaterialManagement({
     selectedCabinTextSubTag,
     cabinCalibrationOnly,
     selectedItemSubCategory,
-    currentItemSubCategoryOptions
+    currentItemSubCategoryOptions,
+    itemSubCategoryRows
   ]);
 
   const totalItemPages = Math.max(1, Math.ceil(filteredInventory.length / ITEMS_PER_PAGE));
