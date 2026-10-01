@@ -589,7 +589,7 @@ export default function MaterialManagement({
       await supabase.from('inventory_item_subcategories').delete().eq('inventory_type',type).eq('parent_category',parentCategory).eq('name',target.name);
       const rows = editingItemSubCatMaterialNames.length > 0
         ? editingItemSubCatMaterialNames.map((materialName,index)=>({ inventory_type:type,parent_category:parentCategory,name:newName,material_name:materialName,sort_order:index,is_active:true }))
-        : [{ inventory_type:type,parent_category:parentCategory,name:newName,material_name:null,sort_order:0,is_active:true }];
+        : [{ inventory_type:type,parent_category:parentCategory,name:newName,material_name:'',sort_order:0,is_active:true }];
       const { error } = await supabase.from('inventory_item_subcategories').insert(rows);
       if (error) throw error;
       await refreshItemSubCategoryRows();
