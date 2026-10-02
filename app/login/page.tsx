@@ -198,11 +198,11 @@ export default function LoginPage() {
         <div className="text-xs text-[#64748B] bg-[#F5F6F8] p-3.5 rounded-lg border border-[#E2E5E9] space-y-1.5 leading-relaxed">
           <div className="flex items-start space-x-1.5">
             <span className="text-[#243B5A] font-bold">•</span>
-            <p><strong className="text-[#1F2937] font-semibold">아이디(사번):</strong> 현대 삼호중공업 사번 (대소문자 관계없이 입력 가능)</p>
+            <p><strong className="text-[#1F2937] font-semibold">아이디(사번):</strong> 현대 삼호중공업 사번</p>
           </div>
           <div className="flex items-start space-x-1.5">
             <span className="text-[#243B5A] font-bold">•</span>
-            <p>아이디가 없는 경우 시스템 관리자에게 문의 바랍니다.</p>
+            <p>아이디가 없는 경우 시스템 관리자에게 문의 바랍니다.- 조형수 책임</p>
           </div>
         </div>
       </div>
