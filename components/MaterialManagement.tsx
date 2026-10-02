@@ -461,6 +461,7 @@ export default function MaterialManagement({
   const [itemSubCategoryRows, setItemSubCategoryRows] = useState<any[]>([]);
   const [selectedItemSubCategory, setSelectedItemSubCategory] = useState<string>('전체 보기');
   const [isItemSubCatModalOpen, setIsItemSubCatModalOpen] = useState<boolean>(false);
+  const [isInventoryListOpen, setIsInventoryListOpen] = useState<boolean>(false);
   const [newItemSubCatName, setNewItemSubCatName] = useState<string>('');
   const [newItemSubCatMaterialNames, setNewItemSubCatMaterialNames] = useState<string[]>([]);
   const [editingItemSubCatId, setEditingItemSubCatId] = useState<string | number | null>(null);
@@ -899,15 +900,34 @@ export default function MaterialManagement({
         }
         newQty = currentQty - qtyChange;
       } else if (logType === '반납') {
+        const initialQty = Number(targetItem.initial_quantity);
+        if (!Number.isFinite(initialQty) || initialQty < 0) {
+          showCenterToast('최초 보유수량이 등록되지 않은 자재입니다. 관리자에게 최초 보유수량을 확인해주세요.');
+          return;
+        }
+        if (currentQty + qtyChange > initialQty) {
+          showCenterToast(`반납 후 수량이 최초 보유수량(${initialQty} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
+          return;
+        }
         newQty = currentQty + qtyChange;
       }
 
-      const { error: invError } = await supabase
+      let updateQuery = supabase
         .from('inventory')
         .update({ quantity: newQty, updated_at: new Date().toISOString() })
         .eq('id', targetItem.id);
 
+      if (logType === '반납') {
+        updateQuery = updateQuery.lte('quantity', Number(targetItem.initial_quantity) - qtyChange);
+      }
+
+      const { data: updatedRows, error: invError } = await updateQuery.select('id, quantity');
+
       if (invError) throw invError;
+      if (logType === '반납' && (!updatedRows || updatedRows.length === 0)) {
+        showCenterToast('반납 수량이 최초 보유수량을 초과했거나 이미 다른 반납 처리가 완료되었습니다.');
+        return;
+      }
 
       let finalLogType = logType === '소모성 사용' ? '소모성 사용' : logType;
       if (logType === '반납') {
@@ -2228,7 +2248,18 @@ export default function MaterialManagement({
       </div>
 
       {/* 전체 목록 표시 (페이징 완전 제거) */}
-      <div className="space-y-2">
+      <div className="bg-white rounded-lg border border-[#E2E5E9] overflow-hidden shadow-2xs">
+        <button
+          type="button"
+          onClick={() => setIsInventoryListOpen(!isInventoryListOpen)}
+          className="w-full px-3.5 py-2.5 bg-[#F5F6F8] flex items-center justify-between text-left hover:bg-[#EEF0F3] transition"
+        >
+          <span className="text-xs font-bold text-[#1F2937]">전체 목록</span>
+          {isInventoryListOpen ? <ChevronUp className="h-4 w-4 text-[#64748B]" /> : <ChevronDown className="h-4 w-4 text-[#64748B]" />}
+        </button>
+
+        {isInventoryListOpen && (
+          <div className="p-2.5 space-y-2">
         {filteredInventory.map((item) => {
           const isCabin = inventoryTab === 'CABIN';
           const isSelected = selectedCabinIds.includes(String(item.id));
@@ -2338,6 +2369,8 @@ export default function MaterialManagement({
         {filteredInventory.length === 0 && (
           <div className="bg-white rounded-lg border border-[#E2E5E9] p-8 text-center text-[#64748B] text-xs">
             등록되었거나 선택 조건에 해당하는 자재가 존재하지 않습니다.
+          </div>
+        )}
           </div>
         )}
       </div>
