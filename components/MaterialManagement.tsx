@@ -512,18 +512,18 @@ export default function MaterialManagement({
     if (inventoryTab === 'CABIN') return [];
     const parentCategory = inventoryTab === '고정' ? selectedFixedSubCategory : selectedConsumableCategory;
     const rows = itemSubCategoryRows.filter(row => row.inventory_type === inventoryTab && row.parent_category === parentCategory && row.is_active !== false);
-    const map = new Map<string, { name:string; materialNames:string[]; id:any }>();
+    const map = new Map<string, { name:string; materialNames:string[]; id:any; sortOrder:number }>();
     rows.forEach(row => {
       const name = String(row.name || '').trim();
       if (!name) return;
-      if (!map.has(name)) map.set(name, { name, materialNames: [], id: row.id });
+      if (!map.has(name)) map.set(name, { name, materialNames: [], id: row.id, sortOrder: Number(row.sort_order ?? 0) });
       const materialName = String(row.material_name || '').trim();
       if (materialName && currentMaterialNames.includes(materialName)) {
         const entry = map.get(name)!;
         if (!entry.materialNames.includes(materialName)) entry.materialNames.push(materialName);
       }
     });
-    return Array.from(map.values()).sort((a,b)=>a.name.localeCompare(b.name,'ko'));
+    return Array.from(map.values()).sort((a,b)=>a.sortOrder - b.sortOrder || a.name.localeCompare(b.name,'ko'));
   }, [itemSubCategoryRows, inventoryTab, selectedFixedSubCategory, selectedConsumableCategory, selectedCabinSheet, currentMaterialNames]);
 
   const currentItemSubCategoryOptions = currentItemSubCategoryEntries.map(entry => entry.name);
@@ -557,9 +557,12 @@ export default function MaterialManagement({
     const { type, parentCategory } = getCurrentItemSubCategoryContext();
     if (currentItemSubCategoryOptions.includes(name)) return showCenterToast('이미 존재하는 자재 종류입니다.');
     try {
+      const nextSortOrder = currentItemSubCategoryEntries.length > 0
+        ? Math.max(...currentItemSubCategoryEntries.map(entry => entry.sortOrder)) + 1
+        : 0;
       const rows = newItemSubCatMaterialNames.length > 0
-        ? newItemSubCatMaterialNames.map((materialName, index) => ({ inventory_type:type, parent_category:parentCategory, name, material_name:materialName, sort_order:index, is_active:true }))
-        : [{ inventory_type:type, parent_category:parentCategory, name, material_name:'', sort_order:0, is_active:true }];
+        ? newItemSubCatMaterialNames.map((materialName) => ({ inventory_type:type, parent_category:parentCategory, name, material_name:materialName, sort_order:nextSortOrder, is_active:true }))
+        : [{ inventory_type:type, parent_category:parentCategory, name, material_name:'', sort_order:nextSortOrder, is_active:true }];
       const { error } = await supabase.from('inventory_item_subcategories').insert(rows);
       if (error) throw error;
       await refreshItemSubCategoryRows();
@@ -581,10 +584,12 @@ export default function MaterialManagement({
     try {
       const target = itemSubCategoryRows.find(row => row.id === editingItemSubCatId);
       if (!target) return;
+      const targetEntry = currentItemSubCategoryEntries.find(entry => entry.name === target.name);
+      const targetSortOrder = targetEntry?.sortOrder ?? 0;
       await supabase.from('inventory_item_subcategories').delete().eq('inventory_type',type).eq('parent_category',parentCategory).eq('name',target.name);
       const rows = editingItemSubCatMaterialNames.length > 0
-        ? editingItemSubCatMaterialNames.map((materialName,index)=>({ inventory_type:type,parent_category:parentCategory,name:newName,material_name:materialName,sort_order:index,is_active:true }))
-        : [{ inventory_type:type,parent_category:parentCategory,name:newName,material_name:'',sort_order:0,is_active:true }];
+        ? editingItemSubCatMaterialNames.map((materialName)=>({ inventory_type:type,parent_category:parentCategory,name:newName,material_name:materialName,sort_order:targetSortOrder,is_active:true }))
+        : [{ inventory_type:type,parent_category:parentCategory,name:newName,material_name:'',sort_order:targetSortOrder,is_active:true }];
       const { error } = await supabase.from('inventory_item_subcategories').insert(rows);
       if (error) throw error;
       await refreshItemSubCategoryRows();
@@ -611,6 +616,37 @@ export default function MaterialManagement({
       showCenterToast('자재 종류가 삭제되었습니다.');
     } catch (error:any) {
       showCenterToast('자재 종류 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
+    }
+  };
+
+  const moveCurrentItemSubCategory = async (index: number, direction: -1 | 1) => {
+    if (!isAdmin) return;
+    const entries = [...currentItemSubCategoryEntries];
+    const targetIndex = index + direction;
+    if (targetIndex < 0 || targetIndex >= entries.length) return;
+
+    [entries[index], entries[targetIndex]] = [entries[targetIndex], entries[index]];
+
+    const { type, parentCategory } = getCurrentItemSubCategoryContext();
+
+    try {
+      for (let entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+        const entry = entries[entryIndex];
+        const { error } = await supabase
+          .from('inventory_item_subcategories')
+          .update({ sort_order: entryIndex })
+          .eq('inventory_type', type)
+          .eq('parent_category', parentCategory)
+          .eq('name', entry.name);
+        if (error) throw error;
+      }
+
+      await refreshItemSubCategoryRows();
+      if (selectedItemSubCategory === entries[index].name) {
+        setSelectedItemSubCategory(entries[index].name);
+      }
+    } catch (error:any) {
+      showCenterToast('자재 종류 순서 저장 실패: ' + (error?.message || '알 수 없는 오류'));
     }
   };
 
@@ -1725,6 +1761,24 @@ export default function MaterialManagement({
                         <div className="text-[10px] text-[#64748B] truncate">{entry.materialNames.length ? `${entry.materialNames.length}개 자재 연결` : '연결된 자재 없음'}</div>
                       </div>
                       <div className="flex gap-1 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => moveCurrentItemSubCategory(currentItemSubCategoryEntries.findIndex(item => item.name === entry.name), -1)}
+                          disabled={currentItemSubCategoryEntries.findIndex(item => item.name === entry.name) === 0}
+                          className="px-1 py-0.5 bg-white border border-[#E2E5E9] text-[#64748B] rounded text-[10px] disabled:opacity-30"
+                          title="위로 이동"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveCurrentItemSubCategory(currentItemSubCategoryEntries.findIndex(item => item.name === entry.name), 1)}
+                          disabled={currentItemSubCategoryEntries.findIndex(item => item.name === entry.name) === currentItemSubCategoryEntries.length - 1}
+                          className="px-1 py-0.5 bg-white border border-[#E2E5E9] text-[#64748B] rounded text-[10px] disabled:opacity-30"
+                          title="아래로 이동"
+                        >
+                          ▼
+                        </button>
                         <button type="button" onClick={()=>{ setEditingItemSubCatId(entry.id); setEditingItemSubCatName(entry.name); setEditingItemSubCatMaterialNames([...entry.materialNames]); }} className="px-1.5 py-0.5 bg-gray-200 text-gray-700 rounded text-[10px]">수정</button>
                         <button type="button" onClick={()=>handleDeleteItemSubCategory(entry.name)} className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]">삭제</button>
                       </div>
