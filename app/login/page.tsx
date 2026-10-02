@@ -128,7 +128,7 @@ export default function LoginPage() {
           <div className="space-y-3">
             <div>
               <label htmlFor="userCode" className="block text-xs font-semibold text-[#1F2937] mb-1.5">
-                아이디 <span className="text-[#64748B] font-normal">(사번 : W123456 / 대소문자 구분 없음)</span>
+                아이디 <span className="text-[#64748B] font-normal">(사번 : 예: W123456 / 대소문자 구분 없음)</span>
               </label>
               <div className="relative rounded-lg shadow-2xs">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
