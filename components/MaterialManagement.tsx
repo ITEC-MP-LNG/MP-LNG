@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Plus, 
   Pencil, 
@@ -44,6 +44,7 @@ export interface InventoryItem {
   quantity: number;
   unit: string;
   min_quantity?: number;
+  initial_quantity?: number;
   location?: string;
   location_or_section?: string;
   maker_model?: string;
@@ -59,6 +60,8 @@ export interface InventoryLog {
   type: string;
   quantity: number;
   worker_name?: string;
+  issued_by?: string;
+  returned_by?: string;
   memo?: string;
   created_at: string;
 }
@@ -118,7 +121,7 @@ export default function MaterialManagement({
 
         const isConsumable = matchedItem?.type === '소모성' || log.type.includes('소모성');
         const isReturned = log.type.includes('반납완료');
-        const isIssue = log.type.includes('불출');
+        const isIssue = log.type.includes('불출') || log.type.includes('소모성 사용');
 
         // 1. 소모성 자재 불출 이력 삭제
         if (isConsumable && isIssue) {
@@ -166,6 +169,7 @@ export default function MaterialManagement({
   const [returnQty, setReturnQty] = useState<number>(1);
   const [returnHasIssue, setReturnHasIssue] = useState<boolean>(false);
   const [returnMemo, setReturnMemo] = useState<string>('');
+  const returnSubmittingRef = useRef(false);
 
   // --- 이력 수정 모달 상태 ---
   const [showEditLogModal, setShowEditLogModal] = useState<boolean>(false);
@@ -546,12 +550,12 @@ export default function MaterialManagement({
   };
 
   const handleAddItemSubCategory = async () => {
-    if (!isAdmin) return alert('관리자만 자재 종류를 추가할 수 있습니다.');
+    if (!isAdmin) return showCenterToast('관리자만 자재 종류를 추가할 수 있습니다.');
     const name = newItemSubCatName.trim();
-    if (!name) return alert('자재 종류 이름을 입력해주세요.');
-    if (name === '전체 보기') return alert('전체 보기는 기본 항목이라 추가할 수 없습니다.');
+    if (!name) return showCenterToast('자재 종류 이름을 입력해주세요.');
+    if (name === '전체 보기') return showCenterToast('전체 보기는 기본 항목이라 추가할 수 없습니다.');
     const { type, parentCategory } = getCurrentItemSubCategoryContext();
-    if (currentItemSubCategoryOptions.includes(name)) return alert('이미 존재하는 자재 종류입니다.');
+    if (currentItemSubCategoryOptions.includes(name)) return showCenterToast('이미 존재하는 자재 종류입니다.');
     try {
       const rows = newItemSubCatMaterialNames.length > 0
         ? newItemSubCatMaterialNames.map((materialName, index) => ({ inventory_type:type, parent_category:parentCategory, name, material_name:materialName, sort_order:index, is_active:true }))
@@ -564,15 +568,15 @@ export default function MaterialManagement({
       setNewItemSubCatMaterialNames([]);
       showCenterToast('자재 종류가 추가되었습니다.');
     } catch (error:any) {
-      alert('자재 종류 추가 실패: ' + (error?.message || '알 수 없는 오류'));
+      showCenterToast('자재 종류 추가 실패: ' + (error?.message || '알 수 없는 오류'));
     }
   };
 
   const handleSaveItemSubCategoryEdit = async () => {
     if (!isAdmin || editingItemSubCatId === null) return;
     const newName = editingItemSubCatName.trim();
-    if (!newName) return alert('자재 종류 이름을 입력해주세요.');
-    if (newName === '전체 보기') return alert('전체 보기는 수정할 수 없습니다.');
+    if (!newName) return showCenterToast('자재 종류 이름을 입력해주세요.');
+    if (newName === '전체 보기') return showCenterToast('전체 보기는 수정할 수 없습니다.');
     const { type, parentCategory } = getCurrentItemSubCategoryContext();
     try {
       const target = itemSubCategoryRows.find(row => row.id === editingItemSubCatId);
@@ -590,13 +594,13 @@ export default function MaterialManagement({
       setEditingItemSubCatMaterialNames([]);
       showCenterToast('자재 종류가 수정되었습니다.');
     } catch (error:any) {
-      alert('자재 종류 수정 실패: ' + (error?.message || '알 수 없는 오류'));
+      showCenterToast('자재 종류 수정 실패: ' + (error?.message || '알 수 없는 오류'));
     }
   };
 
   const handleDeleteItemSubCategory = async (name: string) => {
-    if (!isAdmin) return alert('관리자만 자재 종류를 삭제할 수 있습니다.');
-    if (name === '전체 보기') return alert('전체 보기는 삭제할 수 없습니다.');
+    if (!isAdmin) return showCenterToast('관리자만 자재 종류를 삭제할 수 있습니다.');
+    if (name === '전체 보기') return showCenterToast('전체 보기는 삭제할 수 없습니다.');
     if (!confirm(`'${name}' 자재 종류를 삭제하시겠습니까?\n\n※ 실제 자재 데이터는 삭제되지 않습니다.`)) return;
     const { type, parentCategory } = getCurrentItemSubCategoryContext();
     try {
@@ -606,7 +610,7 @@ export default function MaterialManagement({
       setSelectedItemSubCategory('전체 보기');
       showCenterToast('자재 종류가 삭제되었습니다.');
     } catch (error:any) {
-      alert('자재 종류 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
+      showCenterToast('자재 종류 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
     }
   };
 
@@ -652,7 +656,7 @@ export default function MaterialManagement({
       }
       setCurrentSubCategories(list);
     } catch (error: any) {
-      alert('서브 카테고리 순서 저장 실패: ' + (error?.message || '알 수 없는 오류'));
+      showCenterToast('서브 카테고리 순서 저장 실패: ' + (error?.message || '알 수 없는 오류'));
     }
   };
 
@@ -665,7 +669,7 @@ export default function MaterialManagement({
       await persistSubCategories('CABIN', list);
       setCustomCabinSheets(list);
     } catch (error: any) {
-      alert('CABIN 서브탭 순서 저장 실패: ' + (error?.message || '알 수 없는 오류') + '\nSupabase의 inventory_subcategories 테이블과 권한 설정을 확인해주세요.');
+      showCenterToast('CABIN 서브탭 순서 저장 실패: ' + (error?.message || '알 수 없는 오류') + '\nSupabase의 inventory_subcategories 테이블과 권한 설정을 확인해주세요.');
     }
   };
 
@@ -681,7 +685,7 @@ export default function MaterialManagement({
   };
 
   const handleOpenInventoryCreate = () => {
-    if (!isAdmin) return alert('관리자만 자재를 등록할 수 있습니다.');
+    if (!isAdmin) return showCenterToast('관리자만 자재를 등록할 수 있습니다.');
     setEditingItem(null);
     setItemType(inventoryTab);
     const codePrefix = inventoryTab === '고정' ? 'FIX-' : inventoryTab === '소모성' ? 'MAT-' : 'CBN-';
@@ -704,7 +708,7 @@ export default function MaterialManagement({
   };
 
   const handleOpenInventoryEdit = (item: any) => {
-    if (!isAdmin) return alert('관리자만 자재 정보를 수정할 수 있습니다.');
+    if (!isAdmin) return showCenterToast('관리자만 자재 정보를 수정할 수 있습니다.');
     setSelectedDetailItem(null);
     setEditingItem(item);
     setItemType(item.type as MainTab);
@@ -737,7 +741,7 @@ export default function MaterialManagement({
 
   const handleSubmitInventory = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isAdmin) return alert('관리자 권한이 필요합니다.');
+    if (!isAdmin) return showCenterToast('관리자 권한이 필요합니다.');
 
     try {
       if (itemType === 'CABIN') {
@@ -776,6 +780,7 @@ export default function MaterialManagement({
           vbt_type: itemType === '고정' ? (itemVbtType || null) : null,
           sub_equipment: itemType === '고정' ? subEquipValue : null,
           quantity: itemQuantity,
+          initial_quantity: editingItem?.initial_quantity ?? itemQuantity,
           unit: itemUnit,
           min_quantity: itemMinQty,
           location: itemLocation,
@@ -796,12 +801,12 @@ export default function MaterialManagement({
 
       setShowInventorySheet(false);
     } catch (err: any) {
-      alert('데이터베이스 저장 실패: ' + err.message);
+      showCenterToast('데이터베이스 저장 실패: ' + err.message);
     }
   };
 
   const handleDeleteInventory = async (item: any) => {
-    if (!isAdmin) return alert('관리자만 삭제할 수 있습니다.');
+    if (!isAdmin) return showCenterToast('관리자만 삭제할 수 있습니다.');
     if (!confirm('정말로 이 자재를 삭제하시겠습니까?')) return;
 
     const targetTableName = item.type === 'CABIN' ? 'cabin_inventory' : 'inventory';
@@ -819,13 +824,13 @@ export default function MaterialManagement({
         await fetchInventory();
       }
     } catch (err: any) {
-      alert('삭제 실패: ' + err.message);
+      showCenterToast('삭제 실패: ' + err.message);
     }
   };
 
   const handleOpenLogModal = (item: any, type: string) => {
     if (item.type === '소모성' && type === '반납') {
-      alert('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
+      showCenterToast('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
       return;
     }
     setSelectedDetailItem(null);
@@ -844,7 +849,7 @@ export default function MaterialManagement({
     try {
       const qtyChange = Number(logQty);
       if (qtyChange <= 0) {
-        alert('수량은 1 이상이어야 합니다.');
+        showCenterToast('수량은 1 이상이어야 합니다.');
         return;
       }
 
@@ -853,7 +858,7 @@ export default function MaterialManagement({
 
       if (logType === '불출' || logType === '소모성 사용') {
         if (currentQty < qtyChange) {
-          alert('현재 보유 재고보다 불출(사용) 수량이 많습니다.');
+          showCenterToast('현재 보유 재고보다 불출(사용) 수량이 많습니다.');
           return;
         }
         newQty = currentQty - qtyChange;
@@ -868,7 +873,7 @@ export default function MaterialManagement({
 
       if (invError) throw invError;
 
-      let finalLogType = logType === '소모성 사용' ? '불출' : logType;
+      let finalLogType = logType === '소모성 사용' ? '소모성 사용' : logType;
       if (logType === '반납') {
         finalLogType = logHasIssue ? '불출, 반납완료, 이상알림' : '반납완료';
       }
@@ -881,6 +886,8 @@ export default function MaterialManagement({
           type: finalLogType,
           quantity: qtyChange,
           worker_name: currentUser?.name || '작업자',
+          issued_by: logType === '반납' ? null : (currentUser?.name || '작업자'),
+          returned_by: logType === '반납' ? (currentUser?.name || '작업자') : null,
           memo: logMemo.trim() || null,
           created_at: new Date().toISOString()
         }]);
@@ -892,7 +899,7 @@ export default function MaterialManagement({
       await fetchInventory();
       await fetchInventoryLogs();
     } catch (err: any) {
-      alert('처리 중 오류가 발생했습니다: ' + err.message);
+      showCenterToast('처리 중 오류가 발생했습니다: ' + err.message);
     }
   };
 
@@ -944,7 +951,7 @@ export default function MaterialManagement({
       setCabinBatchMemo('');
       await fetchInventoryLogs();
     } catch (err: any) {
-      alert('CABIN 일괄 불출 처리 중 오류가 발생했습니다: ' + err.message);
+      showCenterToast('CABIN 일괄 불출 처리 중 오류가 발생했습니다: ' + err.message);
     }
   };
 
@@ -986,19 +993,19 @@ export default function MaterialManagement({
       await fetchCabinInventory();
       await fetchInventoryLogs();
     } catch (err: any) {
-      alert('CABIN 일괄 반납 처리 중 오류가 발생했습니다: ' + err.message);
+      showCenterToast('CABIN 일괄 반납 처리 중 오류가 발생했습니다: ' + err.message);
     }
   };
 
   const handleOpenReturnModal = (log: InventoryLog) => {
     if (log.item_name && log.item_name.includes('[CABIN 일괄 불출]')) {
-      alert('CABIN 일괄 불출된 항목은 개별적으로 항목을 찾아 반납 처리해야 합니다. CABIN 탭에서 해당 항목을 확인 후 반납하세요.');
+      showCenterToast('CABIN 일괄 불출된 항목은 개별적으로 항목을 찾아 반납 처리해야 합니다. CABIN 탭에서 해당 항목을 확인 후 반납하세요.');
       return;
     }
 
     const foundItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
     if (foundItem && foundItem.type === '소모성') {
-      alert('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
+      showCenterToast('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
       return;
     }
 
@@ -1011,12 +1018,13 @@ export default function MaterialManagement({
 
   const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!targetReturnLog) return;
+    if (!targetReturnLog || returnSubmittingRef.current) return;
+    returnSubmittingRef.current = true;
 
     try {
       const qtyToReturn = Number(returnQty);
       if (qtyToReturn <= 0) {
-        alert('반납 수량은 1 이상이어야 합니다.');
+        showCenterToast('반납 수량은 1 이상이어야 합니다.');
         return;
       }
 
@@ -1045,20 +1053,38 @@ export default function MaterialManagement({
       }
 
       if (!foundItem) {
-        return alert(`'${targetReturnLog.item_name}'에 해당하는 자재 정보를 데이터베이스에서 찾을 수 없습니다.`);
+        showCenterToast(`'${targetReturnLog.item_name}'에 해당하는 자재 정보를 데이터베이스에서 찾을 수 없습니다.`);
+        return;
       }
 
       if (foundItem.type === '소모성') {
-        return alert('소모성 자재는 반납 처리를 할 수 없습니다.');
+        showCenterToast('소모성 자재는 반납 처리를 할 수 없습니다.');
+        return;
       }
 
       if (foundItem.type !== 'CABIN') {
-        const newQty = foundItem.quantity + qtyToReturn;
-        const { error: invErr } = await supabase
+        const currentQty = Number(foundItem.quantity || 0);
+        const initialQty = Number(foundItem.initial_quantity);
+        if (!Number.isFinite(initialQty) || initialQty < 0) {
+          showCenterToast('최초 보유수량이 등록되지 않은 자재입니다. 관리자에게 최초 보유수량을 확인해주세요.');
+          return;
+        }
+        if (currentQty + qtyToReturn > initialQty) {
+          showCenterToast(`반납 후 수량이 최초 보유수량(${initialQty} ${foundItem.unit || 'EA'})을 초과할 수 없습니다.`);
+          return;
+        }
+
+        const { data: updatedRows, error: invErr } = await supabase
           .from('inventory')
-          .update({ quantity: newQty, updated_at: new Date().toISOString() })
-          .eq('id', foundItem.id);
+          .update({ quantity: currentQty + qtyToReturn, updated_at: new Date().toISOString() })
+          .eq('id', foundItem.id)
+          .lte('quantity', initialQty - qtyToReturn)
+          .select('id, quantity');
         if (invErr) throw invErr;
+        if (!updatedRows || updatedRows.length === 0) {
+          showCenterToast('반납 수량이 최초 보유수량을 초과했거나 이미 다른 반납 처리가 완료되었습니다.');
+          return;
+        }
       }
 
       const finalLogType = returnHasIssue ? '불출, 반납완료, 이상알림' : '반납완료';
@@ -1069,10 +1095,12 @@ export default function MaterialManagement({
         .update({ 
           type: finalLogType, 
           quantity: qtyToReturn, 
+          returned_by: currentUser?.name || '작업자',
           memo: memoText,
           updated_at: new Date().toISOString() 
         })
-        .eq('id', targetReturnLog.id);
+        .eq('id', targetReturnLog.id)
+        .not('type', 'ilike', '%반납완료%');
       if (logErr) throw logErr;
 
       showCenterToast('반납 처리가 완료되었습니다.');
@@ -1084,13 +1112,15 @@ export default function MaterialManagement({
       }
       await fetchInventoryLogs();
     } catch (err: any) {
-      alert('반납 처리 중 오류가 발생했습니다: ' + err.message);
+      showCenterToast('반납 처리 중 오류가 발생했습니다: ' + err.message);
+    } finally {
+      returnSubmittingRef.current = false;
     }
   };
 
   const handleOpenEditLog = (log: InventoryLog) => {
     if (!isAdmin) {
-      alert('관리자 권한이 있는 인원만 수정할 수 있습니다.');
+      showCenterToast('관리자 권한이 있는 인원만 수정할 수 있습니다.');
       return;
     }
     setTargetEditLog(log);
@@ -1106,7 +1136,7 @@ export default function MaterialManagement({
     try {
       const newQty = Number(editLogQty);
       if (newQty <= 0) {
-        alert('수량은 1 이상이어야 합니다.');
+        showCenterToast('수량은 1 이상이어야 합니다.');
         return;
       }
 
@@ -1126,13 +1156,13 @@ export default function MaterialManagement({
       setTargetEditLog(null);
       await fetchInventoryLogs();
     } catch (err: any) {
-      alert('이력 수정 실패: ' + err.message);
+      showCenterToast('이력 수정 실패: ' + err.message);
     }
   };
 
   const handleOpenDeleteLog = (logId: string | number) => {
     if (!isAdmin) {
-      alert('관리자 권한이 있는 인원만 삭제할 수 있습니다.');
+      showCenterToast('관리자 권한이 있는 인원만 삭제할 수 있습니다.');
       return;
     }
     setPendingDeleteLogId(logId);
@@ -1152,13 +1182,13 @@ export default function MaterialManagement({
       showCenterToast('이력이 삭제되었습니다.');
       await fetchInventoryLogs();
     } catch (err: any) {
-      alert('이력 삭제 실패: ' + err.message);
+      showCenterToast('이력 삭제 실패: ' + err.message);
     }
   };
 
   const handleOpenBatchDeleteLogs = () => {
-    if (!isAdmin) return alert('관리자만 삭제할 수 있습니다.');
-    if (selectedLogIds.length === 0) return alert('삭제할 이력을 선택해주세요.');
+    if (!isAdmin) return showCenterToast('관리자만 삭제할 수 있습니다.');
+    if (selectedLogIds.length === 0) return showCenterToast('삭제할 이력을 선택해주세요.');
     setShowBatchDeleteConfirm(true);
   };
 
@@ -1176,7 +1206,7 @@ export default function MaterialManagement({
       setSelectedLogIds([]);
       await fetchInventoryLogs();
     } catch (err: any) {
-      alert('일괄 삭제 실패: ' + err.message);
+      showCenterToast('일괄 삭제 실패: ' + err.message);
     }
   };
 
@@ -1421,7 +1451,7 @@ export default function MaterialManagement({
 
               <div className="flex space-x-2 pt-2">
                 <button type="button" onClick={() => setShowReturnModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-                <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition">반납 확정</button>
+                <button type="submit" disabled={returnSubmittingRef.current} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-semibold text-xs rounded-lg transition">반납 확정</button>
               </div>
             </form>
           </div>
@@ -1538,7 +1568,7 @@ export default function MaterialManagement({
                         setCustomCabinSheets(updated);
                         setSelectedCabinSheet(cleaned);
                       } catch (error: any) {
-                        alert('CABIN 종류 저장 실패: ' + (error?.message || '알 수 없는 오류'));
+                        showCenterToast('CABIN 종류 저장 실패: ' + (error?.message || '알 수 없는 오류'));
                       }
                     }
                     setNewSheetInput('');
@@ -1590,7 +1620,7 @@ export default function MaterialManagement({
                             const updated = [...customCabinSheets];
                             updated[index] = cleaned;
                             if (new Set(updated).size !== updated.length) {
-                              alert('이미 존재하는 CABIN 종류입니다.');
+                              showCenterToast('이미 존재하는 CABIN 종류입니다.');
                               return;
                             }
                             try {
@@ -1599,7 +1629,7 @@ export default function MaterialManagement({
                               if (selectedCabinSheet === sheet) setSelectedCabinSheet(cleaned);
                               setEditingSheetIndex(null);
                             } catch (error: any) {
-                              alert('CABIN 종류 수정 실패: ' + (error?.message || '알 수 없는 오류'));
+                              showCenterToast('CABIN 종류 수정 실패: ' + (error?.message || '알 수 없는 오류'));
                             }
                           }}
                           className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px]"
@@ -1627,7 +1657,7 @@ export default function MaterialManagement({
                               setCustomCabinSheets(updated);
                               if (selectedCabinSheet === sheet && updated.length > 0) setSelectedCabinSheet(updated[0]);
                             } catch (error: any) {
-                              alert('CABIN 종류 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
+                              showCenterToast('CABIN 종류 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
                             }
                           }
                         }}
@@ -1729,8 +1759,8 @@ export default function MaterialManagement({
                     const name = newSubCatInput.trim();
                     if (!name) return;
                     const list = getCurrentSubCategories();
-                    if (name === '전체 보기') { alert('전체 보기는 기본 항목이라 추가할 수 없습니다.'); return; }
-                    if (list.includes(name)) { alert('이미 존재하는 카테고리입니다.'); setNewSubCatInput(''); return; }
+                    if (name === '전체 보기') { showCenterToast('전체 보기는 기본 항목이라 추가할 수 없습니다.'); return; }
+                    if (list.includes(name)) { showCenterToast('이미 존재하는 카테고리입니다.'); setNewSubCatInput(''); return; }
                     const updated = [...list, name];
                     try {
                       if (inventoryTab === '고정' || inventoryTab === '소모성') {
@@ -1740,7 +1770,7 @@ export default function MaterialManagement({
                       setCurrentSelectedCategory(name);
                       setNewSubCatInput('');
                     } catch (error: any) {
-                      alert('서브 카테고리 저장 실패: ' + (error?.message || '알 수 없는 오류') + '\nSupabase의 inventory_subcategories 테이블과 권한 설정을 확인해주세요.');
+                      showCenterToast('서브 카테고리 저장 실패: ' + (error?.message || '알 수 없는 오류') + '\nSupabase의 inventory_subcategories 테이블과 권한 설정을 확인해주세요.');
                     }
                   }}
                   className="px-3 py-1.5 bg-[#243B5A] text-white rounded text-xs font-semibold shrink-0"
@@ -1789,7 +1819,7 @@ export default function MaterialManagement({
                             if (!newName) return;
                             const list = [...getCurrentSubCategories()];
                             if (list.some((value, i) => i !== index && value === newName)) {
-                              alert('이미 존재하는 서브 카테고리입니다.');
+                              showCenterToast('이미 존재하는 서브 카테고리입니다.');
                               return;
                             }
                             list[index] = newName;
@@ -1801,7 +1831,7 @@ export default function MaterialManagement({
                               if (getCurrentSelectedCategory() === cat) setCurrentSelectedCategory(newName);
                               setEditingSubCatIndex(null);
                             } catch (error: any) {
-                              alert('서브 카테고리 수정 실패: ' + (error?.message || '알 수 없는 오류'));
+                              showCenterToast('서브 카테고리 수정 실패: ' + (error?.message || '알 수 없는 오류'));
                             }
                           }}
                           className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[10px]"
@@ -1832,7 +1862,7 @@ export default function MaterialManagement({
                             if (getCurrentSelectedCategory() === cat && list.length > 0) setCurrentSelectedCategory(list[0]);
                             else if (getCurrentSelectedCategory() === cat) setCurrentSelectedCategory('');
                           } catch (error: any) {
-                            alert('서브 카테고리 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
+                            showCenterToast('서브 카테고리 삭제 실패: ' + (error?.message || '알 수 없는 오류'));
                           }
                         }}
                         className="px-1.5 py-0.5 bg-red-100 text-red-600 rounded text-[10px]"
@@ -2310,6 +2340,12 @@ export default function MaterialManagement({
                 const isSelected = selectedLogIds.includes(String(log.id));
                 const isReturnCompleted = log.type.includes('반납완료');
                 const isIssueAlert = log.type.includes('이상알림');
+                const isConsumableUsage = log.type.includes('소모성 사용');
+                const matchedHistoryItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
+                const historyItemCode = matchedHistoryItem?.type === '고정' ? matchedHistoryItem?.code : undefined;
+                const issuedBy = log.issued_by || (!isReturnCompleted ? log.worker_name : undefined);
+                const returnedBy = log.returned_by;
+                const samePerson = Boolean(issuedBy && returnedBy && issuedBy === returnedBy);
 
                 return (
                   <div
@@ -2330,11 +2366,14 @@ export default function MaterialManagement({
                       <div className="min-w-0 space-y-0.5">
                         <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                           <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                            isReturnCompleted ? 'bg-emerald-100 text-emerald-800' : 'bg-blue-100 text-blue-800'
+                            isReturnCompleted ? 'bg-emerald-100 text-emerald-800' : isConsumableUsage ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-800'
                           }`}>
                             {log.type}
                           </span>
                           <span className="font-bold text-[#1F2937] truncate">{log.item_name}</span>
+                          {historyItemCode && (
+                            <span className="text-[10px] font-mono bg-white border border-[#E2E5E9] text-[#475569] px-1.5 py-0.2 rounded">자재코드: {historyItemCode}</span>
+                          )}
                           <span className="text-[10px] text-[#64748B]">({log.quantity} EA)</span>
                           {isIssueAlert && (
                             <span className="bg-red-100 text-red-700 text-[10px] px-1.5 py-0.2 rounded font-bold border border-red-200">
@@ -2344,7 +2383,19 @@ export default function MaterialManagement({
                         </div>
 
                         <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-x-2">
-                          <span>작업자: <strong className="text-[#1F2937]">{log.worker_name}</strong></span>
+                          {isReturnCompleted ? (
+                            samePerson || (!returnedBy && issuedBy) ? (
+                              <span>불출/반납: <strong className="text-[#1F2937]">{issuedBy || returnedBy}</strong></span>
+                            ) : (
+                              <>
+                                <span>불출: <strong className="text-[#1F2937]">{issuedBy || '-'}</strong></span>
+                                <span>|</span>
+                                <span>반납: <strong className="text-[#1F2937]">{returnedBy || '-'}</strong></span>
+                              </>
+                            )
+                          ) : (
+                            <span>{isConsumableUsage ? '사용: ' : '불출: '}<strong className="text-[#1F2937]">{log.issued_by || log.worker_name}</strong></span>
+                          )}
                           <span>|</span>
                           <span>일시: {new Date(log.created_at).toLocaleString('ko-KR')}</span>
                           {log.memo && (
@@ -2358,14 +2409,22 @@ export default function MaterialManagement({
                     </div>
 
                     <div className="flex items-center space-x-1 shrink-0 self-end sm:self-center">
-                      {!isReturnCompleted && !log.item_name?.includes('[CABIN') && (
+                      {isConsumableUsage ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="px-2 py-1 bg-gray-100 text-gray-400 border border-gray-200 rounded text-[10px] font-semibold cursor-not-allowed"
+                        >
+                          소모성 사용 완료
+                        </button>
+                      ) : !isReturnCompleted && !log.item_name?.includes('[CABIN') ? (
                         <button
                           onClick={() => handleOpenReturnModal(log)}
                           className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold transition"
                         >
                           반납처리
                         </button>
-                      )}
+                      ) : null}
 
                       {isAdmin && (
                         <>
