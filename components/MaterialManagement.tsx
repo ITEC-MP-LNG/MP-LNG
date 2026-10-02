@@ -770,19 +770,19 @@ export default function MaterialManagement({
         const dbType = itemType === '기자재' ? '고정' : itemType;
 
         const payload = {
-          type: dbType,
-          code: itemCode.trim(),
-          name: itemName.trim(),
-          serial_number: itemSerialNo.trim() || null,
-          category: itemCategory,
-          vbt_type: (itemType === '기자재' || itemType === '고정') ? (itemVbtType || null) : null,
-          sub_equipment: (itemType === '기자재' || itemType === '고정') ? subEquipValue : null,
-          quantity: itemQuantity,
-          unit: itemUnit,
-          min_quantity: itemMinQty,
-          location: itemLocation,
-          updated_at: new Date().toISOString()
-        };
+  type: dbType,
+  code: itemCode.trim(),
+  name: itemName.trim(),
+  serial_number: itemSerialNo.trim() || null,
+  category: itemCategory,
+  vbt_type: ((itemType as string) === '기자재' || itemType === '고정') ? (itemVbtType || null) : null,
+  sub_equipment: ((itemType as string) === '기자재' || itemType === '고정') ? subEquipValue : null,
+  quantity: itemQuantity,
+  unit: itemUnit,
+  min_quantity: itemMinQty,
+  location: itemLocation,
+  updated_at: new Date().toISOString()
+};
 
         if (editingItem) {
           const { error } = await supabase.from('inventory').update(payload).eq('id', editingItem.id);
