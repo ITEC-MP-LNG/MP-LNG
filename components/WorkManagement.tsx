@@ -255,7 +255,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     fetchTasks();
   }, [currentUser]);
 
-  // 해당 업무 변경 권한 확인
+  // 해당 업무 변경 권한 확인 (현재 로직 그대로 유지)
   const canModifyTaskStatus = (task: Task) => {
     if (isAdmin) return true;
     if (task.task_type === 'WEEKLY' || task.task_type === 'CABIN') return false;
@@ -530,7 +530,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (target === 'NIGHT') setNightWorkerList(nightWorkerList.filter(n => n !== name));
   };
 
-  // 업무 저장 (주간 업무 지정 기간 자동 입력 기능 포함)
+  // 업무 저장
   const handleSubmitTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자 권한이 없습니다.'); return; }
@@ -538,7 +538,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     try {
       if (formData.task_type === 'WEEKLY' && !editingTask) {
-        // 주간 업무 신규 등록 시 시작일부터 종료일까지 날짜별 개별 생성
         const start = new Date(formData.start_date);
         const end = new Date(formData.end_date);
 
@@ -572,7 +571,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         const { error } = await supabase.from('tasks').insert(insertPayloads);
         if (error) throw error;
       } else {
-        // 단일 수정 혹은 CABIN / DAILY 등록
         let payload: any = {
           title: formData.title.trim(),
           description: formData.description.trim(),
@@ -916,13 +914,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <span className="font-medium text-[#1F2937]">{t.assigned_names?.join(', ') || '미지정'}</span>
                     </div>
 
-                    <div className="flex items-center space-x-1">
-                      <button onClick={() => setSelectedTaskForSheet(t)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#243B5A]/10 text-[#243B5A] flex items-center gap-1">
-                        <Eye className="h-3.5 w-3.5" />
-                        <span>상세</span>
-                      </button>
-
-                      {dailySubTab === 'HISTORY' && isAdmin && (
+                    {dailySubTab === 'HISTORY' && isAdmin && (
+                      <div className="flex items-center space-x-1">
                         <button
                           onClick={() => handleDeleteTask(t.id)}
                           className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 flex items-center gap-1 hover:bg-red-100 transition"
@@ -930,8 +923,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           <Trash2 className="h-3.5 w-3.5" />
                           <span>삭제</span>
                         </button>
-                      )}
-                    </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))
