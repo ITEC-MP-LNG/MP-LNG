@@ -110,7 +110,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   // 바텀시트 모달 (상세보기)
   const [selectedTaskForSheet, setSelectedTaskForSheet] = useState<Task | null>(null);
 
-  // 상태 변경 모달 (상세보기 및 비고 수정)
+  // 상태 변경 모달 (상세보기, 버튼 직접 선택 및 비고 수정)
   const [statusChangeModal, setStatusChangeModal] = useState<{
     open: boolean;
     task: Task | null;
@@ -392,14 +392,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return;
     }
 
-    const statusOrder: Task['status'][] = ['PENDING', 'IN_PROGRESS', 'COMPLETED'];
-    const currentIndex = statusOrder.indexOf(task.status);
-    const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length];
-
     setStatusChangeModal({
       open: true,
       task: task,
-      targetStatus: nextStatus,
+      targetStatus: task.status,
       remarks: task.remarks || ''
     });
   };
@@ -439,7 +435,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return (
       <button
         onClick={(e) => handleNextStatus(e, task)}
-        title="클릭 시 상태 변경 (대기 -> 진행중 -> 완료)"
+        title="클릭 시 상태 및 비고란 변경 모달 호출"
         className={`px-2.5 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1 transition-all shrink-0 ${config.bg}`}
       >
         <Icon className="h-3.5 w-3.5" />
@@ -1202,7 +1198,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 상태 변경 및 비고 입력 모달 (버튼 클릭 시 출력) */}
+        {/* 상태 변경 및 비고 입력 모달 (버튼 직접 선택 구현) */}
         {statusChangeModal.open && statusChangeModal.task && (
           <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border animate-in fade-in zoom-in-95 duration-150">
@@ -1230,11 +1226,47 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                             [...(statusChangeModal.task.day_workers || []), ...(statusChangeModal.task.night_workers || [])].join(', ') || 
                             '지정 안됨'}
                   </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <span className="text-[#64748B]">변경될 상태:</span>
-                    <span className="font-bold text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      {statusChangeModal.targetStatus === 'PENDING' ? '대기' : statusChangeModal.targetStatus === 'IN_PROGRESS' ? '진행중' : '완료'}
-                    </span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })}
+                      className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
+                        statusChangeModal.targetStatus === 'PENDING'
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                      }`}
+                    >
+                      <AlertCircle className="h-3.5 w-3.5" />
+                      <span>대기</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })}
+                      className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
+                        statusChangeModal.targetStatus === 'IN_PROGRESS'
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                          : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                    >
+                      <PlayCircle className="h-3.5 w-3.5" />
+                      <span>진행중</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })}
+                      className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
+                        statusChangeModal.targetStatus === 'COMPLETED'
+                          ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
+                          : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                      }`}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      <span>완료</span>
+                    </button>
                   </div>
                 </div>
 
