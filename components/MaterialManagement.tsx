@@ -76,7 +76,7 @@ interface MaterialManagementProps {
   fetchInventoryLogs: () => Promise<void>;
 }
 
-type MainTab = '고정' | '소모성' | 'CABIN';
+type MainTab = '기자재' | '소모성' | 'CABIN';
 type VbtSubCategory = '1L' | '1S' | '2L' | '2S' | 'FLAT' | '기타';
 
 export default function MaterialManagement({
@@ -91,7 +91,7 @@ export default function MaterialManagement({
   fetchInventory,
   fetchInventoryLogs,
 }: MaterialManagementProps) {
-  const [inventoryTab, setInventoryTab] = useState<MainTab>('고정');
+  const [inventoryTab, setInventoryTab] = useState<MainTab>('기자재');
   const [cabinInventoryList, setCabinInventoryList] = useState<any[]>([]);
   const [loadingCabin, setLoadingCabin] = useState<boolean>(false);
 
@@ -205,11 +205,11 @@ export default function MaterialManagement({
         const { data, error } = await supabase
           .from('inventory_subcategories')
           .select('inventory_type, name, sort_order')
-          .in('inventory_type', ['고정', '소모성'])
+          .in('inventory_type', ['기자재', '고정', '소모성'])
           .order('sort_order', { ascending: true, nullsFirst: false });
         if (error) throw error;
         if (cancelled || !data || data.length === 0) return;
-        const fixed = data.filter((row: any) => row.inventory_type === '고정').map((row: any) => row.name);
+        const fixed = data.filter((row: any) => row.inventory_type === '기자재' || row.inventory_type === '고정').map((row: any) => row.name);
         const consumable = data.filter((row: any) => row.inventory_type === '소모성').map((row: any) => row.name);
         if (fixed.length) {
           setFixedSubCategories(fixed);
@@ -227,12 +227,12 @@ export default function MaterialManagement({
     return () => { cancelled = true; };
   }, []);
 
-  const persistSubCategories = async (type: '고정' | '소모성' | 'CABIN', categories: string[]) => {
+  const persistSubCategories = async (type: '기자재' | '소모성' | 'CABIN', categories: string[]) => {
     const cleaned = Array.from(new Set(categories.map(value => value.trim()).filter(Boolean)));
     const { error: deleteError } = await supabase
       .from('inventory_subcategories')
       .delete()
-      .eq('inventory_type', type);
+      .in('inventory_type', [type, type === '기자재' ? '고정' : type]);
     if (deleteError) throw deleteError;
     if (cleaned.length) {
       const { error: insertError } = await supabase
@@ -485,7 +485,7 @@ export default function MaterialManagement({
 
   const currentMaterialNames = useMemo(() => {
     let names: string[] = [];
-    if (inventoryTab === '고정') {
+    if (inventoryTab === '기자재') {
       names = inventoryList.filter(item => {
         const cat = item.category || '';
         const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
@@ -506,8 +506,8 @@ export default function MaterialManagement({
 
   const currentItemSubCategoryEntries = useMemo(() => {
     if (inventoryTab === 'CABIN') return [];
-    const parentCategory = inventoryTab === '고정' ? selectedFixedSubCategory : selectedConsumableCategory;
-    const rows = itemSubCategoryRows.filter(row => row.inventory_type === inventoryTab && row.parent_category === parentCategory && row.is_active !== false);
+    const parentCategory = inventoryTab === '기자재' ? selectedFixedSubCategory : selectedConsumableCategory;
+    const rows = itemSubCategoryRows.filter(row => (row.inventory_type === inventoryTab || (inventoryTab === '기자재' && row.inventory_type === '고정')) && row.parent_category === parentCategory && row.is_active !== false);
     const map = new Map<string, { name:string; materialNames:string[]; id:any }>();
     rows.forEach(row => {
       const name = String(row.name || '').trim();
@@ -531,7 +531,7 @@ export default function MaterialManagement({
   }, [currentItemSubCategoryOptions, selectedItemSubCategory]);
 
   const getCurrentItemSubCategoryContext = () => {
-    const parentCategory = inventoryTab === '고정' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : selectedCabinSheet;
+    const parentCategory = inventoryTab === '기자재' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : selectedCabinSheet;
     return { type: inventoryTab, parentCategory };
   };
 
@@ -577,7 +577,7 @@ export default function MaterialManagement({
     try {
       const target = itemSubCategoryRows.find(row => row.id === editingItemSubCatId);
       if (!target) return;
-      await supabase.from('inventory_item_subcategories').delete().eq('inventory_type',type).eq('parent_category',parentCategory).eq('name',target.name);
+      await supabase.from('inventory_item_subcategories').delete().in('inventory_type', [type, '고정']).eq('parent_category',parentCategory).eq('name',target.name);
       const rows = editingItemSubCatMaterialNames.length > 0
         ? editingItemSubCatMaterialNames.map((materialName,index)=>({ inventory_type:type,parent_category:parentCategory,name:newName,material_name:materialName,sort_order:index,is_active:true }))
         : [{ inventory_type:type,parent_category:parentCategory,name:newName,material_name:'',sort_order:0,is_active:true }];
@@ -600,7 +600,7 @@ export default function MaterialManagement({
     if (!confirm(`'${name}' 자재 종류를 삭제하시겠습니까?\n\n※ 실제 자재 데이터는 삭제되지 않습니다.`)) return;
     const { type, parentCategory } = getCurrentItemSubCategoryContext();
     try {
-      const { error } = await supabase.from('inventory_item_subcategories').delete().eq('inventory_type',type).eq('parent_category',parentCategory).eq('name',name);
+      const { error } = await supabase.from('inventory_item_subcategories').delete().in('inventory_type', [type, '고정']).eq('parent_category',parentCategory).eq('name',name);
       if (error) throw error;
       await refreshItemSubCategoryRows();
       setSelectedItemSubCategory('전체 보기');
@@ -610,7 +610,7 @@ export default function MaterialManagement({
     }
   };
 
-  const [itemType, setItemType] = useState<MainTab>('고정');
+  const [itemType, setItemType] = useState<MainTab>('기자재');
   const [itemCode, setItemCode] = useState('');
   const [itemName, setItemName] = useState('');
   const [itemSerialNo, setItemSerialNo] = useState('');
@@ -631,13 +631,13 @@ export default function MaterialManagement({
   const [cabinCalibrationDate, setCabinCalibrationDate] = useState('');
 
   const getCurrentSubCategories = () => {
-    if (inventoryTab === '고정') return fixedSubCategories;
+    if (inventoryTab === '기자재') return fixedSubCategories;
     if (inventoryTab === '소모성') return consumableSubCategories;
     return [];
   };
 
   const setCurrentSubCategories = (list: string[]) => {
-    if (inventoryTab === '고정') setFixedSubCategories(list);
+    if (inventoryTab === '기자재') setFixedSubCategories(list);
     else if (inventoryTab === '소모성') setConsumableSubCategories(list);
   };
 
@@ -647,7 +647,7 @@ export default function MaterialManagement({
     if (targetIndex < 0 || targetIndex >= list.length) return;
     [list[index], list[targetIndex]] = [list[targetIndex], list[index]];
     try {
-      if (inventoryTab === '고정' || inventoryTab === '소모성') {
+      if (inventoryTab === '기자재' || inventoryTab === '소모성') {
         await persistSubCategories(inventoryTab, list);
       }
       setCurrentSubCategories(list);
@@ -670,13 +670,13 @@ export default function MaterialManagement({
   };
 
   const getCurrentSelectedCategory = () => {
-    if (inventoryTab === '고정') return selectedFixedSubCategory;
+    if (inventoryTab === '기자재') return selectedFixedSubCategory;
     if (inventoryTab === '소모성') return selectedConsumableCategory;
     return `${selectedCabinSheet} - ${selectedCabinTextSubTag}`;
   };
 
   const setCurrentSelectedCategory = (val: string) => {
-    if (inventoryTab === '고정') setSelectedFixedSubCategory(val);
+    if (inventoryTab === '기자재') setSelectedFixedSubCategory(val);
     else if (inventoryTab === '소모성') setSelectedConsumableCategory(val);
   };
 
@@ -684,14 +684,14 @@ export default function MaterialManagement({
     if (!isAdmin) return showCenterToast('관리자만 자재를 등록할 수 있습니다.');
     setEditingItem(null);
     setItemType(inventoryTab);
-    const codePrefix = inventoryTab === '고정' ? 'FIX-' : inventoryTab === '소모성' ? 'MAT-' : 'CBN-';
+    const codePrefix = inventoryTab === '기자재' ? 'FIX-' : inventoryTab === '소모성' ? 'MAT-' : 'CBN-';
     setItemCode(codePrefix + String(Math.floor(Math.random() * 900) + 100));
     setItemName('');
     setItemSerialNo('');
     setItemVbtType('');
     setItemCalDate('');
     setItemNextCalDate('');
-    setItemCategory(inventoryTab === '고정' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : '일반');
+    setItemCategory(inventoryTab === '기자재' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : '일반');
     
     setCabinSheetName(selectedCabinSheet || 'C#1');
     setCabinLocationSection('');
@@ -707,7 +707,7 @@ export default function MaterialManagement({
     if (!isAdmin) return showCenterToast('관리자만 자재 정보를 수정할 수 있습니다.');
     setSelectedDetailItem(null);
     setEditingItem(item);
-    setItemType(item.type as MainTab);
+    setItemType((item.type === '고정' ? '기자재' : item.type) as MainTab);
 
     if (item.type === 'CABIN') {
       setItemCode(item.no || '');
@@ -767,14 +767,16 @@ export default function MaterialManagement({
           ? (itemNextCalDate.trim() ? `${itemCalDate.trim()} | ${itemNextCalDate.trim()}` : itemCalDate.trim())
           : null;
 
+        const dbType = itemType === '기자재' ? '고정' : itemType;
+
         const payload = {
-          type: itemType,
+          type: dbType,
           code: itemCode.trim(),
           name: itemName.trim(),
           serial_number: itemSerialNo.trim() || null,
           category: itemCategory,
-          vbt_type: itemType === '고정' ? (itemVbtType || null) : null,
-          sub_equipment: itemType === '고정' ? subEquipValue : null,
+          vbt_type: (itemType === '기자재' || itemType === '고정') ? (itemVbtType || null) : null,
+          sub_equipment: (itemType === '기자재' || itemType === '고정') ? subEquipValue : null,
           quantity: itemQuantity,
           unit: itemUnit,
           min_quantity: itemMinQty,
@@ -828,6 +830,20 @@ export default function MaterialManagement({
       showCenterToast('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
       return;
     }
+
+    // 기자재 반납 시 최근 불출 이력 존재 여부 확인
+    if ((item.type === '고정' || item.type === '기자재') && type === '반납') {
+      const hasIssueLog = inventoryLogs.some(log => 
+        (log.inventory_id === item.id || log.item_name === item.name) && 
+        log.type.includes('불출') && 
+        !log.type.includes('반납완료')
+      );
+      if (!hasIssueLog) {
+        showCenterToast('불출 이력이 없어 반납할 수 없습니다.');
+        return;
+      }
+    }
+
     setSelectedDetailItem(null);
     setTargetItem(item);
     setLogType(item.type === '소모성' ? '소모성 사용' : type);
@@ -999,6 +1015,17 @@ export default function MaterialManagement({
     const foundItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
     if ((foundItem && foundItem.type === '소모성') || log.type.includes('소모성')) {
       showCenterToast('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
+      return;
+    }
+
+    // 기자재 반납 시 불출 이력 확인
+    const hasIssueLog = inventoryLogs.some(l => 
+      (l.inventory_id === log.inventory_id || l.item_name === log.item_name) && 
+      l.type.includes('불출') && 
+      !l.type.includes('반납완료')
+    );
+    if (!hasIssueLog) {
+      showCenterToast('불출 이력이 없어 반납할 수 없습니다.');
       return;
     }
 
@@ -1214,7 +1241,7 @@ export default function MaterialManagement({
       const consumables = inventoryList.filter(i => i.type === '소모성');
       result = selectedConsumableCategory === '전체 보기' ? consumables : consumables.filter(item => item.category === selectedConsumableCategory);
     } else {
-      const baseFixed = inventoryList.filter(i => i.type === '고정');
+      const baseFixed = inventoryList.filter(i => i.type === '고정' || i.type === '기자재');
 
       result = baseFixed.filter(item => {
         const cat = item.category || '';
@@ -1732,7 +1759,7 @@ export default function MaterialManagement({
                     if (list.includes(name)) { showCenterToast('이미 존재하는 카테고리입니다.'); setNewSubCatInput(''); return; }
                     const updated = [...list, name];
                     try {
-                      if (inventoryTab === '고정' || inventoryTab === '소모성') {
+                      if (inventoryTab === '기자재' || inventoryTab === '소모성') {
                         await persistSubCategories(inventoryTab, updated);
                       }
                       setCurrentSubCategories(updated);
@@ -1793,7 +1820,7 @@ export default function MaterialManagement({
                             }
                             list[index] = newName;
                             try {
-                              if (inventoryTab === '고정' || inventoryTab === '소모성') {
+                              if (inventoryTab === '기자재' || inventoryTab === '소모성') {
                                 await persistSubCategories(inventoryTab, list);
                               }
                               setCurrentSubCategories(list);
@@ -1824,7 +1851,7 @@ export default function MaterialManagement({
                           if (!confirm(`'${cat}' 카테고리를 삭제하시겠습니까?`)) return;
                           const list = getCurrentSubCategories().filter(c => c !== cat);
                           try {
-                            if (inventoryTab === '고정' || inventoryTab === '소모성') {
+                            if (inventoryTab === '기자재' || inventoryTab === '소모성') {
                               await persistSubCategories(inventoryTab, list);
                             }
                             setCurrentSubCategories(list);
@@ -1854,7 +1881,7 @@ export default function MaterialManagement({
           </div>
           <div className="min-w-0">
             <h1 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate">기자재 및 소모성 자재 관리 시스템</h1>
-            <p className="text-[10px] sm:text-[11px] text-[#64748B] truncate">고정 기자재, 소모품 및 CABIN 자재 통합 관리</p>
+            <p className="text-[10px] sm:text-[11px] text-[#64748B] truncate">기자재, 소모품 및 CABIN 자재 통합 관리</p>
           </div>
         </div>
       </div>
@@ -1900,9 +1927,9 @@ export default function MaterialManagement({
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2">
         <div className="flex bg-[#E2E5E9]/60 p-1 rounded-lg border border-[#E2E5E9] w-full sm:w-auto">
           <button
-            onClick={() => { setInventoryTab('고정'); setSelectedItemSubCategory('전체 보기'); }}
+            onClick={() => { setInventoryTab('기자재'); setSelectedItemSubCategory('전체 보기'); }}
             className={`flex-1 sm:flex-none flex items-center justify-center space-x-1 px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-              inventoryTab === '고정' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
+              inventoryTab === '기자재' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'
             }`}
           >
             <Lock className="h-3.5 w-3.5 shrink-0" />
@@ -1997,7 +2024,7 @@ export default function MaterialManagement({
             className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
             style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
           >
-            {(inventoryTab === '고정' || inventoryTab === '소모성') && (
+            {(inventoryTab === '기자재' || inventoryTab === '소모성') && (
               <button
                 onClick={() => { setCurrentSelectedCategory('전체 보기'); setSelectedItemSubCategory('전체 보기'); }}
                 className={`px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition shrink-0 ${getCurrentSelectedCategory() === '전체 보기' ? 'bg-[#243B5A] text-white shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9]'}`}
@@ -2043,7 +2070,7 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {inventoryTab === '고정' && selectedFixedSubCategory === 'VBT' && (
+      {inventoryTab === '기자재' && selectedFixedSubCategory === 'VBT' && (
         <div className="bg-white p-1.5 rounded-lg border border-[#E2E5E9] flex overflow-x-auto gap-1 shadow-2xs">
           {(['1L', '1S', '2L', '2S', 'FLAT', '기타'] as VbtSubCategory[]).map((subCat) => (
             <button
@@ -2059,7 +2086,7 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {inventoryTab !== 'CABIN' && !(inventoryTab === '고정' && selectedFixedSubCategory === 'VBT') && (
+      {inventoryTab !== 'CABIN' && !(inventoryTab === '기자재' && selectedFixedSubCategory === 'VBT') && (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
             <Package className="h-3.5 w-3.5 text-[#243B5A]" />
@@ -2138,79 +2165,107 @@ export default function MaterialManagement({
                 </button>
               </>
             )}
+            <button
+              onClick={toggleSelectAllCabin}
+              className="px-2 py-1 bg-[#F5F6F8] border border-[#E2E5E9] hover:bg-[#E2E5E9] text-[#1F2937] rounded text-xs font-medium transition"
+            >
+              {selectedCabinIds.length === filteredInventory.length && filteredInventory.length > 0 ? '선택 해제' : '전체 선택'}
+            </button>
           </div>
         )}
       </div>
 
-      {/* 전체 목록 표시 */}
-      <div className="space-y-2">
+      {/* 자재 목록 그리드 */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
         {filteredInventory.map((item) => {
+          const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
           const isCabin = inventoryTab === 'CABIN';
           const isSelected = selectedCabinIds.includes(String(item.id));
 
           return (
             <div 
               key={item.id} 
-              className={`bg-white rounded-lg border p-3 shadow-2xs hover:border-[#243B5A] transition flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 ${
-                isSelected ? 'border-[#243B5A] bg-blue-50/20' : 'border-[#E2E5E9]'
+              className={`bg-white rounded-lg border p-3 flex flex-col justify-between space-y-2 shadow-2xs transition ${
+                isSelected ? 'border-blue-500 bg-blue-50/20' : 'border-[#E2E5E9] hover:border-[#CBD5E1]'
               }`}
             >
-              <div className="flex items-start space-x-2.5 min-w-0 flex-1">
-                {isCabin && (
-                  <input 
-                    type="checkbox" 
-                    checked={isSelected} 
-                    onChange={() => toggleSelectCabinItem(item.id)}
-                    className="mt-1 w-4 h-4 accent-[#243B5A] rounded shrink-0 cursor-pointer"
-                  />
-                )}
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
-                    <span className="bg-[#243B5A] text-white text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0">
-                      {item.code || item.no}
-                    </span>
-                    <h3 className="font-bold text-xs sm:text-sm text-[#1F2937] truncate">{item.name || item.item}</h3>
-                    {item.vbt_type && (
-                      <span className="bg-slate-100 text-slate-700 text-[10px] font-semibold px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
-                        {item.vbt_type}
-                      </span>
+              <div className="space-y-1.5">
+                <div className="flex justify-between items-start gap-2">
+                  <div className="flex items-center space-x-1.5 min-w-0">
+                    {isCabin && (
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected}
+                        onChange={() => toggleSelectCabinItem(item.id)}
+                        className="w-4 h-4 accent-[#243B5A] rounded shrink-0 cursor-pointer"
+                      />
                     )}
+                    <span className="bg-[#F5F6F8] text-[#243B5A] border border-[#E2E5E9] text-[10px] font-mono font-bold px-1.5 py-0.5 rounded shrink-0">
+                      {isCabin ? (item.no || item.code) : item.code}
+                    </span>
+                    <h3 className="font-bold text-xs sm:text-sm text-[#1F2937] truncate">{isCabin ? item.item : item.name}</h3>
                   </div>
 
-                  <div className="flex items-center space-x-3 text-[11px] text-[#64748B] mt-1.5 flex-wrap gap-y-1">
-                    <span>구분: <strong className="text-[#1F2937]">{item.category || item.sheet_name}</strong></span>
-                    {item.location && <span>위치: <strong className="text-[#1F2937]">{item.location}</strong></span>}
-                    {item.serial_number && <span>S/N: <strong className="text-[#1F2937] font-mono">{item.serial_number}</strong></span>}
-                    {item.calibration_date && <span>교정일: <strong className="text-[#1F2937] font-mono">{item.calibration_date}</strong></span>}
-                  </div>
+                  {!isCabin && (
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                      item.quantity <= (item.min_quantity || 0) 
+                        ? 'bg-red-100 text-red-700 border border-red-200' 
+                        : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                    }`}>
+                      재고 {item.quantity}{item.unit}
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-[11px] text-[#64748B] space-y-0.5">
+                  {isCabin ? (
+                    <>
+                      {item.maker_model && <p className="truncate">제조/모델: {item.maker_model}</p>}
+                      {item.serial_number && <p className="truncate font-mono">S/N: {item.serial_number}</p>}
+                      {item.cert_no && <p className="truncate font-mono">Cert No: {item.cert_no}</p>}
+                      {item.calibration_date && <p className="text-amber-700 font-semibold truncate">교정일시: {item.calibration_date}</p>}
+                      {item.location_or_section && <p className="truncate text-[#94A3B8]">위치: {item.location_or_section}</p>}
+                    </>
+                  ) : (
+                    <>
+                      {item.serial_number && <p className="truncate font-mono">S/N: {item.serial_number}</p>}
+                      {item.vbt_type && <p className="truncate text-blue-700 font-semibold">VBT 타입: {item.vbt_type}</p>}
+                      {/* 교정일시 기존 로직 보완 및 상시 표기 */}
+                      {(calDate || nextCalDate) && (
+                        <p className="text-amber-700 font-semibold truncate">
+                          교정일시: {calDate} {nextCalDate ? `(차기: ${nextCalDate})` : ''}
+                        </p>
+                      )}
+                      {item.location && <p className="truncate text-[#94A3B8]">위치: {item.location}</p>}
+                    </>
+                  )}
                 </div>
               </div>
 
-              <div className="flex items-center justify-between sm:justify-end w-full sm:w-auto space-x-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E2E5E9] shrink-0">
-                {!isCabin && (
-                  <div className="text-right">
-                    <span className="text-[10px] text-[#64748B] block">보유 재고</span>
-                    <span className="text-xs sm:text-sm font-extrabold text-[#243B5A] font-mono">{item.quantity} {item.unit}</span>
-                  </div>
-                )}
+              <div className="flex items-center justify-between pt-2 border-t border-[#F1F5F9] gap-1">
+                <button
+                  onClick={() => setSelectedDetailItem(item)}
+                  className="px-2 py-1 text-[11px] font-medium text-[#64748B] hover:text-[#1F2937] hover:bg-[#F5F6F8] rounded transition"
+                >
+                  상세보기
+                </button>
 
                 <div className="flex items-center space-x-1">
                   {!isCabin && (
                     <>
                       <button
-                        onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : '불출')}
-                        className="px-2.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white text-xs rounded-md transition font-semibold flex items-center space-x-1 shadow-2xs"
+                        onClick={() => handleOpenLogModal(item, '불출')}
+                        className="px-2 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-[11px] font-medium transition"
                       >
-                        <ArrowUpRight className="h-3.5 w-3.5" />
-                        <span>{item.type === '소모성' ? '소모성 사용' : '불출'}</span>
+                        불출
                       </button>
+
                       {item.type !== '소모성' && (
                         <button
                           onClick={() => handleOpenLogModal(item, '반납')}
-                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded-md transition font-semibold flex items-center space-x-1 shadow-2xs"
+                          className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] font-medium transition"
                         >
-                          <ArrowDownRight className="h-3.5 w-3.5" />
-                          <span>반납</span>
+                          반납
                         </button>
                       )}
                     </>
@@ -2219,8 +2274,8 @@ export default function MaterialManagement({
                   {isAdmin && (
                     <button
                       onClick={() => handleOpenInventoryEdit(item)}
-                      className="p-1.5 text-[#64748B] hover:text-[#1F2937] hover:bg-[#F5F6F8] rounded-md border border-[#E2E5E9] transition"
-                      title="자재 정보 수정"
+                      className="p-1 text-[#64748B] hover:text-[#1F2937] hover:bg-[#F5F6F8] rounded transition"
+                      title="수정"
                     >
                       <Pencil className="h-3.5 w-3.5" />
                     </button>
@@ -2232,37 +2287,46 @@ export default function MaterialManagement({
         })}
 
         {filteredInventory.length === 0 && (
-          <div className="bg-white rounded-lg border border-[#E2E5E9] p-8 text-center text-[#94A3B8] text-xs">
-            등록되거나 조건에 부합하는 자재가 없습니다.
+          <div className="col-span-full py-8 text-center text-[#94A3B8] text-xs bg-white rounded-lg border border-[#E2E5E9]">
+            등록되거나 검색된 자재 품목이 없습니다.
           </div>
         )}
       </div>
 
-      {/* 불출 및 반납 이력 관리 섹션 */}
+      {/* 최근 불출 / 반납 이력 Section */}
       <div className="bg-white rounded-lg border border-[#E2E5E9] p-3 shadow-2xs space-y-3">
-        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2.5">
+        <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
           <div className="flex items-center space-x-2">
             <History className="h-4 w-4 text-[#243B5A]" />
-            <h2 className="text-xs sm:text-sm font-bold text-[#1F2937]">최근 불출 / 반납 이력</h2>
-            <span className="text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-0.5 rounded-full text-[#64748B] font-normal">
+            <h2 className="text-xs sm:text-sm font-bold text-[#1F2937]">최근 불출/반납 이력</h2>
+            <span className="text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-0.5 rounded-full text-[#64748B]">
               총 {inventoryLogs.length}건
             </span>
           </div>
 
-          <div className="flex items-center space-x-1.5">
+          <div className="flex items-center space-x-1">
             {isAdmin && selectedLogIds.length > 0 && (
               <button
                 onClick={handleOpenBatchDeleteLogs}
-                className="px-2 py-1 bg-red-50 text-red-600 hover:bg-red-100 border border-red-200 rounded text-xs font-semibold transition flex items-center space-x-1"
+                className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-semibold shadow-2xs transition flex items-center space-x-1"
               >
-                <Trash2 className="h-3 w-3" />
+                <Trash2 className="h-3.5 w-3.5" />
                 <span>선택 삭제 ({selectedLogIds.length})</span>
+              </button>
+            )}
+
+            {isAdmin && (
+              <button
+                onClick={toggleSelectAllLogs}
+                className="px-2 py-1 bg-[#F5F6F8] border border-[#E2E5E9] hover:bg-[#E2E5E9] text-[#1F2937] rounded text-xs font-medium transition"
+              >
+                {selectedLogIds.length === inventoryLogs.length && inventoryLogs.length > 0 ? '선택 해제' : '전체 선택'}
               </button>
             )}
 
             <button
               onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
-              className="p-1 hover:bg-[#F5F6F8] rounded text-[#64748B]"
+              className="p-1 text-[#64748B] hover:text-[#1F2937] rounded transition"
             >
               {isHistorySectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </button>
@@ -2270,74 +2334,69 @@ export default function MaterialManagement({
         </div>
 
         {isHistorySectionOpen && (
-          <div className="space-y-2 max-h-80 overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+          <div className="space-y-2">
             {inventoryLogs.map((log) => {
+              const matchedItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
+              const isConsumable = matchedItem?.type === '소모성' || log.type.includes('소모성');
+              const hasIssue = log.type.includes('이상알림') || log.type.includes('결함') || log.type.includes('이상');
               const isSelected = selectedLogIds.includes(String(log.id));
-              const isReturned = log.type.includes('반납완료');
-              const hasAlert = log.type.includes('이상알림');
-              const isConsumable = log.type.includes('소모성');
 
-              // 자재코드 매칭
-              const matchedItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name) || cabinInventoryList.find(i => i.id === log.inventory_id || i.item === log.item_name);
-              const materialCode = matchedItem ? (matchedItem.code || matchedItem.no) : null;
+              // 소모성 자재는 표기명 변경
+              const displayType = isConsumable ? '소모성 사용' : log.type;
 
               return (
                 <div 
                   key={log.id} 
-                  className={`p-2.5 rounded-lg border text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 transition ${
-                    hasAlert ? 'bg-amber-50/50 border-amber-200' : isSelected ? 'bg-blue-50/30 border-[#243B5A]' : 'bg-[#F5F6F8]/60 border-[#E2E5E9]'
+                  className={`p-2.5 rounded-lg border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 transition text-xs ${
+                    hasIssue 
+                      ? 'border-2 border-red-500 bg-red-50/20' 
+                      : isSelected 
+                      ? 'border-blue-500 bg-blue-50/20' 
+                      : 'border-[#E2E5E9] bg-white hover:border-[#CBD5E1]'
                   }`}
                 >
-                  <div className="flex items-start space-x-2 min-w-0 flex-1">
+                  <div className="flex items-center space-x-2 min-w-0 flex-1">
                     {isAdmin && (
                       <input 
                         type="checkbox" 
-                        checked={isSelected} 
+                        checked={isSelected}
                         onChange={() => toggleSelectLog(log.id)}
-                        className="mt-0.5 w-3.5 h-3.5 accent-[#243B5A] rounded shrink-0 cursor-pointer"
+                        className="w-4 h-4 accent-[#243B5A] rounded shrink-0 cursor-pointer"
                       />
                     )}
-
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
-                        <span className={`text-[10px] font-bold px-1.5 py-0.2 rounded border shrink-0 ${
-                          isReturned 
-                            ? 'bg-blue-50 text-blue-700 border-blue-200' 
-                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                    
+                    <div className="min-w-0 space-y-0.5">
+                      <div className="flex items-center space-x-1.5 min-w-0">
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold shrink-0 ${
+                          log.type.includes('불출') ? 'bg-amber-100 text-amber-800' :
+                          log.type.includes('반납') ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
                         }`}>
-                          {log.type}
+                          {displayType}
                         </span>
-
-                        {/* 기자재 불출 시 자재코드 표시 */}
-                        {materialCode && !isConsumable && (
-                          <span className="bg-[#243B5A] text-white text-[9px] font-mono font-bold px-1.5 py-0.2 rounded shrink-0">
-                            {materialCode}
-                          </span>
-                        )}
-
-                        <span className="font-bold text-[#1F2937] truncate">{log.item_name}</span>
-                        <span className="text-[#64748B] font-mono font-bold">({log.quantity}개)</span>
+                        <h4 className="font-bold text-[#1F2937] truncate text-xs sm:text-sm">{log.item_name}</h4>
+                        <span className="text-[10px] text-[#64748B] shrink-0">({log.quantity}개)</span>
                       </div>
-
+                      
                       <div className="flex items-center space-x-2 text-[10px] text-[#64748B] flex-wrap">
-                        <span>작업자: <strong className="text-[#1F2937]">{log.worker_name}</strong></span>
+                        <span>작업자: {log.worker_name || '미지정'}</span>
                         <span>•</span>
                         <span>일시: {new Date(log.created_at).toLocaleString('ko-KR')}</span>
                         {log.memo && (
                           <>
                             <span>•</span>
-                            <span className="text-[#1F2937] italic truncate">메모: {log.memo}</span>
+                            <span className="text-[#1F2937] font-medium truncate max-w-xs">메모: {log.memo}</span>
                           </>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center space-x-1 self-end sm:self-center shrink-0">
-                    {!isReturned && !isConsumable && (
+                  <div className="flex items-center space-x-1 shrink-0 self-end sm:self-center">
+                    {/* 소모성 자재는 반납 버튼 노출 안함, 기자재만 불출 상태일 때 노출 */}
+                    {!isConsumable && log.type.includes('불출') && !log.type.includes('반납완료') && (
                       <button
                         onClick={() => handleOpenReturnModal(log)}
-                        className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-[10px] font-semibold transition shadow-2xs"
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold shadow-2xs transition"
                       >
                         반납 처리
                       </button>
@@ -2347,17 +2406,17 @@ export default function MaterialManagement({
                       <>
                         <button
                           onClick={() => handleOpenEditLog(log)}
-                          className="p-1 text-[#64748B] hover:text-[#1F2937] bg-white border border-[#E2E5E9] rounded transition"
-                          title="이력 수정"
+                          className="p-1 text-[#64748B] hover:text-[#1F2937] hover:bg-[#F5F6F8] rounded transition"
+                          title="수정"
                         >
-                          <Pencil className="h-3 w-3" />
+                          <Pencil className="h-3.5 w-3.5" />
                         </button>
                         <button
                           onClick={() => handleOpenDeleteLog(log.id)}
-                          className="p-1 text-red-500 hover:text-red-700 bg-white border border-[#E2E5E9] rounded transition"
-                          title="이력 삭제"
+                          className="p-1 text-red-600 hover:bg-red-50 rounded transition"
+                          title="삭제"
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </button>
                       </>
                     )}
@@ -2368,14 +2427,98 @@ export default function MaterialManagement({
 
             {inventoryLogs.length === 0 && (
               <div className="py-6 text-center text-[#94A3B8] text-xs">
-                기록된 불출 및 반납 이력이 없습니다.
+                최근 불출/반납 이력이 존재하지 않습니다.
               </div>
             )}
           </div>
         )}
       </div>
 
-      {/* 자재 등록 / 수정 모달 */}
+      {/* 상세 보기 모달 */}
+      {selectedDetailItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-sm font-bold">자재 상세 정보</h3>
+              <button onClick={() => setSelectedDetailItem(null)}><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9] space-y-1">
+                <span className="text-[10px] text-[#64748B] font-mono block">{selectedDetailItem.code || selectedDetailItem.no}</span>
+                <h4 className="font-bold text-sm text-[#1F2937]">{selectedDetailItem.name || selectedDetailItem.item}</h4>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                  <span className="text-[#64748B] block text-[10px]">구분 / 분류</span>
+                  <span className="font-semibold text-[#1F2937]">{selectedDetailItem.type === '고정' ? '기자재' : selectedDetailItem.type} / {selectedDetailItem.category || selectedDetailItem.sheet_name}</span>
+                </div>
+                <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                  <span className="text-[#64748B] block text-[10px]">보유 수량</span>
+                  <span className="font-semibold text-[#1F2937]">{selectedDetailItem.quantity || 1} {selectedDetailItem.unit || 'EA'}</span>
+                </div>
+              </div>
+
+              {selectedDetailItem.maker_model && (
+                <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                  <span className="text-[#64748B] block text-[10px]">제조사 / 모델</span>
+                  <span className="font-semibold text-[#1F2937]">{selectedDetailItem.maker_model}</span>
+                </div>
+              )}
+
+              {selectedDetailItem.serial_number && (
+                <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                  <span className="text-[#64748B] block text-[10px]">시리얼 번호 (S/N)</span>
+                  <span className="font-mono font-semibold text-[#1F2937]">{selectedDetailItem.serial_number}</span>
+                </div>
+              )}
+
+              {selectedDetailItem.cert_no && (
+                <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                  <span className="text-[#64748B] block text-[10px]">교정 성적서 번호</span>
+                  <span className="font-mono font-semibold text-[#1F2937]">{selectedDetailItem.cert_no}</span>
+                </div>
+              )}
+
+              {(selectedDetailItem.sub_equipment || selectedDetailItem.calibration_date) && (
+                <div className="bg-amber-50 p-2 rounded border border-amber-200">
+                  <span className="text-amber-800 block text-[10px] font-semibold">교정 일시 정보</span>
+                  <span className="font-semibold text-amber-900">
+                    {selectedDetailItem.calibration_date || selectedDetailItem.sub_equipment}
+                  </span>
+                </div>
+              )}
+
+              {(selectedDetailItem.location || selectedDetailItem.location_or_section) && (
+                <div className="bg-white p-2 rounded border border-[#E2E5E9]">
+                  <span className="text-[#64748B] block text-[10px]">보관 위치</span>
+                  <span className="font-semibold text-[#1F2937]">{selectedDetailItem.location || selectedDetailItem.location_or_section}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="flex space-x-2 pt-2">
+              <button 
+                onClick={() => setSelectedDetailItem(null)} 
+                className="flex-1 py-2 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#1F2937] font-semibold text-xs rounded-lg transition"
+              >
+                닫기
+              </button>
+              {isAdmin && (
+                <button 
+                  onClick={() => handleDeleteInventory(selectedDetailItem)} 
+                  className="px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 font-semibold text-xs rounded-lg transition"
+                >
+                  삭제
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 자재 등록 / 수정 Sheet */}
       {showInventorySheet && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-md w-full p-5 shadow-2xl space-y-4 text-[#1F2937] max-h-[90vh] overflow-y-auto">
@@ -2386,90 +2529,51 @@ export default function MaterialManagement({
 
             <form onSubmit={handleSubmitInventory} className="space-y-3 text-xs">
               <div>
-                <label className="block text-[#64748B] font-semibold mb-1">자재 구분</label>
-                <div className="flex bg-[#F5F6F8] p-1 rounded-md border border-[#E2E5E9]">
-                  {(['고정', '소모성', 'CABIN'] as MainTab[]).map(type => (
-                    <button
-                      key={type}
-                      type="button"
-                      onClick={() => setItemType(type)}
-                      className={`flex-1 py-1 rounded text-xs font-semibold transition ${
-                        itemType === type ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B]'
-                      }`}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
+                <label className="block text-[#64748B] font-semibold mb-1">구분 타입</label>
+                <select 
+                  value={itemType} 
+                  onChange={e => setItemType(e.target.value as MainTab)} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] font-semibold"
+                >
+                  <option value="기자재">기자재</option>
+                  <option value="소모성">소모성 자재</option>
+                  <option value="CABIN">CABIN</option>
+                </select>
               </div>
 
               {itemType === 'CABIN' ? (
                 <>
                   <div>
-                    <label className="block text-[#64748B] font-semibold mb-1">Sheet / 카테고리 명</label>
-                    <input 
-                      type="text" 
-                      required 
-                      value={cabinSheetName} 
-                      onChange={e => setCabinSheetName(e.target.value)} 
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                    />
+                    <label className="block text-[#64748B] font-semibold mb-1">Sheet 명칭</label>
+                    <input type="text" required value={cabinSheetName} onChange={e=>setCabinSheetName(e.target.value)} placeholder="예: C#1" className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md" />
                   </div>
                   <div>
-                    <label className="block text-[#64748B] font-semibold mb-1">관리 번호 (No)</label>
-                    <input 
-                      type="text" 
-                      required 
-                      value={itemCode} 
-                      onChange={e => setItemCode(e.target.value)} 
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md font-mono" 
-                    />
+                    <label className="block text-[#64748B] font-semibold mb-1">품목 식별 번호 (NO)</label>
+                    <input type="text" required value={itemCode} onChange={e=>setItemCode(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md font-mono" />
                   </div>
                   <div>
-                    <label className="block text-[#64748B] font-semibold mb-1">품목명 (Item)</label>
-                    <input 
-                      type="text" 
-                      required 
-                      value={itemName} 
-                      onChange={e => setItemName(e.target.value)} 
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                    />
+                    <label className="block text-[#64748B] font-semibold mb-1">품목명 (ITEM)</label>
+                    <input type="text" required value={itemName} onChange={e=>setItemName(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md font-bold" />
                   </div>
                   <div>
-                    <label className="block text-[#64748B] font-semibold mb-1">위치 / 구역 (Location)</label>
-                    <input 
-                      type="text" 
-                      value={cabinLocationSection} 
-                      onChange={e => setCabinLocationSection(e.target.value)} 
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[#64748B] font-semibold mb-1">제조사 / 모델 (Maker / Model)</label>
-                    <input 
-                      type="text" 
-                      value={cabinMakerModel} 
-                      onChange={e => setCabinMakerModel(e.target.value)} 
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                    />
+                    <label className="block text-[#64748B] font-semibold mb-1">제조사 / 모델</label>
+                    <input type="text" value={cabinMakerModel} onChange={e=>setCabinMakerModel(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md" />
                   </div>
                   <div>
                     <label className="block text-[#64748B] font-semibold mb-1">시리얼 번호 (S/N)</label>
-                    <input 
-                      type="text" 
-                      value={cabinSerialNo} 
-                      onChange={e => setCabinSerialNo(e.target.value)} 
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md font-mono" 
-                    />
+                    <input type="text" value={cabinSerialNo} onChange={e=>setCabinSerialNo(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md font-mono" />
                   </div>
                   <div>
-                    <label className="block text-[#64748B] font-semibold mb-1">교정일 (Calibration Date)</label>
-                    <input 
-                      type="date" 
-                      value={cabinCalibrationDate} 
-                      onChange={e => setCabinCalibrationDate(e.target.value)} 
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                    />
+                    <label className="block text-[#64748B] font-semibold mb-1">교정 성적서 번호 (Cert No)</label>
+                    <input type="text" value={cabinCertNo} onChange={e=>setCabinCertNo(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md font-mono" />
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">교정 일자</label>
+                    <input type="date" value={cabinCalibrationDate} onChange={e=>setCabinCalibrationDate(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md" />
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">위치 / 섹션</label>
+                    <input type="text" value={cabinLocationSection} onChange={e=>setCabinLocationSection(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md" />
                   </div>
                 </>
               ) : (
@@ -2477,22 +2581,12 @@ export default function MaterialManagement({
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-[#64748B] font-semibold mb-1">자재 코드</label>
-                      <input 
-                        type="text" 
-                        required 
-                        value={itemCode} 
-                        onChange={e => setItemCode(e.target.value)} 
-                        className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md font-mono" 
-                      />
+                      <input type="text" required value={itemCode} onChange={e=>setItemCode(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md font-mono" />
                     </div>
                     <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">서브 카테고리</label>
-                      <select 
-                        value={itemCategory} 
-                        onChange={e => setItemCategory(e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md"
-                      >
-                        {(itemType === '고정' ? fixedSubCategories : consumableSubCategories).map(cat => (
+                      <label className="block text-[#64748B] font-semibold mb-1">카테고리</label>
+                      <select value={itemCategory} onChange={e=>setItemCategory(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md">
+                        {(itemType === '기자재' ? fixedSubCategories : consumableSubCategories).map(cat => (
                           <option key={cat} value={cat}>{cat}</option>
                         ))}
                       </select>
@@ -2501,93 +2595,64 @@ export default function MaterialManagement({
 
                   <div>
                     <label className="block text-[#64748B] font-semibold mb-1">자재명</label>
-                    <input 
-                      type="text" 
-                      required 
-                      value={itemName} 
-                      onChange={e => setItemName(e.target.value)} 
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                    />
+                    <input type="text" required value={itemName} onChange={e=>setItemName(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md font-bold" />
                   </div>
 
                   <div>
-                    <label className="block text-[#64748B] font-semibold mb-1">시리얼 번호 (선택)</label>
-                    <input 
-                      type="text" 
-                      value={itemSerialNo} 
-                      onChange={e => setItemSerialNo(e.target.value)} 
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md font-mono" 
-                    />
+                    <label className="block text-[#64748B] font-semibold mb-1">시리얼 번호 (S/N)</label>
+                    <input type="text" value={itemSerialNo} onChange={e=>setItemSerialNo(e.target.value)} placeholder="선택 사항" className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md font-mono" />
                   </div>
 
-                  {itemType === '고정' && (
+                  {itemType === '기자재' && itemCategory === 'VBT' && (
+                    <div>
+                      <label className="block text-[#64748B] font-semibold mb-1">VBT 세부 타입</label>
+                      <select value={itemVbtType} onChange={e=>setItemVbtType(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md">
+                        <option value="">선택 안함</option>
+                        <option value="1L">1L</option>
+                        <option value="1S">1S</option>
+                        <option value="2L">2L</option>
+                        <option value="2S">2S</option>
+                        <option value="FLAT">FLAT</option>
+                      </select>
+                    </div>
+                  )}
+
+                  {itemType === '기자재' && (
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[#64748B] font-semibold mb-1">교정일</label>
-                        <input 
-                          type="date" 
-                          value={itemCalDate} 
-                          onChange={e => setItemCalDate(e.target.value)} 
-                          className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                        />
+                        <input type="date" value={itemCalDate} onChange={e=>setItemCalDate(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md" />
                       </div>
                       <div>
                         <label className="block text-[#64748B] font-semibold mb-1">차기 교정일</label>
-                        <input 
-                          type="date" 
-                          value={itemNextCalDate} 
-                          onChange={e => setItemNextCalDate(e.target.value)} 
-                          className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                        />
+                        <input type="date" value={itemNextCalDate} onChange={e=>setItemNextCalDate(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md" />
                       </div>
                     </div>
                   )}
 
                   <div className="grid grid-cols-3 gap-2">
                     <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">초기 수량</label>
-                      <input 
-                        type="number" 
-                        min="0" 
-                        required 
-                        value={itemQuantity} 
-                        onChange={e => setItemQuantity(Number(e.target.value))} 
-                        className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md font-bold" 
-                      />
+                      <label className="block text-[#64748B] font-semibold mb-1">수량</label>
+                      <input type="number" min="0" required value={itemQuantity} onChange={e=>setItemQuantity(Number(e.target.value))} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md font-bold" />
                     </div>
                     <div>
                       <label className="block text-[#64748B] font-semibold mb-1">단위</label>
-                      <input 
-                        type="text" 
-                        required 
-                        value={itemUnit} 
-                        onChange={e => setItemUnit(e.target.value)} 
-                        className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                      />
+                      <input type="text" required value={itemUnit} onChange={e=>setItemUnit(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md" />
                     </div>
                     <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">보관 위치</label>
-                      <input 
-                        type="text" 
-                        value={itemLocation} 
-                        onChange={e => setItemLocation(e.target.value)} 
-                        className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
-                      />
+                      <label className="block text-[#64748B] font-semibold mb-1">최소 안전 재고</label>
+                      <input type="number" min="0" value={itemMinQty} onChange={e=>setItemMinQty(Number(e.target.value))} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md" />
                     </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">보관 위치</label>
+                    <input type="text" value={itemLocation} onChange={e=>setItemLocation(e.target.value)} className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md" />
                   </div>
                 </>
               )}
 
-              <div className="flex space-x-2 pt-2">
-                {editingItem && (
-                  <button 
-                    type="button" 
-                    onClick={() => handleDeleteInventory(editingItem)} 
-                    className="py-2 px-3 bg-red-100 hover:bg-red-200 text-red-600 font-semibold text-xs rounded-lg transition"
-                  >
-                    삭제
-                  </button>
-                )}
+              <div className="flex space-x-2 pt-3">
                 <button type="button" onClick={() => setShowInventorySheet(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
                 <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">저장하기</button>
               </div>
@@ -2596,20 +2661,20 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 개별 불출 / 사용 / 반납 모달 */}
+      {/* 불출/사용/반납 등록 Sheet */}
       {showLogSheet && targetItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
             <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
-              <h3 className="text-sm font-bold">자재 {logType} 처리</h3>
+              <h3 className="text-sm font-bold">{logType} 처리</h3>
               <button onClick={() => setShowLogSheet(false)}><X className="h-4 w-4" /></button>
             </div>
 
             <form onSubmit={handleSubmitLog} className="space-y-3 text-xs">
               <div className="bg-[#F5F6F8] p-2.5 rounded-md border border-[#E2E5E9] space-y-1">
-                <span className="text-[10px] text-[#64748B] block">대상 품목</span>
-                <p className="font-bold text-[#1F2937]">{targetItem.name || targetItem.item}</p>
-                <p className="text-[10px] text-[#64748B]">현재 재고: {targetItem.quantity} {targetItem.unit}</p>
+                <span className="text-[10px] text-[#64748B] font-mono block">{targetItem.code}</span>
+                <p className="font-bold text-[#1F2937]">{targetItem.name}</p>
+                <span className="text-[10px] text-blue-600 block">현재 보유 재고: {targetItem.quantity} {targetItem.unit}</span>
               </div>
 
               <div>
@@ -2617,28 +2682,43 @@ export default function MaterialManagement({
                 <input 
                   type="number" 
                   min="1" 
-                  max={logType === '반납' ? undefined : targetItem.quantity}
+                  max={logType === '반납' ? undefined : targetItem.quantity} 
                   required 
                   value={logQty} 
                   onChange={e => setLogQty(Number(e.target.value))} 
-                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md font-bold" 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] font-bold" 
                 />
               </div>
 
+              {logType === '반납' && (
+                <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 flex items-center space-x-2">
+                  <input 
+                    type="checkbox" 
+                    id="logHasIssue"
+                    checked={logHasIssue} 
+                    onChange={e => setLogHasIssue(e.target.checked)} 
+                    className="w-4 h-4 accent-amber-600 rounded"
+                  />
+                  <label htmlFor="logHasIssue" className="text-amber-900 font-semibold cursor-pointer select-none">
+                    장비 이상(결함) 있음 체크
+                  </label>
+                </div>
+              )}
+
               <div>
-                <label className="block text-[#64748B] font-semibold mb-1">작업자 / 메모</label>
+                <label className="block text-[#64748B] font-semibold mb-1">메모 / 사유</label>
                 <input 
                   type="text" 
                   placeholder="특이사항이나 사용 목적 입력" 
                   value={logMemo} 
                   onChange={e => setLogMemo(e.target.value)} 
-                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md" 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                 />
               </div>
 
               <div className="flex space-x-2 pt-2">
                 <button type="button" onClick={() => setShowLogSheet(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">{logType} 확정</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">처리 완료</button>
               </div>
             </form>
           </div>
