@@ -100,6 +100,11 @@ export const normalizeCommissioningStatus = (raw: any, legacyStatus: ShipStatus)
   return result;
 };
 
+const isCommissioningComplete = (ship: ShipItem) => {
+  const processStatuses = normalizeCommissioningStatus(ship.commissioning_status, ship.status);
+  return STATUS_LIST.every((step) => processStatuses[step] === '완료');
+};
+
 // Tank 항목 및 단계 정의
 export const TANKS = ['TK1', 'TK2', 'TK3', 'TK4'] as const;
 export type TankKey = typeof TANKS[number]; // 'TK1' | 'TK2' | 'TK3' | 'TK4'
@@ -162,7 +167,7 @@ export interface ShipItem {
   dwt?: string | null;        // DWT 일자 (YYYY-MM-DD)
   status: ShipStatus;         // 진행단계현황 (기존 호환용)
   progress: number | null;    // 산출 공정률
-  commissioning_status?: CommissioningStatusMap; // 시운전 공정별 대기/진행중/완료
+  commissioning_status?: CommissioningStatusMap; // 공정별 대기/진행중/완료
   delivery_date: string | null;      // 인도예정일
   day_shift: string;          // 주간 근무자
   day_shift_user_ids?: string[];
@@ -1324,7 +1329,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     </tr>
                   ) : (
                     infoFilteredShips.map((ship) => {
-                      const currentIdx = STATUS_LIST.indexOf(ship.status);
+                      const processStatuses = normalizeCommissioningStatus(ship.commissioning_status, ship.status);
+                      const allCommissioningComplete = isCommissioningComplete(ship);
 
                       return (
                         <tr
@@ -1333,7 +1339,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                           className="hover:bg-slate-50 transition cursor-pointer"
                         >
                           <td className="py-3 px-3 font-mono font-bold text-[#243B5A] whitespace-nowrap">
-                            {ship.ship_no}
+                            <div className="flex items-center gap-1.5">
+                              <span>{ship.ship_no}</span>
+                              {allCommissioningComplete && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9px] font-bold font-sans">
+                                  전 공정 완료
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-3 px-3 font-semibold text-[#1F2937] whitespace-nowrap">
                             {ship.ship_name}
@@ -1358,9 +1371,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                           </td>
                           <td className="py-3 px-3">
                             <div className="flex flex-wrap gap-1 max-w-[240px]">
-                              {STATUS_LIST.map((step, idx) => {
-                                const isCompleted = idx < currentIdx;
-                                const isCurrent = idx === currentIdx;
+                              {STATUS_LIST.map((step) => {
+                                const processStatus = processStatuses[step];
+                                const isCompleted = processStatus === '완료';
+                                const isCurrent = processStatus === '진행중';
 
                                 return (
                                   <span
@@ -1425,7 +1439,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           {/* Mobile Card View */}
           <div className="block lg:hidden space-y-2.5">
             {infoFilteredShips.map((ship) => {
-              const currentIdx = STATUS_LIST.indexOf(ship.status);
+              const processStatuses = normalizeCommissioningStatus(ship.commissioning_status, ship.status);
+              const allCommissioningComplete = isCommissioningComplete(ship);
 
               return (
                 <div
@@ -1444,6 +1459,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             {ship.shipowner}
                           </span>
                         )}
+                        {allCommissioningComplete && (
+                          <span className="text-[9px] bg-emerald-100 text-emerald-700 px-1.5 py-0.5 rounded font-bold border border-emerald-200">
+                            전 공정 완료
+                          </span>
+                        )}
                       </div>
                       <h3 className="text-xs font-bold text-[#1F2937] mt-1">{ship.ship_name}</h3>
                     </div>
@@ -1451,9 +1471,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </div>
 
                   <div className="flex flex-wrap gap-1 pt-1">
-                    {STATUS_LIST.map((step, idx) => {
-                      const isCompleted = idx < currentIdx;
-                      const isCurrent = idx === currentIdx;
+                    {STATUS_LIST.map((step) => {
+                      const processStatus = processStatuses[step];
+                      const isCompleted = processStatus === '완료';
+                      const isCurrent = processStatus === '진행중';
 
                       return (
                         <span
