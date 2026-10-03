@@ -195,6 +195,7 @@ export default function EducationManagement({
   // 통합 모달 열기 핸들러
   // -------------------------------------------------------------
   const handleOpenScheduleCreate = (dateStr?: string) => {
+    if (!isAdmin) return showAlert('관리자만 일정을 등록할 수 있습니다.', '권한 없음', 'error');
     setEditingScheduleId(null);
     setScheduleType('education');
     setFormTitle('');
@@ -224,6 +225,7 @@ export default function EducationManagement({
 
   const handleOpenEventEdit = (ev: EventItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!isAdmin) return showAlert('관리자만 EVENT를 수정할 수 있습니다.', '권한 없음', 'error');
     setEditingScheduleId(ev.id);
     setScheduleType('event');
     setFormTitle(ev.title);
@@ -258,6 +260,7 @@ export default function EducationManagement({
 
   const handleDeleteEvent = (id: number | string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    if (!isAdmin) return showAlert('관리자만 EVENT를 삭제할 수 있습니다.', '권한 없음', 'error');
 
     showConfirm('정말 이 EVENT를 삭제하시겠습니까?', async () => {
       try {
@@ -313,6 +316,7 @@ export default function EducationManagement({
         showAlert('교육 저장 실패: ' + (err?.message || '오류가 발생했습니다.'), '저장 오류', 'error');
       }
     } else {
+      if (!isAdmin) return showAlert('관리자만 EVENT를 등록/수정할 수 있습니다.', '권한 없음', 'error');
       if (!formTitle.trim()) return showAlert('EVENT 제목을 입력해주세요.', '입력 항목 누락', 'error');
 
       try {
@@ -411,13 +415,15 @@ export default function EducationManagement({
         </div>
 
         <div className="flex items-center space-x-2">
-          <button
-            onClick={() => handleOpenScheduleCreate()}
-            className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-3.5 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs"
-          >
-            <Plus className="h-4 w-4" />
-            <span>신규 일정 등록</span>
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => handleOpenScheduleCreate()}
+              className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-3.5 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs"
+            >
+              <Plus className="h-4 w-4" />
+              <span>신규 일정 등록</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -463,13 +469,15 @@ export default function EducationManagement({
                           {day}
                         </span>
                         
-                        <button
-                          onClick={() => handleOpenScheduleCreate(dateStr)}
-                          className="text-[#64748B] hover:text-[#243B5A] p-0.5 rounded"
-                          title="이 날짜에 일정 추가"
-                        >
-                          <Plus className="h-3 w-3" />
-                        </button>
+                        {isAdmin && (
+                          <button
+                            onClick={() => handleOpenScheduleCreate(dateStr)}
+                            className="text-[#64748B] hover:text-[#243B5A] p-0.5 rounded"
+                            title="이 날짜에 일정 추가"
+                          >
+                            <Plus className="h-3 w-3" />
+                          </button>
+                        )}
                       </div>
 
                       <div className="space-y-1 max-h-[85px] overflow-y-auto">
@@ -501,58 +509,55 @@ export default function EducationManagement({
             </div>
           </div>
 
-          {/* 하단 전체 목록 영역 (전체 교육 목록 & 전체 EVENT 목록 동시 표기) */}
-          <div className="mt-6 space-y-8">
+          {/* 하단 전체 목록 영역 - 목록은 최소화하고 선택 시 상세 팝업에서 확인 */}
+          <div className="mt-6 space-y-5">
             {/* 1. 전체 교육 목록 */}
-            <div className="space-y-3">
+            <div className="space-y-2">
               <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center gap-1.5">
                 <GraduationCap className="h-4 w-4 text-[#243B5A]" />
                 <span>전체 교육 목록</span>
               </h3>
               {visibleEducations.length === 0 ? (
-                <div className="bg-white rounded-xl p-8 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
+                <div className="bg-white rounded-xl p-6 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
                   등록된 교육 일정이 없습니다.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {visibleEducations.map(edu => (
-                    <div 
-                      key={edu.id} 
+                <div className="bg-white rounded-xl border border-[#E2E5E9] overflow-hidden shadow-xs">
+                  {visibleEducations.map((edu, idx) => (
+                    <div
+                      key={edu.id}
                       onClick={() => setSelectedEduForDetail(edu)}
-                      className="bg-white rounded-xl border border-[#E2E5E9] p-4 shadow-xs hover:border-slate-400 transition cursor-pointer flex flex-col justify-between"
+                      className={`px-3 py-2.5 flex items-center gap-2.5 cursor-pointer hover:bg-[#F5F6F8] transition ${
+                        idx !== visibleEducations.length - 1 ? 'border-b border-[#E2E5E9]' : ''
+                      }`}
                     >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-[#243B5A] border border-slate-200">
-                            {edu.edu_date} ({edu.time_slot})
-                          </span>
-                          
-                          {isAdmin && (
-                            <div className="flex items-center space-x-1">
-                              <button
-                                onClick={(e) => handleOpenEduEdit(edu, e)}
-                                className="p-1 text-[#64748B] hover:text-[#243B5A] rounded hover:bg-slate-100"
-                                title="교육 수정"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={(e) => handleDeleteEdu(edu.id, e)}
-                                className="p-1 text-[#64748B] hover:text-[#DC2626] rounded hover:bg-slate-100"
-                                title="교육 삭제"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          )}
+                      <span className="shrink-0 text-[10px] font-semibold px-2 py-1 rounded bg-slate-100 text-[#243B5A] border border-slate-200">
+                        {edu.edu_date}
+                      </span>
+                      <span className="min-w-0 flex-1 text-xs font-semibold text-[#1F2937] truncate">
+                        {edu.title}
+                      </span>
+                      <span className="hidden sm:block shrink-0 text-[10px] text-[#64748B]">
+                        {edu.time_slot}
+                      </span>
+                      {isAdmin && (
+                        <div className="flex items-center space-x-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => handleOpenEduEdit(edu, e)}
+                            className="p-1 text-[#64748B] hover:text-[#243B5A] rounded hover:bg-slate-100"
+                            title="교육 수정"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteEdu(edu.id, e)}
+                            className="p-1 text-[#64748B] hover:text-[#DC2626] rounded hover:bg-slate-100"
+                            title="교육 삭제"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
-
-                        <h4 className="text-xs font-bold text-[#1F2937] mb-2">{edu.title}</h4>
-
-                        <div className="space-y-1 text-[11px] text-[#64748B] bg-slate-50 p-2.5 rounded-lg border border-[#E2E5E9]">
-                          <div>장소: <strong className="text-[#1F2937]">{edu.location}</strong></div>
-                        </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -560,54 +565,52 @@ export default function EducationManagement({
             </div>
 
             {/* 2. 전체 EVENT 목록 */}
-            <div className="space-y-3">
+            <div className="space-y-2">
               <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center gap-1.5">
                 <CalendarIcon className="h-4 w-4 text-[#0D9488]" />
                 <span>전체 EVENT 목록</span>
               </h3>
               {visibleEvents.length === 0 ? (
-                <div className="bg-white rounded-xl p-8 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
+                <div className="bg-white rounded-xl p-6 text-center border border-[#E2E5E9] text-[#64748B] text-xs">
                   등록된 EVENT가 없습니다.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {visibleEvents.map(ev => (
-                    <div 
-                      key={ev.id} 
+                <div className="bg-white rounded-xl border border-[#E2E5E9] overflow-hidden shadow-xs">
+                  {visibleEvents.map((ev, idx) => (
+                    <div
+                      key={ev.id}
                       onClick={() => setSelectedEventForDetail(ev)}
-                      className="bg-white rounded-xl border border-[#E2E5E9] p-4 shadow-xs hover:border-teal-400 transition cursor-pointer flex flex-col justify-between"
+                      className={`px-3 py-2.5 flex items-center gap-2.5 cursor-pointer hover:bg-[#F5F6F8] transition ${
+                        idx !== visibleEvents.length - 1 ? 'border-b border-[#E2E5E9]' : ''
+                      }`}
                     >
-                      <div>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-teal-50 text-teal-800 border border-teal-200">
-                            {ev.event_date} {ev.time_slot ? `(${ev.time_slot})` : ''}
-                          </span>
-                          
-                          <div className="flex items-center space-x-1">
-                            <button
-                              onClick={(e) => handleOpenEventEdit(ev, e)}
-                              className="p-1 text-[#64748B] hover:text-[#0D9488] rounded hover:bg-slate-100"
-                              title="EVENT 수정"
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={(e) => handleDeleteEvent(ev.id, e)}
-                              className="p-1 text-[#64748B] hover:text-[#DC2626] rounded hover:bg-slate-100"
-                              title="EVENT 삭제"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
+                      <span className="shrink-0 text-[10px] font-semibold px-2 py-1 rounded bg-teal-50 text-teal-800 border border-teal-200">
+                        {ev.event_date}
+                      </span>
+                      <span className="min-w-0 flex-1 text-xs font-semibold text-[#1F2937] truncate">
+                        {ev.title}
+                      </span>
+                      <span className="hidden sm:block shrink-0 text-[10px] text-[#64748B]">
+                        {ev.time_slot || ''}
+                      </span>
+                      {isAdmin && (
+                        <div className="flex items-center space-x-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => handleOpenEventEdit(ev, e)}
+                            className="p-1 text-[#64748B] hover:text-[#0D9488] rounded hover:bg-slate-100"
+                            title="EVENT 수정"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            onClick={(e) => handleDeleteEvent(ev.id, e)}
+                            className="p-1 text-[#64748B] hover:text-[#DC2626] rounded hover:bg-slate-100"
+                            title="EVENT 삭제"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </div>
-
-                        <h4 className="text-xs font-bold text-[#1F2937] mb-2">{ev.title}</h4>
-
-                        <div className="space-y-1 text-[11px] text-[#64748B] bg-slate-50 p-2.5 rounded-lg border border-[#E2E5E9]">
-                          {ev.location && <div>장소: <strong className="text-[#1F2937]">{ev.location}</strong></div>}
-                          {ev.description && <div className="truncate">내용: {ev.description}</div>}
-                        </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -999,24 +1002,28 @@ export default function EducationManagement({
 
             <div className="flex justify-between items-center pt-3 border-t border-[#E2E5E9]">
               <div className="flex space-x-1.5">
-                <button
-                  onClick={() => {
-                    const evToEdit = selectedEventForDetail;
-                    setSelectedEventForDetail(null);
-                    handleOpenEventEdit(evToEdit);
-                  }}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#1F2937] rounded-lg text-xs font-semibold transition flex items-center space-x-1 border border-[#E2E5E9]"
-                >
-                  <Pencil className="h-3 w-3" />
-                  <span>수정</span>
-                </button>
-                <button
-                  onClick={() => handleDeleteEvent(selectedEventForDetail.id)}
-                  className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-[#DC2626] rounded-lg text-xs font-semibold transition flex items-center space-x-1 border border-red-200"
-                >
-                  <Trash2 className="h-3 w-3" />
-                  <span>삭제</span>
-                </button>
+                {isAdmin && (
+                  <>
+                    <button
+                      onClick={() => {
+                        const evToEdit = selectedEventForDetail;
+                        setSelectedEventForDetail(null);
+                        handleOpenEventEdit(evToEdit);
+                      }}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-[#1F2937] rounded-lg text-xs font-semibold transition flex items-center space-x-1 border border-[#E2E5E9]"
+                    >
+                      <Pencil className="h-3 w-3" />
+                      <span>수정</span>
+                    </button>
+                    <button
+                      onClick={() => handleDeleteEvent(selectedEventForDetail.id)}
+                      className="px-3 py-1.5 bg-red-50 hover:bg-red-100 text-[#DC2626] rounded-lg text-xs font-semibold transition flex items-center space-x-1 border border-red-200"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>삭제</span>
+                    </button>
+                  </>
+                )}
               </div>
 
               <button
