@@ -501,7 +501,7 @@ export default function NoticeBoard({
   };
 
   return (
-    <div className="w-full text-[#1F2937] p-4 sm:p-6 space-y-6 font-sans border-box">
+    <div className="w-full text-[#1F2937] space-y-6 font-sans border-box">
       {/* 상단 Header */}
       <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div className="flex items-center space-x-3 w-full sm:w-auto justify-between sm:justify-start">
