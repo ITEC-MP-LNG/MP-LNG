@@ -494,6 +494,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   // Status 탱크별 공정 일자 종합 비교표 XLSX 다운로드
   // =========================================================================
   const handleDownloadExcel = () => {
+    if (!isAdmin) {
+      showAlert('권한 필요', '엑셀 다운로드는 관리자 권한만 가능합니다.', 'warning');
+      return;
+    }
+
     if (!currentStatusShip) {
       showAlert('다운로드 불가', '현재 선택된 호선이 없습니다.', 'warning');
       return;
@@ -1606,14 +1611,16 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     );
                   })()}
 
-                  {/* 엑셀 다운로드 버튼 */}
-                  <button
-                    onClick={handleDownloadExcel}
-                    className="flex items-center space-x-1 bg-white hover:bg-slate-50 text-[#243B5A] border border-[#243B5A] px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
-                    title="Status 엑셀 다운로드"
-                  >
-                    <span>엑셀 다운로드</span>
-                  </button>
+                  {/* 관리자 권한 전용: 엑셀 다운로드 */}
+                  {isAdmin && (
+                    <button
+                      onClick={handleDownloadExcel}
+                      className="flex items-center space-x-1 bg-white hover:bg-slate-50 text-[#243B5A] border border-[#243B5A] px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
+                      title="Status 엑셀 다운로드"
+                    >
+                      <span>엑셀 다운로드</span>
+                    </button>
+                  )}
 
                   {/* 관리자 권한 전용 액션: 수정 & 삭제 */}
                   {isAdmin && (
@@ -1759,15 +1766,17 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </h4>
                   <div className="flex items-center gap-2">
                     <span className="hidden md:inline text-[11px] text-[#64748B]">S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT</span>
-                    <button
-                      type="button"
-                      onClick={handleDownloadExcel}
-                      className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#243B5A] hover:bg-[#1d3049] text-white text-[11px] font-bold transition cursor-pointer whitespace-nowrap"
-                      title="탱크별 공정 일자 종합 비교표를 Excel 파일로 다운로드"
-                    >
-                      <span className="font-mono">XLSX</span>
-                      <span>다운로드</span>
-                    </button>
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={handleDownloadExcel}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#243B5A] hover:bg-[#1d3049] text-white text-[11px] font-bold transition cursor-pointer whitespace-nowrap"
+                        title="탱크별 공정 일자 종합 비교표를 Excel 파일로 다운로드"
+                      >
+                        <span className="font-mono">XLSX</span>
+                        <span>다운로드</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
