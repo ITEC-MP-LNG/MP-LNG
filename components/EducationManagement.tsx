@@ -355,8 +355,13 @@ export default function EducationManagement({
     return now >= targetCutoff;
   };
 
-  const visibleEducations = educations.filter(edu => !isExpired(edu.edu_date));
-  const visibleEvents = events.filter(ev => !isExpired(ev.event_date));
+  const currentMonthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+  const visibleEducations = educations.filter(edu =>
+    !isExpired(edu.edu_date) && edu.edu_date?.slice(0, 7) === currentMonthKey
+  );
+  const visibleEvents = events.filter(ev =>
+    !isExpired(ev.event_date) && ev.event_date?.slice(0, 7) === currentMonthKey
+  );
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
@@ -373,7 +378,7 @@ export default function EducationManagement({
   }
 
   return (
-    <div className="w-full text-[#1F2937] space-y-4 font-sans border-box">
+    <div className="w-full text-[#1F2937] p-4 sm:p-6 space-y-4 font-sans border-box">
       
       {/* 🚀 상단 타이틀 영역 */}
       <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex items-center justify-between gap-3">
