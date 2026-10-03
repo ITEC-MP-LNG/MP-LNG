@@ -431,6 +431,28 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     s.night_shift.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // 호선 제원 정보 하단 목록은 상단 선택 상태와 동일하게 필터링
+  // - 호선 선택: 현재 선택된 호선 1척만 표시
+  // - 선주사 선택: 선택된 선주사의 호선만 표시
+  // - 선주사 선택 후 해당 선주사의 호선을 다시 선택하면 선택 호선 1척만 표시
+  const infoFilteredShips = filteredShips.filter((ship) => {
+    if (statusSelectorTab === 'SHIP') {
+      return currentStatusShip?.id === ship.id;
+    }
+
+    if (!selectedOwnerFilter) return true;
+
+    const sameOwner = (ship.shipowner || '').trim() === selectedOwnerFilter;
+    if (!sameOwner) return false;
+
+    // 현재 선택 호선이 선택된 선주사 소속이면 해당 호선만 표시
+    if (currentStatusShip && (currentStatusShip.shipowner || '').trim() === selectedOwnerFilter) {
+      return currentStatusShip.id === ship.id;
+    }
+
+    return true;
+  });
+
   // 현재 Status 탭에서 활성화된 호선 객체 찾기
   const currentStatusShip = ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
 
@@ -1289,14 +1311,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#E2E5E9] text-[#1F2937]">
-                  {filteredShips.length === 0 ? (
+                  {infoFilteredShips.length === 0 ? (
                     <tr>
                       <td colSpan={isAdmin ? 11 : 10} className="text-center py-10 text-[#64748B]">
                         등록되거나 검색 조건에 일치하는 호선 데이터가 없습니다.
                       </td>
                     </tr>
                   ) : (
-                    filteredShips.map((ship) => {
+                    infoFilteredShips.map((ship) => {
                       const currentIdx = STATUS_LIST.indexOf(ship.status);
 
                       return (
@@ -1397,7 +1419,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
           {/* Mobile Card View */}
           <div className="block lg:hidden space-y-2.5">
-            {filteredShips.map((ship) => {
+            {infoFilteredShips.map((ship) => {
               const currentIdx = STATUS_LIST.indexOf(ship.status);
 
               return (
