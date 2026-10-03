@@ -442,8 +442,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }));
   };
 
-  const handleDirectStepChange = async (targetStatus: ShipStatus, newProcessStatus: CommissioningProcessStatus) => {
-    if (!selectedShip) return;
+  const handleDirectStepChange = (targetStatus: ShipStatus, newProcessStatus: CommissioningProcessStatus) => {
+    if (!selectedShip || !isAdmin) return;
 
     const nextCommissioningStatus = normalizeCommissioningStatus(
       selectedShip.commissioning_status,
@@ -451,23 +451,36 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     );
     nextCommissioningStatus[targetStatus] = newProcessStatus;
 
+    const updated = { ...selectedShip, commissioning_status: nextCommissioningStatus };
+    setShips(prev => prev.map(s => s.id === selectedShip.id ? updated : s));
+    setSelectedShip(updated);
+  };
+
+  const handleSaveCommissioningStatus = async () => {
+    if (!selectedShip || !isAdmin) return;
+
+    const commissioningStatus = normalizeCommissioningStatus(
+      selectedShip.commissioning_status,
+      selectedShip.status
+    );
+
     try {
       const { error } = await supabase
         .from(TABLE_NAME)
-        .update({ commissioning_status: nextCommissioningStatus })
+        .update({ commissioning_status: commissioningStatus })
         .eq('id', selectedShip.id);
 
       if (error) {
-        showAlert('단계 변경 오류', '시운전 공정 상태 변경 중 오류가 발생했습니다: ' + error.message, 'error');
+        showAlert('저장 오류', '공정 상태 저장 중 오류가 발생했습니다: ' + error.message, 'error');
         return;
       }
 
-      const updated = { ...selectedShip, commissioning_status: nextCommissioningStatus };
+      const updated = { ...selectedShip, commissioning_status: commissioningStatus };
       setShips(prev => prev.map(s => s.id === selectedShip.id ? updated : s));
       setSelectedShip(updated);
-      showAlert('변경 완료', `[${targetStatus}] 공정 상태가 [${newProcessStatus}]로 변경되었습니다.`, 'success');
+      showAlert('저장 완료', '공정 상태가 저장되었습니다.', 'success');
     } catch (e: any) {
-      showAlert('오류', '공정 상태 변경에 실패했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
+      showAlert('오류', '공정 상태 저장에 실패했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
     }
   };
 
@@ -1975,15 +1988,26 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <h4 className="text-xs font-bold text-[#1F2937] flex items-center gap-1">
-                  <Activity className="h-3.5 w-3.5 text-[#243B5A]" /> 시운전 공정 현황
+                  <Activity className="h-3.5 w-3.5 text-[#243B5A]" /> 공정 현황
                 </h4>
-                <span className="text-[11px] font-bold text-[#243B5A]">
-                  {(() => {
-                    const processStatuses = normalizeCommissioningStatus(selectedShip.commissioning_status, selectedShip.status);
-                    const completedCount = STATUS_LIST.filter((step) => processStatuses[step] === '완료').length;
-                    return `완료 ${completedCount}/${STATUS_LIST.length}`;
-                  })()}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-[#243B5A]">
+                    {(() => {
+                      const processStatuses = normalizeCommissioningStatus(selectedShip.commissioning_status, selectedShip.status);
+                      const completedCount = STATUS_LIST.filter((step) => processStatuses[step] === '완료').length;
+                      return `완료 ${completedCount}/${STATUS_LIST.length}`;
+                    })()}
+                  </span>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={handleSaveCommissioningStatus}
+                      className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-[10px] font-bold transition cursor-pointer"
+                    >
+                      저장
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="space-y-1.5 pt-1">
