@@ -456,6 +456,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
   const handleSelectStatusShip = (ship: ShipItem) => {
     setSelectedHullNo(ship.ship_no);
+    setSelectedShip(ship);
     setIsShipSelectionModalOpen(false);
   };
 
@@ -1156,6 +1157,94 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* ============================================================== */}
       {activeMainTab === 'INFO' && (
         <>
+          {/* 호선 제원 정보 선택 방식: Status와 동일한 호선 선택 / 선주사 선택 */}
+          <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs space-y-3">
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setStatusSelectorTab('SHIP')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                  statusSelectorTab === 'SHIP'
+                    ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                    : 'bg-white text-[#64748B] border-[#CBD5E1] hover:bg-slate-50'
+                }`}
+              >
+                호선 선택
+              </button>
+              <button
+                type="button"
+                onClick={() => setStatusSelectorTab('OWNER')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                  statusSelectorTab === 'OWNER'
+                    ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                    : 'bg-white text-[#64748B] border-[#CBD5E1] hover:bg-slate-50'
+                }`}
+              >
+                선주사 선택
+              </button>
+            </div>
+
+            {statusSelectorTab === 'SHIP' ? (
+              <div className="flex items-center justify-between gap-3 bg-slate-50 border border-[#E2E5E9] rounded-lg px-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="text-[10px] text-[#64748B] font-semibold mb-0.5">현재 선택된 호선</div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    {currentStatusShip ? (
+                      <>
+                        <span className="bg-[#243B5A] text-white text-xs font-mono font-bold px-2 py-0.5 rounded shrink-0">
+                          Ship {currentStatusShip.ship_no}
+                        </span>
+                        <span className="text-xs font-semibold text-[#1F2937] truncate">
+                          {currentStatusShip.ship_name || '호선명 미입력'}
+                        </span>
+                        {currentStatusShip.shipowner && (
+                          <span className="text-[10px] bg-white text-[#475569] border border-[#E2E5E9] px-1.5 py-0.5 rounded shrink-0">
+                            {currentStatusShip.shipowner}
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-xs text-[#64748B]">선택된 호선이 없습니다.</span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={openShipSelectionModal}
+                  className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#243B5A] bg-white text-[#243B5A] hover:bg-[#F1F5F9] transition cursor-pointer shadow-2xs"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  <span>목록 보기</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3 bg-slate-50 border border-[#E2E5E9] rounded-lg px-3 py-2.5">
+                <div className="min-w-0">
+                  <div className="text-[10px] text-[#64748B] font-semibold mb-0.5">현재 선택된 선주사</div>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Building2 className="h-3.5 w-3.5 text-[#243B5A] shrink-0" />
+                    <span className="text-xs font-bold text-[#1F2937] truncate">
+                      {currentStatusOwner || '선주사 미지정'}
+                    </span>
+                    {currentStatusShip && currentStatusOwner && (
+                      <span className="text-[10px] text-[#64748B] shrink-0">
+                        · {currentStatusShip.ship_no} 선택
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={openOwnerSelectionModal}
+                  className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#243B5A] bg-white text-[#243B5A] hover:bg-[#F1F5F9] transition cursor-pointer shadow-2xs"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                  <span>목록 보기</span>
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* 상단 검색 컨트롤 바 */}
           <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
             <div className="flex items-center space-x-2">
