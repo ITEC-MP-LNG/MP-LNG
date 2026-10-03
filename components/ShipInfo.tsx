@@ -189,6 +189,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   // Status 선택 방식: 전체 호선 선택 / 선주사별 호선 선택
   const [statusSelectorTab, setStatusSelectorTab] = useState<'SHIP' | 'OWNER'>('SHIP');
   const [isShipSelectionModalOpen, setIsShipSelectionModalOpen] = useState(false);
+  const [isInfoOwnerSelectionModalOpen, setIsInfoOwnerSelectionModalOpen] = useState(false);
   const [selectedOwnerFilter, setSelectedOwnerFilter] = useState('');
   const [statusEditFormData, setStatusEditFormData] = useState<{
     id: string;
@@ -271,6 +272,19 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   useEffect(() => {
     fetchShips();
   }, []);
+
+  // 선택 모달이 열려 있는 동안 뒤쪽 페이지가 스크롤되지 않도록 고정
+  useEffect(() => {
+    const isSelectionModalOpen = isShipSelectionModalOpen || isInfoOwnerSelectionModalOpen;
+    if (!isSelectionModalOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isShipSelectionModalOpen, isInfoOwnerSelectionModalOpen]);
 
   const normalizeTankStatus = (raw: any): ShipTankStatus => {
     const defaultStatus = getDefaultTankStatus();
@@ -459,6 +473,15 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     const initialOwner = currentStatusOwner || shipOwners[0] || '';
     setSelectedOwnerFilter(initialOwner);
     setIsShipSelectionModalOpen(true);
+  };
+
+  const openInfoOwnerSelectionModal = () => {
+    setIsInfoOwnerSelectionModalOpen(true);
+  };
+
+  const handleSelectInfoOwner = (owner: string) => {
+    setSelectedOwnerFilter(owner);
+    setIsInfoOwnerSelectionModalOpen(false);
   };
 
   const handleSelectStatusShip = (ship: ShipItem) => {
@@ -1183,7 +1206,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </div>
               <button
                 type="button"
-                onClick={openOwnerSelectionModal}
+                onClick={openInfoOwnerSelectionModal}
                 className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#243B5A] bg-white text-[#243B5A] hover:bg-[#F1F5F9] transition cursor-pointer shadow-2xs"
               >
                 <Search className="h-3.5 w-3.5" />
@@ -3084,7 +3107,76 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 7. Status 호선/선주사 목록 선택 모달 */}
+      {/* 7. 호선 제원 정보 - 선주사 선택 모달 */}
+      {/* ============================================================== */}
+      {isInfoOwnerSelectionModalOpen && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setIsInfoOwnerSelectionModalOpen(false);
+          }}
+        >
+          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-md w-full shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-[#1F2937] flex items-center gap-1.5">
+                  <Building2 className="h-4 w-4 text-[#243B5A]" />
+                  선주사 선택
+                </h3>
+                <p className="text-[11px] text-[#64748B] mt-1">선주사를 선택하면 해당 선주사의 호선만 아래 목록에 표시됩니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsInfoOwnerSelectionModalOpen(false)}
+                className="p-1 text-[#64748B] hover:text-[#1F2937] rounded-lg hover:bg-slate-100 cursor-pointer"
+                aria-label="닫기"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => handleSelectInfoOwner('')}
+                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                  !selectedOwnerFilter
+                    ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                    : 'bg-white text-[#475569] border-[#CBD5E1] hover:bg-slate-50'
+                }`}
+              >
+                <span>전체 선주사</span>
+                <span className="text-[10px] opacity-80">{ships.length}척</span>
+              </button>
+
+              {shipOwners.length > 0 ? shipOwners.map((owner) => (
+                <button
+                  key={owner}
+                  type="button"
+                  onClick={() => handleSelectInfoOwner(owner)}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                    selectedOwnerFilter === owner
+                      ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                      : 'bg-white text-[#475569] border-[#CBD5E1] hover:bg-slate-50'
+                  }`}
+                >
+                  <span>{owner}</span>
+                  <span className="text-[10px] opacity-80">
+                    {ships.filter(ship => (ship.shipowner || '').trim() === owner).length}척
+                  </span>
+                </button>
+              )) : (
+                <div className="w-full text-xs text-[#64748B] text-center py-5 border border-dashed border-[#CBD5E1] rounded-lg">
+                  등록된 선주사가 없습니다.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* 8. Status 호선/선주사 목록 선택 모달 */}
       {/* ============================================================== */}
       {isShipSelectionModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
