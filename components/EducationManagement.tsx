@@ -373,7 +373,7 @@ export default function EducationManagement({
   }
 
   return (
-    <div className="w-full text-[#1F2937] p-4 sm:p-6 space-y-4 font-sans border-box">
+    <div className="w-full text-[#1F2937] space-y-4 font-sans border-box">
       
       {/* 🚀 상단 타이틀 영역 */}
       <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex items-center justify-between gap-3">
