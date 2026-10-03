@@ -31,7 +31,6 @@ import {
   RotateCcw,
   ArrowLeft,
   ArrowRight,
-  Settings
 } from 'lucide-react';
 
 // Supabase 클라이언트 설정
@@ -187,7 +186,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const [shipNoTitleEditId, setShipNoTitleEditId] = useState('');
   const [shipNoTitleEditValue, setShipNoTitleEditValue] = useState('');
   // Status 호선 선택 서브탭 설정 모달 상태
-  const [isShipTabSettingsOpen, setIsShipTabSettingsOpen] = useState(false);
+  // Status 선택 방식: 전체 호선 선택 / 선주사별 호선 선택
+  const [statusSelectorTab, setStatusSelectorTab] = useState<'SHIP' | 'OWNER'>('SHIP');
+  const [isShipSelectionModalOpen, setIsShipSelectionModalOpen] = useState(false);
+  const [selectedOwnerFilter, setSelectedOwnerFilter] = useState('');
   const [statusEditFormData, setStatusEditFormData] = useState<{
     id: string;
     ship_no: string;
@@ -324,18 +326,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // 서브탭 순서 이동 기능 (좌/우 이동)
-  const handleMoveSubTab = (index: number, direction: 'left' | 'right') => {
-    const newShips = [...ships];
-    const targetIdx = direction === 'left' ? index - 1 : index + 1;
-    if (targetIdx < 0 || targetIdx >= newShips.length) return;
-
-    const temp = newShips[index];
-    newShips[index] = newShips[targetIdx];
-    newShips[targetIdx] = temp;
-    setShips(newShips);
-  };
-
   // 사용자 유효성 검증
   const verifyMultipleUsersInSupabase = async (namesString: string): Promise<{ validUserIds: string[]; invalidNames: string[] }> => {
     const nameArray = namesString.split(',').map(n => n.trim()).filter(Boolean);
@@ -443,6 +433,31 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
   // 현재 Status 탭에서 활성화된 호선 객체 찾기
   const currentStatusShip = ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
+
+  // Status 선택용 선주사 목록 및 현재 선택 선주사
+  const shipOwners = Array.from(
+    new Set(ships.map(ship => (ship.shipowner || '').trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b, 'ko'));
+
+  const currentStatusOwner = currentStatusShip?.shipowner?.trim() || '';
+  const ownerFilteredShips = ships.filter(ship =>
+    (ship.shipowner || '').trim() === selectedOwnerFilter
+  );
+
+  const openShipSelectionModal = () => {
+    setIsShipSelectionModalOpen(true);
+  };
+
+  const openOwnerSelectionModal = () => {
+    const initialOwner = currentStatusOwner || shipOwners[0] || '';
+    setSelectedOwnerFilter(initialOwner);
+    setIsShipSelectionModalOpen(true);
+  };
+
+  const handleSelectStatusShip = (ship: ShipItem) => {
+    setSelectedHullNo(ship.ship_no);
+    setIsShipSelectionModalOpen(false);
+  };
 
   // =========================================================================
   // Status 탱크별 공정 일자 종합 비교표 XLSX 다운로드
@@ -748,87 +763,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     } catch (e: any) {
       showAlert('수정 실패', 'Ship No. 수정 중 오류가 발생했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
     }
-  };
-
-  // Ship No. 서브탭 순서를 Supabase에 저장
-  const persistShipOrder = async (orderedShips: ShipItem[]): Promise<boolean> => {
-    if (!isAdmin) return false;
-
-    try {
-      const results = await Promise.all(
-        orderedShips.map((ship, index) =>
-          supabase
-            .from(TABLE_NAME)
-            .update({ sort_order: index })
-            .eq('id', ship.id)
-        )
-      );
-
-      const failed = results.find((result) => result.error);
-      if (failed?.error) {
-        showAlert('순서 저장 실패', '호선 서브탭 순서 저장 중 오류가 발생했습니다: ' + failed.error.message, 'error');
-        return false;
-      }
-
-      return true;
-    } catch (e: any) {
-      showAlert('순서 저장 실패', '호선 서브탭 순서 저장 중 오류가 발생했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
-      return false;
-    }
-  };
-
-  // Ship No. 서브탭의 ▲▼ 위치 이동
-  const handleMoveShipPosition = async (shipId: string, direction: 'up' | 'down') => {
-    if (!isAdmin) {
-      showAlert('권한 필요', '위치 변경은 관리자 권한만 가능합니다.', 'warning');
-      return;
-    }
-
-    const currentIndex = ships.findIndex((ship) => ship.id === shipId);
-    if (currentIndex < 0) return;
-
-    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= ships.length) return;
-
-    const newShips = [...ships];
-    const currentShip = newShips[currentIndex];
-    newShips[currentIndex] = newShips[targetIndex];
-    newShips[targetIndex] = currentShip;
-
-    setShips(newShips);
-    const saved = await persistShipOrder(newShips);
-    if (!saved) {
-      setShips(ships);
-    }
-  };
-
-  // [수정 모달] 현재 호선의 서브탭 위치를 좌/우로 이동
-  const handleMoveShipFromEditModal = async (direction: 'left' | 'right') => {
-    if (!isAdmin || !statusEditFormData.id) return;
-
-    const currentIndex = ships.findIndex((ship) => ship.id === statusEditFormData.id);
-    if (currentIndex < 0) return;
-
-    const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= ships.length) return;
-
-    const newShips = [...ships];
-    const currentShip = newShips[currentIndex];
-    newShips[currentIndex] = newShips[targetIndex];
-    newShips[targetIndex] = currentShip;
-    setShips(newShips);
-
-    const saved = await persistShipOrder(newShips);
-    if (!saved) {
-      setShips(ships);
-      return;
-    }
-
-    showAlert(
-      '호선 위치 변경',
-      `[Ship #${currentShip.ship_no}] 호선의 화면상 위치를 ${direction === 'left' ? '왼쪽' : '오른쪽'}으로 이동했습니다.`,
-      'success'
-    );
   };
 
   // [수정 처리] Status 수정 모달 저장
@@ -1428,60 +1362,93 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               )}
             </div>
 
-            {/* 서브탭 목록: Ship No.만 표시하고 관리는 우측 [설정]에서 통합 처리 */}
-            {ships.length === 0 ? (
-              <div className="text-xs text-[#64748B] py-4 text-center border-t border-[#E2E5E9]">
-                등록된 호선이 없습니다. 우측 상단의 [신규 Ship 등록] 버튼을 눌러 등록을 시작하세요.
+            {/* Status 선택 방식: 호선 선택 / 선주사 선택 */}
+            <div className="border-t border-[#E2E5E9] pt-3">
+              <div className="flex items-center gap-1.5 mb-3">
+                <button
+                  type="button"
+                  onClick={() => setStatusSelectorTab('SHIP')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                    statusSelectorTab === 'SHIP'
+                      ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                      : 'bg-white text-[#64748B] border-[#CBD5E1] hover:bg-slate-50'
+                  }`}
+                >
+                  호선 선택
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStatusSelectorTab('OWNER')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                    statusSelectorTab === 'OWNER'
+                      ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                      : 'bg-white text-[#64748B] border-[#CBD5E1] hover:bg-slate-50'
+                  }`}
+                >
+                  선주사 선택
+                </button>
               </div>
-            ) : (
-              <div className="flex items-center gap-2 pt-1 pb-1">
-                <div className="flex-1 min-w-0 flex items-center gap-2 overflow-x-auto scrollbar-thin">
-                  {ships.map((ship) => {
-                    const isSelected = (currentStatusShip?.ship_no === ship.ship_no);
-                    const stats = calculateTankStats(ship.tank_status);
 
-                    return (
-                      <button
-                        key={ship.id}
-                        type="button"
-                        onClick={() => setSelectedHullNo(ship.ship_no)}
-                        className={`flex items-center gap-1.5 shrink-0 px-2.5 py-1.5 rounded-lg border transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-[#243B5A]/5 border-[#243B5A]/40 ring-1 ring-[#243B5A]/20'
-                            : 'bg-white border-[#E2E5E9] hover:bg-slate-50 hover:border-slate-300'
-                        }`}
-                        title={`Ship #${ship.ship_no} 선택`}
-                      >
-                        <span className={`font-bold text-xs font-mono whitespace-nowrap ${
-                          isSelected ? 'text-[#243B5A]' : 'text-[#475569]'
-                        }`}>
-                          Ship {ship.ship_no}
-                        </span>
-                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-sans font-bold whitespace-nowrap ${
-                          isSelected
-                            ? 'bg-[#243B5A] text-white'
-                            : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                        }`}>
-                          {stats.completed}/{stats.total}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {isAdmin && (
+              {statusSelectorTab === 'SHIP' ? (
+                <div className="flex items-center justify-between gap-3 bg-slate-50 border border-[#E2E5E9] rounded-lg px-3 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-[#64748B] font-semibold mb-0.5">현재 선택된 호선</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {currentStatusShip ? (
+                        <>
+                          <span className="bg-[#243B5A] text-white text-xs font-mono font-bold px-2 py-0.5 rounded shrink-0">
+                            Ship {currentStatusShip.ship_no}
+                          </span>
+                          <span className="text-xs font-semibold text-[#1F2937] truncate">
+                            {currentStatusShip.ship_name || '호선명 미입력'}
+                          </span>
+                          {currentStatusShip.shipowner && (
+                            <span className="text-[10px] bg-white text-[#475569] border border-[#E2E5E9] px-1.5 py-0.5 rounded shrink-0">
+                              {currentStatusShip.shipowner}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        <span className="text-xs text-[#64748B]">선택된 호선이 없습니다.</span>
+                      )}
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => setIsShipTabSettingsOpen(true)}
-                    className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#CBD5E1] bg-white text-[#243B5A] hover:bg-slate-50 transition cursor-pointer shadow-2xs"
-                    title="호선 선택 서브탭 설정"
+                    onClick={openShipSelectionModal}
+                    className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#243B5A] bg-white text-[#243B5A] hover:bg-[#F1F5F9] transition cursor-pointer shadow-2xs"
                   >
-                    <Settings className="h-3.5 w-3.5" />
-                    <span>설정</span>
+                    <Search className="h-3.5 w-3.5" />
+                    <span>목록 보기</span>
                   </button>
-                )}
-              </div>
-            )}
+                </div>
+              ) : (
+                <div className="flex items-center justify-between gap-3 bg-slate-50 border border-[#E2E5E9] rounded-lg px-3 py-2.5">
+                  <div className="min-w-0">
+                    <div className="text-[10px] text-[#64748B] font-semibold mb-0.5">현재 선택된 선주사</div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Building2 className="h-3.5 w-3.5 text-[#243B5A] shrink-0" />
+                      <span className="text-xs font-bold text-[#1F2937] truncate">
+                        {currentStatusOwner || '선주사 미지정'}
+                      </span>
+                      {currentStatusShip && currentStatusOwner && (
+                        <span className="text-[10px] text-[#64748B] shrink-0">
+                          · {currentStatusShip.ship_no} 선택
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={openOwnerSelectionModal}
+                    className="flex items-center gap-1.5 shrink-0 px-3 py-1.5 rounded-lg text-xs font-semibold border border-[#243B5A] bg-white text-[#243B5A] hover:bg-[#F1F5F9] transition cursor-pointer shadow-2xs"
+                  >
+                    <Search className="h-3.5 w-3.5" />
+                    <span>목록 보기</span>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* 선택된 호선의 Status 대시보드 */}
@@ -3035,22 +3002,26 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 7. Status 호선 선택 서브탭 설정 모달 */}
+      {/* 7. Status 호선/선주사 목록 선택 모달 */}
       {/* ============================================================== */}
-      {isShipTabSettingsOpen && isAdmin && (
+      {isShipSelectionModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-lg w-full shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-2xl w-full shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
               <div>
                 <h3 className="text-sm font-bold text-[#1F2937] flex items-center gap-1.5">
-                  <Settings className="h-4 w-4 text-[#243B5A]" />
-                  호선 선택 서브탭 설정
+                  {statusSelectorTab === 'OWNER' ? <Building2 className="h-4 w-4 text-[#243B5A]" /> : <Ship className="h-4 w-4 text-[#243B5A]" />}
+                  {statusSelectorTab === 'OWNER' ? '선주사별 호선 선택' : '호선 목록 선택'}
                 </h3>
-                <p className="text-[11px] text-[#64748B] mt-1">호선 순서를 변경하거나 호선번호를 수정·삭제할 수 있습니다.</p>
+                <p className="text-[11px] text-[#64748B] mt-1">
+                  {statusSelectorTab === 'OWNER'
+                    ? '선주사를 선택하면 해당 선주사의 호선만 표시됩니다.'
+                    : '목록에서 입력할 호선을 선택하세요.'}
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setIsShipTabSettingsOpen(false)}
+                onClick={() => setIsShipSelectionModalOpen(false)}
                 className="p-1 text-[#64748B] hover:text-[#1F2937] rounded-lg hover:bg-slate-100 cursor-pointer"
                 aria-label="닫기"
               >
@@ -3058,60 +3029,105 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </button>
             </div>
 
-            <div className="space-y-2">
-              {ships.map((ship, index) => (
-                <div key={ship.id} className="flex items-center gap-2 p-2.5 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC]">
-                  <div className="flex flex-col gap-1 shrink-0">
+            {statusSelectorTab === 'OWNER' ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-1.5">
+                  {shipOwners.length > 0 ? shipOwners.map((owner) => (
                     <button
+                      key={owner}
                       type="button"
-                      onClick={() => handleMoveShipPosition(ship.id, 'up')}
-                      disabled={index === 0}
-                      className="w-7 h-6 rounded-md text-[10px] font-bold text-[#64748B] bg-white border border-[#CBD5E1] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                      title="위로 이동"
+                      onClick={() => setSelectedOwnerFilter(owner)}
+                      className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+                        selectedOwnerFilter === owner
+                          ? 'bg-[#243B5A] text-white border-[#243B5A]'
+                          : 'bg-white text-[#475569] border-[#CBD5E1] hover:bg-slate-50'
+                      }`}
                     >
-                      ▲
+                      {owner}
+                      <span className={`ml-1.5 text-[10px] ${selectedOwnerFilter === owner ? 'text-white/80' : 'text-[#94A3B8]'}`}>
+                        {ships.filter(ship => (ship.shipowner || '').trim() === owner).length}
+                      </span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleMoveShipPosition(ship.id, 'down')}
-                      disabled={index === ships.length - 1}
-                      className="w-7 h-6 rounded-md text-[10px] font-bold text-[#64748B] bg-white border border-[#CBD5E1] hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-                      title="아래로 이동"
-                    >
-                      ▼
-                    </button>
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold font-mono text-[#243B5A] truncate">Ship {ship.ship_no}</div>
-                    <div className="text-[10px] text-[#64748B] truncate mt-0.5">{ship.ship_name || '호선명 미입력'}</div>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenShipNoTitleEdit(ship)}
-                    className="px-2.5 py-1.5 rounded-md text-[10px] font-bold text-[#243B5A] bg-white border border-[#CBD5E1] hover:bg-[#F1F5F9] cursor-pointer whitespace-nowrap"
-                  >
-                    수정
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsShipTabSettingsOpen(false);
-                      handleRequestDeleteStatusShip(ship);
-                    }}
-                    className="px-2.5 py-1.5 rounded-md text-[10px] font-bold text-red-600 bg-white border border-red-200 hover:bg-red-50 cursor-pointer whitespace-nowrap"
-                  >
-                    삭제
-                  </button>
+                  )) : (
+                    <div className="w-full text-xs text-[#64748B] text-center py-5 border border-dashed border-[#CBD5E1] rounded-lg">
+                      등록된 선주사가 없습니다.
+                    </div>
+                  )}
                 </div>
-              ))}
-            </div>
+
+                {selectedOwnerFilter && (
+                  <div className="border-t border-[#E2E5E9] pt-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="text-xs font-bold text-[#1F2937]">
+                        {selectedOwnerFilter} <span className="text-[#64748B] font-normal">호선 목록</span>
+                      </div>
+                      <span className="text-[10px] text-[#64748B]">{ownerFilteredShips.length}척</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {ownerFilteredShips.map((ship) => {
+                        const stats = calculateTankStats(ship.tank_status);
+                        const isSelected = currentStatusShip?.id === ship.id;
+                        return (
+                          <button
+                            key={ship.id}
+                            type="button"
+                            onClick={() => handleSelectStatusShip(ship)}
+                            className={`text-left p-3 rounded-lg border transition cursor-pointer ${
+                              isSelected
+                                ? 'bg-[#243B5A]/5 border-[#243B5A]/50 ring-1 ring-[#243B5A]/20'
+                                : 'bg-white border-[#E2E5E9] hover:bg-slate-50 hover:border-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-mono text-xs font-bold text-[#243B5A]">Ship {ship.ship_no}</span>
+                              <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                                {stats.completed}/{stats.total}
+                              </span>
+                            </div>
+                            <div className="text-[10px] text-[#64748B] truncate mt-1">{ship.ship_name || '호선명 미입력'}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {ships.map((ship) => {
+                  const stats = calculateTankStats(ship.tank_status);
+                  const isSelected = currentStatusShip?.id === ship.id;
+                  return (
+                    <button
+                      key={ship.id}
+                      type="button"
+                      onClick={() => handleSelectStatusShip(ship)}
+                      className={`text-left p-3 rounded-lg border transition cursor-pointer ${
+                        isSelected
+                          ? 'bg-[#243B5A]/5 border-[#243B5A]/50 ring-1 ring-[#243B5A]/20'
+                          : 'bg-white border-[#E2E5E9] hover:bg-slate-50 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-mono text-xs font-bold text-[#243B5A]">Ship {ship.ship_no}</span>
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 font-bold">
+                          {stats.completed}/{stats.total}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-[#64748B] truncate mt-1">
+                        {ship.ship_name || '호선명 미입력'}
+                        {ship.shipowner && <span className="ml-1.5 text-[#94A3B8]">· {ship.shipowner}</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="flex justify-end pt-2 border-t border-[#E2E5E9]">
               <button
                 type="button"
-                onClick={() => setIsShipTabSettingsOpen(false)}
+                onClick={() => setIsShipSelectionModalOpen(false)}
                 className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
               >
                 닫기
@@ -3122,7 +3138,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 8. Ship No. TITLE 수정 모달 */}
+      {/* 7. Ship No. TITLE 수정 모달 */}
       {/* ============================================================== */}
       {isShipNoTitleEditModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
@@ -3181,7 +3197,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 9. 삭제 확인 모달 */}
+      {/* 8. 삭제 확인 모달 */}
       {/* ============================================================== */}
       {isDeleteModalOpen && targetDeleteShip && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
