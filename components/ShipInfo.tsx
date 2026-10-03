@@ -1231,7 +1231,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[#64748B]" />
               <input
                 type="text"
-                placeholder="호선, 선주사, 도크, DWT, 근무자 검색..."
+                placeholder="호선, 선주사, 위치..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-8 pr-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] placeholder-[#64748B]/70 focus:bg-white focus:border-[#243B5A] focus:outline-hidden transition font-medium"
