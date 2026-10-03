@@ -167,7 +167,7 @@ export interface ShipItem {
   dwt?: string | null;        // DWT 일자 (YYYY-MM-DD)
   status: ShipStatus;         // 진행단계현황 (기존 호환용)
   progress: number | null;    // 산출 공정률
-  commissioning_status?: CommissioningStatusMap; // 공정별 대기/진행중/완료
+  commissioning_status?: CommissioningStatusMap; // 시운전 공정별 대기/진행중/완료
   delivery_date: string | null;      // 인도예정일
   day_shift: string;          // 주간 근무자
   day_shift_user_ids?: string[];
@@ -476,16 +476,16 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         .eq('id', selectedShip.id);
 
       if (error) {
-        showAlert('저장 오류', '공정 상태 저장 중 오류가 발생했습니다: ' + error.message, 'error');
+        showAlert('저장 오류', '시운전 공정 상태 저장 중 오류가 발생했습니다: ' + error.message, 'error');
         return;
       }
 
       const updated = { ...selectedShip, commissioning_status: commissioningStatus };
       setShips(prev => prev.map(s => s.id === selectedShip.id ? updated : s));
       setSelectedShip(updated);
-      showAlert('저장 완료', '공정 상태가 저장되었습니다.', 'success');
+      showAlert('저장 완료', '시운전 공정 상태가 저장되었습니다.', 'success');
     } catch (e: any) {
-      showAlert('오류', '공정 상태 저장에 실패했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
+      showAlert('오류', '시운전 공정 상태 저장에 실패했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
     }
   };
 
@@ -1839,17 +1839,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </h4>
                   <div className="flex items-center gap-2">
                     <span className="hidden md:inline text-[11px] text-[#64748B]">S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT</span>
-                    {isAdmin && (
-                      <button
-                        type="button"
-                        onClick={handleDownloadExcel}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[#243B5A] hover:bg-[#1d3049] text-white text-[11px] font-bold transition cursor-pointer whitespace-nowrap"
-                        title="탱크별 공정 일자 종합 비교표를 Excel 파일로 다운로드"
-                      >
-                        <span className="font-mono">XLSX</span>
-                        <span>다운로드</span>
-                      </button>
-                    )}
+                    {/* 기존 XLSX 다운로드 버튼은 요청에 따라 제거 */}
                   </div>
                 </div>
 
@@ -1859,7 +1849,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       <tr className="bg-slate-50 border-b border-[#E2E5E9] text-[#64748B] font-semibold">
                         <th className="py-2.5 px-4 w-1/5">검사 / 시험 공정</th>
                         {TANKS.map(tk => (
-                          <th key={tk} className="py-2.5 px-4 text-center font-mono font-bold text-[#243B5A]">
+                          <th key={tk} className="py-2.5 px-4 text-center font-mono font-bold text-[#243B5A] border-l border-[#CBD5E1]">
                             {tk}
                           </th>
                         ))}
@@ -1877,7 +1867,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             const isInProgress = stepInfo.status === '진행중';
 
                             return (
-                              <td key={tkKey} className="py-3 px-4 text-center">
+                              <td key={tkKey} className="py-3 px-4 text-center border-l border-[#CBD5E1]">
                                 <div className="inline-flex flex-col items-center gap-1">
                                   <div className="flex items-center gap-1 flex-wrap justify-center">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isDone
@@ -2009,7 +1999,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <h4 className="text-xs font-bold text-[#1F2937] flex items-center gap-1">
-                  <Activity className="h-3.5 w-3.5 text-[#243B5A]" /> 공정 현황
+                  <Activity className="h-3.5 w-3.5 text-[#243B5A]" /> 시운전 공정 현황
                 </h4>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold text-[#243B5A]">
