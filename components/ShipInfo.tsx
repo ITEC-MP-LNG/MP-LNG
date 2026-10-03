@@ -696,6 +696,52 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     setIsStatusEditModalOpen(true);
   };
 
+  // Status 수정 모달에서 호선의 화면상 위치를 좌/우로 이동하고 Supabase에 저장
+  const handleMoveShipFromEditModal = async (direction: 'left' | 'right') => {
+    if (!isAdmin || !statusEditFormData.id) return;
+
+    const currentIndex = ships.findIndex((ship) => ship.id === statusEditFormData.id);
+    if (currentIndex < 0) return;
+
+    const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= ships.length) return;
+
+    const previousShips = [...ships];
+    const newShips = [...ships];
+    const currentShip = newShips[currentIndex];
+    newShips[currentIndex] = newShips[targetIndex];
+    newShips[targetIndex] = currentShip;
+
+    setShips(newShips);
+
+    try {
+      const results = await Promise.all(
+        newShips.map((ship, index) =>
+          supabase
+            .from(TABLE_NAME)
+            .update({ sort_order: index })
+            .eq('id', ship.id)
+        )
+      );
+
+      const failed = results.find((result) => result.error);
+      if (failed?.error) {
+        setShips(previousShips);
+        showAlert('순서 저장 실패', '호선 위치 저장 중 오류가 발생했습니다: ' + failed.error.message, 'error');
+        return;
+      }
+
+      showAlert(
+        '호선 위치 변경',
+        `[Ship #${currentShip.ship_no}] 호선의 화면상 위치를 ${direction === 'left' ? '왼쪽' : '오른쪽'}으로 이동했습니다.`,
+        'success'
+      );
+    } catch (e: any) {
+      setShips(previousShips);
+      showAlert('순서 저장 실패', '호선 위치 저장 중 오류가 발생했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
+    }
+  };
+
   // Ship No. 서브탭의 TITLE(Ship No.)만 수정
   const handleOpenShipNoTitleEdit = (ship: ShipItem) => {
     if (!isAdmin) {
