@@ -67,9 +67,38 @@ export const STATUS_LIST: ShipStatus[] = [
   'Nh3 Test',
   'PBGT',
   'B/F SBTT',
-  'A/T SBTT',
-  'Gas Trial'
+  'Gas Trial',
+  'A/T SBTT'
 ];
+
+export type CommissioningProcessStatus = '대기' | '진행중' | '완료';
+export type CommissioningStatusMap = Record<ShipStatus, CommissioningProcessStatus>;
+
+export const getDefaultCommissioningStatus = (): CommissioningStatusMap => ({
+  'Sound Test 1St': '대기',
+  'Sound Test 2nd': '대기',
+  'Nh3 Test': '대기',
+  'PBGT': '대기',
+  'B/F SBTT': '대기',
+  'Gas Trial': '대기',
+  'A/T SBTT': '대기',
+});
+
+export const normalizeCommissioningStatus = (raw: any, legacyStatus: ShipStatus): CommissioningStatusMap => {
+  const result = getDefaultCommissioningStatus();
+  const legacyIdx = STATUS_LIST.indexOf(legacyStatus);
+  STATUS_LIST.forEach((step, idx) => {
+    if (idx < legacyIdx) result[step] = '완료';
+    else if (idx === legacyIdx) result[step] = '진행중';
+  });
+  if (raw && typeof raw === 'object') {
+    STATUS_LIST.forEach((step) => {
+      const value = raw[step];
+      if (value === '대기' || value === '진행중' || value === '완료') result[step] = value;
+    });
+  }
+  return result;
+};
 
 // Tank 항목 및 단계 정의
 export const TANKS = ['TK1', 'TK2', 'TK3', 'TK4'] as const;
@@ -131,8 +160,9 @@ export interface ShipItem {
   launch_date?: string | null;       // 진수일
   pt_mount_date?: string | null;     // P/T 탑재일
   dwt?: string | null;        // DWT 일자 (YYYY-MM-DD)
-  status: ShipStatus;         // 진행단계현황
+  status: ShipStatus;         // 진행단계현황 (기존 호환용)
   progress: number | null;    // 산출 공정률
+  commissioning_status?: CommissioningStatusMap; // 시운전 공정별 대기/진행중/완료
   delivery_date: string | null;      // 인도예정일
   day_shift: string;          // 주간 근무자
   day_shift_user_ids?: string[];
@@ -327,6 +357,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         const parsedShips: ShipItem[] = data.map((item: any) => ({
           ...item,
           tank_status: normalizeTankStatus(item.tank_status),
+          commissioning_status: normalizeCommissioningStatus(item.commissioning_status, item.status),
         }));
         setShips(parsedShips);
 
@@ -411,27 +442,32 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }));
   };
 
-  const handleDirectStepChange = async (targetStatus: ShipStatus) => {
+  const handleDirectStepChange = async (targetStatus: ShipStatus, newProcessStatus: CommissioningProcessStatus) => {
     if (!selectedShip) return;
-    const calculatedProgress = STATUS_PROGRESS_MAP[targetStatus];
+
+    const nextCommissioningStatus = normalizeCommissioningStatus(
+      selectedShip.commissioning_status,
+      selectedShip.status
+    );
+    nextCommissioningStatus[targetStatus] = newProcessStatus;
 
     try {
       const { error } = await supabase
         .from(TABLE_NAME)
-        .update({ status: targetStatus, progress: calculatedProgress })
+        .update({ commissioning_status: nextCommissioningStatus })
         .eq('id', selectedShip.id);
 
       if (error) {
-        showAlert('단계 변경 오류', '단계 변경 중 오류가 발생했습니다: ' + error.message, 'error');
+        showAlert('단계 변경 오류', '시운전 공정 상태 변경 중 오류가 발생했습니다: ' + error.message, 'error');
         return;
       }
 
-      const updated = { ...selectedShip, status: targetStatus, progress: calculatedProgress };
+      const updated = { ...selectedShip, commissioning_status: nextCommissioningStatus };
       setShips(prev => prev.map(s => s.id === selectedShip.id ? updated : s));
       setSelectedShip(updated);
-      showAlert('완료', `공정 단계가 [${targetStatus}]로 변경되었습니다.`, 'success');
+      showAlert('변경 완료', `[${targetStatus}] 공정 상태가 [${newProcessStatus}]로 변경되었습니다.`, 'success');
     } catch (e: any) {
-      showAlert('오류', '단계 변경에 실패했습니다: ' + e?.message, 'error');
+      showAlert('오류', '공정 상태 변경에 실패했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
     }
   };
 
@@ -668,6 +704,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       // 날짜 빈 문자열 → null 변환 (Supabase date 타입 오류 방지)
       const sanitizedCreateData = {
         ...statusCreateFormData,
+        commissioning_status: getDefaultCommissioningStatus(),
         sort_order: ships.length,
         launch_date: statusCreateFormData.launch_date || null,
         pt_mount_date: statusCreateFormData.pt_mount_date || null,
@@ -697,6 +734,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         const newShip: ShipItem = {
           ...data[0],
           tank_status: normalizeTankStatus(data[0].tank_status),
+          commissioning_status: normalizeCommissioningStatus(data[0].commissioning_status, data[0].status),
         };
         setShips(prev => [...prev, newShip]);
         setSelectedHullNo(newShip.ship_no); // 새로 만든 Ship 서브탭으로 바로 선택!
@@ -1028,6 +1066,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       // 날짜 빈 문자열 → null 변환 (Supabase date 타입 오류 방지)
       const sanitizedFormData = {
         ...formData,
+        commissioning_status: editingShip?.commissioning_status || normalizeCommissioningStatus(undefined, editingShip?.status || formData.status),
         launch_date: formData.launch_date || null,
         pt_mount_date: formData.pt_mount_date || null,
         dwt: formData.dwt || null,
@@ -1939,15 +1978,22 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <Activity className="h-3.5 w-3.5 text-[#243B5A]" /> 시운전 공정 현황
                 </h4>
                 <span className="text-[11px] font-bold text-[#243B5A]">
-                  {selectedShip.status === 'Gas Trial' ? '최종단계' : `공정률 ${selectedShip.progress}%`}
+                  {(() => {
+                    const processStatuses = normalizeCommissioningStatus(selectedShip.commissioning_status, selectedShip.status);
+                    const completedCount = STATUS_LIST.filter((step) => processStatuses[step] === '완료').length;
+                    return `완료 ${completedCount}/${STATUS_LIST.length}`;
+                  })()}
                 </span>
               </div>
 
               <div className="space-y-1.5 pt-1">
-                {STATUS_LIST.map((step, idx) => {
-                  const currentIdx = STATUS_LIST.indexOf(selectedShip.status);
-                  const isCompleted = idx < currentIdx;
-                  const isCurrent = idx === currentIdx;
+                {STATUS_LIST.map((step) => {
+                  const processStatus = normalizeCommissioningStatus(
+                    selectedShip.commissioning_status,
+                    selectedShip.status
+                  )[step];
+                  const isCompleted = processStatus === '완료';
+                  const isCurrent = processStatus === '진행중';
 
                   return (
                     <div
@@ -1971,24 +2017,37 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       </div>
 
                       <div className="flex items-center space-x-2">
-                        {isCurrent ? (
-                          <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] rounded-full font-bold shadow-2xs">
-                            진행중
-                          </span>
-                        ) : isCompleted ? (
-                          <span className="px-2 py-0.5 bg-slate-200 text-slate-600 text-[10px] rounded-full font-semibold">
-                            완료
-                          </span>
-                        ) : null}
+                        {(() => {
+                          if (isAdmin) {
+                            return (
+                              <select
+                                value={processStatus}
+                                onChange={(e) => handleDirectStepChange(step, e.target.value as CommissioningProcessStatus)}
+                                className={`px-2 py-0.5 border rounded text-[10px] font-bold focus:outline-hidden cursor-pointer ${processStatus === '완료'
+                                    ? 'bg-slate-100 text-slate-600 border-slate-200'
+                                    : processStatus === '진행중'
+                                      ? 'bg-emerald-600 text-white border-emerald-600'
+                                      : 'bg-white text-slate-500 border-slate-300'
+                                  }`}
+                              >
+                                <option value="대기">대기</option>
+                                <option value="진행중">진행중</option>
+                                <option value="완료">완료</option>
+                              </select>
+                            );
+                          }
 
-                        {isAdmin && !isCurrent && (
-                          <button
-                            onClick={() => handleDirectStepChange(step)}
-                            className="px-2 py-0.5 bg-white border border-[#243B5A] text-[#243B5A] hover:bg-[#243B5A] hover:text-white text-[10px] rounded font-semibold transition cursor-pointer ml-1"
-                          >
-                            변경
-                          </button>
-                        )}
+                          return (
+                            <span className={`px-2 py-0.5 text-[10px] rounded-full font-semibold ${processStatus === '완료'
+                                ? 'bg-slate-200 text-slate-600'
+                                : processStatus === '진행중'
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-slate-50 text-slate-400 border border-slate-200'
+                              }`}>
+                              {processStatus}
+                            </span>
+                          );
+                        })()}
                       </div>
                     </div>
                   );
