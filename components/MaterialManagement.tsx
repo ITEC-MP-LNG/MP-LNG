@@ -56,6 +56,7 @@ export interface InventoryItem {
 export interface InventoryLog {
   id: string | number;
   inventory_id?: string | number;
+  item_code?: string;
   item_name?: string;
   type: string;
   quantity: number;
@@ -107,61 +108,76 @@ export default function MaterialManagement({
     }, 2500);
   };
 
-  // --- 매일 23시 이력 자동 정리/삭제 스케줄러 (반납완료 & 소모성 자재 불출만 초기화) ---
+  // --- 매일 23시 이력 자동 정리/삭제 스케줄러 ---
+  // 23:00 정각을 놓쳐도 23시 이후 페이지가 열려 있으면 정리되도록 처리합니다.
+  // 반납완료 이력과 소모성 자재 불출/사용 이력만 삭제합니다.
+  const cleanupRanDateRef = useRef<string | null>(null);
+
   useEffect(() => {
     const processDailyCleanup = async () => {
-      if (!inventoryLogs || inventoryLogs.length === 0) return;
+      const now = new Date();
+      if (now.getHours() < 23) return;
 
-      const deleteIds: (string | number)[] = [];
+      const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      if (cleanupRanDateRef.current === todayKey) return;
 
-      inventoryLogs.forEach((log) => {
-        const matchedItem = inventoryList.find(
-          i => i.id === log.inventory_id || i.name === log.item_name
-        );
+      try {
+        // 소모성 자재의 실제 inventory ID를 먼저 조회하여 이름 중복으로 인한 오삭제를 방지합니다.
+        const { data: consumableItems, error: consumableError } = await supabase
+          .from('inventory')
+          .select('id')
+          .eq('type', '소모성');
+        if (consumableError) throw consumableError;
 
-        const isConsumable = matchedItem?.type === '소모성' || log.type.includes('소모성');
-        const isReturned = log.type.includes('반납완료');
-        const isIssue = log.type.includes('불출') || log.type.includes('소모성 사용');
+        const consumableIds = (consumableItems || []).map((item: any) => item.id);
 
-        // 1. 소모성 자재 불출 이력 삭제
-        if (isConsumable && isIssue) {
-          deleteIds.push(log.id);
-          return;
-        }
+        // 1. 반납완료 이력 삭제
+        const { error: returnedDeleteError } = await supabase
+          .from('inventory_logs')
+          .delete()
+          .ilike('type', '%반납완료%');
+        if (returnedDeleteError) throw returnedDeleteError;
 
-        // 2. 반납완료 이력 삭제
-        if (isReturned) {
-          deleteIds.push(log.id);
-          return;
-        }
-      });
-
-      if (deleteIds.length > 0) {
-        try {
-          const { error } = await supabase
+        // 2. 소모성 자재의 불출/사용 이력 삭제
+        if (consumableIds.length > 0) {
+          const { error: consumableDeleteError } = await supabase
             .from('inventory_logs')
             .delete()
-            .in('id', deleteIds);
-
-          if (!error) {
-            await fetchInventoryLogs();
-          }
-        } catch (err) {
-          console.error('23시 자동 삭제 오류:', err);
+            .in('inventory_id', consumableIds);
+          if (consumableDeleteError) throw consumableDeleteError;
         }
+
+        // 3. 기존 데이터 중 inventory_id가 없지만 유형에 소모성 사용이 기록된 이력도 정리
+        const { error: usageDeleteError } = await supabase
+          .from('inventory_logs')
+          .delete()
+          .ilike('type', '%소모성 사용%');
+        if (usageDeleteError) throw usageDeleteError;
+
+        cleanupRanDateRef.current = todayKey;
+        await fetchInventoryLogs();
+      } catch (err) {
+        console.error('23시 자동 삭제 오류:', err);
       }
     };
 
-    const checkAndRunCleanup = () => {
-      const now = new Date();
-      if (now.getHours() === 23 && now.getMinutes() === 0) {
-        processDailyCleanup();
-      }
-    };
-
-    const timer = setInterval(checkAndRunCleanup, 60000); // 1분 간격 체크
+    processDailyCleanup();
+    const timer = setInterval(processDailyCleanup, 60000);
     return () => clearInterval(timer);
-  }, [inventoryLogs, inventoryList, fetchInventoryLogs]);
+  }, [fetchInventoryLogs]);
+
+  // 이력에 inventory_id가 있으면 반드시 ID를 우선 사용합니다.
+  // 동일한 품목명이 여러 개 존재할 때 첫 번째 자재가 잘못 연결되는 문제를 방지합니다.
+  const findInventoryItemForLog = (log: InventoryLog) => {
+    if (log.inventory_id !== undefined && log.inventory_id !== null && log.inventory_id !== '') {
+      const byId = inventoryList.find(i => String(i.id) === String(log.inventory_id));
+      if (byId) return byId;
+    }
+    if (log.item_name) {
+      return inventoryList.find(i => i.name === log.item_name);
+    }
+    return undefined;
+  };
 
   // 반납 모달 상태 (수량 확인 및 이상유무 체크 포함)
   const [showReturnModal, setShowReturnModal] = useState<boolean>(false);
@@ -938,7 +954,8 @@ export default function MaterialManagement({
         .from('inventory_logs')
         .insert([{
           inventory_id: targetItem.id,
-          item_name: targetItem.name,
+          item_code: targetItem.type === 'CABIN' ? (targetItem.no || targetItem.code || null) : (targetItem.code || null),
+          item_name: targetItem.name || targetItem.item,
           type: finalLogType,
           quantity: qtyChange,
           worker_name: currentUser?.name || '작업자',
@@ -1059,7 +1076,7 @@ export default function MaterialManagement({
       return;
     }
 
-    const foundItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
+    const foundItem = findInventoryItemForLog(log);
     if (foundItem && foundItem.type === '소모성') {
       showCenterToast('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
       return;
@@ -1096,11 +1113,11 @@ export default function MaterialManagement({
         }
       }
 
-      if (!foundItem && targetReturnLog.item_name) {
-        const { data: invDataByName } = await supabase.from('inventory').select('*').eq('name', targetReturnLog.item_name).limit(1);
-        if (invDataByName && invDataByName.length > 0) {
-          foundItem = invDataByName[0];
-        } else {
+      if (!foundItem) {
+        const matchedInventoryItem = findInventoryItemForLog(targetReturnLog);
+        if (matchedInventoryItem) {
+          foundItem = matchedInventoryItem;
+        } else if (targetReturnLog.item_name) {
           const { data: cabinDataByName } = await supabase.from('cabin_inventory').select('*').eq('item', targetReturnLog.item_name).limit(1);
           if (cabinDataByName && cabinDataByName.length > 0) {
             foundItem = { ...cabinDataByName[0], type: 'CABIN', quantity: 1, unit: 'EA' };
@@ -2428,8 +2445,8 @@ export default function MaterialManagement({
                 const isReturnCompleted = log.type.includes('반납완료');
                 const isIssueAlert = log.type.includes('이상알림');
                 const isConsumableUsage = log.type.includes('소모성 사용');
-                const matchedHistoryItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
-                const historyItemCode = matchedHistoryItem?.type === '고정' ? matchedHistoryItem?.code : undefined;
+                const matchedHistoryItem = findInventoryItemForLog(log);
+                const historyItemCode = log.item_code || matchedHistoryItem?.code || (matchedHistoryItem?.type === 'CABIN' ? matchedHistoryItem?.no : undefined);
                 const issuedBy = log.issued_by || (!isReturnCompleted ? log.worker_name : undefined);
                 const returnedBy = log.returned_by;
                 const samePerson = Boolean(issuedBy && returnedBy && issuedBy === returnedBy);
@@ -2808,7 +2825,8 @@ export default function MaterialManagement({
             <form onSubmit={handleSubmitLog} className="space-y-3 text-xs">
               <div className="bg-[#F5F6F8] p-2.5 rounded-md border border-[#E2E5E9] space-y-1">
                 <span className="text-[10px] text-[#64748B] block">선택 품목</span>
-                <p className="font-bold text-[#1F2937]">{targetItem.name}</p>
+                <p className="font-bold text-[#1F2937]">{targetItem.name || targetItem.item}</p>
+                <p className="text-[10px] text-[#64748B]">자재코드: <strong className="font-mono text-[#243B5A]">{targetItem.code || targetItem.no || '-'}</strong></p>
                 <p className="text-[10px] text-[#64748B]">현재 보유 재고: {targetItem.quantity} {targetItem.unit}</p>
               </div>
 
