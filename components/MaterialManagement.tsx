@@ -2155,7 +2155,7 @@ export default function MaterialManagement({
               key={subCat}
               onClick={() => { setSelectedVbtSubCategory(subCat); setSelectedItemSubCategory('전체 보기'); }}
               className={`flex-1 min-w-[42px] py-1 rounded-md text-[11px] font-semibold transition shrink-0 ${
-                selectedVbtSubCategory === subCat ? 'bg-slate-700 text-white shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9]'
+                selectedVbtSubCategory === subCat ? 'bg-slate-700 text-white shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B]'
               }`}
             >
               {subCat}
@@ -2163,355 +2163,393 @@ export default function MaterialManagement({
           ))}
         </div>
       )}
-      {inventoryTab !== 'CABIN' && (
-        <div className="bg-white px-2.5 py-1.5 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
-          <div className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0">
-            <span className="text-[11px] text-[#64748B] font-semibold shrink-0">품목별:</span>
+
+      {inventoryTab !== 'CABIN' && !(inventoryTab === '고정' && selectedFixedSubCategory === 'VBT') && (
+        <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
+            <Package className="h-3.5 w-3.5 text-[#243B5A]" />
+            <span>자재명:</span>
+          </div>
+          <div
+            className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
+          >
             <button
               onClick={() => setSelectedItemSubCategory('전체 보기')}
-              className={`px-2.5 py-1 rounded text-xs transition whitespace-nowrap shrink-0 ${
-                selectedItemSubCategory === '전체 보기' ? 'bg-slate-800 text-white font-semibold' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9]'
-              }`}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${selectedItemSubCategory === '전체 보기' ? 'bg-slate-700 text-white font-semibold shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'}`}
             >
               전체 보기
             </button>
-            {currentItemSubCategoryEntries.map(entry => {
-              const isSelected = selectedItemSubCategory === entry.name;
+            {currentItemSubCategoryOptions.map((name) => {
+              const isSelected = selectedItemSubCategory === name;
               return (
                 <button
-                  key={entry.name}
-                  onClick={() => setSelectedItemSubCategory(entry.name)}
-                  className={`px-2.5 py-1 rounded text-xs transition whitespace-nowrap shrink-0 ${
-                    isSelected ? 'bg-slate-800 text-white font-semibold' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9]'
+                  key={name}
+                  onClick={() => setSelectedItemSubCategory(name)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
+                    isSelected
+                      ? 'bg-slate-700 text-white font-semibold shadow-2xs'
+                      : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
                   }`}
+                  title={name}
                 >
-                  {entry.name}
+                  {name}
                 </button>
               );
             })}
           </div>
           {isAdmin && (
             <button
-              onClick={() => setIsItemSubCatModalOpen(true)}
-              className="px-2 py-1 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded border border-[#E2E5E9] text-[11px] font-semibold shrink-0 transition"
-              title="품목 종류 추가/수정/관리"
+              onClick={() => { setNewItemSubCatName(''); setNewItemSubCatMaterialNames([]); setEditingItemSubCatId(null); setIsItemSubCatModalOpen(true); }}
+              className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
+              title="자재명 카테고리 수정/삭제"
             >
-              종류 편집
+              <Settings className="h-4 w-4 shrink-0" />
             </button>
           )}
         </div>
       )}
 
-      {/* 메인 리스트 아코디언 컴포넌트 */}
-      <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-2xs overflow-hidden">
-        <button
-          onClick={() => setIsInventoryListOpen(!isInventoryListOpen)}
-          className="w-full px-4 py-3 flex items-center justify-between bg-white hover:bg-[#F8FAFC] transition text-left border-b border-[#E2E5E9]"
-        >
-          <div className="flex items-center space-x-2">
-            <Package className="h-4 w-4 text-[#243B5A]" />
-            <span className="font-bold text-xs sm:text-sm text-[#1F2937]">
-              {inventoryTab} 자재 목록 ({filteredInventory.length}건)
-            </span>
+      <div className="bg-white rounded-lg border border-[#E2E5E9] p-3 flex items-center justify-between gap-2 shadow-2xs">
+        <div className="flex items-center space-x-2 text-xs font-bold text-[#1F2937] min-w-0 truncate">
+          <Package className="h-4 w-4 text-[#243B5A] shrink-0" />
+          <span className="truncate">
+            {inventoryTab === 'CABIN'
+              ? `종류 [${selectedCabinSheet || '전체'}]${selectedItemSubCategory !== '전체 보기' ? ` > ${selectedItemSubCategory}` : ''} 목록`
+              : `서브탭 [${currentActiveSubCatName}]${selectedItemSubCategory ? ` > ${selectedItemSubCategory}` : ''} 목록`}
+          </span>
+          <span className="text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-0.5 rounded-full text-[#64748B] shrink-0 font-normal">
+            총 {filteredInventory.length}건
+          </span>
+        </div>
+
+        {inventoryTab === 'CABIN' && (
+          <div className="flex items-center space-x-1 shrink-0">
+            {selectedCabinIds.length > 0 && (
+              <>
+                <button
+                  onClick={() => setShowCabinBatchModal(true)}
+                  className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-semibold shadow-2xs transition flex items-center gap-1"
+                >
+                  <ArrowUpRight className="h-3.5 w-3.5" />
+                  <span>일괄 불출 ({selectedCabinIds.length})</span>
+                </button>
+                <button
+                  onClick={() => setShowCabinBatchReturnModal(true)}
+                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold shadow-2xs transition flex items-center gap-1"
+                >
+                  <ArrowDownRight className="h-3.5 w-3.5" />
+                  <span>일괄 반납 ({selectedCabinIds.length})</span>
+                </button>
+              </>
+            )}
           </div>
-          {isInventoryListOpen ? (
-            <ChevronUp className="h-4 w-4 text-[#64748B]" />
-          ) : (
-            <ChevronDown className="h-4 w-4 text-[#64748B]" />
-          )}
+        )}
+      </div>
+
+      {/* 전체 목록 표시 (페이징 완전 제거) */}
+      <div className="bg-white rounded-lg border border-[#E2E5E9] overflow-hidden shadow-2xs">
+        <button
+          type="button"
+          onClick={() => setIsInventoryListOpen(!isInventoryListOpen)}
+          className="w-full px-3.5 py-2.5 bg-[#F5F6F8] flex items-center justify-between text-left hover:bg-[#EEF0F3] transition"
+        >
+          <span className="text-xs font-bold text-[#1F2937]">전체 목록</span>
+          {isInventoryListOpen ? <ChevronUp className="h-4 w-4 text-[#64748B]" /> : <ChevronDown className="h-4 w-4 text-[#64748B]" />}
         </button>
 
         {isInventoryListOpen && (
-          <div className="p-3">
-            {inventoryTab === 'CABIN' && selectedCabinIds.length > 0 && (
-              <div className="mb-3 p-2.5 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
-                <span className="text-xs font-semibold text-blue-900">
-                  {selectedCabinIds.length}개 품목 선택됨
-                </span>
-                <div className="flex space-x-1.5">
-                  <button
-                    onClick={() => setShowCabinBatchModal(true)}
-                    className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white text-xs font-semibold rounded-md transition shadow-2xs"
-                  >
-                    일괄 불출
-                  </button>
-                  <button
-                    onClick={() => setShowCabinBatchReturnModal(true)}
-                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-md transition shadow-2xs"
-                  >
-                    일괄 반납
-                  </button>
-                </div>
-              </div>
-            )}
+          <div className="p-2.5 space-y-2">
+        {filteredInventory.map((item) => {
+          const isCabin = inventoryTab === 'CABIN';
+          const isSelected = selectedCabinIds.includes(String(item.id));
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-[#E2E5E9] bg-[#F8FAFC] text-[#64748B] font-bold">
-                    {inventoryTab === 'CABIN' && (
-                      <th className="p-2 w-8 text-center">
-                        <input
-                          type="checkbox"
-                          checked={selectedCabinIds.length > 0 && selectedCabinIds.length === filteredInventory.length}
-                          onChange={toggleSelectAllCabin}
-                          className="rounded border-[#E2E5E9] accent-[#243B5A]"
-                        />
-                      </th>
+          return (
+            <div 
+              key={item.id} 
+              className={`bg-white rounded-lg border p-3 shadow-2xs hover:border-[#243B5A] transition flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 ${
+                isSelected ? 'border-blue-500 bg-blue-50/20' : 'border-[#E2E5E9]'
+              }`}
+            >
+              <div className="flex items-start space-x-2.5 min-w-0 flex-1">
+                {isCabin && (
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => toggleSelectCabinItem(item.id)}
+                    className="mt-1 h-4 w-4 rounded accent-[#243B5A] cursor-pointer shrink-0"
+                  />
+                )}
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                    <span className="text-[10px] font-mono font-bold bg-[#F5F6F8] text-[#243B5A] border border-[#E2E5E9] px-1.5 py-0.5 rounded shrink-0">
+                      {isCabin ? (item.no || 'NO-CODE') : item.code}
+                    </span>
+                    <h3 className="font-bold text-xs sm:text-sm text-[#1F2937] truncate">
+                      {isCabin ? item.item : item.name}
+                    </h3>
+                    {item.vbt_type && (
+                      <span className="text-[10px] bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.2 rounded shrink-0 font-medium">
+                        {item.vbt_type}
+                      </span>
                     )}
-                    <th className="p-2">식별코드 / 번호</th>
-                    <th className="p-2">품목명</th>
-                    <th className="p-2">위치 / 구역</th>
-                    {inventoryTab === 'CABIN' ? (
+                  </div>
+
+                  <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-x-3 gap-y-1 pt-0.5">
+                    {isCabin ? (
                       <>
-                        <th className="p-2">제조사 / 모델</th>
-                        <th className="p-2">시리얼 번호</th>
-                        <th className="p-2">교정일</th>
+                        {item.maker_model && <span>제조사/모델: <strong className="text-[#1F2937] font-semibold">{item.maker_model}</strong></span>}
+                        {item.serial_number && <span>S/N: <strong className="text-[#1F2937] font-semibold">{item.serial_number}</strong></span>}
+                        {item.cert_no && <span>성적서번호: <strong className="text-[#1F2937] font-semibold">{item.cert_no}</strong></span>}
+                        {item.calibration_date && <span className="text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">교정일: <strong>{item.calibration_date}</strong></span>}
+                        {item.location_or_section && <span>구역/위치: <strong className="text-[#1F2937] font-semibold">{item.location_or_section}</strong></span>}
                       </>
                     ) : (
                       <>
-                        <th className="p-2">재고 수량</th>
-                        <th className="p-2">교정 / 관리정보</th>
+                        {item.serial_number && <span>S/N: <strong className="text-[#1F2937] font-semibold">{item.serial_number}</strong></span>}
+                        {item.location && <span>보관장소: <strong className="text-[#1F2937] font-semibold">{item.location}</strong></span>}
+                        {item.sub_equipment && (
+                          <span className="text-amber-700 bg-amber-50 px-1.5 py-0.2 rounded border border-amber-200">
+                            교정일자: <strong>{item.sub_equipment}</strong>
+                          </span>
+                        )}
                       </>
                     )}
-                    <th className="p-2 text-right">작업</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-[#E2E5E9]">
-                  {filteredInventory.length === 0 ? (
-                    <tr>
-                      <td colSpan={inventoryTab === 'CABIN' ? 7 : 6} className="text-center py-8 text-[#94A3B8]">
-                        해당하는 자재 항목이 없습니다.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredInventory.map((item) => {
-                      const isCabin = inventoryTab === 'CABIN';
-                      const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+                  </div>
+                </div>
+              </div>
 
-                      return (
-                        <tr key={item.id} className="hover:bg-[#F8FAFC] transition">
-                          {isCabin && (
-                            <td className="p-2 text-center">
-                              <input
-                                type="checkbox"
-                                checked={selectedCabinIds.includes(String(item.id))}
-                                onChange={() => toggleSelectCabinItem(item.id)}
-                                className="rounded border-[#E2E5E9] accent-[#243B5A]"
-                              />
-                            </td>
-                          )}
-                          <td className="p-2 font-mono font-bold text-[#243B5A]">
-                            {isCabin ? item.no || item.code : item.code}
-                          </td>
-                          <td className="p-2 font-semibold text-[#1F2937]">
-                            {isCabin ? item.item : item.name}
-                          </td>
-                          <td className="p-2 text-[#64748B]">
-                            {isCabin ? item.location_or_section : item.location}
-                          </td>
-                          {isCabin ? (
-                            <>
-                              <td className="p-2 text-[#64748B]">{item.maker_model || '-'}</td>
-                              <td className="p-2 text-[#64748B] font-mono text-[11px]">{item.serial_number || '-'}</td>
-                              <td className="p-2 font-mono text-[11px] text-[#243B5A]">
-                                {item.calibration_date || '-'}
-                              </td>
-                            </>
-                          ) : (
-                            <>
-                              <td className="p-2">
-                                <span className={`font-bold ${item.quantity <= (item.min_quantity || 0) ? 'text-red-600' : 'text-[#1F2937]'}`}>
-                                  {item.quantity} {item.unit}
-                                </span>
-                              </td>
-                              <td className="p-2 font-mono text-[11px] text-[#64748B]">
-                                {calDate ? (
-                                  <span>{calDate} {nextCalDate ? `(~${nextCalDate})` : ''}</span>
-                                ) : (
-                                  item.sub_equipment || '-'
-                                )}
-                              </td>
-                            </>
-                          )}
-                          <td className="p-2 text-right space-x-1">
-                            {!isCabin && (
-                              <>
-                                <button
-                                  onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : '불출')}
-                                  className="px-2 py-1 bg-[#243B5A] text-white text-[11px] font-semibold rounded hover:bg-[#1d3049] transition"
-                                >
-                                  불출
-                                </button>
-                                {item.type !== '소모성' && (
-                                  <button
-                                    onClick={() => handleOpenLogModal(item, '반납')}
-                                    className="px-2 py-1 bg-blue-600 text-white text-[11px] font-semibold rounded hover:bg-blue-700 transition"
-                                  >
-                                    반납
-                                  </button>
-                                )}
-                              </>
-                            )}
-                            {isAdmin && (
-                              <button
-                                onClick={() => handleOpenInventoryEdit(item)}
-                                className="p-1 bg-gray-100 text-[#64748B] hover:text-[#1F2937] hover:bg-gray-200 rounded transition"
-                                title="수정"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
+              <div className="flex sm:flex-col items-center sm:items-end justify-between w-full sm:w-auto pt-2 sm:pt-0 border-t sm:border-t-0 border-[#E2E5E9] shrink-0 gap-2">
+                {!isCabin && (
+                  <div className="text-right">
+                    <span className="text-[10px] text-[#64748B] block">보유 수량</span>
+                    <span className="font-bold text-sm text-[#1F2937]">
+                      {item.quantity} <span className="text-xs font-normal text-[#64748B]">{item.unit}</span>
+                    </span>
+                  </div>
+                )}
+
+                <div className="flex items-center space-x-1.5">
+                  {!isCabin && (
+                    <>
+                      <button
+                        onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : '불출')}
+                        className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-medium transition shadow-2xs flex items-center space-x-1"
+                      >
+                        <ArrowUpRight className="h-3 w-3" />
+                        <span>{item.type === '소모성' ? '사용' : '불출'}</span>
+                      </button>
+                      {item.type !== '소모성' && (
+                        <button
+                          onClick={() => handleOpenLogModal(item, '반납')}
+                          className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-[#1F2937] rounded text-xs font-medium transition flex items-center space-x-1 border border-[#E2E5E9]"
+                        >
+                          <ArrowDownRight className="h-3 w-3 text-emerald-600" />
+                          <span>반납</span>
+                        </button>
+                      )}
+                    </>
                   )}
-                </tbody>
-              </table>
+
+                  {isAdmin && (
+                    <button
+                      onClick={() => handleOpenInventoryEdit(item)}
+                      className="p-1 text-[#64748B] hover:text-[#1F2937] hover:bg-[#F5F6F8] rounded transition"
+                      title="수정"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {filteredInventory.length === 0 && (
+          <div className="bg-white rounded-lg border border-[#E2E5E9] p-8 text-center text-[#64748B] text-xs">
+            등록되었거나 선택 조건에 해당하는 자재가 존재하지 않습니다.
+          </div>
+        )}
+          </div>
+        )}
+      </div>
+
+      {/* 최근 불출/반납 이력 섹션 */}
+      <div className="bg-white rounded-lg border border-[#E2E5E9] overflow-hidden shadow-2xs mt-4">
+        <div className="px-3.5 py-2.5 bg-[#F5F6F8] border-b border-[#E2E5E9] flex justify-between items-center">
+          <div className="flex items-center space-x-2">
+            <History className="h-4 w-4 text-[#243B5A]" />
+            <h2 className="text-xs font-bold text-[#1F2937]">최근 불출 / 반납 이력 (23시 자동 초기화)</h2>
+            <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-semibold">
+              {inventoryLogs.length}건
+            </span>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            {isAdmin && selectedLogIds.length > 0 && (
+              <button
+                onClick={handleOpenBatchDeleteLogs}
+                className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[11px] font-semibold transition flex items-center space-x-1"
+              >
+                <Trash2 className="h-3 w-3" />
+                <span>선택 삭제 ({selectedLogIds.length})</span>
+              </button>
+            )}
+            <button
+              onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
+              className="text-[#64748B] hover:text-[#1F2937] p-1"
+            >
+              {isHistorySectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+
+        {isHistorySectionOpen && (
+          <div className="p-3 space-y-2">
+            <div className="flex items-center justify-between pb-2 border-b border-[#E2E5E9] text-[11px] font-semibold text-[#64748B]">
+              {isAdmin && (
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    checked={inventoryLogs.length > 0 && selectedLogIds.length === inventoryLogs.length}
+                    onChange={toggleSelectAllLogs}
+                    className="h-3.5 w-3.5 rounded accent-[#243B5A] cursor-pointer"
+                  />
+                  <span>전체 선택</span>
+                </div>
+              )}
+              <span className="text-[10px]">※ 매일 23시: 반납완료 및 소모성 자재 불출이 자동 초기화됩니다.</span>
+            </div>
+
+            <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
+              {inventoryLogs.map((log) => {
+                const isSelected = selectedLogIds.includes(String(log.id));
+                const isReturnCompleted = log.type.includes('반납완료');
+                const isIssueAlert = log.type.includes('이상알림');
+                const isConsumableUsage = log.type.includes('소모성 사용');
+                const matchedHistoryItem = inventoryList.find(i => i.id === log.inventory_id || i.name === log.item_name);
+                const historyItemCode = matchedHistoryItem?.type === '고정' ? matchedHistoryItem?.code : undefined;
+                const issuedBy = log.issued_by || (!isReturnCompleted ? log.worker_name : undefined);
+                const returnedBy = log.returned_by;
+                const samePerson = Boolean(issuedBy && returnedBy && issuedBy === returnedBy);
+
+                return (
+                  <div
+                    key={log.id}
+                    className={`p-2.5 rounded-lg border text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 transition ${
+                      isSelected ? 'bg-blue-50/40 border-blue-300' : 'bg-[#F5F6F8]/50 border-[#E2E5E9]'
+                    }`}
+                  >
+                    <div className="flex items-start space-x-2 min-w-0 flex-1">
+                      {isAdmin && (
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectLog(log.id)}
+                          className="mt-0.5 h-3.5 w-3.5 rounded accent-[#243B5A] cursor-pointer shrink-0"
+                        />
+                      )}
+                      <div className="min-w-0 space-y-0.5">
+                        <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
+                            isReturnCompleted ? 'bg-emerald-100 text-emerald-800' : isConsumableUsage ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {log.type}
+                          </span>
+                          <span className="font-bold text-[#1F2937] truncate">{log.item_name}</span>
+                          {historyItemCode && (
+                            <span className="text-[10px] font-mono bg-white border border-[#E2E5E9] text-[#475569] px-1.5 py-0.2 rounded">자재코드: {historyItemCode}</span>
+                          )}
+                          <span className="text-[10px] text-[#64748B]">({log.quantity} EA)</span>
+                          {isIssueAlert && (
+                            <span className="bg-red-100 text-red-700 text-[10px] px-1.5 py-0.2 rounded font-bold border border-red-200">
+                              ⚠️ 이상(결함) 발생
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-x-2">
+                          {isReturnCompleted ? (
+                            samePerson || (!returnedBy && issuedBy) ? (
+                              <span>불출/반납: <strong className="text-[#1F2937]">{issuedBy || returnedBy}</strong></span>
+                            ) : (
+                              <>
+                                <span>불출: <strong className="text-[#1F2937]">{issuedBy || '-'}</strong></span>
+                                <span>|</span>
+                                <span>반납: <strong className="text-[#1F2937]">{returnedBy || '-'}</strong></span>
+                              </>
+                            )
+                          ) : (
+                            <span>{isConsumableUsage ? '사용: ' : '불출: '}<strong className="text-[#1F2937]">{log.issued_by || log.worker_name}</strong></span>
+                          )}
+                          <span>|</span>
+                          <span>일시: {new Date(log.created_at).toLocaleString('ko-KR')}</span>
+                          {log.memo && (
+                            <>
+                              <span>|</span>
+                              <span className="text-slate-600 truncate max-w-xs">메모: {log.memo}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-1 shrink-0 self-end sm:self-center">
+                      {isConsumableUsage ? (
+                        <button
+                          type="button"
+                          disabled
+                          className="px-2 py-1 bg-gray-100 text-gray-400 border border-gray-200 rounded text-[10px] font-semibold cursor-not-allowed"
+                        >
+                          소모성 사용 완료
+                        </button>
+                      ) : !isReturnCompleted && !log.item_name?.includes('[CABIN') ? (
+                        <button
+                          onClick={() => handleOpenReturnModal(log)}
+                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold transition"
+                        >
+                          반납처리
+                        </button>
+                      ) : null}
+
+                      {isAdmin && (
+                        <>
+                          <button
+                            onClick={() => handleOpenEditLog(log)}
+                            className="p-1 text-[#64748B] hover:text-[#1F2937] hover:bg-gray-200 rounded transition"
+                            title="이력 수정"
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                          <button
+                            onClick={() => handleOpenDeleteLog(log.id)}
+                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition"
+                            title="이력 삭제"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {inventoryLogs.length === 0 && (
+                <div className="text-center py-6 text-[#64748B] text-xs">
+                  최근 기록된 불출 및 반납 이력이 존재하지 않습니다.
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* 사용 / 반납 이력 세션 */}
-      <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-2xs overflow-hidden">
-        <div className="px-4 py-3 bg-white border-b border-[#E2E5E9] flex items-center justify-between">
-          <button
-            onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)}
-            className="flex items-center space-x-2 font-bold text-xs sm:text-sm text-[#1F2937]"
-          >
-            <History className="h-4 w-4 text-[#243B5A]" />
-            <span>최근 불출 및 반납 완료 이력 ({inventoryLogs.length}건)</span>
-            {isHistorySectionOpen ? <ChevronUp className="h-4 w-4 text-[#64748B]" /> : <ChevronDown className="h-4 w-4 text-[#64748B]" />}
-          </button>
-
-          {isAdmin && selectedLogIds.length > 0 && (
-            <button
-              onClick={handleOpenBatchDeleteLogs}
-              className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-md transition flex items-center space-x-1"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              <span>{selectedLogIds.length}건 삭제</span>
-            </button>
-          )}
-        </div>
-
-        {isHistorySectionOpen && (
-          <div className="p-3 overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-[#E2E5E9] bg-[#F8FAFC] text-[#64748B] font-bold">
-                  {isAdmin && (
-                    <th className="p-2 w-8 text-center">
-                      <input
-                        type="checkbox"
-                        checked={selectedLogIds.length > 0 && selectedLogIds.length === inventoryLogs.length}
-                        onChange={toggleSelectAllLogs}
-                        className="rounded border-[#E2E5E9] accent-[#243B5A]"
-                      />
-                    </th>
-                  )}
-                  <th className="p-2">일시</th>
-                  <th className="p-2">구분</th>
-                  <th className="p-2">품목명</th>
-                  <th className="p-2">수량</th>
-                  <th className="p-2">작업자</th>
-                  <th className="p-2">메모 / 특이사항</th>
-                  <th className="p-2 text-right">관리</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#E2E5E9]">
-                {inventoryLogs.length === 0 ? (
-                  <tr>
-                    <td colSpan={isAdmin ? 8 : 7} className="text-center py-8 text-[#94A3B8]">
-                      최근 불출/반납 이력이 없습니다.
-                    </td>
-                  </tr>
-                ) : (
-                  inventoryLogs.map((log) => {
-                    const isIssue = log.type.includes('불출') || log.type.includes('사용');
-                    const isReturn = log.type.includes('반납');
-                    const hasIssueAlert = log.type.includes('이상알림');
-
-                    return (
-                      <tr key={log.id} className="hover:bg-[#F8FAFC] transition">
-                        {isAdmin && (
-                          <td className="p-2 text-center">
-                            <input
-                              type="checkbox"
-                              checked={selectedLogIds.includes(String(log.id))}
-                              onChange={() => toggleSelectLog(log.id)}
-                              className="rounded border-[#E2E5E9] accent-[#243B5A]"
-                            />
-                          </td>
-                        )}
-                        <td className="p-2 font-mono text-[11px] text-[#64748B]">
-                          {new Date(log.created_at).toLocaleString('ko-KR', {
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit'
-                          })}
-                        </td>
-                        <td className="p-2">
-                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-                            isIssue ? 'bg-amber-100 text-amber-800' : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {log.type}
-                          </span>
-                          {hasIssueAlert && (
-                            <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700">
-                              ⚠️ 결함
-                            </span>
-                          )}
-                        </td>
-                        <td className="p-2 font-semibold text-[#1F2937]">{log.item_name}</td>
-                        <td className="p-2 font-bold text-[#243B5A]">{log.quantity}</td>
-                        <td className="p-2 text-[#64748B]">{log.worker_name || log.issued_by || log.returned_by || '-'}</td>
-                        <td className="p-2 text-[#64748B] truncate max-w-[200px]">{log.memo || '-'}</td>
-                        <td className="p-2 text-right space-x-1">
-                          {isIssue && !isReturn && (
-                            <button
-                              onClick={() => handleOpenReturnModal(log)}
-                              className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-semibold rounded transition"
-                            >
-                              반납 처리
-                            </button>
-                          )}
-                          {isAdmin && (
-                            <>
-                              <button
-                                onClick={() => handleOpenEditLog(log)}
-                                className="p-1 bg-gray-100 text-[#64748B] hover:text-[#1F2937] hover:bg-gray-200 rounded transition"
-                                title="수정"
-                              >
-                                <Pencil className="h-3 w-3" />
-                              </button>
-                              <button
-                                onClick={() => handleOpenDeleteLog(log.id)}
-                                className="p-1 bg-red-50 text-red-600 hover:bg-red-100 rounded transition"
-                                title="삭제"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* 자재 등록 / 수정 Modal (Drawer) */}
+      {/* 자재 등록 / 수정 Sheet 모달 */}
       {showInventorySheet && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-lg w-full p-5 shadow-2xl space-y-4 my-8 text-[#1F2937]">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-md w-full p-5 shadow-2xl space-y-4 text-[#1F2937] max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
               <h3 className="text-sm font-bold">
                 {editingItem ? '자재 정보 수정' : '신규 자재 등록'}
@@ -2521,251 +2559,236 @@ export default function MaterialManagement({
 
             <form onSubmit={handleSubmitInventory} className="space-y-3 text-xs">
               <div>
-                <label className="block text-[#64748B] font-semibold mb-1">구분 탭</label>
-                <select
-                  value={itemType}
-                  onChange={(e) => setItemType(e.target.value as MainTab)}
-                  disabled={!!editingItem}
-                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] font-semibold"
-                >
-                  <option value="고정">고정 기자재</option>
-                  <option value="소모성">소모성 자재</option>
-                  <option value="CABIN">CABIN 자재</option>
-                </select>
+                <label className="block text-[#64748B] font-semibold mb-1">구분</label>
+                <div className="flex space-x-2">
+                  {(['고정', '소모성', 'CABIN'] as MainTab[]).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      disabled={!!editingItem}
+                      onClick={() => setItemType(t)}
+                      className={`flex-1 py-1.5 rounded-md font-semibold text-xs border ${
+                        itemType === t ? 'bg-[#243B5A] text-white border-[#243B5A]' : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9]'
+                      } disabled:opacity-50`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               {itemType === 'CABIN' ? (
                 <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">종류 (Sheet)</label>
-                      <input
-                        type="text"
-                        required
-                        value={cabinSheetName}
-                        onChange={(e) => setCabinSheetName(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                        placeholder="예: C#1"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">식별 번호 (No)</label>
-                      <input
-                        type="text"
-                        required
-                        value={itemCode}
-                        onChange={(e) => setItemCode(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                        placeholder="예: CBN-101"
-                      />
-                    </div>
-                  </div>
-
                   <div>
-                    <label className="block text-[#64748B] font-semibold mb-1">품목명 (Item)</label>
-                    <input
-                      type="text"
-                      required
-                      value={itemName}
-                      onChange={(e) => setItemName(e.target.value)}
-                      className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                      placeholder="품목명 입력"
+                    <label className="block text-[#64748B] font-semibold mb-1">Sheet 이름 / 카테고리</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={cabinSheetName} 
+                      onChange={e => setCabinSheetName(e.target.value)} 
+                      placeholder="예: C#1" 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                     />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">위치 / 구역</label>
-                      <input
-                        type="text"
-                        value={cabinLocationSection}
-                        onChange={(e) => setCabinLocationSection(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                        placeholder="예: Section A"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">제조사 / 모델</label>
-                      <input
-                        type="text"
-                        value={cabinMakerModel}
-                        onChange={(e) => setCabinMakerModel(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">NO / 식별코드</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={itemCode} 
+                      onChange={e => setItemCode(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                    />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">시리얼 번호</label>
-                      <input
-                        type="text"
-                        value={cabinSerialNo}
-                        onChange={(e) => setCabinSerialNo(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">증명서 번호 (Cert No)</label>
-                      <input
-                        type="text"
-                        value={cabinCertNo}
-                        onChange={(e) => setCabinCertNo(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">품목명 (ITEM)</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={itemName} 
+                      onChange={e => setItemName(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                    />
                   </div>
-
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">제조사 및 모델명</label>
+                    <input 
+                      type="text" 
+                      value={cabinMakerModel} 
+                      onChange={e => setCabinMakerModel(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">시리얼 번호 (SERIAL NO)</label>
+                    <input 
+                      type="text" 
+                      value={cabinSerialNo} 
+                      onChange={e => setCabinSerialNo(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">성적서 번호 (CERT NO)</label>
+                    <input 
+                      type="text" 
+                      value={cabinCertNo} 
+                      onChange={e => setCabinCertNo(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                    />
+                  </div>
                   <div>
                     <label className="block text-[#64748B] font-semibold mb-1">교정일자</label>
-                    <input
-                      type="date"
-                      value={cabinCalibrationDate}
-                      onChange={(e) => setCabinCalibrationDate(e.target.value)}
-                      className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
+                    <input 
+                      type="date" 
+                      value={cabinCalibrationDate} 
+                      onChange={e => setCabinCalibrationDate(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">구역 및 보관 위치</label>
+                    <input 
+                      type="text" 
+                      value={cabinLocationSection} 
+                      onChange={e => setCabinLocationSection(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                     />
                   </div>
                 </>
               ) : (
                 <>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">자재 코드</label>
-                      <input
-                        type="text"
-                        required
-                        value={itemCode}
-                        onChange={(e) => setItemCode(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">카테고리</label>
-                      <select
-                        value={itemCategory}
-                        onChange={(e) => setItemCategory(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                      >
-                        {getCurrentSubCategories().map((cat) => (
-                          <option key={cat} value={cat}>{cat}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-
                   <div>
-                    <label className="block text-[#64748B] font-semibold mb-1">품목명</label>
-                    <input
-                      type="text"
-                      required
-                      value={itemName}
-                      onChange={(e) => setItemName(e.target.value)}
-                      className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
+                    <label className="block text-[#64748B] font-semibold mb-1">자재 코드</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={itemCode} 
+                      onChange={e => setItemCode(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                     />
                   </div>
-
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">시리얼 번호</label>
-                      <input
-                        type="text"
-                        value={itemSerialNo}
-                        onChange={(e) => setItemSerialNo(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">보관 위치</label>
-                      <input
-                        type="text"
-                        value={itemLocation}
-                        onChange={(e) => setItemLocation(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                      />
-                    </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">품목명 / 자재명</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={itemName} 
+                      onChange={e => setItemName(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                    />
                   </div>
-
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">서브 카테고리</label>
+                    <select
+                      value={itemCategory}
+                      onChange={e => setItemCategory(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]"
+                    >
+                      {getCurrentSubCategories().map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+                  {itemType === '고정' && itemCategory === 'VBT' && (
+                    <div>
+                      <label className="block text-[#64748B] font-semibold mb-1">VBT 타입</label>
+                      <input 
+                        type="text" 
+                        placeholder="예: 1L, 2S 등" 
+                        value={itemVbtType} 
+                        onChange={e => setItemVbtType(e.target.value)} 
+                        className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                      />
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">시리얼 번호 (S/N)</label>
+                    <input 
+                      type="text" 
+                      value={itemSerialNo} 
+                      onChange={e => setItemSerialNo(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                    />
+                  </div>
                   {itemType === '고정' && (
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[#64748B] font-semibold mb-1">교정일자</label>
-                        <input
-                          type="date"
-                          value={itemCalDate}
-                          onChange={(e) => setItemCalDate(e.target.value)}
-                          className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
+                        <input 
+                          type="date" 
+                          value={itemCalDate} 
+                          onChange={e => setItemCalDate(e.target.value)} 
+                          className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                         />
                       </div>
                       <div>
                         <label className="block text-[#64748B] font-semibold mb-1">차기 교정예정일</label>
-                        <input
-                          type="date"
-                          value={itemNextCalDate}
-                          onChange={(e) => setItemNextCalDate(e.target.value)}
-                          className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
+                        <input 
+                          type="date" 
+                          value={itemNextCalDate} 
+                          onChange={e => setItemNextCalDate(e.target.value)} 
+                          className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                         />
                       </div>
                     </div>
                   )}
-
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">보유 수량</label>
-                      <input
-                        type="number"
-                        min="0"
-                        required
-                        value={itemQuantity}
-                        onChange={(e) => setItemQuantity(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
+                      <label className="block text-[#64748B] font-semibold mb-1">초기 / 보유 수량</label>
+                      <input 
+                        type="number" 
+                        min="0" 
+                        required 
+                        value={itemQuantity} 
+                        onChange={e => setItemQuantity(Number(e.target.value))} 
+                        className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                       />
                     </div>
                     <div>
                       <label className="block text-[#64748B] font-semibold mb-1">단위</label>
-                      <input
-                        type="text"
-                        required
-                        value={itemUnit}
-                        onChange={(e) => setItemUnit(e.target.value)}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
+                      <input 
+                        type="text" 
+                        value={itemUnit} 
+                        onChange={e => setItemUnit(e.target.value)} 
+                        className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                       />
                     </div>
-                    <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">최소 안전재고</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={itemMinQty}
-                        onChange={(e) => setItemMinQty(Number(e.target.value))}
-                        className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
-                      />
-                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">보관 장소 / 위치</label>
+                    <input 
+                      type="text" 
+                      value={itemLocation} 
+                      onChange={e => setItemLocation(e.target.value)} 
+                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
+                    />
                   </div>
                 </>
               )}
 
-              <div className="flex space-x-2 pt-3">
+              <div className="flex space-x-2 pt-3 border-t border-[#E2E5E9]">
                 {editingItem && (
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteInventory(editingItem)}
+                  <button 
+                    type="button" 
+                    onClick={() => handleDeleteInventory(editingItem)} 
                     className="py-2 px-3 bg-red-100 hover:bg-red-200 text-red-600 font-semibold text-xs rounded-lg transition"
                   >
                     삭제
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={() => setShowInventorySheet(false)}
+                <button 
+                  type="button" 
+                  onClick={() => setShowInventorySheet(false)} 
                   className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition"
                 >
                   취소
                 </button>
-                <button
-                  type="submit"
+                <button 
+                  type="submit" 
                   className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition"
                 >
-                  저장 확정
+                  저장하기
                 </button>
               </div>
             </form>
@@ -2773,67 +2796,55 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 불출 / 사용 처리 Modal */}
+      {/* 불출/사용 처리 모달 */}
       {showLogSheet && targetItem && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
             <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
-              <h3 className="text-sm font-bold">{logType} 처리</h3>
+              <h3 className="text-sm font-bold">{logType} 등록</h3>
               <button onClick={() => setShowLogSheet(false)}><X className="h-4 w-4" /></button>
             </div>
 
             <form onSubmit={handleSubmitLog} className="space-y-3 text-xs">
               <div className="bg-[#F5F6F8] p-2.5 rounded-md border border-[#E2E5E9] space-y-1">
                 <span className="text-[10px] text-[#64748B] block">선택 품목</span>
-                <p className="font-bold text-[#1F2937]">{targetItem.name || targetItem.item}</p>
-                <span className="text-[10px] text-blue-600 font-semibold block">
-                  현재 재고: {targetItem.quantity} {targetItem.unit || 'EA'}
-                </span>
+                <p className="font-bold text-[#1F2937]">{targetItem.name}</p>
+                <p className="text-[10px] text-[#64748B]">현재 보유 재고: {targetItem.quantity} {targetItem.unit}</p>
               </div>
 
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">수량</label>
-                <input
-                  type="number"
-                  min="1"
-                  max={logType !== '반납' ? targetItem.quantity : undefined}
-                  required
-                  value={logQty}
-                  onChange={(e) => setLogQty(Number(e.target.value))}
-                  className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md font-bold text-[#1F2937]"
+                <input 
+                  type="number" 
+                  min="1" 
+                  max={logType === '반납' ? undefined : targetItem.quantity}
+                  required 
+                  value={logQty} 
+                  onChange={e => setLogQty(Number(e.target.value))} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] font-bold" 
                 />
               </div>
 
               <div>
-                <label className="block text-[#64748B] font-semibold mb-1">메모 / 불출 목적</label>
-                <input
-                  type="text"
-                  placeholder="예: 현장 점검용 불출"
-                  value={logMemo}
-                  onChange={(e) => setLogMemo(e.target.value)}
-                  className="w-full px-2.5 py-1.5 border border-[#E2E5E9] rounded-md"
+                <label className="block text-[#64748B] font-semibold mb-1">사유 / 사용 목적 / 메모</label>
+                <input 
+                  type="text" 
+                  placeholder="예: 2번 탱크 불출" 
+                  value={logMemo} 
+                  onChange={e => setLogMemo(e.target.value)} 
+                  className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
                 />
               </div>
 
               <div className="flex space-x-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowLogSheet(false)}
-                  className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition"
-                >
-                  취소
-                </button>
-                <button
-                  type="submit"
-                  className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition"
-                >
-                  {logType} 확정
-                </button>
+                <button type="button" onClick={() => setShowLogSheet(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">등록 확정</button>
               </div>
             </form>
           </div>
         </div>
       )}
+
     </div>
   );
 }
