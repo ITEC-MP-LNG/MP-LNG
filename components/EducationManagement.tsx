@@ -58,9 +58,6 @@ export default function EducationManagement({
   currentUser,
 }: EducationManagementProps) {
   const [currentDate, setCurrentDate] = useState(new Date());
-  
-  // 탭 상태 ('education' | 'event')
-  const [activeTab, setActiveTab] = useState<'education' | 'event'>('education');
 
   // 커스텀 알림(Alert / Confirm) 상태 관리
   const [alertDialog, setAlertDialog] = useState<{
@@ -95,33 +92,36 @@ export default function EducationManagement({
     setConfirmDialog({ show: true, title, message, onConfirm });
   };
 
-  // 교육 관련 모달 상태
-  const [showEduModal, setShowEduModal] = useState(false);
-  const [editingEdu, setEditingEdu] = useState<Education | null>(null);
+  // 상세보기 팝업 상태
   const [selectedEduForDetail, setSelectedEduForDetail] = useState<Education | null>(null);
+  const [selectedEventForDetail, setSelectedEventForDetail] = useState<EventItem | null>(null);
 
+  // 교육 당일 배정 알림 팝업 상태
   const [assignedNoticeEdu, setAssignedNoticeEdu] = useState<Education | null>(null);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
 
-  const [eduTitle, setEduTitle] = useState('');
-  const [eduDate, setEduDate] = useState(getLocalDateString());
-  const [eduTimeSlot, setEduTimeSlot] = useState('10:00~12:00');
-  const [eduLocation, setEduLocation] = useState('대회의실');
+  // EVENT 데이터 및 로딩 상태
+  const [events, setEvents] = useState<EventItem[]>([]);
+  const [loadingEvents, setLoadingEvents] = useState(false);
 
+  // -------------------------------------------------------------
+  // 통합 등록 / 수정 모달 상태
+  // -------------------------------------------------------------
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [scheduleType, setScheduleType] = useState<'education' | 'event'>('education');
+  const [editingScheduleId, setEditingScheduleId] = useState<number | string | null>(null);
+
+  // 공통 폼 상태
+  const [formTitle, setFormTitle] = useState('');
+  const [formDate, setFormDate] = useState(getLocalDateString());
+  const [formTimeSlot, setFormTimeSlot] = useState('10:00~12:00');
+  const [formLocation, setFormLocation] = useState('');
+
+  // 교육 전용 폼 상태
   const [assignedWorkersInput, setAssignedWorkersInput] = useState('');
   const [assignedWorkers, setAssignedWorkers] = useState<string[]>([]);
 
-  // EVENT 관련 상태 및 데이터
-  const [events, setEvents] = useState<EventItem[]>([]);
-  const [loadingEvents, setLoadingEvents] = useState(false);
-  const [showEventModal, setShowEventModal] = useState(false);
-  const [editingEvent, setEditingEvent] = useState<EventItem | null>(null);
-  const [selectedEventForDetail, setSelectedEventForDetail] = useState<EventItem | null>(null);
-
-  const [eventTitle, setEventTitle] = useState('');
-  const [eventDate, setEventDate] = useState(getLocalDateString());
-  const [eventTimeSlot, setEventTimeSlot] = useState('14:00~15:00');
-  const [eventLocation, setEventLocation] = useState('');
+  // EVENT 전용 폼 상태
   const [eventDescription, setEventDescription] = useState('');
 
   // 이벤트 데이터 불러오기
@@ -191,32 +191,52 @@ export default function EducationManagement({
     setAssignedWorkers(prev => prev.filter(name => name !== nameToRemove));
   };
 
-  // 교육 등록/수정 핸들러
-  const handleOpenEduCreate = (dateStr?: string) => {
-    if (!isAdmin) return showAlert('관리자만 교육을 등록할 수 있습니다.', '권한 없음', 'error');
-    setEditingEdu(null);
-    setEduTitle('');
-    setEduDate(dateStr || getLocalDateString());
-    setEduTimeSlot('10:00~12:00');
-    setEduLocation('대회의실');
+  // -------------------------------------------------------------
+  // 통합 모달 열기 핸들러
+  // -------------------------------------------------------------
+  const handleOpenScheduleCreate = (dateStr?: string) => {
+    setEditingScheduleId(null);
+    setScheduleType('education');
+    setFormTitle('');
+    setFormDate(dateStr || getLocalDateString());
+    setFormTimeSlot('10:00~12:00');
+    setFormLocation('대회의실');
     setAssignedWorkersInput('');
     setAssignedWorkers([]);
-    setShowEduModal(true);
+    setEventDescription('');
+    setShowScheduleModal(true);
   };
 
   const handleOpenEduEdit = (edu: Education, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!isAdmin) return showAlert('관리자만 교육을 수정할 수 있습니다.', '권한 없음', 'error');
-    setEditingEdu(edu);
-    setEduTitle(edu.title);
-    setEduDate(edu.edu_date);
-    setEduTimeSlot(edu.time_slot);
-    setEduLocation(edu.location);
+    setEditingScheduleId(edu.id);
+    setScheduleType('education');
+    setFormTitle(edu.title);
+    setFormDate(edu.edu_date);
+    setFormTimeSlot(edu.time_slot);
+    setFormLocation(edu.location);
     setAssignedWorkersInput('');
     setAssignedWorkers(edu.assigned_workers || []);
-    setShowEduModal(true);
+    setEventDescription('');
+    setShowScheduleModal(true);
   };
 
+  const handleOpenEventEdit = (ev: EventItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingScheduleId(ev.id);
+    setScheduleType('event');
+    setFormTitle(ev.title);
+    setFormDate(ev.event_date);
+    setFormTimeSlot(ev.time_slot || '');
+    setFormLocation(ev.location || '');
+    setEventDescription(ev.description || '');
+    setAssignedWorkersInput('');
+    setAssignedWorkers([]);
+    setShowScheduleModal(true);
+  };
+
+  // 삭제 핸들러
   const handleDeleteEdu = (id: number | string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
     if (!isAdmin) return showAlert('삭제 권한이 없습니다.', '권한 없음', 'error');
@@ -227,7 +247,7 @@ export default function EducationManagement({
         if (error) throw error;
 
         showAlert('성공적으로 삭제되었습니다.', '삭제 완료', 'success');
-        setShowEduModal(false);
+        setShowScheduleModal(false);
         setSelectedEduForDetail(null);
         fetchEducations();
       } catch (err: any) {
@@ -236,66 +256,7 @@ export default function EducationManagement({
     }, '교육 일정 삭제');
   };
 
-  const handleSubmitEdu = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isAdmin) return showAlert('등록/수정 권한이 없습니다.', '권한 없음', 'error');
-    if (!eduTitle.trim()) return showAlert('교육명을 입력해주세요.', '입력 항목 누락', 'error');
-
-    try {
-      const basePayload: any = {
-        title: eduTitle,
-        time_slot: eduTimeSlot,
-        location: eduLocation,
-        assigned_workers: assignedWorkers,
-        updated_at: new Date().toISOString()
-      };
-
-      if (editingEdu) {
-        let { error } = await supabase.from('educations').update({ ...basePayload, edu_date: eduDate }).eq('id', editingEdu.id);
-        if (error) {
-          const { error: retryError } = await supabase.from('educations').update(basePayload).eq('id', editingEdu.id);
-          if (retryError) throw retryError;
-        }
-        showAlert('교육 일정이 수정되었습니다.', '수정 완료', 'success');
-      } else {
-        let { error } = await supabase.from('educations').insert([{ ...basePayload, edu_date: eduDate }]);
-        if (error) {
-          const { error: retryError } = await supabase.from('educations').insert([basePayload]);
-          if (retryError) throw retryError;
-        }
-        showAlert('신규 교육 일정이 등록되었습니다.', '등록 완료', 'success');
-      }
-
-      setShowEduModal(false);
-      fetchEducations();
-    } catch (err: any) {
-      showAlert('교육 저장 실패: ' + (err?.message || '오류가 발생했습니다.'), '저장 오류', 'error');
-    }
-  };
-
-  // EVENT 등록/수정 핸들러
-  const handleOpenEventCreate = (dateStr?: string) => {
-    setEditingEvent(null);
-    setEventTitle('');
-    setEventDate(dateStr || getLocalDateString());
-    setEventTimeSlot('14:00~15:00');
-    setEventLocation('');
-    setEventDescription('');
-    setShowEventModal(true);
-  };
-
-  const handleOpenEventEdit = (ev: EventItem, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    setEditingEvent(ev);
-    setEventTitle(ev.title);
-    setEventDate(ev.event_date);
-    setEventTimeSlot(ev.time_slot || '');
-    setEventLocation(ev.location || '');
-    setEventDescription(ev.description || '');
-    setShowEventModal(true);
-  };
-
-  const handleDeleteEvent = (id: number, e?: React.MouseEvent) => {
+  const handleDeleteEvent = (id: number | string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
 
     showConfirm('정말 이 EVENT를 삭제하시겠습니까?', async () => {
@@ -304,7 +265,7 @@ export default function EducationManagement({
         if (error) throw error;
 
         showAlert('EVENT가 삭제되었습니다.', '삭제 완료', 'success');
-        setShowEventModal(false);
+        setShowScheduleModal(false);
         setSelectedEventForDetail(null);
         fetchEvents();
       } catch (err: any) {
@@ -313,34 +274,72 @@ export default function EducationManagement({
     }, 'EVENT 삭제');
   };
 
-  const handleSubmitEvent = async (e: React.FormEvent) => {
+  // 통합 폼 제출 핸들러
+  const handleSubmitSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!eventTitle.trim()) return showAlert('EVENT 제목을 입력해주세요.', '입력 항목 누락', 'error');
 
-    try {
-      const payload = {
-        title: eventTitle,
-        event_date: eventDate,
-        time_slot: eventTimeSlot,
-        location: eventLocation,
-        description: eventDescription,
-        updated_at: new Date().toISOString()
-      };
+    if (scheduleType === 'education') {
+      if (!isAdmin) return showAlert('등록/수정 권한이 없습니다.', '권한 없음', 'error');
+      if (!formTitle.trim()) return showAlert('교육명을 입력해주세요.', '입력 항목 누락', 'error');
 
-      if (editingEvent) {
-        const { error } = await supabase.from('events').update(payload).eq('id', editingEvent.id);
-        if (error) throw error;
-        showAlert('EVENT가 수정되었습니다.', '수정 완료', 'success');
-      } else {
-        const { error } = await supabase.from('events').insert([payload]);
-        if (error) throw error;
-        showAlert('신규 EVENT가 등록되었습니다.', '등록 완료', 'success');
+      try {
+        const basePayload: any = {
+          title: formTitle,
+          time_slot: formTimeSlot,
+          location: formLocation,
+          assigned_workers: assignedWorkers,
+          updated_at: new Date().toISOString()
+        };
+
+        if (editingScheduleId) {
+          let { error } = await supabase.from('educations').update({ ...basePayload, edu_date: formDate }).eq('id', editingScheduleId);
+          if (error) {
+            const { error: retryError } = await supabase.from('educations').update(basePayload).eq('id', editingScheduleId);
+            if (retryError) throw retryError;
+          }
+          showAlert('교육 일정이 수정되었습니다.', '수정 완료', 'success');
+        } else {
+          let { error } = await supabase.from('educations').insert([{ ...basePayload, edu_date: formDate }]);
+          if (error) {
+            const { error: retryError } = await supabase.from('educations').insert([basePayload]);
+            if (retryError) throw retryError;
+          }
+          showAlert('신규 교육 일정이 등록되었습니다.', '등록 완료', 'success');
+        }
+
+        setShowScheduleModal(false);
+        fetchEducations();
+      } catch (err: any) {
+        showAlert('교육 저장 실패: ' + (err?.message || '오류가 발생했습니다.'), '저장 오류', 'error');
       }
+    } else {
+      if (!formTitle.trim()) return showAlert('EVENT 제목을 입력해주세요.', '입력 항목 누락', 'error');
 
-      setShowEventModal(false);
-      fetchEvents();
-    } catch (err: any) {
-      showAlert('EVENT 저장 실패: ' + (err?.message || '오류가 발생했습니다.'), '저장 오류', 'error');
+      try {
+        const payload = {
+          title: formTitle,
+          event_date: formDate,
+          time_slot: formTimeSlot,
+          location: formLocation,
+          description: eventDescription,
+          updated_at: new Date().toISOString()
+        };
+
+        if (editingScheduleId) {
+          const { error } = await supabase.from('events').update(payload).eq('id', editingScheduleId);
+          if (error) throw error;
+          showAlert('EVENT가 수정되었습니다.', '수정 완료', 'success');
+        } else {
+          const { error } = await supabase.from('events').insert([payload]);
+          if (error) throw error;
+          showAlert('신규 EVENT가 등록되었습니다.', '등록 완료', 'success');
+        }
+
+        setShowScheduleModal(false);
+        fetchEvents();
+      } catch (err: any) {
+        showAlert('EVENT 저장 실패: ' + (err?.message || '오류가 발생했습니다.'), '저장 오류', 'error');
+      }
     }
   };
 
@@ -372,8 +371,8 @@ export default function EducationManagement({
   return (
     <div className="w-full text-[#1F2937] p-4 sm:p-6 space-y-4 font-sans border-box">
       
-      {/* 🚀 상단 타이틀 영역 및 탭 전환 */}
-      <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+      {/* 🚀 상단 타이틀 영역 */}
+      <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs flex items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <div className="p-2.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
             <GraduationCap className="h-6 w-6" />
@@ -383,29 +382,9 @@ export default function EducationManagement({
             <p className="text-xs text-[#64748B]">사내 정기 교육 및 중요 EVENT 일정 관리</p>
           </div>
         </div>
-
-        {/* 탭 버튼 */}
-        <div className="flex bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9]">
-          <button
-            onClick={() => setActiveTab('education')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-              activeTab === 'education' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
-            }`}
-          >
-            교육 일정 관리
-          </button>
-          <button
-            onClick={() => setActiveTab('event')}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-              activeTab === 'event' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
-            }`}
-          >
-            EVENT 관리
-          </button>
-        </div>
       </div>
 
-      {/* 캘린더 컨트롤 및 등록 버튼 헤더 */}
+      {/* 캘린더 컨트롤 및 신규 일정 등록 버튼 */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-xs gap-3">
         <div className="flex items-center space-x-2">
           <button
@@ -432,24 +411,13 @@ export default function EducationManagement({
         </div>
 
         <div className="flex items-center space-x-2">
-          {activeTab === 'education' && isAdmin && (
-            <button
-              onClick={() => handleOpenEduCreate()}
-              className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-3.5 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs"
-            >
-              <Plus className="h-4 w-4" />
-              <span>신규 교육 등록</span>
-            </button>
-          )}
-          {activeTab === 'event' && (
-            <button
-              onClick={() => handleOpenEventCreate()}
-              className="flex items-center justify-center space-x-1.5 bg-[#0D9488] text-white px-3.5 py-2 rounded-lg hover:bg-[#0f766e] transition shadow-xs font-medium text-xs"
-            >
-              <Plus className="h-4 w-4" />
-              <span>신규 EVENT 등록</span>
-            </button>
-          )}
+          <button
+            onClick={() => handleOpenScheduleCreate()}
+            className="flex items-center justify-center space-x-1.5 bg-[#243B5A] text-white px-3.5 py-2 rounded-lg hover:bg-[#1d3049] transition shadow-xs font-medium text-xs"
+          >
+            <Plus className="h-4 w-4" />
+            <span>신규 일정 등록</span>
+          </button>
         </div>
       </div>
 
@@ -457,7 +425,7 @@ export default function EducationManagement({
         <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-12 text-xs text-[#64748B]">일정을 불러오는 중...</div>
       ) : (
         <>
-          {/* 달력 뷰 */}
+          {/* 통합 달력 뷰 */}
           <div className="bg-white rounded-xl border border-[#E2E5E9] overflow-hidden shadow-xs">
             <div className="grid grid-cols-7 bg-[#F5F6F8] border-b border-[#E2E5E9] text-center py-2.5 text-xs font-bold text-[#64748B]">
               <div className="text-red-600">일</div>
@@ -495,26 +463,13 @@ export default function EducationManagement({
                           {day}
                         </span>
                         
-                        <div className="flex items-center space-x-1">
-                          {activeTab === 'education' && isAdmin && (
-                            <button
-                              onClick={() => handleOpenEduCreate(dateStr)}
-                              className="text-[#64748B] hover:text-[#243B5A] p-0.5 rounded"
-                              title="이 날짜에 교육 추가"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          )}
-                          {activeTab === 'event' && (
-                            <button
-                              onClick={() => handleOpenEventCreate(dateStr)}
-                              className="text-[#64748B] hover:text-[#0D9488] p-0.5 rounded"
-                              title="이 날짜에 이벤트 추가"
-                            >
-                              <Plus className="h-3 w-3" />
-                            </button>
-                          )}
-                        </div>
+                        <button
+                          onClick={() => handleOpenScheduleCreate(dateStr)}
+                          className="text-[#64748B] hover:text-[#243B5A] p-0.5 rounded"
+                          title="이 날짜에 일정 추가"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
                       </div>
 
                       <div className="space-y-1 max-h-[85px] overflow-y-auto">
@@ -546,9 +501,10 @@ export default function EducationManagement({
             </div>
           </div>
 
-          {/* 하단 목록 영역 */}
-          {activeTab === 'education' ? (
-            <div className="mt-6 space-y-3">
+          {/* 하단 전체 목록 영역 (전체 교육 목록 & 전체 EVENT 목록 동시 표기) */}
+          <div className="mt-6 space-y-8">
+            {/* 1. 전체 교육 목록 */}
+            <div className="space-y-3">
               <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center gap-1.5">
                 <GraduationCap className="h-4 w-4 text-[#243B5A]" />
                 <span>전체 교육 목록</span>
@@ -602,8 +558,9 @@ export default function EducationManagement({
                 </div>
               )}
             </div>
-          ) : (
-            <div className="mt-6 space-y-3">
+
+            {/* 2. 전체 EVENT 목록 */}
+            <div className="space-y-3">
               <h3 className="text-xs font-bold text-[#64748B] uppercase tracking-wider flex items-center gap-1.5">
                 <CalendarIcon className="h-4 w-4 text-[#0D9488]" />
                 <span>전체 EVENT 목록</span>
@@ -656,7 +613,7 @@ export default function EducationManagement({
                 </div>
               )}
             </div>
-          )}
+          </div>
         </>
       )}
 
@@ -759,135 +716,161 @@ export default function EducationManagement({
         </div>
       )}
 
-      {/* 교육 등록 및 수정 모달 */}
-      {showEduModal && isAdmin && (
+      {/* 🚀 [통합] 신규 일정 및 수정 등록 모달 */}
+      {showScheduleModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-md w-full p-5 shadow-xl relative text-[#1F2937]">
-            <button onClick={() => setShowEduModal(false)} className="absolute top-4 right-4 text-[#64748B]"><X className="h-4 w-4" /></button>
-            <h2 className="text-xs font-bold text-[#1F2937] mb-3">{editingEdu ? '교육 일정 수정' : '신규 교육 일정 등록'}</h2>
+            <button onClick={() => setShowScheduleModal(false)} className="absolute top-4 right-4 text-[#64748B]"><X className="h-4 w-4" /></button>
+            <h2 className="text-xs font-bold text-[#1F2937] mb-3">
+              {editingScheduleId ? (scheduleType === 'education' ? '교육 일정 수정' : 'EVENT 수정') : '신규 일정 등록'}
+            </h2>
             
-            <form onSubmit={handleSubmitEdu} className="space-y-3 text-xs">
+            <form onSubmit={handleSubmitSchedule} className="space-y-3 text-xs">
+              {/* 등록 유형 선택 (신규 등록일 때 활성화) */}
               <div>
-                <label className="block font-semibold text-[#64748B] mb-1">교육명</label>
-                <input type="text" required value={eduTitle} onChange={e => setEduTitle(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" placeholder="예: 상반기 정기 안전교육" />
-              </div>
-
-              <div>
-                <label className="block font-semibold text-[#64748B] mb-1">교육 장소</label>
-                <input type="text" required value={eduLocation} onChange={e => setEduLocation(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden" placeholder="예: 대회의실" />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-[#64748B] mb-1">교육 일자</label>
-                  <input type="date" required value={eduDate} onChange={e => setEduDate(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" />
-                </div>
-                <div>
-                  <label className="block font-semibold text-[#64748B] mb-1">교육 시간대</label>
-                  <input type="text" required value={eduTimeSlot} onChange={e => setEduTimeSlot(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="10:00~12:00" />
-                </div>
-              </div>
-
-              <div>
-                <label className="block font-semibold text-[#64748B] mb-1">교육 대상자 배정 (쉼표 구분 입력 가능)</label>
-                <div className="flex gap-2 mb-1.5">
-                  <input
-                    type="text"
-                    value={assignedWorkersInput}
-                    onChange={e => setAssignedWorkersInput(e.target.value)}
-                    className="flex-1 bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]"
-                    placeholder="홍길동, 이순신"
-                  />
+                <label className="block font-semibold text-[#64748B] mb-1">등록 구분</label>
+                <div className="flex bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9]">
                   <button
                     type="button"
-                    onClick={handleAddWorkers}
-                    className="bg-[#243B5A] hover:bg-[#1d3049] text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shrink-0"
+                    disabled={!!editingScheduleId}
+                    onClick={() => setScheduleType('education')}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition ${
+                      scheduleType === 'education' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
+                    } ${editingScheduleId ? 'opacity-80 cursor-not-allowed' : ''}`}
                   >
-                    추가
+                    교육 일정
                   </button>
-                </div>
-
-                <div className="flex flex-wrap gap-1 p-2 bg-slate-50 border border-[#E2E5E9] rounded-lg min-h-[36px] max-h-24 overflow-y-auto">
-                  {assignedWorkers.length === 0 ? (
-                    <span className="text-[11px] text-[#64748B]">배정된 인원이 없습니다.</span>
-                  ) : (
-                    assignedWorkers.map((worker, idx) => (
-                      <span key={idx} className="inline-flex items-center gap-1 bg-white text-[#243B5A] text-[11px] px-2 py-0.5 rounded border border-[#E2E5E9] font-medium">
-                        {worker}
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveWorker(worker)}
-                          className="hover:text-[#DC2626] rounded-full p-0.5"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between pt-3 border-t border-[#E2E5E9]">
-                {editingEdu ? (
                   <button
                     type="button"
-                    onClick={() => handleDeleteEdu(editingEdu.id)}
-                    className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[#DC2626] bg-red-50 hover:bg-red-100 border border-red-200"
+                    disabled={!!editingScheduleId}
+                    onClick={() => setScheduleType('event')}
+                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition ${
+                      scheduleType === 'event' ? 'bg-[#0D9488] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
+                    } ${editingScheduleId ? 'opacity-80 cursor-not-allowed' : ''}`}
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    <span>삭제</span>
+                    EVENT 일정
                   </button>
-                ) : <div />}
-
-                <div className="flex space-x-2">
-                  <button type="button" onClick={() => setShowEduModal(false)} className="px-3 py-1.5 bg-white border border-[#E2E5E9] hover:bg-slate-50 rounded-lg text-xs text-[#1F2937]">취소</button>
-                  <button type="submit" className="px-3 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold">{editingEdu ? '수정 완료' : '등록하기'}</button>
                 </div>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
 
-      {/* EVENT 등록 및 수정 모달 */}
-      {showEventModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-md w-full p-5 shadow-xl relative text-[#1F2937]">
-            <button onClick={() => setShowEventModal(false)} className="absolute top-4 right-4 text-[#64748B]"><X className="h-4 w-4" /></button>
-            <h2 className="text-xs font-bold text-[#1F2937] mb-3">{editingEvent ? 'EVENT 수정' : '신규 EVENT 등록'}</h2>
-            
-            <form onSubmit={handleSubmitEvent} className="space-y-3 text-xs">
+              {/* 제목 */}
               <div>
-                <label className="block font-semibold text-[#64748B] mb-1">EVENT 제목</label>
-                <input type="text" required value={eventTitle} onChange={e => setEventTitle(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="예: 사내 워크숍" />
+                <label className="block font-semibold text-[#64748B] mb-1">
+                  {scheduleType === 'education' ? '교육명' : 'EVENT 제목'}
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={formTitle}
+                  onChange={e => setFormTitle(e.target.value)}
+                  className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
+                  placeholder={scheduleType === 'education' ? '예: 상반기 정기 안전교육' : '예: 사내 워크숍'}
+                />
               </div>
 
+              {/* 장소 */}
               <div>
                 <label className="block font-semibold text-[#64748B] mb-1">장소</label>
-                <input type="text" value={eventLocation} onChange={e => setEventLocation(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="예: 강당" />
+                <input
+                  type="text"
+                  required={scheduleType === 'education'}
+                  value={formLocation}
+                  onChange={e => setFormLocation(e.target.value)}
+                  className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
+                  placeholder="예: 대회의실 또는 강당"
+                />
               </div>
 
+              {/* 날짜 및 시간 */}
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block font-semibold text-[#64748B] mb-1">날짜</label>
-                  <input type="date" required value={eventDate} onChange={e => setEventDate(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" />
+                  <label className="block font-semibold text-[#64748B] mb-1">일자</label>
+                  <input
+                    type="date"
+                    required
+                    value={formDate}
+                    onChange={e => setFormDate(e.target.value)}
+                    className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]"
+                  />
                 </div>
                 <div>
-                  <label className="block font-semibold text-[#64748B] mb-1">시간</label>
-                  <input type="text" value={eventTimeSlot} onChange={e => setEventTimeSlot(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="14:00~15:00" />
+                  <label className="block font-semibold text-[#64748B] mb-1">시간대</label>
+                  <input
+                    type="text"
+                    required={scheduleType === 'education'}
+                    value={formTimeSlot}
+                    onChange={e => setFormTimeSlot(e.target.value)}
+                    className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]"
+                    placeholder="10:00~12:00"
+                  />
                 </div>
               </div>
 
-              <div>
-                <label className="block font-semibold text-[#64748B] mb-1">내용</label>
-                <textarea rows={3} value={eventDescription} onChange={e => setEventDescription(e.target.value)} className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]" placeholder="이벤트 상세 내용을 입력하세요." />
-              </div>
+              {/* 교육 전용 필드: 대상자 지정 */}
+              {scheduleType === 'education' && (
+                <div>
+                  <label className="block font-semibold text-[#64748B] mb-1">교육 대상자 배정 (쉼표 구분 입력 가능)</label>
+                  <div className="flex gap-2 mb-1.5">
+                    <input
+                      type="text"
+                      value={assignedWorkersInput}
+                      onChange={e => setAssignedWorkersInput(e.target.value)}
+                      className="flex-1 bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]"
+                      placeholder="홍길동, 이순신"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleAddWorkers}
+                      className="bg-[#243B5A] hover:bg-[#1d3049] text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shrink-0"
+                    >
+                      추가
+                    </button>
+                  </div>
 
+                  <div className="flex flex-wrap gap-1 p-2 bg-slate-50 border border-[#E2E5E9] rounded-lg min-h-[36px] max-h-24 overflow-y-auto">
+                    {assignedWorkers.length === 0 ? (
+                      <span className="text-[11px] text-[#64748B]">배정된 인원이 없습니다.</span>
+                    ) : (
+                      assignedWorkers.map((worker, idx) => (
+                        <span key={idx} className="inline-flex items-center gap-1 bg-white text-[#243B5A] text-[11px] px-2 py-0.5 rounded border border-[#E2E5E9] font-medium">
+                          {worker}
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveWorker(worker)}
+                            className="hover:text-[#DC2626] rounded-full p-0.5"
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* EVENT 전용 필드: 상세 내용 */}
+              {scheduleType === 'event' && (
+                <div>
+                  <label className="block font-semibold text-[#64748B] mb-1">EVENT 상세 내용</label>
+                  <textarea
+                    rows={3}
+                    value={eventDescription}
+                    onChange={e => setEventDescription(e.target.value)}
+                    className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]"
+                    placeholder="이벤트 상세 내용을 입력하세요."
+                  />
+                </div>
+              )}
+
+              {/* 하단 푸터 버튼 */}
               <div className="flex items-center justify-between pt-3 border-t border-[#E2E5E9]">
-                {editingEvent ? (
+                {editingScheduleId ? (
                   <button
                     type="button"
-                    onClick={() => handleDeleteEvent(editingEvent.id)}
+                    onClick={() => {
+                      if (scheduleType === 'education') handleDeleteEdu(editingScheduleId);
+                      else handleDeleteEvent(editingScheduleId);
+                    }}
                     className="flex items-center space-x-1 px-3 py-1.5 rounded-lg text-xs font-medium text-[#DC2626] bg-red-50 hover:bg-red-100 border border-red-200"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
@@ -896,8 +879,15 @@ export default function EducationManagement({
                 ) : <div />}
 
                 <div className="flex space-x-2">
-                  <button type="button" onClick={() => setShowEventModal(false)} className="px-3 py-1.5 bg-white border border-[#E2E5E9] hover:bg-slate-50 rounded-lg text-xs text-[#1F2937]">취소</button>
-                  <button type="submit" className="px-3 py-1.5 bg-[#0D9488] hover:bg-[#0f766e] text-white rounded-lg text-xs font-semibold">{editingEvent ? '수정 완료' : '등록하기'}</button>
+                  <button type="button" onClick={() => setShowScheduleModal(false)} className="px-3 py-1.5 bg-white border border-[#E2E5E9] hover:bg-slate-50 rounded-lg text-xs text-[#1F2937]">취소</button>
+                  <button
+                    type="submit"
+                    className={`px-3 py-1.5 text-white rounded-lg text-xs font-semibold ${
+                      scheduleType === 'education' ? 'bg-[#243B5A] hover:bg-[#1d3049]' : 'bg-[#0D9488] hover:bg-[#0f766e]'
+                    }`}
+                  >
+                    {editingScheduleId ? '수정 완료' : '등록하기'}
+                  </button>
                 </div>
               </div>
             </form>
