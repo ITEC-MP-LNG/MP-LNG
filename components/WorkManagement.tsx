@@ -736,7 +736,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   return (
     <div className="bg-[#F5F6F8] min-h-screen w-full text-[#1F2937] p-0 m-0">
-      <div className="w-full bg-white border-b border-[#E2E5E9] p-3 sm:p-4 space-y-4">
+      <div className="w-full bg-white border-b border-[#E2E5E9] space-y-4">
         
         {/* Header */}
         <div className="flex flex-col gap-3 pb-3 border-b border-[#E2E5E9]">
