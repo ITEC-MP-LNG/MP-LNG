@@ -779,7 +779,7 @@ export default function HRManagement({
     : [selectedSubCategory];
 
   return (
-    <div className="w-full min-h-screen bg-[#F5F6F8] text-[#1F2937] space-y-3 font-sans box-border">
+    <div className="w-full min-h-screen bg-[#F5F6F8] text-[#1F2937] space-y-1 font-sans box-border">
       <div className="bg-white p-3 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
