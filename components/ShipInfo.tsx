@@ -431,6 +431,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     s.night_shift.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // 현재 Status 탭에서 활성화된 호선 객체 찾기
+  const currentStatusShip = ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
+
   // 호선 제원 정보 하단 목록은 상단 선택 상태와 동일하게 필터링
   // - 호선 선택: 현재 선택된 호선 1척만 표시
   // - 선주사 선택: 선택된 선주사의 호선만 표시
@@ -452,9 +455,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
     return true;
   });
-
-  // 현재 Status 탭에서 활성화된 호선 객체 찾기
-  const currentStatusShip = ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
 
   // Status 선택용 선주사 목록 및 현재 선택 선주사
   const shipOwners = Array.from(
