@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useMemo } from 'react';
-import { Pencil, Trash2, ChevronDown } from 'lucide-react';
+import { Pencil, Trash2 } from 'lucide-react';
 
 export interface OrganizationChartUser {
   id: string;
@@ -22,9 +22,9 @@ interface OrganizationChartProps {
   isAdmin?: boolean;
 }
 
-/* -------------------------------------------------------
-   기본 순서
-------------------------------------------------------- */
+/* =====================================================
+   기본 설정
+===================================================== */
 
 const TEAM_ORDER = ['1팀', '2팀', '3팀', '4팀'];
 
@@ -45,94 +45,113 @@ const OPERATION_JOB_ORDER: Record<string, number> = {
   매니저: 7,
 };
 
-const getJobOrder = (
-  user: OrganizationChartUser,
-  orderMap: Record<string, number>
-) => {
-  return orderMap[user.job_title || ''] ?? 99;
-};
+/* =====================================================
+   정렬
+===================================================== */
 
-const sortUsers = (
-  list: OrganizationChartUser[],
+function sortUsers(
+  users: OrganizationChartUser[],
   orderMap: Record<string, number>
-) => {
-  return [...list].sort((a, b) => {
-    const jobDiff =
-      getJobOrder(a, orderMap) - getJobOrder(b, orderMap);
+) {
+  return [...users].sort((a, b) => {
+    const aOrder = orderMap[a.job_title || ''] ?? 99;
+    const bOrder = orderMap[b.job_title || ''] ?? 99;
 
-    if (jobDiff !== 0) return jobDiff;
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder;
+    }
 
     return (a.display_order ?? 0) - (b.display_order ?? 0);
   });
-};
+}
 
-/* -------------------------------------------------------
+/* =====================================================
+   수정 / 삭제
+===================================================== */
+
+function editUser(userId: string) {
+  const fn = (window as any).handleChartEdit;
+
+  if (typeof fn === 'function') {
+    fn(userId);
+  }
+}
+
+function deleteUser(userId: string) {
+  const fn = (window as any).handleChartDelete;
+
+  if (typeof fn === 'function') {
+    fn(userId);
+  }
+}
+
+function editRoot() {
+  const fn = (window as any).handleChartStructureEdit;
+
+  if (typeof fn === 'function') {
+    fn('root');
+  }
+}
+
+/* =====================================================
    사람 카드
-------------------------------------------------------- */
+===================================================== */
 
 function PersonCard({
   user,
   isAdmin,
-  compact = false,
+  leader = false,
 }: {
   user: OrganizationChartUser;
   isAdmin?: boolean;
-  compact?: boolean;
+  leader?: boolean;
 }) {
-  const handleEdit = () => {
-    const fn = (window as any).handleChartEdit;
-    if (typeof fn === 'function') {
-      fn(user.id);
-    }
-  };
-
-  const handleDelete = () => {
-    const fn = (window as any).handleChartDelete;
-    if (typeof fn === 'function') {
-      fn(user.id);
-    }
-  };
-
-  const isLeader =
-    user.job_title === '본부장' ||
-    user.job_title === '소장' ||
-    user.job_title === '팀장';
-
   return (
     <div
       className={`
-        relative w-full rounded-xl border bg-white
-        transition-shadow hover:shadow-md
-        ${isLeader ? 'border-slate-400' : 'border-slate-200'}
-        ${compact ? 'px-3 py-2.5' : 'px-3.5 py-3'}
+        group relative rounded-xl border bg-white
+        px-3 py-2.5 shadow-sm
+        transition-all duration-150
+        hover:-translate-y-0.5 hover:shadow-md
+        ${
+          leader
+            ? 'border-slate-400'
+            : 'border-slate-200'
+        }
       `}
     >
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2.5">
+        {/* 직책 표시 */}
+        <div
+          className={`
+            flex h-8 w-8 shrink-0 items-center justify-center
+            rounded-lg text-[10px] font-bold
+            ${
+              leader
+                ? 'bg-slate-800 text-white'
+                : 'bg-slate-100 text-slate-600'
+            }
+          `}
+        >
+          {user.job_title?.substring(0, 2) || '직원'}
+        </div>
+
+        {/* 이름 */}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <span
-              className={`
-                font-semibold text-slate-800 truncate
-                ${compact ? 'text-xs' : 'text-sm'}
-              `}
-            >
+          <div className="flex items-center gap-1.5">
+            <span className="truncate text-sm font-bold text-slate-800">
               {user.name}
             </span>
 
             {user.job_title && (
-              <span
-                className={`
-                  shrink-0 rounded-md bg-slate-100
-                  px-1.5 py-0.5 text-[10px] text-slate-600
-                `}
-              >
+              <span className="shrink-0 text-[10px] text-slate-400">
                 {user.job_title}
               </span>
             )}
           </div>
 
           {(user.position || user.field) && (
-            <div className="mt-1 text-[10px] text-slate-400 truncate">
+            <div className="mt-0.5 truncate text-[10px] text-slate-400">
               {user.position}
               {user.position && user.field ? ' · ' : ''}
               {user.field}
@@ -140,11 +159,12 @@ function PersonCard({
           )}
         </div>
 
+        {/* 관리자 버튼 */}
         {isAdmin && (
-          <div className="flex shrink-0 items-center gap-1">
+          <div className="flex shrink-0 gap-0.5 opacity-70 transition-opacity group-hover:opacity-100">
             <button
               type="button"
-              onClick={handleEdit}
+              onClick={() => editUser(user.id)}
               className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
               title="수정"
             >
@@ -153,7 +173,7 @@ function PersonCard({
 
             <button
               type="button"
-              onClick={handleDelete}
+              onClick={() => deleteUser(user.id)}
               className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-500"
               title="삭제"
             >
@@ -166,90 +186,183 @@ function PersonCard({
   );
 }
 
-/* -------------------------------------------------------
-   조직 섹션
-------------------------------------------------------- */
+/* =====================================================
+   조직명 박스
+===================================================== */
 
-function SectionTitle({
+function OrganizationBox({
   title,
   subtitle,
+  dark = false,
 }: {
   title: string;
   subtitle?: string;
+  dark?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-3">
-      <div className="h-8 w-1 rounded-full bg-slate-700" />
+    <div
+      className={`
+        relative z-10 rounded-xl border px-5 py-3 text-center
+        shadow-sm
+        ${
+          dark
+            ? 'border-slate-700 bg-slate-800 text-white'
+            : 'border-slate-300 bg-white text-slate-800'
+        }
+      `}
+    >
+      <div className="text-sm font-bold">
+        {title}
+      </div>
 
-      <div>
-        <div className="text-base font-bold text-slate-800">
-          {title}
+      {subtitle && (
+        <div
+          className={`
+            mt-0.5 text-[10px]
+            ${dark ? 'text-slate-300' : 'text-slate-400'}
+          `}
+        >
+          {subtitle}
         </div>
+      )}
+    </div>
+  );
+}
 
-        {subtitle && (
-          <div className="mt-0.5 text-[10px] text-slate-400">
-            {subtitle}
-          </div>
-        )}
+/* =====================================================
+   세로 연결선
+===================================================== */
+
+function DownLine() {
+  return (
+    <div className="flex h-7 justify-center">
+      <div className="w-px bg-slate-300" />
+    </div>
+  );
+}
+
+/* =====================================================
+   수평 연결선
+===================================================== */
+
+function HorizontalConnector({
+  count,
+}: {
+  count: number;
+}) {
+  if (count <= 1) return null;
+
+  return (
+    <div className="hidden sm:block">
+      <div className="relative mx-auto h-6">
+        <div className="absolute left-[calc(50%)] right-[calc(50%)] top-0 border-t border-slate-300" />
+
+        <div
+          className="absolute left-0 right-0 top-0"
+          style={{
+            width: `calc(${Math.min(count, 4) * 25}% - 12px)`,
+            marginLeft: `calc(50% - ${Math.min(count, 4) * 12.5}% + 6px)`,
+          }}
+        />
       </div>
     </div>
   );
 }
 
-/* -------------------------------------------------------
-   세로 연결선
-------------------------------------------------------- */
-
-function VerticalConnector() {
-  return (
-    <div className="flex justify-center">
-      <div className="h-6 w-px bg-slate-300" />
-    </div>
-  );
-}
-
-/* -------------------------------------------------------
+/* =====================================================
    운영
-------------------------------------------------------- */
+===================================================== */
 
-function OperationSection({
+function OperationDiagram({
   users,
   isAdmin,
 }: {
   users: OrganizationChartUser[];
   isAdmin?: boolean;
 }) {
-  const operationUsers = sortUsers(users, OPERATION_JOB_ORDER);
+  const operationUsers = sortUsers(
+    users,
+    OPERATION_JOB_ORDER
+  );
 
-  if (operationUsers.length === 0) return null;
+  if (operationUsers.length === 0) {
+    return null;
+  }
+
+  const leaders = operationUsers.filter((user) =>
+    ['본부장', '소장', '사무'].includes(
+      user.job_title || ''
+    )
+  );
+
+  const others = operationUsers.filter(
+    (user) =>
+      !['본부장', '소장', '사무'].includes(
+        user.job_title || ''
+      )
+  );
 
   return (
     <section>
-      <SectionTitle
-        title="운영"
-        subtitle="본부 운영 및 사무"
-      />
-
-      <div className="mt-4">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {operationUsers.map((user) => (
-            <PersonCard
-              key={user.id}
-              user={user}
-              isAdmin={isAdmin}
-            />
-          ))}
-        </div>
+      {/* 운영 조직 */}
+      <div className="flex justify-center">
+        <OrganizationBox
+          title="운영"
+          subtitle="본부 운영 및 사무"
+          dark
+        />
       </div>
+
+      <DownLine />
+
+      {/* 본부장 / 소장 / 사무 */}
+      <div
+        className={`
+          grid gap-3
+          ${
+            leaders.length === 1
+              ? 'grid-cols-1'
+              : leaders.length === 2
+                ? 'grid-cols-1 sm:grid-cols-2'
+                : 'grid-cols-1 sm:grid-cols-3'
+          }
+        `}
+      >
+        {leaders.map((user) => (
+          <PersonCard
+            key={user.id}
+            user={user}
+            isAdmin={isAdmin}
+            leader
+          />
+        ))}
+      </div>
+
+      {/* 기타 운영 인원 */}
+      {others.length > 0 && (
+        <>
+          <DownLine />
+
+          <div className="mx-auto grid max-w-3xl grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {others.map((user) => (
+              <PersonCard
+                key={user.id}
+                user={user}
+                isAdmin={isAdmin}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </section>
   );
 }
 
-/* -------------------------------------------------------
-   관리 분야
-------------------------------------------------------- */
+/* =====================================================
+   관리
+===================================================== */
 
-function ManagementSection({
+function ManagementDiagram({
   users,
   isAdmin,
 }: {
@@ -257,7 +370,10 @@ function ManagementSection({
   isAdmin?: boolean;
 }) {
   const fields = useMemo(() => {
-    const map = new Map<string, OrganizationChartUser[]>();
+    const map = new Map<
+      string,
+      OrganizationChartUser[]
+    >();
 
     users.forEach((user) => {
       const field =
@@ -277,130 +393,279 @@ function ManagementSection({
     );
   }, [users]);
 
-  if (fields.length === 0) return null;
+  if (fields.length === 0) {
+    return null;
+  }
 
   return (
     <section>
-      <SectionTitle
-        title="관리"
-        subtitle="분야별 인원"
-      />
-
-      <div className="mt-4 space-y-3">
-        {fields.map(([fieldName, fieldUsers]) => {
-          const sortedUsers = sortUsers(
-            fieldUsers,
-            TEAM_JOB_ORDER
-          );
-
-          return (
-            <div
-              key={fieldName}
-              className="rounded-xl border border-slate-200 bg-slate-50/60 p-3"
-            >
-              <div className="mb-2 flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-slate-500" />
-
-                <span className="text-xs font-bold text-slate-700">
-                  {fieldName}
-                </span>
-
-                <span className="text-[10px] text-slate-400">
-                  {sortedUsers.length}명
-                </span>
-              </div>
-
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                {sortedUsers.map((user) => (
-                  <PersonCard
-                    key={user.id}
-                    user={user}
-                    isAdmin={isAdmin}
-                    compact
-                  />
-                ))}
-              </div>
-            </div>
-          );
-        })}
+      {/* 관리 조직 */}
+      <div className="flex justify-center">
+        <OrganizationBox
+          title="관리"
+          subtitle="분야별 관리"
+          dark
+        />
       </div>
-    </section>
-  );
-}
 
-/* -------------------------------------------------------
-   TEAM
-------------------------------------------------------- */
+      <DownLine />
 
-function TeamSection({
-  users,
-  isAdmin,
-}: {
-  users: OrganizationChartUser[];
-  isAdmin?: boolean;
-}) {
-  const teams = TEAM_ORDER.map((teamName) => {
-    const teamUsers = users.filter(
-      (user) =>
-        user.department === teamName ||
-        user.department === teamName.replace('팀', ' TEAM')
-    );
+      {/* 분야 */}
+      <div className="relative">
+        {/* PC 연결선 */}
+        {fields.length > 1 && (
+          <div className="pointer-events-none absolute left-[10%] right-[10%] top-0 hidden border-t border-slate-300 sm:block" />
+        )}
 
-    return {
-      teamName,
-      users: sortUsers(teamUsers, TEAM_JOB_ORDER),
-    };
-  }).filter((team) => team.users.length > 0);
+        <div
+          className={`
+            grid gap-4
+            ${
+              fields.length === 1
+                ? 'grid-cols-1'
+                : fields.length === 2
+                  ? 'grid-cols-1 sm:grid-cols-2'
+                  : fields.length === 3
+                    ? 'grid-cols-1 sm:grid-cols-3'
+                    : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+            }
+          `}
+        >
+          {fields.map(
+            ([fieldName, fieldUsers]) => {
+              const sortedUsers = sortUsers(
+                fieldUsers,
+                TEAM_JOB_ORDER
+              );
 
-  if (teams.length === 0) return null;
+              return (
+                <div
+                  key={fieldName}
+                  className="relative pt-3"
+                >
+                  {/* 분야 연결선 */}
+                  <div className="absolute left-1/2 top-0 hidden h-3 w-px -translate-x-1/2 bg-slate-300 sm:block" />
 
-  return (
-    <section>
-      <SectionTitle
-        title="TEAM"
-        subtitle="팀별 조직"
-      />
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+                    {/* 분야 제목 */}
+                    <div className="border-b border-slate-200 bg-slate-50 px-4 py-2.5 text-center">
+                      <div className="text-xs font-bold text-slate-700">
+                        {fieldName}
+                      </div>
 
-      <div className="mt-4">
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {teams.map((team) => (
-            <div
-              key={team.teamName}
-              className="overflow-hidden rounded-xl border border-slate-200 bg-white"
-            >
-              {/* 팀 제목 */}
-              <div className="border-b border-slate-200 bg-slate-100 px-4 py-3">
-                <div className="text-sm font-bold text-slate-800">
-                  {team.teamName}
+                      <div className="mt-0.5 text-[10px] text-slate-400">
+                        {sortedUsers.length}명
+                      </div>
+                    </div>
+
+                    {/* 분야 인원 */}
+                    <div className="space-y-2 p-2.5">
+                      {sortedUsers.map(
+                        (user) => (
+                          <PersonCard
+                            key={user.id}
+                            user={user}
+                            isAdmin={isAdmin}
+                            leader={
+                              user.job_title ===
+                              '팀장'
+                            }
+                          />
+                        )
+                      )}
+                    </div>
+                  </div>
                 </div>
-
-                <div className="mt-0.5 text-[10px] text-slate-400">
-                  {team.users.length}명
-                </div>
-              </div>
-
-              {/* 팀원 */}
-              <div className="space-y-2 p-3">
-                {team.users.map((user) => (
-                  <PersonCard
-                    key={user.id}
-                    user={user}
-                    isAdmin={isAdmin}
-                    compact
-                  />
-                ))}
-              </div>
-            </div>
-          ))}
+              );
+            }
+          )}
         </div>
       </div>
     </section>
   );
 }
 
-/* -------------------------------------------------------
-   메인 조직도
-------------------------------------------------------- */
+/* =====================================================
+   TEAM
+===================================================== */
+
+function TeamDiagram({
+  users,
+  isAdmin,
+}: {
+  users: OrganizationChartUser[];
+  isAdmin?: boolean;
+}) {
+  const teams = TEAM_ORDER.map(
+    (teamName) => {
+      const teamUsers = users.filter(
+        (user) =>
+          user.department === teamName ||
+          user.department ===
+            teamName.replace(
+              '팀',
+              ' TEAM'
+            )
+      );
+
+      return {
+        teamName,
+        users: sortUsers(
+          teamUsers,
+          TEAM_JOB_ORDER
+        ),
+      };
+    }
+  ).filter(
+    (team) => team.users.length > 0
+  );
+
+  if (teams.length === 0) {
+    return null;
+  }
+
+  return (
+    <section>
+      {/* TEAM */}
+      <div className="flex justify-center">
+        <OrganizationBox
+          title="TEAM"
+          subtitle="팀별 조직"
+          dark
+        />
+      </div>
+
+      <DownLine />
+
+      {/* 팀 연결선 */}
+      <div className="relative">
+        {teams.length > 1 && (
+          <div className="pointer-events-none absolute left-[8%] right-[8%] top-0 hidden border-t border-slate-300 sm:block" />
+        )}
+
+        <div
+          className={`
+            grid gap-4
+            ${
+              teams.length === 1
+                ? 'grid-cols-1 max-w-md mx-auto'
+                : teams.length === 2
+                  ? 'grid-cols-1 sm:grid-cols-2'
+                  : teams.length === 3
+                    ? 'grid-cols-1 sm:grid-cols-3'
+                    : 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-4'
+            }
+          `}
+        >
+          {teams.map((team) => {
+            const leaderUsers =
+              team.users.filter(
+                (user) =>
+                  user.job_title ===
+                  '팀장'
+              );
+
+            const memberUsers =
+              team.users.filter(
+                (user) =>
+                  user.job_title !==
+                  '팀장'
+              );
+
+            return (
+              <div
+                key={team.teamName}
+                className="relative pt-3"
+              >
+                {/* 팀으로 내려오는 선 */}
+                <div className="absolute left-1/2 top-0 hidden h-3 w-px -translate-x-1/2 bg-slate-300 sm:block" />
+
+                <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+                  {/* 팀 제목 */}
+                  <div className="bg-slate-100 px-4 py-3 text-center">
+                    <div className="text-sm font-bold text-slate-800">
+                      {team.teamName}
+                    </div>
+
+                    <div className="mt-0.5 text-[10px] text-slate-400">
+                      {team.users.length}명
+                    </div>
+                  </div>
+
+                  <div className="p-3">
+                    {/* 팀장 */}
+                    {leaderUsers.length > 0 && (
+                      <>
+                        <div className="text-center text-[10px] font-semibold text-slate-400">
+                          TEAM LEADER
+                        </div>
+
+                        <div className="mt-1.5 space-y-2">
+                          {leaderUsers.map(
+                            (user) => (
+                              <PersonCard
+                                key={user.id}
+                                user={user}
+                                isAdmin={
+                                  isAdmin
+                                }
+                                leader
+                              />
+                            )
+                          )}
+                        </div>
+                      </>
+                    )}
+
+                    {/* 팀원 연결선 */}
+                    {leaderUsers.length >
+                      0 &&
+                      memberUsers.length >
+                        0 && (
+                        <div className="flex justify-center py-2">
+                          <div className="h-5 w-px bg-slate-300" />
+                        </div>
+                      )}
+
+                    {/* 팀원 */}
+                    {memberUsers.length >
+                      0 && (
+                      <>
+                        <div className="mb-1 text-center text-[10px] font-semibold text-slate-400">
+                          MEMBERS
+                        </div>
+
+                        <div className="space-y-2">
+                          {memberUsers.map(
+                            (user) => (
+                              <PersonCard
+                                key={
+                                  user.id
+                                }
+                                user={user}
+                                isAdmin={
+                                  isAdmin
+                                }
+                              />
+                            )
+                          )}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* =====================================================
+   메인
+===================================================== */
 
 export default function OrganizationChart({
   users,
@@ -415,62 +680,59 @@ export default function OrganizationChart({
     );
   }, [users]);
 
-  /*
-   * 운영
-   */
-  const operationUsers = useMemo(
-    () =>
-      activeUsers.filter(
-        (user) => user.department === '운영'
-      ),
-    [activeUsers]
-  );
+  /* 운영 */
+  const operationUsers = useMemo(() => {
+    return activeUsers.filter(
+      (user) =>
+        user.department === '운영'
+    );
+  }, [activeUsers]);
 
-  /*
-   * 관리
-   *
-   * 운영/TEAM이 아닌 사람을 관리 대상으로 봅니다.
-   * 현재 DB에서 관리 분야가 field에 들어가는 구조를 기준으로 합니다.
-   */
-  const managementUsers = useMemo(
-    () =>
-      activeUsers.filter(
-        (user) =>
-          user.department === '관리' ||
+  /* TEAM */
+  const teamUsers = useMemo(() => {
+    return activeUsers.filter(
+      (user) =>
+        TEAM_ORDER.includes(
+          user.department || ''
+        ) ||
+        (user.department || '').includes(
+          'TEAM'
+        )
+    );
+  }, [activeUsers]);
+
+  /* 관리
+     운영과 TEAM을 제외한 나머지를 관리로 처리
+  */
+  const managementUsers = useMemo(() => {
+    return activeUsers.filter(
+      (user) => {
+        const department =
+          user.department || '';
+
+        const isTeam =
+          TEAM_ORDER.includes(
+            department
+          ) ||
+          department.includes('TEAM');
+
+        return (
+          department === '관리' ||
           (
-            user.department !== '운영' &&
-            !TEAM_ORDER.includes(user.department || '') &&
-            !(user.department || '').includes('TEAM')
+            department !== '운영' &&
+            !isTeam
           )
-      ),
-    [activeUsers]
-  );
-
-  /*
-   * TEAM
-   */
-  const teamUsers = useMemo(
-    () =>
-      activeUsers.filter(
-        (user) =>
-          TEAM_ORDER.includes(user.department || '') ||
-          (user.department || '').includes('TEAM')
-      ),
-    [activeUsers]
-  );
-
-  const handleRootEdit = () => {
-    const fn = (window as any).handleChartStructureEdit;
-
-    if (typeof fn === 'function') {
-      fn('root');
-    }
-  };
+        );
+      }
+    );
+  }, [activeUsers]);
 
   return (
     <div className="w-full">
-      {/* 제목 */}
-      <div className="mb-6 flex items-center justify-between gap-3">
+      {/* =========================================
+          상단 제목
+      ========================================= */}
+      <div className="mb-7 flex items-center justify-between gap-3">
         <div>
           <div className="text-lg font-bold text-slate-800">
             {rootTitle}
@@ -484,8 +746,8 @@ export default function OrganizationChart({
         {isAdmin && (
           <button
             type="button"
-            onClick={handleRootEdit}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-500 hover:bg-slate-50"
+            onClick={editRoot}
+            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-2 text-xs text-slate-500 transition-colors hover:bg-slate-50"
           >
             <Pencil size={13} />
             제목 수정
@@ -493,47 +755,64 @@ export default function OrganizationChart({
         )}
       </div>
 
-      {/* 전체 조직 구조 */}
-      <div className="space-y-0">
+      {/* =========================================
+          조직도
+      ========================================= */}
+      <div className="mx-auto w-full max-w-6xl">
         {/* 운영 */}
-        <OperationSection
-          users={operationUsers}
-          isAdmin={isAdmin}
-        />
+        {operationUsers.length >
+          0 && (
+          <OperationDiagram
+            users={operationUsers}
+            isAdmin={isAdmin}
+          />
+        )}
 
-        {/* 연결선 */}
-        {operationUsers.length > 0 &&
-          managementUsers.length > 0 && (
-            <VerticalConnector />
+        {/* 운영 → 관리 */}
+        {operationUsers.length >
+          0 &&
+          managementUsers.length >
+            0 && (
+            <div className="flex justify-center py-5">
+              <div className="h-8 w-px bg-slate-300" />
+            </div>
           )}
 
         {/* 관리 */}
-        <ManagementSection
-          users={managementUsers}
-          isAdmin={isAdmin}
-        />
+        {managementUsers.length >
+          0 && (
+          <ManagementDiagram
+            users={managementUsers}
+            isAdmin={isAdmin}
+          />
+        )}
 
-        {/* 연결선 */}
-        {managementUsers.length > 0 &&
+        {/* 관리 → TEAM */}
+        {managementUsers.length >
+          0 &&
           teamUsers.length > 0 && (
-            <VerticalConnector />
+            <div className="flex justify-center py-5">
+              <div className="h-8 w-px bg-slate-300" />
+            </div>
           )}
 
         {/* TEAM */}
-        <TeamSection
-          users={teamUsers}
-          isAdmin={isAdmin}
-        />
-      </div>
+        {teamUsers.length > 0 && (
+          <TeamDiagram
+            users={teamUsers}
+            isAdmin={isAdmin}
+          />
+        )}
 
-      {/* 인원이 하나도 없을 경우 */}
-      {activeUsers.length === 0 && (
-        <div className="rounded-xl border border-dashed border-slate-300 py-12 text-center">
-          <div className="text-sm text-slate-500">
-            표시할 조직원이 없습니다.
+        {/* 데이터 없음 */}
+        {activeUsers.length === 0 && (
+          <div className="rounded-xl border border-dashed border-slate-300 py-14 text-center">
+            <div className="text-sm text-slate-500">
+              표시할 조직원이 없습니다.
+            </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
