@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { OrgChart } from 'd3-org-chart';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
+import pptxgen from 'pptxgenjs';
 import { 
   Users, 
   Building2, 
@@ -27,7 +28,8 @@ import {
   UserX,
   PackageCheck,
   Calendar,
-  FolderTree
+  FolderTree,
+  Presentation
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -56,6 +58,14 @@ export interface HRUser {
   returned_items?: string;
   parent_id?: string | null;
   display_order?: number;
+}
+
+export interface OrgNode {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  type: string;
+  display_order: number;
 }
 
 interface HRManagementProps {
@@ -135,6 +145,8 @@ export default function HRManagement({
   currentUser = null 
 }: HRManagementProps) {
   const [users, setUsers] = useState<HRUser[]>([]);
+  const [orgNodes, setOrgNodes] = useState<OrgNode[]>([]);
+  const [rootTitle, setRootTitle] = useState<string>('조직도 (LNG 목포)');
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'ORG' | 'CHART' | 'LIST'>('ORG');
   const [searchTerm, setSearchTerm] = useState('');
@@ -148,15 +160,19 @@ export default function HRManagement({
   const [detailUser, setDetailUser] = useState<HRUser | null>(null);
   const [selectedUser, setSelectedUser] = useState<HRUser | null>(null);
 
-  // 조직도 구조 직접 변경을 위한 모달 상태
+  // 조직도 구조 직접 변경 모달 상태
   const [isOrgEditModalOpen, setIsOrgEditModalOpen] = useState(false);
   const [targetOrgUser, setTargetOrgUser] = useState<HRUser | null>(null);
   const [parentUserId, setParentUserId] = useState<string>('');
   const [userDisplayOrder, setUserDisplayOrder] = useState<number>(0);
 
+  // 루트 조직도 타이틀 수정 모달 상태
+  const [isTitleEditModalOpen, setIsTitleEditModalOpen] = useState(false);
+  const [editTitleInput, setEditTitleInput] = useState('');
+
   const orgChartContainerRef = useRef<HTMLDivElement>(null);
   const orgChartRef = useRef<any>(null);
-  
+
   const [formData, setFormData] = useState({
     inputId: '', 
     name: '',
@@ -210,6 +226,145 @@ export default function HRManagement({
     }
   };
 
+  // PowerPoint(PPT) 다운로드 기능 구현
+  const handleExportPPT = () => {
+    try {
+      const pres = new pptxgen();
+      pres.layout = 'LAYOUT_16x9';
+      const slide = pres.addSlide();
+
+      // 메인 제목 노드
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: 0.8, y: 0.8, w: 2.2, h: 1.0,
+        fill: { color: '2B579A' },
+        line: { color: '1E395B', width: 1 },
+        rectRadius: 0.1
+      });
+      slide.addText(rootTitle, {
+        x: 0.8, y: 0.8, w: 2.2, h: 1.0,
+        align: 'center', color: 'FFFFFF', fontSize: 13, bold: true
+      });
+
+      // 1. 운영 노드
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: 3.6, y: 0.8, w: 1.6, h: 0.8,
+        fill: { color: '33527A' },
+        rectRadius: 0.1
+      });
+      slide.addText('운영', {
+        x: 3.6, y: 0.8, w: 1.6, h: 0.8,
+        align: 'center', color: 'FFFFFF', fontSize: 12, bold: true
+      });
+
+      // 운영 - 관리 연결선 (세로)
+      slide.addConnector(pres.ConnectorType.line, {
+        x: 4.4, y: 1.6, w: 0, h: 0.8,
+        line: { color: '33527A', width: 2 }
+      });
+
+      // 운영 - 인원 연결선 (가로)
+      slide.addConnector(pres.ConnectorType.line, {
+        x: 5.2, y: 1.2, w: 0.8, h: 0,
+        line: { color: '33527A', width: 2 }
+      });
+
+      // 운영 인원 노드
+      const opUsers = users.filter(u => !u.is_retired && u.department === '운영');
+      const opText = opUsers.length > 0 ? opUsers.map(u => `${u.name} (${u.position || '인원'})`).join('\n') : '인원';
+      
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: 6.0, y: 0.8, w: 2.2, h: Math.max(0.8, opUsers.length * 0.4),
+        fill: { color: '4B6E9B' },
+        rectRadius: 0.1
+      });
+      slide.addText(opText, {
+        x: 6.0, y: 0.8, w: 2.2, h: Math.max(0.8, opUsers.length * 0.4),
+        align: 'center', color: 'FFFFFF', fontSize: 11
+      });
+
+      // 2. 관리 노드
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: 3.6, y: 2.4, w: 1.6, h: 0.8,
+        fill: { color: '33527A' },
+        rectRadius: 0.1
+      });
+      slide.addText('관리', {
+        x: 3.6, y: 2.4, w: 1.6, h: 0.8,
+        align: 'center', color: 'FFFFFF', fontSize: 12, bold: true
+      });
+
+      // 관리 - TEAM 연결선 (세로)
+      slide.addConnector(pres.ConnectorType.line, {
+        x: 4.4, y: 3.2, w: 0, h: 0.8,
+        line: { color: '33527A', width: 2 }
+      });
+
+      // 관리 - 인원 연결선 (가로)
+      slide.addConnector(pres.ConnectorType.line, {
+        x: 5.2, y: 2.8, w: 0.8, h: 0,
+        line: { color: '33527A', width: 2 }
+      });
+
+      // 관리 인원 노드
+      const mgUsers = users.filter(u => !u.is_retired && u.department === '관리');
+      const mgText = mgUsers.length > 0 ? mgUsers.map(u => `${u.name} (${u.position || '인원'})`).join('\n') : '인원';
+
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: 6.0, y: 2.4, w: 2.2, h: Math.max(0.8, mgUsers.length * 0.4),
+        fill: { color: '4B6E9B' },
+        rectRadius: 0.1
+      });
+      slide.addText(mgText, {
+        x: 6.0, y: 2.4, w: 2.2, h: Math.max(0.8, mgUsers.length * 0.4),
+        align: 'center', color: 'FFFFFF', fontSize: 11
+      });
+
+      // 3. TEAM 노드
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: 3.6, y: 4.0, w: 1.6, h: 0.8,
+        fill: { color: '33527A' },
+        rectRadius: 0.1
+      });
+      slide.addText('TEAM', {
+        x: 3.6, y: 4.0, w: 1.6, h: 0.8,
+        align: 'center', color: 'FFFFFF', fontSize: 12, bold: true
+      });
+
+      // TEAM 세로 가지선
+      slide.addConnector(pres.ConnectorType.line, {
+        x: 5.2, y: 4.4, w: 0.8, h: 0,
+        line: { color: '33527A', width: 2 }
+      });
+
+      const teams = ['1 TEAM', '2 TEAM', '3 TEAM', '4 TEAM'];
+      teams.forEach((teamName, idx) => {
+        const teamY = 4.0 + (idx * 0.9);
+        
+        if (idx > 0) {
+          slide.addConnector(pres.ConnectorType.line, {
+            x: 6.0, y: 4.4 + ((idx - 1) * 0.9), w: 0, h: 0.9,
+            line: { color: '33527A', width: 2 }
+          });
+        }
+
+        slide.addShape(pres.ShapeType.roundRect, {
+          x: 6.0, y: teamY, w: 2.2, h: 0.7,
+          fill: { color: '4B6E9B' },
+          rectRadius: 0.1
+        });
+        slide.addText(teamName, {
+          x: 6.0, y: teamY, w: 2.2, h: 0.7,
+          align: 'center', color: 'FFFFFF', fontSize: 11, bold: true
+        });
+      });
+
+      pres.writeFile({ fileName: `조직도_${new Date().toISOString().slice(0, 10)}.pptx` });
+    } catch (err) {
+      console.error('PPT 저장 실패:', err);
+      alert('PPT 내보내기 중 오류가 발생했습니다.');
+    }
+  };
+
   const myRole = currentUserRole || currentUser?.role || '';
   const isSuperAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(myRole.toUpperCase());
 
@@ -229,6 +384,7 @@ export default function HRManagement({
 
   useEffect(() => {
     fetchUsers();
+    fetchOrgNodes();
   }, []);
 
   useEffect(() => {
@@ -246,12 +402,20 @@ export default function HRManagement({
       if (target) handleDeleteUser(target);
     };
 
-    (window as any).handleChartStructureEdit = (userId: string) => {
+    (window as any).handleChartStructureEdit = (nodeId: string) => {
       if (!isAdmin) {
         alert('관리자만 조직도 구조를 수정할 수 있습니다.');
         return;
       }
-      const target = users.find(u => u.id === userId);
+
+      if (nodeId === 'root') {
+        setEditTitleInput(rootTitle);
+        setIsTitleEditModalOpen(true);
+        return;
+      }
+
+      const realUserId = nodeId.replace('user_', '');
+      const target = users.find(u => u.id === realUserId);
       if (target) {
         setTargetOrgUser(target);
         setParentUserId(target.parent_id || '');
@@ -259,14 +423,27 @@ export default function HRManagement({
         setIsOrgEditModalOpen(true);
       }
     };
-  }, [users, isAdmin]);
+  }, [users, isAdmin, rootTitle]);
 
-  // 조직도(d3-org-chart) 트리 생성 시 퇴사자 완전히 제외
+  const fetchOrgNodes = async () => {
+    try {
+      const { data, error } = await supabase.from('org_nodes').select('*');
+      if (error) throw error;
+      if (data && data.length > 0) {
+        setOrgNodes(data);
+        const rootNode = data.find(n => n.id === 'root');
+        if (rootNode) setRootTitle(rootNode.name);
+      }
+    } catch (err) {
+      console.warn('org_nodes 테이블이 없거나 조회 불가, 기본값 사용:', err);
+    }
+  };
+
+  // 요구사항 3: 완전 트리 세로 구조 생성 (조직도 ➔ 운영 ➔ 관리 ➔ TEAM)
   const buildHierarchy = (userList: HRUser[]) => {
     const data: any[] = [];
     const usedIds = new Set<string>();
 
-    // 1. 퇴사자 제외된 재직자 목록 필터링
     const activeUserList = userList.filter(u => !u.is_retired && u.department !== '퇴사자');
 
     const addNode = (node: any) => {
@@ -274,16 +451,17 @@ export default function HRManagement({
       if (node.id) usedIds.add(node.id);
     };
 
-    addNode({ id: 'root', parentId: '', name: '조직도', type: 'root' });
+    // 루트 노드 및 기본 직렬(세로) 부모 연결 구조 생성
+    addNode({ id: 'root', parentId: '', name: rootTitle, type: 'root' });
     addNode({ id: 'org_operating', parentId: 'root', name: '운영', type: 'department', level: 'main' });
     addNode({ id: 'org_management', parentId: 'org_operating', name: '관리', type: 'department', level: 'main' });
-    addNode({ id: 'org_team', parentId: 'org_management', name: '팀', type: 'department', level: 'main' });
+    addNode({ id: 'org_team', parentId: 'org_management', name: 'TEAM', type: 'department', level: 'main' });
 
+    // 인원 노드 추가
     const addUserNode = (user: HRUser, defaultParentId: string) => {
-      if (usedIds.has(user.id)) return;
-      // 수동으로 변경된 parent_id가 존재하면 적용
+      if (usedIds.has(`user_${user.id}`)) return;
       const actualParentId = (user.parent_id && user.parent_id !== user.id) 
-        ? `user_${user.parent_id}` 
+        ? (user.parent_id.startsWith('user_') || user.parent_id.startsWith('org_') ? user.parent_id : `user_${user.parent_id}`)
         : defaultParentId;
 
       addNode({
@@ -298,116 +476,32 @@ export default function HRManagement({
       });
     };
 
-    const operatingUsers = activeUserList.filter((u) => (u.department || '').trim() === '운영');
-    const operatingTitleOrder = ['본부장', '소장', '사무'];
-    const otherOperatingTitles = Array.from(new Set(
-      operatingUsers
-        .map((u) => (u.job_title || '').trim())
-        .filter((title) => title && !operatingTitleOrder.includes(title))
-    ));
-    const operatingTitles = [...operatingTitleOrder, ...otherOperatingTitles];
+    // 1. 운영 인원 노드 연결
+    const opUsers = activeUserList.filter(u => u.department === '운영');
+    opUsers.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+           .forEach(u => addUserNode(u, 'org_operating'));
 
-    operatingTitles.forEach((title) => {
-      const members = operatingUsers.filter((u) => (u.job_title || '없음').trim() === title);
-      if (members.length === 0) return;
+    // 2. 관리 인원 노드 연결
+    const mgUsers = activeUserList.filter(u => u.department === '관리');
+    mgUsers.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+           .forEach(u => addUserNode(u, 'org_management'));
 
-      const titleId = `operating_title_${title}`;
-      addNode({
-        id: titleId,
-        parentId: 'org_operating',
-        name: title,
-        type: 'group',
-        level: 'title',
-        department: '운영',
-      });
-      members.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-             .forEach((user) => addUserNode(user, titleId));
-    });
-
-    const managementUsers = activeUserList.filter((u) => (u.department || '').trim() === '관리');
-    const managementFields = Array.from(new Set(
-      managementUsers.map((u) => (u.field || '기타').trim() || '기타')
-    ));
-    const preferredFieldOrder = ['QA', '공정', '공정 및 스케쥴', '공정 및 스케줄', '안전', '캐빈', '사무', '기타'];
-    managementFields.sort((a, b) => {
-      const ia = preferredFieldOrder.indexOf(a);
-      const ib = preferredFieldOrder.indexOf(b);
-      if (ia !== -1 && ib !== -1) return ia - ib;
-      if (ia !== -1) return -1;
-      if (ib !== -1) return 1;
-      return a.localeCompare(b);
-    });
-
-    managementFields.forEach((field) => {
-      const members = managementUsers.filter((u) => ((u.field || '기타').trim() || '기타') === field);
-      if (members.length === 0) return;
-
-      const fieldId = `management_field_${field}`;
-      addNode({
-        id: fieldId,
-        parentId: 'org_management',
-        name: field,
-        type: 'group',
-        level: 'field',
-        department: '관리',
-      });
-      members.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-             .forEach((user) => addUserNode(user, fieldId));
-    });
-
-    const teamDepartments = ['1팀', '2팀', '3팀', '4팀'];
-    const existingTeamDepartments = Array.from(new Set(
-      activeUserList
-        .map((u) => (u.department || '').trim())
-        .filter((dept) => /^\d+팀$/.test(dept))
-    ));
-    const allTeams = Array.from(new Set([...teamDepartments, ...existingTeamDepartments]));
-    allTeams.sort((a, b) => {
-      const na = parseInt(a.replace('팀', ''), 10);
-      const nb = parseInt(b.replace('팀', ''), 10);
-      if (!isNaN(na) && !isNaN(nb)) return na - nb;
-      if (!isNaN(na)) return -1;
-      if (!isNaN(nb)) return 1;
-      return a.localeCompare(b);
-    });
-
-    allTeams.forEach((team) => {
-      const members = activeUserList.filter((u) => (u.department || '').trim() === team);
-      const teamId = `team_${team}`;
+    // 3. TEAM 하위 팀 노드 생성 및 팀별 인원 연결
+    const teams = ['1 TEAM', '2 TEAM', '3 TEAM', '4 TEAM'];
+    teams.forEach((teamName, idx) => {
+      const teamId = `team_${idx + 1}`;
       addNode({
         id: teamId,
         parentId: 'org_team',
-        name: team,
+        name: teamName,
         type: 'department',
-        level: 'team',
-        department: team,
+        level: 'team'
       });
 
-      const sortedMembers = [...members].sort((a, b) => {
-        if ((a.display_order || 0) !== (b.display_order || 0)) {
-          return (a.display_order || 0) - (b.display_order || 0);
-        }
-        const rankA = JOB_TITLE_ORDER_IN_RANK[a.job_title || '없음'] || 99;
-        const rankB = JOB_TITLE_ORDER_IN_RANK[b.job_title || '없음'] || 99;
-        if (rankA !== rankB) return rankA - rankB;
-        return (a.name || '').localeCompare(b.name || '');
-      });
-      sortedMembers.forEach((user) => addUserNode(user, teamId));
-    });
-
-    const handledDepartments = new Set(['운영', '관리', ...allTeams]);
-    const otherDepartments = Array.from(new Set(
-      activeUserList
-        .map((u) => (u.department || '').trim() || '미지정 파트')
-        .filter((dept) => !handledDepartments.has(dept))
-    ));
-
-    otherDepartments.forEach((dept) => {
-      const deptId = `other_dept_${dept}`;
-      addNode({ id: deptId, parentId: 'org_team', name: dept, type: 'department', level: 'other' });
-      activeUserList
-        .filter((u) => ((u.department || '').trim() || '미지정 파트') === dept)
-        .forEach((user) => addUserNode(user, deptId));
+      const teamKey = `${idx + 1}팀`;
+      const teamMembers = activeUserList.filter(u => u.department === teamKey || u.department === teamName);
+      teamMembers.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                 .forEach(u => addUserNode(u, teamId));
     });
 
     return data;
@@ -425,23 +519,24 @@ export default function HRManagement({
         .container(orgChartContainerRef.current)
         .data(chartData)
         .nodeHeight((d: any) => {
-          if (d.data.type === 'root') return 50;
+          if (d.data.type === 'root') return 56;
           if (d.data.type === 'user') return 96;
-          return d.data.level === 'main' ? 48 : 42;
+          return 48;
         })
         .nodeWidth((d: any) => {
-          if (d.data.type === 'user') return 220;
-          if (d.data.level === 'main') return 180;
-          return 150;
+          if (d.data.type === 'user') return 210;
+          if (d.data.type === 'root') return 200;
+          return 160;
         })
-        .childrenMargin((d: any) => d.data.level === 'main' ? 32 : 22)
-        .compactMarginBetween((d: any) => 14)
-        .compactMarginPair((d: any) => 18)
+        .childrenMargin((d: any) => 30)
+        .compactMarginBetween((d: any) => 15)
+        .compactMarginPair((d: any) => 20)
         .nodeContent((d: any) => {
           if (d.data.type === 'root') {
             return `
-              <div style="background-color: #1F2937; color: white; border-radius: 8px; border: 2px solid #111827; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: bold; font-family: sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-                ${d.data.name}
+              <div style="background-color: #1F2937; color: white; border-radius: 8px; border: 2px solid #111827; height: 100%; display: flex; align-items: center; justify-content: space-between; padding: 0 12px; font-weight: bold; font-family: sans-serif; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+                <span>${d.data.name}</span>
+                <button onclick="window.handleChartStructureEdit('root')" style="background: #374151; border: 1px solid #4B5563; border-radius: 4px; color: #F9FAFB; cursor: pointer; font-size: 10px; padding: 2px 5px;" title="명칭 변경">✏️</button>
               </div>`;
           }
 
@@ -467,7 +562,7 @@ export default function HRManagement({
                 <span>${isLeader ? '👑' : '👤'} ${user.name}</span>
                 <div style="display: flex; gap: 3px; align-items: center;">
                   <span style="font-size: 9px; padding: 2px 4px; border-radius: 4px; background-color: ${isLeader ? '#e0e7ff' : '#e2e8f0'}; color: ${isLeader ? '#4f46e5' : '#475569'};">${user.position || ''}</span>
-                  <button onclick="window.handleChartStructureEdit('${user.id}')" style="background: #e0f2fe; border: 1px solid #7dd3fc; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 3px; color: #0369a1;" title="구조 변경">🌿</button>
+                  <button onclick="window.handleChartStructureEdit('${user.id}')" style="background: #e0f2fe; border: 1px solid #7dd3fc; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 3px; color: #0369a1;" title="상사/부모 연결 변경">🌿</button>
                   <button onclick="window.handleChartEdit('${user.id}')" style="background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 3px;" title="수정">✏️</button>
                   <button onclick="window.handleChartDelete('${user.id}')" style="background: #fee2e2; border: 1px solid #fca5a5; border-radius: 4px; cursor: pointer; font-size: 10px; padding: 1px 3px; color: #dc2626;" title="삭제">🗑️</button>
                 </div>
@@ -484,7 +579,7 @@ export default function HRManagement({
       orgChartRef.current.expandAll();
       requestAnimationFrame(() => orgChartRef.current?.fit());
     }
-  }, [activeTab, users]);
+  }, [activeTab, users, rootTitle]);
 
   const fetchUsers = async () => {
     setLoading(true);
@@ -618,6 +713,28 @@ export default function HRManagement({
     } catch (err: any) {
       console.error('삭제 실패:', err);
       alert('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'));
+    }
+  };
+
+  // 조직도 루트 타이틀 변경 저장
+  const handleSaveTitle = async () => {
+    if (!editTitleInput.trim()) {
+      alert('조직도 명칭을 입력해주세요.');
+      return;
+    }
+    try {
+      setRootTitle(editTitleInput.trim());
+      const { error } = await supabase
+        .from('org_nodes')
+        .upsert({ id: 'root', name: editTitleInput.trim(), type: 'root' });
+      
+      if (error) console.warn('org_nodes 테이블 저장 생략 (로컬 상태 적용됨)');
+
+      alert('조직도 명칭이 변경되었습니다.');
+      setIsTitleEditModalOpen(false);
+    } catch (err: any) {
+      console.error('명칭 수정 실패:', err);
+      setIsTitleEditModalOpen(false);
     }
   };
 
@@ -831,14 +948,24 @@ export default function HRManagement({
           </div>
 
           {activeTab === 'CHART' && (
-            <button
-              onClick={handleExportPDF}
-              className="flex items-center space-x-1 bg-[#DC2626] hover:bg-[#b91c1c] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
-              title="현재 조직도를 고화질 PDF로 저장합니다"
-            >
-              <FileText className="h-3.5 w-3.5" />
-              <span>PDF 저장</span>
-            </button>
+            <div className="flex gap-1.5">
+              <button
+                onClick={handleExportPPT}
+                className="flex items-center space-x-1 bg-[#D24726] hover:bg-[#b0381e] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+                title="현재 조직도를 고화질 PPT 형식으로 다운로드합니다"
+              >
+                <Presentation className="h-3.5 w-3.5" />
+                <span>PPT 저장</span>
+              </button>
+              <button
+                onClick={handleExportPDF}
+                className="flex items-center space-x-1 bg-[#DC2626] hover:bg-[#b91c1c] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
+                title="현재 조직도를 고화질 PDF로 저장합니다"
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span>PDF 저장</span>
+              </button>
+            </div>
           )}
 
           {isAdmin && (
@@ -952,7 +1079,7 @@ export default function HRManagement({
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-1.5 font-bold text-[#64748B]">
               <Layers className="h-3.5 w-3.5 text-[#243B5A]" />
-              <span>조직도 (노드 내 🌿 상시/순서 변경 / ✏️ 수정 / 🗑️ 삭제 가능 - 퇴사자 자동 제외)</span>
+              <span>수직 트리 조직도 (노드 ✏️/🌿로 명칭 변경 및 부모 연결 지정 가능)</span>
             </div>
             
             <div className="flex items-center space-x-2">
@@ -1318,14 +1445,60 @@ export default function HRManagement({
         </div>
       )}
 
-      {/* 조직도 구조 직접 수정 모달 */}
+      {/* 조직도 최상단 타이틀 수정 모달 */}
+      {isTitleEditModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-sm w-full p-4 shadow-xl space-y-3 text-[#1F2937]">
+            <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
+              <h3 className="font-bold text-xs text-[#1F2937] flex items-center gap-1.5">
+                <Edit3 className="h-4 w-4 text-[#243B5A]" />
+                조직도 메인 타이틀 명칭 변경
+              </h3>
+              <button onClick={() => setIsTitleEditModalOpen(false)} className="text-[#64748B] hover:text-[#1F2937] p-1">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <label className="block font-bold text-[#64748B]">조직도 명칭 입력</label>
+              <input
+                type="text"
+                value={editTitleInput}
+                onChange={(e) => setEditTitleInput(e.target.value)}
+                placeholder="예: 조직도 (LNG 목포)"
+                className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+              />
+            </div>
+
+            <div className="flex justify-end space-x-2 pt-2 border-t border-[#E2E5E9]">
+              <button
+                type="button"
+                onClick={() => setIsTitleEditModalOpen(false)}
+                className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] rounded-lg text-xs text-[#1F2937]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveTitle}
+                className="px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition"
+              >
+                <Check className="h-3.5 w-3.5" />
+                <span>저장</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 조직도 구조 및 상사 직접 수정 모달 */}
       {isOrgEditModalOpen && targetOrgUser && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3">
           <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-sm w-full p-4 shadow-xl space-y-3 text-[#1F2937]">
             <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
               <h3 className="font-bold text-xs text-[#1F2937] flex items-center gap-1.5">
                 <FolderTree className="h-4 w-4 text-[#243B5A]" />
-                [{targetOrgUser.name}] 조직도 위치 변경
+                [{targetOrgUser.name}] 부모 노드 연결 변경
               </h3>
               <button onClick={() => setIsOrgEditModalOpen(false)} className="text-[#64748B] hover:text-[#1F2937] p-1">
                 <X className="h-4 w-4" />
@@ -1334,25 +1507,31 @@ export default function HRManagement({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-[#64748B] mb-1">직속 상사 선택 (부모 노드)</label>
+                <label className="block font-bold text-[#64748B] mb-1">상위 노드 선택 (부모 연결)</label>
                 <select
                   value={parentUserId}
                   onChange={(e) => setParentUserId(e.target.value)}
                   className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
                 >
-                  <option value="">기본 (파트 그룹 자동 배치)</option>
+                  <option value="">기본 위치 (부서/팀에 자동 배치)</option>
+                  <option value="org_operating">운영 항목</option>
+                  <option value="org_management">관리 항목</option>
+                  <option value="team_1">1 TEAM</option>
+                  <option value="team_2">2 TEAM</option>
+                  <option value="team_3">3 TEAM</option>
+                  <option value="team_4">4 TEAM</option>
                   {users
                     .filter(u => u.id !== targetOrgUser.id && !u.is_retired && u.department !== '퇴사자')
                     .map(u => (
                       <option key={u.id} value={u.id}>
-                        {u.name} ({u.department} · {u.position} {u.job_title})
+                        👤 {u.name} ({u.department} · {u.position} {u.job_title})
                       </option>
                     ))}
                 </select>
               </div>
 
               <div>
-                <label className="block font-bold text-[#64748B] mb-1">동일 그룹 내 정렬 순서 (숫자가 낮을수록 앞)</label>
+                <label className="block font-bold text-[#64748B] mb-1">정렬 순서 (숫자가 작을수록 위/앞)</label>
                 <input
                   type="number"
                   value={userDisplayOrder}
