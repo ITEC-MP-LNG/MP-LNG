@@ -29,7 +29,8 @@ import {
     PackageCheck,
     Calendar,
     FolderTree,
-    Presentation
+    Presentation,
+    HelpCircle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -169,6 +170,17 @@ export default function HRManagement({
     // 루트 조직도 타이틀 수정 모달 상태
     const [isTitleEditModalOpen, setIsTitleEditModalOpen] = useState(false);
     const [editTitleInput, setEditTitleInput] = useState('');
+
+    // 전화 연결 확인 모달 상태
+    const [phoneConfirmDialog, setPhoneConfirmDialog] = useState<{
+        show: boolean;
+        userName: string;
+        phoneNumber: string;
+    }>({
+        show: false,
+        userName: '',
+        phoneNumber: ''
+    });
 
     const [formData, setFormData] = useState({
         inputId: '',
@@ -356,9 +368,21 @@ export default function HRManagement({
 
     const handleMakePhoneCall = (phoneNumber: string, userName: string) => {
         if (!phoneNumber) return;
-        if (window.confirm(`${userName}님에게 전화를 연결하시겠습니까?`)) {
-            window.location.href = `tel:${phoneNumber}`;
-        }
+        setPhoneConfirmDialog({
+            show: true,
+            userName,
+            phoneNumber
+        });
+    };
+
+    const handleConfirmPhoneCall = () => {
+        if (!phoneConfirmDialog.phoneNumber) return;
+        window.location.href = `tel:${phoneConfirmDialog.phoneNumber}`;
+        setPhoneConfirmDialog({
+            show: false,
+            userName: '',
+            phoneNumber: ''
+        });
     };
 
     useEffect(() => {
@@ -1843,6 +1867,37 @@ export default function HRManagement({
         </div>
     )
 }
+    {/* 전화 연결 확인 모달 */}
+    {phoneConfirmDialog.show && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+            <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-sm w-full p-5 shadow-xl relative text-[#1F2937]">
+                <div className="flex items-center space-x-2 mb-2">
+                    <HelpCircle className="h-5 w-5 text-[#243B5A]" />
+                    <h3 className="text-xs font-bold text-[#1F2937]">전화 연결 확인</h3>
+                </div>
+                <p className="text-xs text-[#64748B] my-3 leading-relaxed">
+                    {phoneConfirmDialog.userName}님에게 전화를 연결하시겠습니까?
+                </p>
+                <div className="flex justify-end space-x-2 pt-2">
+                    <button
+                        type="button"
+                        onClick={() => setPhoneConfirmDialog({ show: false, userName: '', phoneNumber: '' })}
+                        className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] hover:bg-slate-50 text-[#1F2937] rounded-lg text-xs font-medium transition"
+                    >
+                        취소
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleConfirmPhoneCall}
+                        className="px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold transition"
+                    >
+                        전화 연결
+                    </button>
+                </div>
+            </div>
+        </div>
+    )}
+
     </div >
   );
 }
