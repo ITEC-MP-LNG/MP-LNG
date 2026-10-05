@@ -354,13 +354,9 @@ export default function HRManagement({
         return isAdmin || isSelf(targetUser);
     };
 
-    const handleMakePhoneCall = (phoneNumber: string, name?: string) => {
+    const handleMakePhoneCall = (phoneNumber: string, userName: string) => {
         if (!phoneNumber) return;
-        const confirmMessage = name
-            ? `${name} 님에게 전화 연결 하시겠습니까?`
-            : '해당 인원에게 전화 연결 하시겠습니까?';
-            
-        if (window.confirm(confirmMessage)) {
+        if (window.confirm(`${userName}님에게 전화를 연결하시겠습니까?`)) {
             window.location.href = `tel:${phoneNumber}`;
         }
     };
@@ -1860,7 +1856,7 @@ function renderMemberCard(
     handleDeleteUser: (user: HRUser) => void,
     canEditUser: (user: HRUser) => boolean,
     isAdmin: boolean,
-    handleMakePhoneCall: (phoneNumber: string, name?: string) => void
+    handleMakePhoneCall: (phoneNumber: string, userName: string) => void
 ) {
     const joinCareer = calculateCareerDetails(member.join_date);
     const totalCareer = calculateCareerDetails(member.career_start_date);
