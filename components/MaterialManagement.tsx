@@ -526,7 +526,14 @@ export default function MaterialManagement({
   }, [inventoryTab, inventoryList, cabinInventoryList, selectedFixedSubCategory, selectedConsumableCategory, selectedCabinSheet]);
 
   const currentItemSubCategoryEntries = useMemo(() => {
-    if (inventoryTab === 'CABIN') return [];
+    if (inventoryTab === 'CABIN') {
+      return currentMaterialNames.map((name, index) => ({
+        name,
+        materialNames: [name],
+        id: `cabin-material-${index}`,
+        sortOrder: index
+      }));
+    }
     const parentCategory = inventoryTab === '고정' ? selectedFixedSubCategory : selectedConsumableCategory;
     const rows = itemSubCategoryRows.filter(row => row.inventory_type === inventoryTab && row.parent_category === parentCategory && row.is_active !== false);
     const map = new Map<string, { name:string; materialNames:string[]; id:any; sortOrder:number }>();
@@ -2162,6 +2169,43 @@ export default function MaterialManagement({
               <Settings className="h-4 w-4 shrink-0" />
             </button>
           )}
+        </div>
+      )}
+
+      {inventoryTab === 'CABIN' && (
+        <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
+          <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
+            <Package className="h-3.5 w-3.5 text-[#243B5A]" />
+            <span>자재명:</span>
+          </div>
+          <div
+            className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
+            style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
+          >
+            <button
+              onClick={() => setSelectedItemSubCategory('전체 보기')}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${selectedItemSubCategory === '전체 보기' ? 'bg-slate-700 text-white font-semibold shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'}`}
+            >
+              전체 보기
+            </button>
+            {currentItemSubCategoryOptions.map((name) => {
+              const isSelected = selectedItemSubCategory === name;
+              return (
+                <button
+                  key={name}
+                  onClick={() => setSelectedItemSubCategory(name)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
+                    isSelected
+                      ? 'bg-slate-700 text-white font-semibold shadow-2xs'
+                      : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
+                  }`}
+                  title={name}
+                >
+                  {name}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 
