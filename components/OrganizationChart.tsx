@@ -28,11 +28,10 @@ interface OrganizationChartProps {
 
 const TEAM_ORDER = ['1팀', '2팀', '3팀', '4팀'];
 
-const TEAM_JOB_ORDER: Record<string, number> = {
-  팀장: 1,
-  책임: 2,
-  프로: 3,
-  매니저: 4,
+const TEAM_RANK_ORDER: Record<string, number> = {
+  책임: 1,
+  프로: 2,
+  매니저: 3,
 };
 
 const OPERATION_JOB_ORDER: Record<string, number> = {
@@ -49,32 +48,28 @@ const OPERATION_JOB_ORDER: Record<string, number> = {
    정렬
 ===================================================== */
 
-function sortUsers(
-  users: OrganizationChartUser[],
-  orderMap: Record<string, number>
-) {
+function sortTeamUsers(users: OrganizationChartUser[]) {
   return [...users].sort((a, b) => {
-    // job_title을 우선 사용하고,
-    // 값이 없으면 position을 사용
-    const aTitle =
-      a.job_title?.trim() ||
-      a.position?.trim() ||
-      '';
+    // 1. 팀장이 항상 최우선
+    const aLeader = a.job_title?.trim() === '팀장';
+    const bLeader = b.job_title?.trim() === '팀장';
 
-    const bTitle =
-      b.job_title?.trim() ||
-      b.position?.trim() ||
-      '';
-
-    const aOrder = orderMap[aTitle] ?? 99;
-    const bOrder = orderMap[bTitle] ?? 99;
-
-    // 직책 순서가 다르면 직책 순서 우선
-    if (aOrder !== bOrder) {
-      return aOrder - bOrder;
+    if (aLeader !== bLeader) {
+      return aLeader ? -1 : 1;
     }
 
-    // 같은 직책이면 display_order
+    // 2. 팀장이 아니면 직급 순서
+    const aRank =
+      TEAM_RANK_ORDER[a.position?.trim() || ''] ?? 99;
+
+    const bRank =
+      TEAM_RANK_ORDER[b.position?.trim() || ''] ?? 99;
+
+    if (aRank !== bRank) {
+      return aRank - bRank;
+    }
+
+    // 3. 같은 직급이면 display_order
     return (a.display_order ?? 0) - (b.display_order ?? 0);
   });
 }
@@ -525,8 +520,7 @@ function TeamDiagram({
       return {
         teamName,
         users: sortUsers(
-          teamUsers,
-          TEAM_JOB_ORDER
+          users: sortTeamUsers(teamUsers),
         ),
       };
     }
