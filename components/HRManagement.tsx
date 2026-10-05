@@ -948,7 +948,7 @@ export default function HRManagement({
                 </div>
             )}
 
-            {loading ? (
+                {loading ? (
                 <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-16 text-xs text-[#64748B]">조직도를 구성하는 중...</div>
             ) : activeTab === 'CHART' ? (
             <div className="bg-white border border-[#E2E5E9] rounded-xl p-3 shadow-xs">
@@ -959,8 +959,6 @@ export default function HRManagement({
                 />
             </div>
             ) : activeTab === 'ORG' ? (
-        </div>
-    ) : activeTab === 'ORG' ? (
         <div className="space-y-3">
             {displayedCategories.map((catName) => {
                 const isRetiredCat = catName === '퇴사자';
