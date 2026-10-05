@@ -257,22 +257,16 @@ export default function HRManagement({
       });
 
       // 운영 - 관리 연결선 (세로)
-     slide.addShape(pptx.ShapeType.line, {
-  x: 2.5,
-  y: 1.5,
-  w: 0,
-  h: 1.0,
-  line: { color: 'CCCCCC', width: 1 }
-});
+      slide.addConnector(pres.ConnectorType.line, {
+        x: 2.5, y: 1.5, w: 0, h: 1.0,
+        line: { color: 'CCCCCC', width: 1 }
+      });
 
       // 운영 - 인원 연결선 (가로)
-     slide.addShape(pptx.ShapeType.line, {
-  x: 2.5,
-  y: 1.5,
-  w: 0,
-  h: 1.0,
-  line: { color: 'CCCCCC', width: 1 }
-});
+      slide.addConnector(pres.ConnectorType.line, {
+        x: 5.2, y: 1.2, w: 0.8, h: 0,
+        line: { color: 'CCCCCC', width: 1 }
+      });
 
       // 운영 인원 노드
       const opUsers = users.filter(u => !u.is_retired && u.department === '운영');
@@ -294,13 +288,10 @@ export default function HRManagement({
         fill: { color: '33527A' },
         rectRadius: 0.1
       });
-      slide.addShape(pptx.ShapeType.line, {
-  x: 2.5,
-  y: 1.5,
-  w: 0,
-  h: 1.0,
-  line: { color: 'CCCCCC', width: 1 }
-});
+      slide.addConnector(pres.ConnectorType.line, {
+        x: 2.5, y: 2.4, w: 0, h: 1.0,
+        line: { color: 'CCCCCC', width: 1 }
+      });
 
       // 관리 - TEAM 연결선 (세로)
       slide.addConnector(pres.ConnectorType.line, {
@@ -329,13 +320,11 @@ export default function HRManagement({
       });
 
       // 3. TEAM 노드
-      slide.addShape(pptx.ShapeType.line, {
-  x: 2.5,
-  y: 1.5,
-  w: 0,
-  h: 1.0,
-  line: { color: 'CCCCCC', width: 1 }
-});
+      slide.addShape(pres.ShapeType.roundRect, {
+        x: 3.6, y: 4.0, w: 1.6, h: 0.8,
+        fill: { color: '33527A' },
+        rectRadius: 0.1
+      });
       slide.addText('TEAM', {
         x: 3.6, y: 4.0, w: 1.6, h: 0.8,
         align: 'center', color: 'FFFFFF', fontSize: 12, bold: true
@@ -611,7 +600,7 @@ export default function HRManagement({
       setUsers(formatted);
     } catch (err: any) {
       console.error('인사 정보 조회 실패:', err?.message || err);
-    } finally {
+    } fontally {
       setLoading(false);
     }
   };
