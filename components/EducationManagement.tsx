@@ -145,19 +145,6 @@ export default function EducationManagement({
     fetchEvents();
   }, []);
 
-  // ── 모바일 뒤로가기: 열려 있는 모달을 우선 닫는다 ──
-  useEffect(() => {
-    const handleAppBack = (e: Event) => {
-      const event = e as CustomEvent<{ handled: boolean }>;
-      if (event.detail?.handled) return;
-
-      if (showScheduleModal) { setShowScheduleModal(false); event.detail.handled = true; return; }
-      if (showNoticeModal)   { setShowNoticeModal(false);   event.detail.handled = true; return; }
-    };
-    window.addEventListener('app-back', handleAppBack);
-    return () => window.removeEventListener('app-back', handleAppBack);
-  }, [showScheduleModal, showNoticeModal]);
-
   // 교육 당일 알림 기능 유지
   useEffect(() => {
     if (!currentUser?.name || educations.length === 0) return;

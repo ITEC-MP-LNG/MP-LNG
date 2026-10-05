@@ -321,29 +321,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     };
   }, [isShipSelectionModalOpen, isInfoOwnerSelectionModalOpen]);
 
-  // ── 모바일 뒤로가기: 열려 있는 모달을 우선 닫는다 ──
-  useEffect(() => {
-    const handleAppBack = (e: Event) => {
-      const event = e as CustomEvent<{ handled: boolean }>;
-      if (event.detail?.handled) return;
-
-      if (isFormModalOpen)              { setIsFormModalOpen(false);              event.detail.handled = true; return; }
-      if (isStatusCreateModalOpen)      { setIsStatusCreateModalOpen(false);      event.detail.handled = true; return; }
-      if (isStatusEditModalOpen)        { setIsStatusEditModalOpen(false);        event.detail.handled = true; return; }
-      if (isShipNoTitleEditModalOpen)   { setIsShipNoTitleEditModalOpen(false);   event.detail.handled = true; return; }
-      if (isDeleteModalOpen)            { setIsDeleteModalOpen(false);            event.detail.handled = true; return; }
-      if (isShipSelectionModalOpen)     { setIsShipSelectionModalOpen(false);     event.detail.handled = true; return; }
-      if (isInfoOwnerSelectionModalOpen){ setIsInfoOwnerSelectionModalOpen(false);event.detail.handled = true; return; }
-      if (alertInfo.isOpen)             { setAlertInfo({ ...alertInfo, isOpen: false }); event.detail.handled = true; return; }
-    };
-    window.addEventListener('app-back', handleAppBack);
-    return () => window.removeEventListener('app-back', handleAppBack);
-  }, [
-    isFormModalOpen, isStatusCreateModalOpen, isStatusEditModalOpen,
-    isShipNoTitleEditModalOpen, isDeleteModalOpen,
-    isShipSelectionModalOpen, isInfoOwnerSelectionModalOpen, alertInfo.isOpen,
-  ]);
-
   const normalizeTankStatus = (raw: any): ShipTankStatus => {
     const defaultStatus = getDefaultTankStatus();
     if (!raw || typeof raw !== 'object') return defaultStatus;

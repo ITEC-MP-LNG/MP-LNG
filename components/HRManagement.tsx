@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { OrgChart } from 'd3-org-chart';
 import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { 
   Users, 
   Building2, 
@@ -26,10 +27,7 @@ import {
   UserX,
   PackageCheck,
   Calendar,
-  FolderTree,
-  CheckCircle2,
-  AlertCircle,
-  Loader2
+  FolderTree
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -158,19 +156,6 @@ export default function HRManagement({
 
   const orgChartContainerRef = useRef<HTMLDivElement>(null);
   const orgChartRef = useRef<any>(null);
-
-  // 중앙 토스트 알림 (MaterialManagement 스타일 적용)
-  const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [toastIsError, setToastIsError] = useState<boolean>(false);
-  const [isExportingPdf, setIsExportingPdf] = useState<boolean>(false);
-
-  const showCenterToast = (msg: string, isError: boolean = false) => {
-    setToastMessage(msg);
-    setToastIsError(isError);
-    setTimeout(() => {
-      setToastMessage(null);
-    }, 2800);
-  };
   
   const [formData, setFormData] = useState({
     inputId: '', 
@@ -194,147 +179,34 @@ export default function HRManagement({
     returned_items: ''
   });
 
-  // 고해상도 PDF 내보내기 (스크린샷 캡처 방식 탈피, d3-org-chart 내장 고해상도 export 및 SVG 렌더링)
   const handleExportPDF = async () => {
-    if (!orgChartContainerRef.current) {
-      showCenterToast('저장할 조직도 영역을 찾을 수 없습니다.', true);
+    const element = orgChartContainerRef.current;
+    if (!element) {
+      alert('저장할 조직도 영역을 찾을 수 없습니다. 조직도 탭에서 시도해주세요.');
       return;
     }
 
-    if (isExportingPdf) return;
-    setIsExportingPdf(true);
-    showCenterToast('고해상도 조직도 PDF를 생성하는 중입니다...');
-
     try {
-      // 1. d3-org-chart의 내장 exportImg 시도 (전체 트리 기준 고배율 렌더링)
-      if (orgChartRef.current && typeof orgChartRef.current.exportImg === 'function') {
-        let exportSucceeded = false;
-        await new Promise<void>((resolve) => {
-          const timeoutId = setTimeout(() => {
-            if (!exportSucceeded) resolve();
-          }, 6000);
+      orgChartRef.current?.fit();
+      await new Promise((resolve) => requestAnimationFrame(resolve));
 
-          try {
-            orgChartRef.current.exportImg({
-              full: true,
-              scale: 3,
-              save: false,
-              onLoad: (dataUrl: string) => {
-                exportSucceeded = true;
-                clearTimeout(timeoutId);
-                try {
-                  const img = new Image();
-                  img.onload = () => {
-                    const isLandscape = img.width >= img.height;
-                    const pdf = new jsPDF({
-                      orientation: isLandscape ? 'landscape' : 'portrait',
-                      unit: 'mm',
-                      format: 'a4',
-                      compress: true
-                    });
-                    const pdfWidth = pdf.internal.pageSize.getWidth();
-                    const pdfHeight = pdf.internal.pageSize.getHeight();
-                    const margin = 8;
-                    const availWidth = pdfWidth - margin * 2;
-                    const availHeight = pdfHeight - margin * 2;
-                    const ratio = Math.min(availWidth / img.width, availHeight / img.height);
-                    const finalWidth = img.width * ratio;
-                    const finalHeight = img.height * ratio;
-                    const posX = margin + (availWidth - finalWidth) / 2;
-                    const posY = margin + (availHeight - finalHeight) / 2;
+      const canvas = await html2canvas(element, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#F8FAFC'
+      });
 
-                    pdf.addImage(dataUrl, 'PNG', posX, posY, finalWidth, finalHeight, undefined, 'FAST');
-                    pdf.save(`조직도_${new Date().toISOString().slice(0, 10)}.pdf`);
-                    showCenterToast('고해상도 조직도 PDF 저장이 완료되었습니다.');
-                    resolve();
-                  };
-                  img.onerror = () => resolve();
-                  img.src = dataUrl;
-                } catch {
-                  resolve();
-                }
-              }
-            });
-          } catch {
-            resolve();
-          }
-        });
+      const imgData = canvas.toDataURL('image/jpeg', 0.85);
+      const pdf = new jsPDF('landscape', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = Math.min((canvas.height * pdfWidth) / canvas.width, pdf.internal.pageSize.getHeight() - 20);
 
-        if (exportSucceeded) {
-          setIsExportingPdf(false);
-          return;
-        }
-      }
-
-      // 2. Fallback: 컨테이너 내부의 SVG 엘리먼트를 직접 고해상도 Canvas로 렌더링
-      const svgEl = orgChartContainerRef.current.querySelector('svg');
-      if (svgEl) {
-        const svgClone = svgEl.cloneNode(true) as SVGSVGElement;
-        const bbox = svgEl.getBBox();
-        const width = Math.max(bbox.width + 100, 1200);
-        const height = Math.max(bbox.height + 100, 800);
-
-        svgClone.setAttribute('width', `${width}`);
-        svgClone.setAttribute('height', `${height}`);
-
-        const svgData = new XMLSerializer().serializeToString(svgClone);
-        const svgBlob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
-        const URL = window.URL || window.webkitURL || window;
-        const blobURL = URL.createObjectURL(svgBlob);
-
-        const img = new Image();
-        img.onload = () => {
-          const scale = 2.5;
-          const canvas = document.createElement('canvas');
-          canvas.width = width * scale;
-          canvas.height = height * scale;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.scale(scale, scale);
-            ctx.drawImage(img, 0, 0);
-
-            const imgData = canvas.toDataURL('image/png', 1.0);
-            const pdf = new jsPDF({
-              orientation: width >= height ? 'landscape' : 'portrait',
-              unit: 'mm',
-              format: 'a4',
-              compress: true
-            });
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = pdf.internal.pageSize.getHeight();
-            const margin = 8;
-            const availWidth = pdfWidth - margin * 2;
-            const availHeight = pdfHeight - margin * 2;
-            const ratio = Math.min(availWidth / width, availHeight / height);
-            const finalW = width * ratio;
-            const finalH = height * ratio;
-            const posX = margin + (availWidth - finalW) / 2;
-            const posY = margin + (availHeight - finalH) / 2;
-
-            pdf.addImage(imgData, 'PNG', posX, posY, finalW, finalH, undefined, 'FAST');
-            pdf.save(`조직도_${new Date().toISOString().slice(0, 10)}.pdf`);
-            showCenterToast('고해상도 조직도 PDF 저장이 완료되었습니다.');
-          }
-          URL.revokeObjectURL(blobURL);
-          setIsExportingPdf(false);
-        };
-        img.onerror = () => {
-          URL.revokeObjectURL(blobURL);
-          setIsExportingPdf(false);
-          showCenterToast('PDF 저장 중 렌더링에 실패했습니다.', true);
-        };
-        img.src = blobURL;
-        return;
-      }
-
-      showCenterToast('조직도 SVG 요소를 찾을 수 없습니다.', true);
-    } catch (err: any) {
+      pdf.addImage(imgData, 'JPEG', 0, 10, pdfWidth, pdfHeight, undefined, 'FAST');
+      pdf.save(`조직도_${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) {
       console.error('PDF 저장 실패:', err);
-      showCenterToast('PDF 저장 실패: ' + (err.message || '알 수 없는 오류'), true);
-    } finally {
-      setIsExportingPdf(false);
+      alert('PDF 저장 중 오류가 발생했습니다.');
     }
   };
 
@@ -359,20 +231,6 @@ export default function HRManagement({
     fetchUsers();
   }, []);
 
-  // ── 모바일 뒤로가기: 열려 있는 모달을 우선 닫는다 ──
-  useEffect(() => {
-    const handleAppBack = (e: Event) => {
-      const event = e as CustomEvent<{ handled: boolean }>;
-      if (event.detail?.handled) return;
-
-      if (isModalOpen)        { setIsModalOpen(false);        event.detail.handled = true; return; }
-      if (isOrgEditModalOpen) { setIsOrgEditModalOpen(false); event.detail.handled = true; return; }
-      if (detailUser)         { setDetailUser(null);          event.detail.handled = true; return; }
-    };
-    window.addEventListener('app-back', handleAppBack);
-    return () => window.removeEventListener('app-back', handleAppBack);
-  }, [isModalOpen, isOrgEditModalOpen, detailUser]);
-
   useEffect(() => {
     setSelectedSubCategory('ALL');
   }, [subGroupType]);
@@ -390,7 +248,7 @@ export default function HRManagement({
 
     (window as any).handleChartStructureEdit = (userId: string) => {
       if (!isAdmin) {
-        showCenterToast('관리자만 조직도 구조를 수정할 수 있습니다.', true);
+        alert('관리자만 조직도 구조를 수정할 수 있습니다.');
         return;
       }
       const target = users.find(u => u.id === userId);
@@ -403,9 +261,7 @@ export default function HRManagement({
     };
   }, [users, isAdmin]);
 
-  // 조직도(d3-org-chart) 트리 생성 시 퇴사자 완전히 제외 및 세로 구조 구축
-  // 기본구조: 운영 아래로 관리, 관리 아래로 팀 (세로 축)
-  // 운영 오른쪽에 운영인원, 관리 오른쪽에 관리인원, 팀 항목에 각 팀마다 인원 배치
+  // 조직도(d3-org-chart) 트리 생성 시 퇴사자 완전히 제외
   const buildHierarchy = (userList: HRUser[]) => {
     const data: any[] = [];
     const usedIds = new Set<string>();
@@ -414,67 +270,24 @@ export default function HRManagement({
     const activeUserList = userList.filter(u => !u.is_retired && u.department !== '퇴사자');
 
     const addNode = (node: any) => {
-      if (node.id && usedIds.has(node.id)) return;
       data.push(node);
       if (node.id) usedIds.add(node.id);
     };
 
-    // ── 1. 핵심 세로 계층 뼈대 노드 ──
-    // 최상위: [운영]
-    addNode({ 
-      id: 'org_operating', 
-      parentId: '', 
-      name: '운영', 
-      type: 'department', 
-      level: 'main',
-      desc: '운영 총괄'
-    });
+    addNode({ id: 'root', parentId: '', name: '조직도', type: 'root' });
+    addNode({ id: 'org_operating', parentId: 'root', name: '운영', type: 'department', level: 'main' });
+    addNode({ id: 'org_management', parentId: 'org_operating', name: '관리', type: 'department', level: 'main' });
+    addNode({ id: 'org_team', parentId: 'org_management', name: '팀', type: 'department', level: 'main' });
 
-    // 운영 아래로: [관리]
-    addNode({ 
-      id: 'org_management', 
-      parentId: 'org_operating', 
-      name: '관리', 
-      type: 'department', 
-      level: 'main',
-      desc: '현장 관리 지원'
-    });
-
-    // 관리 아래로: [팀]
-    addNode({ 
-      id: 'org_team', 
-      parentId: 'org_management', 
-      name: '팀', 
-      type: 'department', 
-      level: 'main',
-      desc: '시공 및 작업팀'
-    });
-
-    // 유저 노드 추가 함수 (수동 부모 연결 완벽 지원)
     const addUserNode = (user: HRUser, defaultParentId: string) => {
-      const userNodeId = `user_${user.id}`;
-      if (usedIds.has(userNodeId)) return;
-
-      let actualParentId = defaultParentId;
-
-      // 사용자가 직접 설정한 부모 노드(parent_id)가 있는 경우
-      if (user.parent_id && user.parent_id !== user.id) {
-        if (
-          user.parent_id === 'org_operating' ||
-          user.parent_id === 'org_management' ||
-          user.parent_id === 'org_team' ||
-          user.parent_id.startsWith('team_') ||
-          user.parent_id.startsWith('op_title_') ||
-          user.parent_id.startsWith('mg_field_')
-        ) {
-          actualParentId = user.parent_id;
-        } else {
-          actualParentId = `user_${user.parent_id}`;
-        }
-      }
+      if (usedIds.has(user.id)) return;
+      // 수동으로 변경된 parent_id가 존재하면 적용
+      const actualParentId = (user.parent_id && user.parent_id !== user.id) 
+        ? `user_${user.parent_id}` 
+        : defaultParentId;
 
       addNode({
-        id: userNodeId,
+        id: `user_${user.id}`,
         parentId: actualParentId,
         name: user.name,
         position: user.position,
@@ -485,7 +298,6 @@ export default function HRManagement({
       });
     };
 
-    // ── 2. 운영 노드: 오른쪽에 운영 인원 배치 ──
     const operatingUsers = activeUserList.filter((u) => (u.department || '').trim() === '운영');
     const operatingTitleOrder = ['본부장', '소장', '사무'];
     const otherOperatingTitles = Array.from(new Set(
@@ -499,7 +311,7 @@ export default function HRManagement({
       const members = operatingUsers.filter((u) => (u.job_title || '없음').trim() === title);
       if (members.length === 0) return;
 
-      const titleId = `op_title_${title}`;
+      const titleId = `operating_title_${title}`;
       addNode({
         id: titleId,
         parentId: 'org_operating',
@@ -508,12 +320,10 @@ export default function HRManagement({
         level: 'title',
         department: '운영',
       });
-      members
-        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-        .forEach((user) => addUserNode(user, titleId));
+      members.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+             .forEach((user) => addUserNode(user, titleId));
     });
 
-    // ── 3. 관리 노드: 오른쪽에 관리 인원 배치 ──
     const managementUsers = activeUserList.filter((u) => (u.department || '').trim() === '관리');
     const managementFields = Array.from(new Set(
       managementUsers.map((u) => (u.field || '기타').trim() || '기타')
@@ -532,7 +342,7 @@ export default function HRManagement({
       const members = managementUsers.filter((u) => ((u.field || '기타').trim() || '기타') === field);
       if (members.length === 0) return;
 
-      const fieldId = `mg_field_${field}`;
+      const fieldId = `management_field_${field}`;
       addNode({
         id: fieldId,
         parentId: 'org_management',
@@ -541,19 +351,17 @@ export default function HRManagement({
         level: 'field',
         department: '관리',
       });
-      members
-        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-        .forEach((user) => addUserNode(user, fieldId));
+      members.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+             .forEach((user) => addUserNode(user, fieldId));
     });
 
-    // ── 4. 팀 노드: 각 팀 마다 인원 배치 ──
-    const defaultTeamList = ['1팀', '2팀', '3팀', '4팀'];
-    const existingTeams = Array.from(new Set(
+    const teamDepartments = ['1팀', '2팀', '3팀', '4팀'];
+    const existingTeamDepartments = Array.from(new Set(
       activeUserList
         .map((u) => (u.department || '').trim())
         .filter((dept) => /^\d+팀$/.test(dept))
     ));
-    const allTeams = Array.from(new Set([...defaultTeamList, ...existingTeams]));
+    const allTeams = Array.from(new Set([...teamDepartments, ...existingTeamDepartments]));
     allTeams.sort((a, b) => {
       const na = parseInt(a.replace('팀', ''), 10);
       const nb = parseInt(b.replace('팀', ''), 10);
@@ -587,7 +395,6 @@ export default function HRManagement({
       sortedMembers.forEach((user) => addUserNode(user, teamId));
     });
 
-    // 기타 부서 (운영, 관리, n팀에 속하지 않은 부서가 있는 경우)
     const handledDepartments = new Set(['운영', '관리', ...allTeams]);
     const otherDepartments = Array.from(new Set(
       activeUserList
@@ -601,13 +408,6 @@ export default function HRManagement({
       activeUserList
         .filter((u) => ((u.department || '').trim() || '미지정 파트') === dept)
         .forEach((user) => addUserNode(user, deptId));
-    });
-
-    // 혹시라도 수동 지정된 부모가 있는 사용자 중 위에서 누락된 사용자가 있다면 추가
-    activeUserList.forEach((user) => {
-      if (!usedIds.has(`user_${user.id}`)) {
-        addUserNode(user, 'org_team');
-      }
     });
 
     return data;
@@ -634,7 +434,6 @@ export default function HRManagement({
           if (d.data.level === 'main') return 180;
           return 150;
         })
-        .compact(false)
         .childrenMargin((d: any) => d.data.level === 'main' ? 32 : 22)
         .compactMarginBetween((d: any) => 14)
         .compactMarginPair((d: any) => 18)
@@ -728,7 +527,7 @@ export default function HRManagement({
 
   const handleOpenAddModal = () => {
     if (!isAdmin) {
-      showCenterToast('관리자만 신규 구성원을 등록할 수 있습니다.', true);
+      alert('관리자만 신규 구성원을 등록할 수 있습니다.');
       return;
     }
     setSelectedUser(null);
@@ -759,11 +558,11 @@ export default function HRManagement({
   const handleOpenEditModal = (user: HRUser) => {
     if (user.is_retired || user.department === '퇴사자') {
       if (!isAdmin) {
-        showCenterToast('퇴사자 정보는 관리자만 수정할 수 있습니다.', true);
+        alert('퇴사자 정보는 관리자만 수정할 수 있습니다.');
         return;
       }
     } else if (!canEditUser(user)) {
-      showCenterToast('본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.', true);
+      alert('본인의 정보 또는 관리자 권한이 있는 경우에만 수정이 가능합니다.');
       return;
     }
 
@@ -794,12 +593,12 @@ export default function HRManagement({
 
   const handleDeleteUser = async (user: HRUser) => {
     if (!isAdmin) {
-      showCenterToast('관리자만 구성원을 삭제할 수 있습니다.', true);
+      alert('관리자만 구성원을 삭제할 수 있습니다.');
       return;
     }
 
     if (currentUser?.id === user.id) {
-      showCenterToast('현재 로그인되어 있는 본인 계정은 삭제할 수 없습니다.', true);
+      alert('현재 로그인되어 있는 본인 계정은 삭제할 수 없습니다.');
       return;
     }
 
@@ -814,11 +613,11 @@ export default function HRManagement({
 
       if (error) throw error;
 
-      showCenterToast(`${user.name} 님의 정보가 성공적으로 삭제되었습니다.`);
+      alert(`${user.name} 님의 정보가 성공적으로 삭제되었습니다.`);
       fetchUsers();
     } catch (err: any) {
       console.error('삭제 실패:', err);
-      showCenterToast('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'), true);
+      alert('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'));
     }
   };
 
@@ -837,12 +636,12 @@ export default function HRManagement({
 
       if (error) throw error;
 
-      showCenterToast(`${targetOrgUser.name} 님의 조직도 위치 정보가 성공적으로 수정되었습니다.`);
+      alert(`${targetOrgUser.name} 님의 조직도 위치 정보가 성공적으로 수정되었습니다.`);
       setIsOrgEditModalOpen(false);
       fetchUsers();
     } catch (err: any) {
       console.error('조직도 구조 변경 실패:', err);
-      showCenterToast('조직도 수정 실패: ' + (err.message || '알 수 없는 오류'), true);
+      alert('조직도 수정 실패: ' + (err.message || '알 수 없는 오류'));
     }
   };
 
@@ -850,22 +649,22 @@ export default function HRManagement({
     e.preventDefault();
 
     if (formData.is_retired && !isAdmin) {
-      showCenterToast('퇴사자 처리 및 관리는 관리자 권한만 가능합니다.', true);
+      alert('퇴사자 처리 및 관리는 관리자 권한만 가능합니다.');
       return;
     }
 
     if (selectedUser && !canEditUser(selectedUser)) {
-      showCenterToast('본인 정보만 수정할 권한이 있습니다.', true);
+      alert('본인 정보만 수정할 권한이 있습니다.');
       return;
     }
 
     if (!formData.inputId.trim()) {
-      showCenterToast('로그인에 사용할 아이디를 입력해주세요.', true);
+      alert('로그인에 사용할 아이디를 입력해주세요.');
       return;
     }
 
     if (formData.birthDate && formData.birthDate.length !== 8) {
-      showCenterToast('생년월일은 8자리(YYYYMMDD)로 정확히 입력해주세요.', true);
+      alert('생년월일은 8자리(YYYYMMDD)로 정확히 입력해주세요.');
       return;
     }
 
@@ -908,10 +707,10 @@ export default function HRManagement({
           .eq('id', selectedUser.id);
 
         if (error) throw error;
-        showCenterToast('인사 정보가 성공적으로 수정되었습니다.');
+        alert('인사 정보가 성공적으로 수정되었습니다.');
       } else {
         if (!formData.birthDate) {
-          showCenterToast('비밀번호로 사용할 생년월일 8자리를 입력해주세요.', true);
+          alert('비밀번호로 사용할 생년월일 8자리를 입력해주세요.');
           return;
         }
 
@@ -923,14 +722,14 @@ export default function HRManagement({
         ]);
 
         if (error) throw error;
-        showCenterToast('새 구성원이 등록되었습니다.');
+        alert('새 구성원이 등록되었습니다.');
       }
 
       setIsModalOpen(false);
       fetchUsers();
     } catch (err: any) {
       console.error('저장 실패:', err);
-      showCenterToast('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'), true);
+      alert('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'));
     }
   };
 
@@ -980,23 +779,7 @@ export default function HRManagement({
     : [selectedSubCategory];
 
   return (
-    <div className="w-full min-h-screen bg-[#F5F6F8] text-[#1F2937] space-y-1 font-sans box-border relative">
-      {/* 중앙 토스트 알림 (MaterialManagement 스타일 적용) */}
-      {toastMessage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 backdrop-blur-xs p-4 pointer-events-none">
-          <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-sm text-center pointer-events-auto">
-            {toastIsError ? (
-              <AlertCircle className="h-5 w-5 text-rose-400 shrink-0" />
-            ) : isExportingPdf ? (
-              <Loader2 className="h-5 w-5 text-amber-400 shrink-0 animate-spin" />
-            ) : (
-              <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-            )}
-            <span className="truncate">{toastMessage}</span>
-          </div>
-        </div>
-      )}
-
+    <div className="w-full min-h-screen bg-[#F5F6F8] text-[#1F2937] space-y-1 font-sans box-border">
       <div className="bg-white p-3 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
@@ -1050,16 +833,11 @@ export default function HRManagement({
           {activeTab === 'CHART' && (
             <button
               onClick={handleExportPDF}
-              disabled={isExportingPdf}
-              className={`flex items-center space-x-1 ${isExportingPdf ? 'bg-slate-400 cursor-not-allowed' : 'bg-[#DC2626] hover:bg-[#b91c1c]'} text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs`}
+              className="flex items-center space-x-1 bg-[#DC2626] hover:bg-[#b91c1c] text-white px-3 py-1.5 rounded-lg text-xs font-bold transition shadow-xs"
               title="현재 조직도를 고화질 PDF로 저장합니다"
             >
-              {isExportingPdf ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <FileText className="h-3.5 w-3.5" />
-              )}
-              <span>{isExportingPdf ? 'PDF 생성 중...' : 'PDF 저장'}</span>
+              <FileText className="h-3.5 w-3.5" />
+              <span>PDF 저장</span>
             </button>
           )}
 
@@ -1556,35 +1334,21 @@ export default function HRManagement({
 
             <div className="space-y-3 text-xs">
               <div>
-                <label className="block font-bold text-[#64748B] mb-1">상위 노드 선택 (부모 노드 연결)</label>
+                <label className="block font-bold text-[#64748B] mb-1">직속 상사 선택 (부모 노드)</label>
                 <select
                   value={parentUserId}
                   onChange={(e) => setParentUserId(e.target.value)}
                   className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
                 >
-                  <option value="">⚙️ 기본 (소속 부서/팀 자동 배치)</option>
-                  
-                  <optgroup label="🏢 부서 / 팀 직속 노드">
-                    <option value="org_operating">🏢 [운영] 총괄 직속</option>
-                    <option value="org_management">📋 [관리] 지원 직속</option>
-                    <option value="org_team">🏗️ [팀] 시공본부 직속</option>
-                    <option value="team_1팀">🚩 [1팀] 직속</option>
-                    <option value="team_2팀">🚩 [2팀] 직속</option>
-                    <option value="team_3팀">🚩 [3팀] 직속</option>
-                    <option value="team_4팀">🚩 [4팀] 직속</option>
-                  </optgroup>
-
-                  <optgroup label="👤 직속 상사 / 개별 인원 하위">
-                    {users
-                      .filter(u => u.id !== targetOrgUser.id && !u.is_retired && u.department !== '퇴사자')
-                      .map(u => (
-                        <option key={u.id} value={u.id}>
-                          👤 {u.name} ({u.department || '미지정'} · {u.position || ''} {u.job_title || ''})
-                        </option>
-                      ))}
-                  </optgroup>
+                  <option value="">기본 (파트 그룹 자동 배치)</option>
+                  {users
+                    .filter(u => u.id !== targetOrgUser.id && !u.is_retired && u.department !== '퇴사자')
+                    .map(u => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.department} · {u.position} {u.job_title})
+                      </option>
+                    ))}
                 </select>
-                <p className="text-[10px] text-[#64748B] mt-1">부서 직속 노드를 선택하거나 특정 직속 상사를 지정하여 트리를 구성할 수 있습니다.</p>
               </div>
 
               <div>

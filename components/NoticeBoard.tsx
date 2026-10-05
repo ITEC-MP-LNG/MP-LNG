@@ -248,26 +248,6 @@ export default function NoticeBoard({
     fetchAllData();
   }, [isAdmin]);
 
-  // ── 모바일 뒤로가기: 열려 있는 모달을 우선 닫는다 ──
-  useEffect(() => {
-    const handleAppBack = (e: Event) => {
-      const event = e as CustomEvent<{ handled: boolean }>;
-      if (event.detail?.handled) return;
-
-      if (showNoticeModal)        { setShowNoticeModal(false);        event.detail.handled = true; return; }
-      if (showSuggestionModal)    { setShowSuggestionModal(false);    event.detail.handled = true; return; }
-      if (showPopupModal)         { setShowPopupModal(false);         event.detail.handled = true; return; }
-      if (showDeleteConfirmModal) { setShowDeleteConfirmModal(false); event.detail.handled = true; return; }
-      if (alertModal.isOpen)      {
-        setAlertModal((prev) => ({ ...prev, isOpen: false }));
-        event.detail.handled = true;
-        return;
-      }
-    };
-    window.addEventListener('app-back', handleAppBack);
-    return () => window.removeEventListener('app-back', handleAppBack);
-  }, [showNoticeModal, showSuggestionModal, showPopupModal, showDeleteConfirmModal, alertModal.isOpen]);
-
   // --- 공지사항 팝업 처리 ---
   const handleClosePopup = () => {
     if (popupNotice) {
