@@ -354,6 +354,13 @@ export default function HRManagement({
         return isAdmin || isSelf(targetUser);
     };
 
+    const handleMakePhoneCall = (phoneNumber: string) => {
+        if (!phoneNumber) return;
+        if (window.confirm('전화를 연결하시겠습니까?')) {
+            window.location.href = `tel:${phoneNumber}`;
+        }
+    };
+
     useEffect(() => {
         fetchUsers();
         fetchOrgNodes();
@@ -1044,7 +1051,7 @@ export default function HRManagement({
                                             <span>파트 리더 (본부장/소장/팀장)</span>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                                            {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin))}
+                                            {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleMakePhoneCall))}
                                         </div>
                                     </div>
                                 )}
@@ -1062,7 +1069,7 @@ export default function HRManagement({
                                             <span>{isRetiredCat ? `퇴사 처리된 구성원 (${members.length}명)` : `소속 구성원 (${members.length}명)`}</span>
                                         </div>
                                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                                            {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin))}
+                                            {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleMakePhoneCall))}
                                         </div>
                                     </div>
                                 )}
@@ -1150,9 +1157,13 @@ export default function HRManagement({
                                         <div>
                                             <span className="text-[#64748B] block text-[10px]">연락처</span>
                                             {u.phone ? (
-                                                <a href={`tel:${u.phone}`} className="font-medium text-[#243B5A] hover:underline flex items-center gap-1 truncate">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleMakePhoneCall(u.phone!)}
+                                                    className="font-medium text-[#243B5A] hover:underline flex items-center gap-1 truncate text-left"
+                                                >
                                                     <Phone className="h-3 w-3 shrink-0" /> <span className="truncate">{u.phone}</span>
-                                                </a>
+                                                </button>
                                             ) : (
                                                 <span className="font-medium text-[#1F2937]">-</span>
                                             )}
@@ -1224,9 +1235,13 @@ export default function HRManagement({
                                     <td className="p-3 font-medium">
                                         <div>
                                             {u.phone ? (
-                                                <a href={`tel:${u.phone}`} className="text-[#243B5A] hover:underline flex items-center gap-1">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleMakePhoneCall(u.phone!)}
+                                                    className="text-[#243B5A] hover:underline flex items-center gap-1 text-left cursor-pointer"
+                                                >
                                                     <Phone className="h-3 w-3" /> {u.phone}
-                                                </a>
+                                                </button>
                                             ) : '-'}
                                         </div>
                                         <div className="text-[10px] text-[#64748B] mt-0.5 truncate max-w-[180px]">
@@ -1486,9 +1501,13 @@ export default function HRManagement({
                                 <Phone className="h-3.5 w-3.5 text-[#243B5A]" /> 연락처
                             </span>
                             {detailUser.phone ? (
-                                <a href={`tel:${detailUser.phone}`} className="font-bold text-[#243B5A] hover:underline flex items-center gap-1">
+                                <button
+                                    type="button"
+                                    onClick={() => handleMakePhoneCall(detailUser.phone!)}
+                                    className="font-bold text-[#243B5A] hover:underline flex items-center gap-1"
+                                >
                                     {detailUser.phone}
-                                </a>
+                                </button>
                             ) : (
                                 <span className="font-bold text-[#1F2937]">미등록</span>
                             )}
@@ -1836,7 +1855,8 @@ function renderMemberCard(
     handleOpenEditModal: (user: HRUser) => void,
     handleDeleteUser: (user: HRUser) => void,
     canEditUser: (user: HRUser) => boolean,
-    isAdmin: boolean
+    isAdmin: boolean,
+    handleMakePhoneCall: (phoneNumber: string) => void
 ) {
     const joinCareer = calculateCareerDetails(member.join_date);
     const totalCareer = calculateCareerDetails(member.career_start_date);
@@ -1920,10 +1940,21 @@ function renderMemberCard(
                     </div>
                 ) : (
                     <div className="flex items-center justify-between text-[#64748B]">
-                        <span className="flex items-center gap-1 font-medium">
-                            <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
-                            {member.phone || '-'}
-                        </span>
+                        {member.phone ? (
+                            <button
+                                type="button"
+                                onClick={() => handleMakePhoneCall(member.phone!)}
+                                className="flex items-center gap-1 font-medium text-[#243B5A] hover:underline cursor-pointer"
+                            >
+                                <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
+                                {member.phone}
+                            </button>
+                        ) : (
+                            <span className="flex items-center gap-1 font-medium">
+                                <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
+                                -
+                            </span>
+                        )}
                         <div className="space-x-1.5">
                             <span className="font-semibold text-[#16A34A]">근속 {joinCareer || '-'}</span>
                             <span className="font-semibold text-[#2563EB]">총경력 {totalCareer || '-'}</span>
