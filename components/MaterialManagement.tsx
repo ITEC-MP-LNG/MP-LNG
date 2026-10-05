@@ -109,17 +109,76 @@ export default function MaterialManagement({
   };
 
   // --- 매일 23시 이력 자동 정리/삭제 스케줄러 ---
-  // 23:00 정각을 놓쳐도 23시 이후 페이지가 열려 있으면 정리되도록 처리합니다.
+  // 23:00 정각에 페이지가 닫혀 있어도 다음 접속 시 전날 이력이 정리되도록 처리합니다.
   // 반납완료 이력과 소모성 자재 불출/사용 이력만 삭제합니다.
   const cleanupRanDateRef = useRef<string | null>(null);
 
   useEffect(() => {
     const processDailyCleanup = async () => {
       const now = new Date();
-      if (now.getHours() < 23) return;
-
       const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      if (cleanupRanDateRef.current === todayKey) return;
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+      const lastCleanupDate = typeof window !== 'undefined' ? localStorage.getItem('inventory_cleanup_last_run') : null;
+
+      // 23시 이전에 접속한 경우: 어제 23시 정리를 놓쳤다면 오늘 00시 이전의 대상 이력만 정리합니다.
+      // 오늘 생성된 이력까지 미리 삭제하지 않도록 날짜 기준을 적용합니다.
+      if (now.getHours() < 23) {
+        if (lastCleanupDate === yesterdayKey) return;
+
+        try {
+          const todayStart = new Date(now);
+          todayStart.setHours(0, 0, 0, 0);
+          const todayStartIso = todayStart.toISOString();
+
+          const { data: consumableItems, error: consumableError } = await supabase
+            .from('inventory')
+            .select('id')
+            .eq('type', '소모성');
+          if (consumableError) throw consumableError;
+
+          const consumableIds = (consumableItems || []).map((item: any) => item.id);
+
+          // 1. 전날까지의 반납완료 이력 삭제
+          const { error: returnedDeleteError } = await supabase
+            .from('inventory_logs')
+            .delete()
+            .ilike('type', '%반납완료%')
+            .lt('created_at', todayStartIso);
+          if (returnedDeleteError) throw returnedDeleteError;
+
+          // 2. 전날까지의 소모성 자재 불출/사용 이력 삭제
+          if (consumableIds.length > 0) {
+            const { error: consumableDeleteError } = await supabase
+              .from('inventory_logs')
+              .delete()
+              .in('inventory_id', consumableIds)
+              .lt('created_at', todayStartIso);
+            if (consumableDeleteError) throw consumableDeleteError;
+          }
+
+          // 3. 전날까지의 소모성 사용 이력 정리
+          const { error: usageDeleteError } = await supabase
+            .from('inventory_logs')
+            .delete()
+            .ilike('type', '%소모성 사용%')
+            .lt('created_at', todayStartIso);
+          if (usageDeleteError) throw usageDeleteError;
+
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('inventory_cleanup_last_run', yesterdayKey);
+          }
+          cleanupRanDateRef.current = yesterdayKey;
+          await fetchInventoryLogs();
+        } catch (err) {
+          console.error('23시 자동 삭제 오류:', err);
+        }
+        return;
+      }
+
+      // 23시 이후에는 오늘 날짜 기준으로 한 번만 전체 대상 이력을 정리합니다.
+      if (cleanupRanDateRef.current === todayKey || lastCleanupDate === todayKey) return;
 
       try {
         // 소모성 자재의 실제 inventory ID를 먼저 조회하여 이름 중복으로 인한 오삭제를 방지합니다.
@@ -155,6 +214,9 @@ export default function MaterialManagement({
         if (usageDeleteError) throw usageDeleteError;
 
         cleanupRanDateRef.current = todayKey;
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('inventory_cleanup_last_run', todayKey);
+        }
         await fetchInventoryLogs();
       } catch (err) {
         console.error('23시 자동 삭제 오류:', err);
@@ -526,7 +588,12 @@ export default function MaterialManagement({
   }, [inventoryTab, inventoryList, cabinInventoryList, selectedFixedSubCategory, selectedConsumableCategory, selectedCabinSheet]);
 
   const currentItemSubCategoryEntries = useMemo(() => {
-    if (inventoryTab === 'CABIN') {
+    const parentCategory = inventoryTab === '고정' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : selectedCabinSheet;
+    const rows = itemSubCategoryRows.filter(row => row.inventory_type === inventoryTab && row.parent_category === parentCategory && row.is_active !== false);
+
+    // CABIN은 기존에 자동으로 보이던 실제 자재명을 그대로 유지하고,
+    // 설정을 한 번 사용하면 inventory_item_subcategories의 저장값을 기준으로 관리합니다.
+    if (inventoryTab === 'CABIN' && rows.length === 0) {
       return currentMaterialNames.map((name, index) => ({
         name,
         materialNames: [name],
@@ -534,8 +601,7 @@ export default function MaterialManagement({
         sortOrder: index
       }));
     }
-    const parentCategory = inventoryTab === '고정' ? selectedFixedSubCategory : selectedConsumableCategory;
-    const rows = itemSubCategoryRows.filter(row => row.inventory_type === inventoryTab && row.parent_category === parentCategory && row.is_active !== false);
+
     const map = new Map<string, { name:string; materialNames:string[]; id:any; sortOrder:number }>();
     rows.forEach(row => {
       const name = String(row.name || '').trim();
@@ -571,6 +637,42 @@ export default function MaterialManagement({
       .order('name', { ascending: true });
     if (error) throw error;
     setItemSubCategoryRows(data || []);
+  };
+
+  const handleOpenItemSubCategorySettings = async () => {
+    if (!isAdmin) return showCenterToast('관리자만 자재명 설정을 변경할 수 있습니다.');
+
+    if (inventoryTab === 'CABIN') {
+      const parentCategory = selectedCabinSheet;
+      const existingRows = itemSubCategoryRows.filter(
+        row => row.inventory_type === 'CABIN' && row.parent_category === parentCategory && row.is_active !== false
+      );
+
+      // 기존에 자동으로 표시되던 CABIN 자재명을 처음 설정할 때만 DB에 등록합니다.
+      if (existingRows.length === 0 && currentMaterialNames.length > 0) {
+        try {
+          const rows = currentMaterialNames.map((name, index) => ({
+            inventory_type: 'CABIN',
+            parent_category: parentCategory,
+            name,
+            material_name: name,
+            sort_order: index,
+            is_active: true
+          }));
+          const { error } = await supabase.from('inventory_item_subcategories').insert(rows);
+          if (error) throw error;
+          await refreshItemSubCategoryRows();
+        } catch (error: any) {
+          showCenterToast('CABIN 자재명 설정 초기화 실패: ' + (error?.message || '알 수 없는 오류'));
+          return;
+        }
+      }
+    }
+
+    setNewItemSubCatName('');
+    setNewItemSubCatMaterialNames([]);
+    setEditingItemSubCatId(null);
+    setIsItemSubCatModalOpen(true);
   };
 
   const handleAddItemSubCategory = async () => {
@@ -1758,10 +1860,10 @@ export default function MaterialManagement({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-lg w-full p-5 shadow-2xl space-y-4 text-[#1F2937] max-h-[85vh] overflow-y-auto">
             <div className="flex justify-between items-center">
-              <h3 className="text-sm font-bold">자재 종류 추가 / 수정 / 삭제</h3>
+              <h3 className="text-sm font-bold">{inventoryTab === 'CABIN' ? '자재명 추가 / 수정 / 삭제' : '자재 종류 추가 / 수정 / 삭제'}</h3>
               <button onClick={() => { setIsItemSubCatModalOpen(false); setEditingItemSubCatId(null); }}><X className="h-4 w-4" /></button>
             </div>
-            <p className="text-[11px] text-[#64748B]">실제 자재명은 변경하지 않고, 선택한 자재들을 하나의 종류로 묶어 보여줍니다.</p>
+            <p className="text-[11px] text-[#64748B]">{inventoryTab === 'CABIN' ? 'CABIN 자재명 탭을 추가하거나 이름 및 연결 자재를 수정할 수 있습니다. 삭제해도 실제 CABIN 자재 데이터는 삭제되지 않습니다.' : '실제 자재명은 변경하지 않고, 선택한 자재들을 하나의 종류로 묶어 보여줍니다.'}</p>
 
             <div className="border border-[#E2E5E9] rounded-lg p-3 space-y-2 bg-[#F8FAFC]">
               <div className="flex gap-1">
@@ -2206,6 +2308,15 @@ export default function MaterialManagement({
               );
             })}
           </div>
+          {isAdmin && (
+            <button
+              onClick={handleOpenItemSubCategorySettings}
+              className="p-1.5 bg-[#F5F6F8] text-[#64748B] hover:text-[#1F2937] hover:bg-[#E2E5E9] rounded-md border border-[#E2E5E9] shrink-0 transition"
+              title="CABIN 자재명 추가/수정/삭제"
+            >
+              <Settings className="h-4 w-4 shrink-0" />
+            </button>
+          )}
         </div>
       )}
 
