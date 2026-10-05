@@ -28,10 +28,11 @@ interface OrganizationChartProps {
 
 const TEAM_ORDER = ['1팀', '2팀', '3팀', '4팀'];
 
-const TEAM_RANK_ORDER: Record<string, number> = {
-  책임: 1,
-  프로: 2,
-  매니저: 3,
+const TEAM_JOB_ORDER: Record<string, number> = {
+  팀장: 1,
+  책임: 2,
+  프로: 3,
+  매니저: 4,
 };
 
 const OPERATION_JOB_ORDER: Record<string, number> = {
@@ -48,9 +49,36 @@ const OPERATION_JOB_ORDER: Record<string, number> = {
    정렬
 ===================================================== */
 
-function sortTeamUsers(users: OrganizationChartUser[]) {
+function sortUsers(
+  users: OrganizationChartUser[],
+  orderMap: Record<string, number>
+) {
   return [...users].sort((a, b) => {
-    // 1. 팀장이 항상 최우선
+    const aOrder = orderMap[a.job_title || ''] ?? 99;
+    const bOrder = orderMap[b.job_title || ''] ?? 99;
+
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder;
+    }
+
+    return (a.display_order ?? 0) - (b.display_order ?? 0);
+  });
+}
+
+/* =====================================================
+   TEAM 전용 정렬
+   팀장(직책) → 책임(직급) → 프로(직급) → 매니저(직급)
+===================================================== */
+
+function sortTeamUsers(users: OrganizationChartUser[]) {
+  const rankOrder: Record<string, number> = {
+    책임: 1,
+    프로: 2,
+    매니저: 3,
+  };
+
+  return [...users].sort((a, b) => {
+    // 1. 직책이 팀장인 사람을 항상 최우선
     const aLeader = a.job_title?.trim() === '팀장';
     const bLeader = b.job_title?.trim() === '팀장';
 
@@ -58,18 +86,18 @@ function sortTeamUsers(users: OrganizationChartUser[]) {
       return aLeader ? -1 : 1;
     }
 
-    // 2. 팀장이 아니면 직급 순서
+    // 2. 팀장이 아니면 '직급(position)' 순서
     const aRank =
-      TEAM_RANK_ORDER[a.position?.trim() || ''] ?? 99;
+      rankOrder[a.position?.trim() || ''] ?? 99;
 
     const bRank =
-      TEAM_RANK_ORDER[b.position?.trim() || ''] ?? 99;
+      rankOrder[b.position?.trim() || ''] ?? 99;
 
     if (aRank !== bRank) {
       return aRank - bRank;
     }
 
-    // 3. 같은 직급이면 display_order
+    // 3. 같은 직급이면 기존 표시 순서
     return (a.display_order ?? 0) - (b.display_order ?? 0);
   });
 }
