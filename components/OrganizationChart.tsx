@@ -54,13 +54,27 @@ function sortUsers(
   orderMap: Record<string, number>
 ) {
   return [...users].sort((a, b) => {
-    const aOrder = orderMap[a.job_title || ''] ?? 99;
-    const bOrder = orderMap[b.job_title || ''] ?? 99;
+    // job_title을 우선 사용하고,
+    // 값이 없으면 position을 사용
+    const aTitle =
+      a.job_title?.trim() ||
+      a.position?.trim() ||
+      '';
 
+    const bTitle =
+      b.job_title?.trim() ||
+      b.position?.trim() ||
+      '';
+
+    const aOrder = orderMap[aTitle] ?? 99;
+    const bOrder = orderMap[bTitle] ?? 99;
+
+    // 직책 순서가 다르면 직책 순서 우선
     if (aOrder !== bOrder) {
       return aOrder - bOrder;
     }
 
+    // 같은 직책이면 display_order
     return (a.display_order ?? 0) - (b.display_order ?? 0);
   });
 }
