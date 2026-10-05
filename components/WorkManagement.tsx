@@ -46,6 +46,7 @@ export interface AppUser {
   id?: string;
   name: string;
   department?: string;
+  phone?: string;
 }
 
 const formatDateToYYYYMMDD = (d: Date) => {
@@ -88,19 +89,21 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   });
 
   // 커스텀 통일 알림 모달 상태
-  const [customAlert, setCustomAlert] = useState<{ open: boolean; title: string; message: string; type?: 'info' | 'confirm'; onConfirm?: () => void }>({
+  const [customAlert, setCustomAlert] = useState<{ open: boolean; title: string; message: string; type?: 'info' | 'confirm'; onConfirm?: () => void; confirmLabel?: string; cancelLabel?: string }>({
     open: false,
     title: '',
     message: '',
-    type: 'info'
+    type: 'info',
+    confirmLabel: '확인',
+    cancelLabel: '취소'
   });
 
   const showCustomAlert = (title: string, message: string) => {
     setCustomAlert({ open: true, title, message, type: 'info' });
   };
 
-  const showCustomConfirm = (title: string, message: string, onConfirm: () => void) => {
-    setCustomAlert({ open: true, title, message, type: 'confirm', onConfirm });
+  const showCustomConfirm = (title: string, message: string, onConfirm: () => void, confirmLabel = '확인', cancelLabel = '취소') => {
+    setCustomAlert({ open: true, title, message, type: 'confirm', onConfirm, confirmLabel, cancelLabel });
   };
 
   // 팝업 미완료 알림 상태
@@ -160,7 +163,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   // app_users 인원 및 부서(department) 불러오기
   const fetchAppUsers = async () => {
     try {
-      const { data, error } = await supabase.from('app_users').select('name, department');
+      const { data, error } = await supabase.from('app_users').select('name, department, phone');
       if (error) throw error;
       if (data) {
         setAppUsers(data);
@@ -377,6 +380,29 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       .filter(Boolean);
     
     setNewTeamMembersText(deptMembers.join(', '));
+  };
+
+  // 일일업무 담당자 전화 연결
+  const handleCallWorker = (workerName: string) => {
+    const worker = appUsers.find(
+      (u) => u.name?.trim().toLowerCase() === workerName.trim().toLowerCase()
+    );
+    const phone = worker?.phone?.trim();
+
+    if (!phone) {
+      showCustomAlert('전화 연결', `${workerName}님의 전화번호가 등록되어 있지 않습니다.`);
+      return;
+    }
+
+    showCustomConfirm(
+      '전화 연결',
+      `${workerName}님에게 전화 연결 하시겠습니까?`,
+      () => {
+        window.location.href = `tel:${phone.replace(/[^0-9+]/g, '')}`;
+      },
+      '예',
+      '아니오'
+    );
   };
 
   // 상태 변경 버튼 클릭 시 (상세보기 및 비고 입력 모달 호출)
@@ -906,8 +932,30 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
                   <div className="flex items-center justify-between md:justify-end space-x-3">
                     <div className="flex items-center space-x-1.5 text-xs text-[#64748B] bg-[#F5F6F8] px-2.5 py-1 rounded-md border">
-                      <User className="h-3.5 w-3.5" />
-                      <span className="font-medium text-[#1F2937]">{t.assigned_names?.join(', ') || '미지정'}</span>
+                      <User className="h-3.5 w-3.5 shrink-0" />
+                      <div className="flex flex-wrap items-center gap-1">
+                        {t.assigned_names?.length ? (
+                          t.assigned_names.map((name) => (
+                            <button
+                              key={`${t.id}-${name}`}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (dailySubTab === 'ACTIVE') handleCallWorker(name);
+                              }}
+                              className={`font-medium text-[#1F2937] rounded px-1.5 py-0.5 transition ${
+                                dailySubTab === 'ACTIVE'
+                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
+                                  : 'cursor-default'
+                              }`}
+                            >
+                              {name}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="font-medium text-[#1F2937]">미지정</span>
+                        )}
+                      </div>
                     </div>
 
                     {dailySubTab === 'HISTORY' && isAdmin && (
@@ -1095,13 +1143,57 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg text-xs">
                       <Sun className="h-3.5 w-3.5 text-amber-600" />
                       <span className="font-bold text-amber-900">주간:</span>
-                      <span className="text-amber-800 font-medium">{t.day_workers?.join(', ') || '없음'}</span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {t.day_workers?.length ? (
+                          t.day_workers.map((name) => (
+                            <button
+                              key={`${t.id}-day-${name}`}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (t.status !== 'COMPLETED') handleCallWorker(name);
+                              }}
+                              className={`font-medium text-amber-800 rounded px-1 transition ${
+                                t.status !== 'COMPLETED'
+                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
+                                  : 'cursor-default'
+                              }`}
+                            >
+                              {name}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="text-amber-800 font-medium">없음</span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center space-x-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg text-xs">
                       <Moon className="h-3.5 w-3.5 text-indigo-600" />
                       <span className="font-bold text-indigo-900">야간:</span>
-                      <span className="text-indigo-800 font-medium">{t.night_workers?.join(', ') || '없음'}</span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {t.night_workers?.length ? (
+                          t.night_workers.map((name) => (
+                            <button
+                              key={`${t.id}-night-${name}`}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (t.status !== 'COMPLETED') handleCallWorker(name);
+                              }}
+                              className={`font-medium text-indigo-800 rounded px-1 transition ${
+                                t.status !== 'COMPLETED'
+                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
+                                  : 'cursor-default'
+                              }`}
+                            >
+                              {name}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="text-indigo-800 font-medium">없음</span>
+                        )}
+                      </div>
                     </div>
 
                     {isAdmin && (
@@ -1129,7 +1221,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <div className="flex justify-end space-x-2 pt-2 border-t text-xs">
                 {customAlert.type === 'confirm' ? (
                   <>
-                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">취소</button>
+                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">{customAlert.cancelLabel || '취소'}</button>
                     <button
                       onClick={() => {
                         setCustomAlert({ ...customAlert, open: false });
@@ -1137,7 +1229,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       }}
                       className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold"
                     >
-                      확인
+                      {customAlert.confirmLabel || '확인'}
                     </button>
                   </>
                 ) : (
