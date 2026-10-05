@@ -996,7 +996,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
                 >
                   <FileSpreadsheet className="h-3.5 w-3.5" />
-                  <span>달력 엑셀 저장</span>
+                  <span>엑셀 저장(수정중)</span>
                 </button>
 
                 <div className="bg-[#F5F6F8] p-1 rounded-lg border flex space-x-1">
