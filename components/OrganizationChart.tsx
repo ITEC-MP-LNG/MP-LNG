@@ -506,24 +506,22 @@ function TeamDiagram({
   isAdmin?: boolean;
 }) {
   const teams = TEAM_ORDER.map(
-    (teamName) => {
-      const teamUsers = users.filter(
-        (user) =>
-          user.department === teamName ||
-          user.department ===
-            teamName.replace(
-              '팀',
-              ' TEAM'
-            )
-      );
+  (teamName) => {
+    const teamUsers = users.filter(
+      (user) =>
+        user.department === teamName ||
+        user.department ===
+          teamName.replace(
+            '팀',
+            ' TEAM'
+          )
+    );
 
-      return {
-        teamName,
-        users: sortUsers(
-          users: sortTeamUsers(teamUsers),
-        ),
-      };
-    }
+    return {
+      teamName,
+      users: sortTeamUsers(teamUsers),
+    };
+  }
   ).filter(
     (team) => team.users.length > 0
   );
