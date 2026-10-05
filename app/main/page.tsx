@@ -60,7 +60,7 @@ function calculateCareerDetails(startDateStr?: string) {
     (now.getTime() - lastAnniversary.getTime()) / (1000 * 60 * 60 * 24)
   );
 
-  return `${years}년 ${remainingDays}일`;
+  return years + '년 ' + remainingDays + '일';
 }
 
 interface ExtendedAppUser extends AppUser {
