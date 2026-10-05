@@ -87,6 +87,7 @@ export default function NoticeBoard({
   const [editingSuggestion, setEditingSuggestion] = useState<SuggestionItem | null>(null);
   const [comments, setComments] = useState<SuggestionComment[]>([]);
   const [newComment, setNewComment] = useState('');
+  const [editingComment, setEditingComment] = useState<SuggestionComment | null>(null);
 
   // 공통 폼 상태
   const [title, setTitle] = useState('');
@@ -470,6 +471,16 @@ export default function NoticeBoard({
     }
   };
 
+  const handleEditComment = (comment: SuggestionComment) => {
+    if (!isAdmin) {
+      showAlert('권한 없음', '댓글 수정 권한이 없습니다.', 'error');
+      return;
+    }
+
+    setEditingComment(comment);
+    setNewComment(comment.content);
+  };
+
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) {
@@ -479,22 +490,38 @@ export default function NoticeBoard({
     if (!newComment.trim() || !selectedSuggestion) return;
 
     try {
-      const { error } = await supabase.from('suggestion_comments').insert([
-        {
-          suggestion_id: selectedSuggestion.id,
-          author_id: getCurrentUserId(),
-          author_name: currentUser?.name || '관리자',
-          content: newComment.trim(),
-          created_at: new Date().toISOString(),
-        },
-      ]);
+      let error;
+
+      if (editingComment) {
+        const result = await supabase
+          .from('suggestion_comments')
+          .update({
+            content: newComment.trim(),
+          })
+          .eq('id', editingComment.id);
+
+        error = result.error;
+      } else {
+        const result = await supabase.from('suggestion_comments').insert([
+          {
+            suggestion_id: selectedSuggestion.id,
+            author_id: getCurrentUserId(),
+            author_name: currentUser?.name || '관리자',
+            content: newComment.trim(),
+            created_at: new Date().toISOString(),
+          },
+        ]);
+
+        error = result.error;
+      }
 
       if (error) throw error;
       setNewComment('');
 
       await fetchComments(selectedSuggestion.id);
       await fetchSuggestions();
-      showAlert('성공', '댓글이 등록되었습니다.', 'success');
+      showAlert('성공', editingComment ? '댓글이 수정되었습니다.' : '댓글이 등록되었습니다.', 'success');
+      setEditingComment(null);
     } catch (err: any) {
       showAlert('댓글 저장 실패', err?.message || '댓글 저장에 실패했습니다.', 'error');
     }
@@ -827,12 +854,20 @@ export default function NoticeBoard({
                           <div className="flex items-center gap-2">
                             <span>{formatDate(c.created_at)}</span>
                             {isAdmin && (
-                              <button
-                                onClick={() => handleDeleteClick(c.id, 'comment', undefined, c.author_id)}
-                                className="text-red-500 hover:text-red-700 cursor-pointer"
-                              >
-                                삭제
-                              </button>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => handleEditComment(c)}
+                                  className="text-[#64748B] hover:text-[#243B5A] cursor-pointer"
+                                >
+                                  수정
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteClick(c.id, 'comment', undefined, c.author_id)}
+                                  className="text-red-500 hover:text-red-700 cursor-pointer"
+                                >
+                                  삭제
+                                </button>
+                              </div>
                             )}
                           </div>
                         </div>
@@ -849,15 +884,27 @@ export default function NoticeBoard({
                       type="text"
                       value={newComment}
                       onChange={(e) => setNewComment(e.target.value)}
-                      placeholder="답변 코멘트를 입력하세요..."
+                      placeholder={editingComment ? "수정할 답변 코멘트를 입력하세요..." : "답변 코멘트를 입력하세요..."}
                       className="flex-1 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
                     />
+                    {editingComment && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingComment(null);
+                          setNewComment('');
+                        }}
+                        className="px-3 py-2 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-[#F5F6F8] transition cursor-pointer shrink-0"
+                      >
+                        취소
+                      </button>
+                    )}
                     <button
                       type="submit"
                       className="px-3 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-semibold hover:bg-[#1d3049] transition cursor-pointer flex items-center gap-1 shrink-0"
                     >
                       <Send className="h-3 w-3" />
-                      <span>등록</span>
+                      <span>{editingComment ? '수정' : '등록'}</span>
                     </button>
                   </form>
                 ) : (
