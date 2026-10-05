@@ -354,9 +354,13 @@ export default function HRManagement({
         return isAdmin || isSelf(targetUser);
     };
 
-    const handleMakePhoneCall = (phoneNumber: string) => {
+    const handleMakePhoneCall = (phoneNumber: string, name?: string) => {
         if (!phoneNumber) return;
-        if (window.confirm('전화를 연결하시겠습니까?')) {
+        const confirmMessage = name
+            ? `${name} 님에게 전화 연결 하시겠습니까?`
+            : '해당 인원에게 전화 연결 하시겠습니까?';
+            
+        if (window.confirm(confirmMessage)) {
             window.location.href = `tel:${phoneNumber}`;
         }
     };
@@ -1159,7 +1163,7 @@ export default function HRManagement({
                                             {u.phone ? (
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleMakePhoneCall(u.phone!)}
+                                                    onClick={() => handleMakePhoneCall(u.phone!, u.name)}
                                                     className="font-medium text-[#243B5A] hover:underline flex items-center gap-1 truncate text-left"
                                                 >
                                                     <Phone className="h-3 w-3 shrink-0" /> <span className="truncate">{u.phone}</span>
@@ -1237,7 +1241,7 @@ export default function HRManagement({
                                             {u.phone ? (
                                                 <button
                                                     type="button"
-                                                    onClick={() => handleMakePhoneCall(u.phone!)}
+                                                    onClick={() => handleMakePhoneCall(u.phone!, u.name)}
                                                     className="text-[#243B5A] hover:underline flex items-center gap-1 text-left cursor-pointer"
                                                 >
                                                     <Phone className="h-3 w-3" /> {u.phone}
@@ -1503,7 +1507,7 @@ export default function HRManagement({
                             {detailUser.phone ? (
                                 <button
                                     type="button"
-                                    onClick={() => handleMakePhoneCall(detailUser.phone!)}
+                                    onClick={() => handleMakePhoneCall(detailUser.phone!, detailUser.name)}
                                     className="font-bold text-[#243B5A] hover:underline flex items-center gap-1"
                                 >
                                     {detailUser.phone}
@@ -1856,7 +1860,7 @@ function renderMemberCard(
     handleDeleteUser: (user: HRUser) => void,
     canEditUser: (user: HRUser) => boolean,
     isAdmin: boolean,
-    handleMakePhoneCall: (phoneNumber: string) => void
+    handleMakePhoneCall: (phoneNumber: string, name?: string) => void
 ) {
     const joinCareer = calculateCareerDetails(member.join_date);
     const totalCareer = calculateCareerDetails(member.career_start_date);
@@ -1943,7 +1947,7 @@ function renderMemberCard(
                         {member.phone ? (
                             <button
                                 type="button"
-                                onClick={() => handleMakePhoneCall(member.phone!)}
+                                onClick={() => handleMakePhoneCall(member.phone!, member.name)}
                                 className="flex items-center gap-1 font-medium text-[#243B5A] hover:underline cursor-pointer"
                             >
                                 <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
