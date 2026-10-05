@@ -257,13 +257,13 @@ export default function HRManagement({
       });
 
       // 운영 - 관리 연결선 (세로)
-      slide.addConnector(pres.ConnectorType.line, {
+      slide.addShape(pres.ShapeType.line, {
         x: 2.5, y: 1.5, w: 0, h: 1.0,
         line: { color: 'CCCCCC', width: 1 }
       });
 
       // 운영 - 인원 연결선 (가로)
-      slide.addConnector(pres.ConnectorType.line, {
+      slide.addShape(pres.ShapeType.line, {
         x: 5.2, y: 1.2, w: 0.8, h: 0,
         line: { color: 'CCCCCC', width: 1 }
       });
@@ -288,19 +288,24 @@ export default function HRManagement({
         fill: { color: '33527A' },
         rectRadius: 0.1
       });
-      slide.addConnector(pres.ConnectorType.line, {
+      slide.addText('관리', {
+        x: 3.6, y: 2.4, w: 1.6, h: 0.8,
+        align: 'center', color: 'FFFFFF', fontSize: 12, bold: true
+      });
+
+      slide.addShape(pres.ShapeType.line, {
         x: 2.5, y: 2.4, w: 0, h: 1.0,
         line: { color: 'CCCCCC', width: 1 }
       });
 
       // 관리 - TEAM 연결선 (세로)
-      slide.addConnector(pres.ConnectorType.line, {
+      slide.addShape(pres.ShapeType.line, {
         x: 4.4, y: 3.2, w: 0, h: 0.8,
         line: { color: '33527A', width: 2 }
       });
 
       // 관리 - 인원 연결선 (가로)
-      slide.addConnector(pres.ConnectorType.line, {
+      slide.addShape(pres.ShapeType.line, {
         x: 5.2, y: 2.8, w: 0.8, h: 0,
         line: { color: '33527A', width: 2 }
       });
@@ -331,7 +336,7 @@ export default function HRManagement({
       });
 
       // TEAM 세로 가지선
-      slide.addConnector(pres.ConnectorType.line, {
+      slide.addShape(pres.ShapeType.line, {
         x: 5.2, y: 4.4, w: 0.8, h: 0,
         line: { color: '33527A', width: 2 }
       });
@@ -341,7 +346,7 @@ export default function HRManagement({
         const teamY = 4.0 + (idx * 0.9);
         
         if (idx > 0) {
-          slide.addConnector(pres.ConnectorType.line, {
+          slide.addShape(pres.ShapeType.line, {
             x: 6.0, y: 4.4 + ((idx - 1) * 0.9), w: 0, h: 0.9,
             line: { color: '33527A', width: 2 }
           });
@@ -439,7 +444,6 @@ export default function HRManagement({
     }
   };
 
-  // 요구사항 3: 완전 트리 세로 구조 생성 (조직도 ➔ 운영 ➔ 관리 ➔ TEAM)
   const buildHierarchy = (userList: HRUser[]) => {
     const data: any[] = [];
     const usedIds = new Set<string>();
@@ -451,17 +455,15 @@ export default function HRManagement({
       if (node.id) usedIds.add(node.id);
     };
 
-    // 루트 노드 및 기본 직렬(세로) 부모 연결 구조 생성
     addNode({ id: 'root', parentId: '', name: rootTitle, type: 'root' });
     addNode({ id: 'org_operating', parentId: 'root', name: '운영', type: 'department', level: 'main' });
     addNode({ id: 'org_management', parentId: 'org_operating', name: '관리', type: 'department', level: 'main' });
     addNode({ id: 'org_team', parentId: 'org_management', name: 'TEAM', type: 'department', level: 'main' });
 
-    // 인원 노드 추가
     const addUserNode = (user: HRUser, defaultParentId: string) => {
       if (usedIds.has(`user_${user.id}`)) return;
       const actualParentId = (user.parent_id && user.parent_id !== user.id) 
-        ? (user.parent_id.startsWith('user_') || user.parent_id.startsWith('org_') ? user.parent_id : `user_${user.parent_id}`)
+        ? (user.parent_id.startsWith('user_') || user.parent_id.startsWith('org_') || user.parent_id.startsWith('team_') ? user.parent_id : `user_${user.parent_id}`)
         : defaultParentId;
 
       addNode({
@@ -476,17 +478,14 @@ export default function HRManagement({
       });
     };
 
-    // 1. 운영 인원 노드 연결
     const opUsers = activeUserList.filter(u => u.department === '운영');
     opUsers.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
            .forEach(u => addUserNode(u, 'org_operating'));
 
-    // 2. 관리 인원 노드 연결
     const mgUsers = activeUserList.filter(u => u.department === '관리');
     mgUsers.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
            .forEach(u => addUserNode(u, 'org_management'));
 
-    // 3. TEAM 하위 팀 노드 생성 및 팀별 인원 연결
     const teams = ['1 TEAM', '2 TEAM', '3 TEAM', '4 TEAM'];
     teams.forEach((teamName, idx) => {
       const teamId = `team_${idx + 1}`;
@@ -716,7 +715,6 @@ export default function HRManagement({
     }
   };
 
-  // 조직도 루트 타이틀 변경 저장
   const handleSaveTitle = async () => {
     if (!editTitleInput.trim()) {
       alert('조직도 명칭을 입력해주세요.');
@@ -738,7 +736,6 @@ export default function HRManagement({
     }
   };
 
-  // 조직도 직접 수정 저장 핸들러
   const handleSaveOrgStructure = async () => {
     if (!targetOrgUser) return;
 
@@ -806,7 +803,7 @@ export default function HRManagement({
         is_retired: isRetired,
         resignation_date: isRetired ? (formData.resignation_date || new Date().toISOString().split('T')[0]) : null,
         returned_items: isRetired ? formData.returned_items : null,
-        ...(isRetired ? { parent_id: null } : {}) // 퇴사 시 상사 연결 해제
+        ...(isRetired ? { parent_id: null } : {})
       };
 
       if (formData.birthDate) {
