@@ -160,6 +160,21 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [nightWorkerList, setNightWorkerList] = useState<string[]>([]);
   const [singleWorkerInput, setSingleWorkerInput] = useState('');
 
+  // ── 모바일 뒤로가기: 열려 있는 모달을 우선 닫는다 ──
+  useEffect(() => {
+    const handleAppBack = (e: Event) => {
+      const event = e as CustomEvent<{ handled: boolean }>;
+      if (event.detail?.handled) return;
+
+      if (isModalOpen)          { setIsModalOpen(false);          event.detail.handled = true; return; }
+      if (isVesselManagerOpen)  { setIsVesselManagerOpen(false);  event.detail.handled = true; return; }
+      if (isTeamManagerOpen)    { setIsTeamManagerOpen(false);    event.detail.handled = true; return; }
+      if (isAlertOpen)          { setIsAlertOpen(false);          event.detail.handled = true; return; }
+    };
+    window.addEventListener('app-back', handleAppBack);
+    return () => window.removeEventListener('app-back', handleAppBack);
+  }, [isModalOpen, isVesselManagerOpen, isTeamManagerOpen, isAlertOpen]);
+
   // app_users 인원 및 부서(department) 불러오기
   const fetchAppUsers = async () => {
     try {

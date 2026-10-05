@@ -242,6 +242,34 @@ export default function MaterialManagement({
     return () => clearInterval(timer);
   }, [fetchInventoryLogs]);
 
+  // ── 모바일 뒤로가기: 열려 있는 모달/시트를 우선 닫는다 ──
+  useEffect(() => {
+    const handleAppBack = (e: Event) => {
+      const event = e as CustomEvent<{ handled: boolean }>;
+      if (event.detail?.handled) return;
+
+      if (showInventorySheet)     { setShowInventorySheet(false);     event.detail.handled = true; return; }
+      if (showLogSheet)           { setShowLogSheet(false);           event.detail.handled = true; return; }
+      if (showReturnModal)        { setShowReturnModal(false);        event.detail.handled = true; return; }
+      if (showEditLogModal)       { setShowEditLogModal(false);       event.detail.handled = true; return; }
+      if (showCabinBatchModal)    { setShowCabinBatchModal(false);    event.detail.handled = true; return; }
+      if (showCabinBatchReturnModal) { setShowCabinBatchReturnModal(false); event.detail.handled = true; return; }
+      if (showBatchDeleteConfirm) { setShowBatchDeleteConfirm(false); event.detail.handled = true; return; }
+      if (isReturnHistoryOpen)    { setIsReturnHistoryOpen(false);    event.detail.handled = true; return; }
+      if (isCabinSheetModalOpen)  { setIsCabinSheetModalOpen(false);  event.detail.handled = true; return; }
+      if (isCabinTagModalOpen)    { setIsCabinTagModalOpen(false);    event.detail.handled = true; return; }
+      if (isSubCatModalOpen)      { setIsSubCatModalOpen(false);      event.detail.handled = true; return; }
+      if (isItemSubCatModalOpen)  { setIsItemSubCatModalOpen(false);  event.detail.handled = true; return; }
+    };
+    window.addEventListener('app-back', handleAppBack);
+    return () => window.removeEventListener('app-back', handleAppBack);
+  }, [
+    showInventorySheet, showLogSheet, showReturnModal, showEditLogModal,
+    showCabinBatchModal, showCabinBatchReturnModal, showBatchDeleteConfirm,
+    isReturnHistoryOpen, isCabinSheetModalOpen, isCabinTagModalOpen,
+    isSubCatModalOpen, isItemSubCatModalOpen,
+  ]);
+
   // 이력에 inventory_id가 있으면 반드시 ID를 우선 사용합니다.
   // 동일한 품목명이 여러 개 존재할 때 첫 번째 자재가 잘못 연결되는 문제를 방지합니다.
   const findInventoryItemForLog = (log: InventoryLog) => {

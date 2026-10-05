@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { OrgChart } from 'd3-org-chart';
 import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import { 
   Users, 
   Building2, 
@@ -156,6 +155,15 @@ export default function HRManagement({
 
   const orgChartContainerRef = useRef<HTMLDivElement>(null);
   const orgChartRef = useRef<any>(null);
+
+  // 토스트 알림
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [toastType, setToastType] = useState<'success' | 'error' | 'info'>('info');
+  const showToast = (msg: string, type: 'success' | 'error' | 'info' = 'info') => {
+    setToastMsg(msg);
+    setToastType(type);
+    setTimeout(() => setToastMsg(null), 2800);
+  };
   
   const [formData, setFormData] = useState({
     inputId: '', 
@@ -230,6 +238,20 @@ export default function HRManagement({
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  // ── 모바일 뒤로가기: 열려 있는 모달을 우선 닫는다 ──
+  useEffect(() => {
+    const handleAppBack = (e: Event) => {
+      const event = e as CustomEvent<{ handled: boolean }>;
+      if (event.detail?.handled) return;
+
+      if (isModalOpen)        { setIsModalOpen(false);        event.detail.handled = true; return; }
+      if (isOrgEditModalOpen) { setIsOrgEditModalOpen(false); event.detail.handled = true; return; }
+      if (detailUser)         { setDetailUser(null);          event.detail.handled = true; return; }
+    };
+    window.addEventListener('app-back', handleAppBack);
+    return () => window.removeEventListener('app-back', handleAppBack);
+  }, [isModalOpen, isOrgEditModalOpen, detailUser]);
 
   useEffect(() => {
     setSelectedSubCategory('ALL');
