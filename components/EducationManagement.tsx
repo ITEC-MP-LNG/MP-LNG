@@ -161,11 +161,21 @@ export default function EducationManagement({
   const markScheduleAsRead = (type: 'education' | 'event', item: any) => {
     if (typeof window === 'undefined' || !item) return;
 
+    const currentScrollY = window.scrollY;
+
     localStorage.setItem(
       getScheduleReadKey(type, item.id),
       String(Date.now())
     );
     setNReadVersion(prev => prev + 1);
+
+    // N 제거를 위한 재렌더링 후에도 현재 화면 스크롤 위치를 유지
+    requestAnimationFrame(() => {
+      window.scrollTo(0, currentScrollY);
+      requestAnimationFrame(() => {
+        window.scrollTo(0, currentScrollY);
+      });
+    });
   };
 
   const handleOpenEducationDetail = (edu: Education) => {
