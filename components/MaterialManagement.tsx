@@ -1399,27 +1399,37 @@ export default function MaterialManagement({
         .eq('status', 'ISSUED');
       if (batchUpdateError) throw batchUpdateError;
 
-      const { data: batchLog } = await supabase
+      const { data: batchLog, error: batchLogFetchError } = await supabase
         .from('inventory_logs')
-        .select('item_name, quantity')
+        .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, created_at')
         .eq('batch_id', batchId)
         .eq('type', '불출')
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      const returnName = batchLog?.item_name?.replace('[기자재 일괄 불출]', '[기자재 일괄 반납]') || batchLog?.item_name?.replace('[CABIN 일괄 불출]', '[CABIN 일괄 반납]') || '[일괄 반납]';
+      if (batchLogFetchError) throw batchLogFetchError;
 
-      const { error: logError } = await supabase.from('inventory_logs').insert([{
-        inventory_id: null,
-        item_name: returnName,
-        type: hasIssue ? '불출, 반납완료, 이상알림' : '반납완료',
-        quantity: returnHistoryRows.length,
-        worker_name: returnedBy,
-        returned_by: returnedBy,
-        memo: customMemo?.trim() ? `일괄 반납메모: ${customMemo.trim()}` : `일괄 반납 완료 (${returnHistoryRows.length}건)`,
-        batch_id: batchId,
-        created_at: returnedAt
-      }]);
-      if (logError) throw logError;
+      if (!batchLog) {
+        throw new Error('해당 일괄 불출 이력을 찾을 수 없습니다.');
+      }
+
+      // 중요: 일괄 반납은 절대로 새 inventory_logs 행을 만들지 않습니다.
+      // 최초 일괄 불출 행 하나를 그대로 유지하면서 type/returned_by/memo만 갱신합니다.
+      // 따라서 같은 행에서 불출자(issued_by)와 반납자(returned_by)를 함께 확인할 수 있습니다.
+      const returnMemo = customMemo?.trim()
+        ? `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납메모: ${customMemo.trim()}`
+        : `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납 완료 (${returnHistoryRows.length}건)`;
+      const { error: logUpdateError } = await supabase
+        .from('inventory_logs')
+        .update({
+          type: hasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료',
+          worker_name: batchLog.worker_name || batchLog.issued_by || '불출자 미기록',
+          issued_by: batchLog.issued_by || batchLog.worker_name || '불출자 미기록',
+          returned_by: returnedBy,
+          memo: returnMemo
+        })
+        .eq('id', batchLog.id);
+      if (logUpdateError) throw logUpdateError;
 
       showCenterToast(`일괄 불출된 ${returnHistoryRows.length}개 품목이 모두 반납되었습니다.`);
       await fetchInventory();
@@ -3205,15 +3215,11 @@ export default function MaterialManagement({
 
                         <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-x-2">
                           {isReturnCompleted ? (
-                            samePerson || (!returnedBy && issuedBy) ? (
-                              <span>불출/반납: <strong className="text-[#1F2937]">{issuedBy || returnedBy}</strong></span>
-                            ) : (
-                              <>
-                                <span>불출: <strong className="text-[#1F2937]">{issuedBy || '-'}</strong></span>
-                                <span>|</span>
-                                <span>반납: <strong className="text-[#1F2937]">{returnedBy || '-'}</strong></span>
-                              </>
-                            )
+                            <>
+                              <span>불출: <strong className="text-[#1F2937]">{issuedBy || '-'}</strong></span>
+                              <span>|</span>
+                              <span>반납: <strong className="text-[#1F2937]">{returnedBy || '-'}</strong></span>
+                            </>
                           ) : (
                             <span>{isConsumableUsage ? '사용: ' : '불출: '}<strong className="text-[#1F2937]">{log.issued_by || log.worker_name}</strong></span>
                           )}
