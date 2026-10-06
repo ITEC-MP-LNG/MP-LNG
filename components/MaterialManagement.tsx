@@ -1147,26 +1147,58 @@ export default function MaterialManagement({
 
       let openIssueLogForReturn: any | null = null;
       if (logType === '반납') {
-        const { data: openIssueLog, error: openIssueLogError } = await supabase
-          .from('inventory_logs')
-          .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
+        // 개별 기자재 반납은 반드시 해당 불출 건의 batch_id를 먼저 찾습니다.
+        // 같은 자재에 미반납 불출 이력이 여러 건 있어도 다른 행을 반납 처리하지 않습니다.
+        const { data: openBatchItem, error: openBatchItemError } = await supabase
+          .from('inventory_batch_items')
+          .select('batch_id, inventory_id, quantity, issued_by, issued_at, memo')
           .eq('inventory_id', targetItem.id)
-          .eq('type', '불출')
-          .not('type', 'ilike', '%반납완료%')
-          .order('created_at', { ascending: false })
+          .eq('inventory_type', '고정')
+          .eq('status', 'ISSUED')
+          .order('issued_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (openIssueLogError) throw openIssueLogError;
-        if (!openIssueLog) {
+        if (openBatchItemError) throw openBatchItemError;
+
+        if (openBatchItem?.batch_id) {
+          const { data: batchLog, error: batchLogError } = await supabase
+            .from('inventory_logs')
+            .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
+            .eq('batch_id', openBatchItem.batch_id)
+            .eq('type', '불출')
+            .not('type', 'ilike', '%반납완료%')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (batchLogError) throw batchLogError;
+          openIssueLogForReturn = batchLog;
+        }
+
+        // 과거에 batch_id가 없는 개별 불출 이력도 반납할 수 있도록 보완합니다.
+        if (!openIssueLogForReturn) {
+          const { data: openIssueLog, error: openIssueLogError } = await supabase
+            .from('inventory_logs')
+            .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
+            .eq('inventory_id', targetItem.id)
+            .eq('type', '불출')
+            .not('type', 'ilike', '%반납완료%')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (openIssueLogError) throw openIssueLogError;
+          openIssueLogForReturn = openIssueLog;
+        }
+
+        if (!openIssueLogForReturn) {
           showCenterToast('반납 처리할 미반납 불출 이력을 찾을 수 없습니다. 먼저 불출 이력을 확인해주세요.');
           return;
         }
-        if (qtyChange > Number(openIssueLog.quantity || 0)) {
-          showCenterToast(`반납 수량은 해당 불출 수량(${openIssueLog.quantity} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
+        if (qtyChange > Number(openIssueLogForReturn.quantity || 0)) {
+          showCenterToast(`반납 수량은 해당 불출 수량(${openIssueLogForReturn.quantity} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
           return;
         }
-        openIssueLogForReturn = openIssueLog;
       }
 
       let updateQuery = supabase
@@ -1215,6 +1247,21 @@ export default function MaterialManagement({
 
         if (logUpdateError) throw logUpdateError;
 
+        // 개별 불출과 연결된 batch item도 함께 반납완료로 변경합니다.
+        if (openIssueLogForReturn.batch_id) {
+          const { error: batchItemUpdateError } = await supabase
+            .from('inventory_batch_items')
+            .update({
+              status: 'RETURNED',
+              returned_by: returnedBy,
+              returned_at: returnedAt
+            })
+            .eq('batch_id', openIssueLogForReturn.batch_id)
+            .eq('inventory_id', targetItem.id)
+            .eq('status', 'ISSUED');
+          if (batchItemUpdateError) throw batchItemUpdateError;
+        }
+
         const { error: returnHistoryError } = await supabase
           .from('inventory_return_history')
           .insert([{
@@ -1250,6 +1297,26 @@ export default function MaterialManagement({
           }]);
 
         if (logError) throw logError;
+
+        // 개별 기자재 불출도 일괄 불출과 동일하게 batch_id를 연결합니다.
+        // 반납 시 이 연결을 이용해 정확히 같은 불출 이력 행을 UPDATE합니다.
+        if (logType === '불출' && targetItem.type === '고정') {
+          const { error: batchItemError } = await supabase
+            .from('inventory_batch_items')
+            .insert([{
+              batch_id: operationBatchId,
+              inventory_id: targetItem.id,
+              inventory_type: '고정',
+              item_code: targetItem.code || null,
+              item_name: targetItem.name || targetItem.item || null,
+              quantity: qtyChange,
+              issued_by: currentUser?.name || '작업자',
+              issued_at: operationAt,
+              status: 'ISSUED',
+              memo: logMemo.trim() || null
+            }]);
+          if (batchItemError) throw batchItemError;
+        }
       }
 
       showCenterToast(`${logType} 처리가 완료되었습니다.`);
