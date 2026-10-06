@@ -291,6 +291,12 @@ export default function MaterialManagement({
   const [fixedBatchQuantities, setFixedBatchQuantities] = useState<Record<string, number>>({});
   const [showFixedBatchModal, setShowFixedBatchModal] = useState<boolean>(false);
   const [fixedBatchMemo, setFixedBatchMemo] = useState<string>('');
+
+  // --- 소모성 자재 일괄 사용 상태 ---
+  const [selectedConsumableIds, setSelectedConsumableIds] = useState<string[]>([]);
+  const [consumableBatchQuantities, setConsumableBatchQuantities] = useState<Record<string, number>>({});
+  const [showConsumableBatchModal, setShowConsumableBatchModal] = useState<boolean>(false);
+  const [consumableBatchMemo, setConsumableBatchMemo] = useState<string>('');
   const [cabinCalibrationOnly, setCabinCalibrationOnly] = useState<boolean>(false);
   const [showCabinBatchModal, setShowCabinBatchModal] = useState<boolean>(false);
   const [cabinBatchMemo, setCabinBatchMemo] = useState<string>('');
@@ -1181,6 +1187,156 @@ export default function MaterialManagement({
     }
   };
 
+  const toggleSelectConsumableItem = (id: string | number) => {
+    const strId = String(id);
+    const target = inventoryList.find(item => String(item.id) === strId && item.type === '소모성');
+    const isSelected = selectedConsumableIds.includes(strId);
+    if (isSelected) {
+      setSelectedConsumableIds(prev => prev.filter(item => item !== strId));
+      setConsumableBatchQuantities(current => {
+        const next = { ...current };
+        delete next[strId];
+        return next;
+      });
+      return;
+    }
+    setSelectedConsumableIds(prev => [...prev, strId]);
+    if (target) {
+      setConsumableBatchQuantities(current => ({
+        ...current,
+        [strId]: Number(target.quantity || 0) > 0 ? 1 : 0
+      }));
+    }
+  };
+
+  const toggleSelectAllConsumable = () => {
+    if (selectedConsumableIds.length === filteredInventory.length) {
+      setSelectedConsumableIds([]);
+      setConsumableBatchQuantities({});
+    } else {
+      const ids = filteredInventory.map(item => String(item.id));
+      const quantities: Record<string, number> = {};
+      filteredInventory.forEach(item => {
+        quantities[String(item.id)] = Number(item.quantity || 0) > 0 ? 1 : 0;
+      });
+      setSelectedConsumableIds(ids);
+      setConsumableBatchQuantities(quantities);
+    }
+  };
+
+  const openConsumableBatchModal = () => {
+    const selectedItems = inventoryList.filter(item =>
+      item.type === '소모성' && selectedConsumableIds.includes(String(item.id))
+    );
+    const quantities: Record<string, number> = {};
+    selectedItems.forEach(item => {
+      const id = String(item.id);
+      const available = Number(item.quantity || 0);
+      const current = Number(consumableBatchQuantities[id] || 1);
+      quantities[id] = available > 0 ? Math.max(1, Math.min(current, available)) : 0;
+    });
+    setConsumableBatchQuantities(quantities);
+    setShowConsumableBatchModal(true);
+  };
+
+  const handleConsumableBatchIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (selectedConsumableIds.length === 0) return;
+
+    try {
+      const selectedItems = inventoryList.filter(item =>
+        item.type === '소모성' && selectedConsumableIds.includes(String(item.id))
+      );
+      if (selectedItems.length === 0) return;
+
+      const unavailable = selectedItems.filter(item => Number(item.quantity || 0) < 1);
+      if (unavailable.length > 0) {
+        showCenterToast(`보유수량이 없는 소모성 자재 ${unavailable.length}건이 포함되어 있어 일괄 사용 처리할 수 없습니다.`);
+        return;
+      }
+
+      const useItems = selectedItems.map(item => {
+        const id = String(item.id);
+        const available = Number(item.quantity || 0);
+        const quantity = Number(consumableBatchQuantities[id] || 0);
+        return { item, available, quantity };
+      });
+
+      const invalidQuantityItem = useItems.find(({ quantity, available }) =>
+        !Number.isInteger(quantity) || quantity < 1 || quantity > available
+      );
+      if (invalidQuantityItem) {
+        showCenterToast(`${invalidQuantityItem.item.name || invalidQuantityItem.item.code || '소모성 자재'}의 사용 수량은 1개 이상, 현재 보유수량 이하로 입력해주세요.`);
+        return;
+      }
+
+      const batchId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const usedAt = new Date().toISOString();
+      const usedBy = currentUser?.name || '작업자';
+      const memoText = consumableBatchMemo.trim() || '소모성 자재 일괄 사용';
+
+      for (const { item, quantity } of useItems) {
+        const { data: updatedRows, error: updateError } = await supabase
+          .from('inventory')
+          .update({ quantity: Number(item.quantity || 0) - quantity, updated_at: usedAt })
+          .eq('id', item.id)
+          .gte('quantity', quantity)
+          .select('id, quantity');
+        if (updateError) throw updateError;
+        if (!updatedRows || updatedRows.length === 0) {
+          throw new Error(`${item.name || item.code || '소모성 자재'}의 재고가 이미 변경되었습니다. 다시 확인해주세요.`);
+        }
+      }
+
+      // 소모성 자재는 반납하지 않으므로 batch item도 USED 상태로 종결합니다.
+      const batchRows = useItems.map(({ item, quantity }) => ({
+        batch_id: batchId,
+        inventory_id: item.id,
+        inventory_type: '소모성',
+        item_code: item.code || null,
+        item_name: item.name || item.item || null,
+        quantity,
+        issued_by: usedBy,
+        issued_at: usedAt,
+        status: 'USED',
+        memo: memoText
+      }));
+      const { error: batchError } = await supabase.from('inventory_batch_items').insert(batchRows);
+      if (batchError) throw batchError;
+
+      const firstItemName = useItems[0].item.name || useItems[0].item.item || useItems[0].item.code || '소모성 자재';
+      const totalUsedQuantity = useItems.reduce((sum, entry) => sum + entry.quantity, 0);
+      const integratedItemName = useItems.length === 1
+        ? `${firstItemName} ${useItems[0].quantity}개`
+        : `${firstItemName} 외 ${useItems.length - 1}건`;
+      const { error: logError } = await supabase.from('inventory_logs').insert([{
+        inventory_id: null,
+        item_name: `[소모성 일괄 사용] ${integratedItemName}`,
+        type: '소모성 사용',
+        quantity: totalUsedQuantity,
+        worker_name: usedBy,
+        issued_by: usedBy,
+        returned_by: null,
+        memo: `${memoText} / 총 ${totalUsedQuantity}개`,
+        batch_id: batchId,
+        created_at: usedAt
+      }]);
+      if (logError) throw logError;
+
+      showCenterToast(`선택된 ${useItems.length}개 소모성 자재에서 총 ${totalUsedQuantity}개가 소모성 사용으로 처리되었습니다.`);
+      setShowConsumableBatchModal(false);
+      setSelectedConsumableIds([]);
+      setConsumableBatchQuantities({});
+      setConsumableBatchMemo('');
+      await fetchInventory();
+      await fetchInventoryLogs();
+    } catch (err: any) {
+      showCenterToast('소모성 자재 일괄 사용 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
+    }
+  };
+
   const toggleSelectFixedItem = (id: string | number) => {
     const strId = String(id);
     const target = inventoryList.find(item => String(item.id) === strId && item.type === '고정');
@@ -1968,6 +2124,68 @@ export default function MaterialManagement({
           <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-xs text-center">
             <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
             <span className="truncate">{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
+      {/* 소모성 자재 일괄 사용 모달 */}
+      {showConsumableBatchModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-sm font-bold">소모성 자재 일괄 사용</h3>
+              <button type="button" onClick={() => setShowConsumableBatchModal(false)}><X className="h-4 w-4" /></button>
+            </div>
+            <form onSubmit={handleConsumableBatchIssue} className="space-y-3 text-xs">
+              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200 space-y-1">
+                <span className="text-[10px] text-blue-700 block font-semibold">선택된 소모성 자재</span>
+                <p className="font-bold text-blue-900 text-sm">총 {selectedConsumableIds.length}건 일괄 사용</p>
+              </div>
+              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                <label className="block text-[#64748B] font-semibold mb-1">품목별 사용 수량</label>
+                {inventoryList
+                  .filter(item => item.type === '소모성' && selectedConsumableIds.includes(String(item.id)))
+                  .map(item => {
+                    const id = String(item.id);
+                    const available = Number(item.quantity || 0);
+                    const quantity = Number(consumableBatchQuantities[id] || 0);
+                    return (
+                      <div key={id} className="flex items-center justify-between gap-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md px-2.5 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-[#1F2937] truncate">{item.name || item.item || item.code || '소모성 자재'}</p>
+                          <p className="text-[10px] text-[#64748B]">보유수량: {available} {item.unit || 'EA'}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <input
+                            type="number"
+                            min={available > 0 ? 1 : 0}
+                            max={available}
+                            step={1}
+                            value={quantity}
+                            onChange={e => {
+                              const next = Number(e.target.value);
+                              setConsumableBatchQuantities(prev => ({ ...prev, [id]: Number.isFinite(next) ? next : 0 }));
+                            }}
+                            className="w-16 px-2 py-1.5 text-center bg-white border border-[#CBD5E1] rounded-md text-xs font-bold text-[#1F2937]"
+                          />
+                          <span className="text-[10px] text-[#64748B]">{item.unit || 'EA'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+              <div className="bg-amber-50 border border-amber-200 rounded-md px-2.5 py-2 text-[10px] text-amber-800">
+                소모성 자재는 반납하지 않으며, 처리 후 <strong>소모성 사용</strong>으로 종료됩니다.
+              </div>
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">사용 메모 / 목적</label>
+                <input type="text" placeholder="예: 검사 작업용 소모성 자재 일괄 사용" value={consumableBatchMemo} onChange={e => setConsumableBatchMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+              </div>
+              <div className="flex space-x-2 pt-2">
+                <button type="button" onClick={() => setShowConsumableBatchModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">일괄 사용 확정</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -2931,14 +3149,28 @@ export default function MaterialManagement({
           </span>
         </div>
 
-        {(inventoryTab === '고정' || inventoryTab === 'CABIN') && filteredInventory.length > 0 && (
+        {(inventoryTab === '고정' || inventoryTab === '소모성' || inventoryTab === 'CABIN') && filteredInventory.length > 0 && (
           <button
             type="button"
-            onClick={inventoryTab === '고정' ? toggleSelectAllFixed : toggleSelectAllCabin}
+            onClick={inventoryTab === '고정' ? toggleSelectAllFixed : inventoryTab === '소모성' ? toggleSelectAllConsumable : toggleSelectAllCabin}
             className="px-2.5 py-1 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#243B5A] rounded text-[10px] font-semibold transition shrink-0"
           >
-            {((inventoryTab === '고정' ? selectedFixedIds.length : selectedCabinIds.length) === filteredInventory.length) ? '전체 선택 해제' : '전체 선택'}
+            {((inventoryTab === '고정' ? selectedFixedIds.length : inventoryTab === '소모성' ? selectedConsumableIds.length : selectedCabinIds.length) === filteredInventory.length) ? '전체 선택 해제' : '전체 선택'}
           </button>
+        )}
+
+        {inventoryTab === '소모성' && (
+          <div className="flex items-center space-x-1 shrink-0">
+            {selectedConsumableIds.length > 0 && (
+              <button
+                onClick={openConsumableBatchModal}
+                className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-semibold shadow-2xs transition flex items-center gap-1"
+              >
+                <ArrowUpRight className="h-3.5 w-3.5" />
+                <span>일괄 사용 ({selectedConsumableIds.length})</span>
+              </button>
+            )}
+          </div>
         )}
 
         {inventoryTab === '고정' && (
@@ -2999,7 +3231,7 @@ export default function MaterialManagement({
             ? selectedCabinIds.includes(String(item.id))
             : isFixed
               ? selectedFixedIds.includes(String(item.id))
-              : false;
+              : selectedConsumableIds.includes(String(item.id));
 
           return (
             <div 
@@ -3009,11 +3241,11 @@ export default function MaterialManagement({
               }`}
             >
               <div className="flex items-start space-x-2.5 min-w-0 flex-1">
-                {(isCabin || isFixed) && (
+                {(isCabin || isFixed || inventoryTab === '소모성') && (
                   <input
                     type="checkbox"
                     checked={isSelected}
-                    onChange={() => isCabin ? toggleSelectCabinItem(item.id) : toggleSelectFixedItem(item.id)}
+                    onChange={() => isCabin ? toggleSelectCabinItem(item.id) : isFixed ? toggleSelectFixedItem(item.id) : toggleSelectConsumableItem(item.id)}
                     className="mt-1 h-4 w-4 rounded accent-[#243B5A] cursor-pointer shrink-0"
                   />
                 )}
