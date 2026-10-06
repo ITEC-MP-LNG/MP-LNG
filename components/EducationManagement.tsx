@@ -124,6 +124,65 @@ export default function EducationManagement({
   // EVENT 전용 폼 상태
   const [eventDescription, setEventDescription] = useState('');
 
+  // 일정 N(신규/수정) 표시용 읽음 처리
+  const [, setNReadVersion] = useState(0);
+
+  const getScheduleReadKey = (type: 'education' | 'event', id: number | string) => {
+    const userKey = currentUser?.name || 'guest';
+    return `education_schedule_read_${userKey}_${type}_${id}`;
+  };
+
+  const getScheduleChangeTime = (item: any) => {
+    const value = item?.updated_at || item?.created_at;
+    const time = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(time) ? time : 0;
+  };
+
+  const isScheduleNew = (type: 'education' | 'event', item: any) => {
+    if (typeof window === 'undefined' || !item) return false;
+
+    const changeTime = getScheduleChangeTime(item);
+    if (!changeTime) return false;
+
+    const readAt = Number(localStorage.getItem(getScheduleReadKey(type, item.id)) || '0');
+    if (readAt > 0) return changeTime > readAt;
+
+    const userKey = currentUser?.name || 'guest';
+    let initializedAt = Number(localStorage.getItem(`education_schedule_n_initialized_${userKey}`) || '0');
+    if (!initializedAt) {
+      initializedAt = Date.now();
+      localStorage.setItem(`education_schedule_n_initialized_${userKey}`, String(initializedAt));
+      return false;
+    }
+
+    return changeTime > initializedAt;
+  };
+
+  const markScheduleAsRead = (type: 'education' | 'event', item: any) => {
+    if (typeof window === 'undefined' || !item) return;
+
+    localStorage.setItem(
+      getScheduleReadKey(type, item.id),
+      String(Date.now())
+    );
+    setNReadVersion(prev => prev + 1);
+  };
+
+  const handleOpenEducationDetail = (edu: Education) => {
+    markScheduleAsRead('education', edu);
+    setSelectedEduForDetail(edu);
+  };
+
+  const handleOpenEventDetail = (ev: EventItem) => {
+    markScheduleAsRead('event', ev);
+    setSelectedEventForDetail(ev);
+  };
+
+  const renderScheduleNewBadge = (type: 'education' | 'event', item: any) => {
+    if (!isScheduleNew(type, item)) return null;
+    return <span className="text-[10px] font-extrabold text-red-600 ml-1">N</span>;
+  };
+
   // 이벤트 데이터 불러오기
   const fetchEvents = async () => {
     try {
@@ -489,21 +548,21 @@ export default function EducationManagement({
                         {dayEdus.map(edu => (
                           <div
                             key={`edu-${edu.id}`}
-                            onClick={() => setSelectedEduForDetail(edu)}
+                            onClick={() => handleOpenEducationDetail(edu)}
                             className="p-1 rounded text-[10px] bg-slate-100 border border-slate-300 text-[#243B5A] cursor-pointer hover:bg-slate-200 transition truncate font-medium flex items-center gap-1"
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[#243B5A] shrink-0" />
-                            <span className="truncate"><strong className="font-semibold">[교육]</strong> {edu.title}</span>
+                            <span className="truncate"><strong className="font-semibold">[교육]</strong> {edu.title}{renderScheduleNewBadge('education', edu)}</span>
                           </div>
                         ))}
                         {dayEvts.map(ev => (
                           <div
                             key={`evt-${ev.id}`}
-                            onClick={() => setSelectedEventForDetail(ev)}
+                            onClick={() => handleOpenEventDetail(ev)}
                             className="p-1 rounded text-[10px] bg-teal-50 border border-teal-200 text-teal-900 cursor-pointer hover:bg-teal-100 transition truncate font-medium flex items-center gap-1"
                           >
                             <span className="w-1.5 h-1.5 rounded-full bg-[#0D9488] shrink-0" />
-                            <span className="truncate"><strong className="font-semibold">[EVENT]</strong> {ev.title}</span>
+                            <span className="truncate"><strong className="font-semibold">[EVENT]</strong> {ev.title}{renderScheduleNewBadge('event', ev)}</span>
                           </div>
                         ))}
                       </div>
@@ -531,7 +590,7 @@ export default function EducationManagement({
                   {visibleEducations.map((edu, idx) => (
                     <div
                       key={edu.id}
-                      onClick={() => setSelectedEduForDetail(edu)}
+                      onClick={() => handleOpenEducationDetail(edu)}
                       className={`px-3 py-2.5 flex items-center gap-2.5 cursor-pointer hover:bg-[#F5F6F8] transition ${
                         idx !== visibleEducations.length - 1 ? 'border-b border-[#E2E5E9]' : ''
                       }`}
@@ -540,7 +599,7 @@ export default function EducationManagement({
                         {edu.edu_date}
                       </span>
                       <span className="min-w-0 flex-1 text-xs font-semibold text-[#1F2937] truncate">
-                        {edu.title}
+                        {edu.title}{renderScheduleNewBadge('education', edu)}
                       </span>
                       <span className="hidden sm:block shrink-0 text-[10px] text-[#64748B]">
                         {edu.time_slot}
@@ -584,7 +643,7 @@ export default function EducationManagement({
                   {visibleEvents.map((ev, idx) => (
                     <div
                       key={ev.id}
-                      onClick={() => setSelectedEventForDetail(ev)}
+                      onClick={() => handleOpenEventDetail(ev)}
                       className={`px-3 py-2.5 flex items-center gap-2.5 cursor-pointer hover:bg-[#F5F6F8] transition ${
                         idx !== visibleEvents.length - 1 ? 'border-b border-[#E2E5E9]' : ''
                       }`}
@@ -593,7 +652,7 @@ export default function EducationManagement({
                         {ev.event_date}
                       </span>
                       <span className="min-w-0 flex-1 text-xs font-semibold text-[#1F2937] truncate">
-                        {ev.title}
+                        {ev.title}{renderScheduleNewBadge('event', ev)}
                       </span>
                       <span className="hidden sm:block shrink-0 text-[10px] text-[#64748B]">
                         {ev.time_slot || ''}
