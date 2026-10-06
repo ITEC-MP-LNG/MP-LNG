@@ -139,6 +139,48 @@ export default function NoticeBoard({
     return String(currentUser?.id || currentUser?.email || currentUser?.name || 'guest');
   };
 
+  // N 표시 상태는 사용자별로 localStorage에 기록합니다.
+  // 최초 기능 적용 시 기존 자료에는 N이 붙지 않도록 기준 시각을 1회 생성합니다.
+  const getBoardBaselineKey = (type: 'notice' | 'suggestion') =>
+    `notice_board_baseline_${type}_${getCurrentUserId()}`;
+
+  const getBoardReadKey = (type: 'notice' | 'suggestion', id: string | number) =>
+    `notice_board_read_${type}_${getCurrentUserId()}_${id}`;
+
+  const ensureBoardBaseline = (type: 'notice' | 'suggestion') => {
+    const key = getBoardBaselineKey(type);
+    const existing = localStorage.getItem(key);
+
+    if (existing) return existing;
+
+    const now = new Date().toISOString();
+    localStorage.setItem(key, now);
+    return now;
+  };
+
+  const isBoardItemNew = (
+    type: 'notice' | 'suggestion',
+    id: string | number,
+    updatedAt: string
+  ) => {
+    const baseline = ensureBoardBaseline(type);
+    const readAt = localStorage.getItem(getBoardReadKey(type, id));
+
+    if (readAt) {
+      return new Date(updatedAt).getTime() > new Date(readAt).getTime();
+    }
+
+    return new Date(updatedAt).getTime() > new Date(baseline).getTime();
+  };
+
+  const markBoardItemAsRead = (
+    type: 'notice' | 'suggestion',
+    id: string | number,
+    updatedAt: string
+  ) => {
+    localStorage.setItem(getBoardReadKey(type, id), updatedAt || new Date().toISOString());
+  };
+
   // --- 데이터 불러오기 ---
   const fetchNotices = async () => {
     try {
@@ -164,13 +206,13 @@ export default function NoticeBoard({
 
       setNotices(fetchedNotices);
 
-      const userKey = getCurrentUserId();
-      const unreadExists = fetchedNotices.some((notice) => {
-        const isRead = localStorage.getItem(`notice_read_${userKey}_${notice.id}`);
-        return !isRead;
-      });
+      ensureBoardBaseline('notice');
+      const unreadExists = fetchedNotices.some((notice) =>
+        isBoardItemNew('notice', notice.id, notice.updated_at || notice.created_at)
+      );
       setHasUnreadNotice(unreadExists);
 
+      const userKey = getCurrentUserId();
       const pinnedNotices = fetchedNotices.filter((n) => n.is_pinned);
       if (pinnedNotices.length > 0) {
         const targetNotice = pinnedNotices[0];
@@ -214,6 +256,7 @@ export default function NoticeBoard({
         has_comment: commentedSet.has(item.id),
       }));
 
+      ensureBoardBaseline('suggestion');
       setSuggestions(formattedSuggestions);
     } catch (err: any) {
       console.error('개선/건의사항 불러오기 실패:', err);
@@ -252,13 +295,11 @@ export default function NoticeBoard({
   // --- 공지사항 팝업 처리 ---
   const handleClosePopup = () => {
     if (popupNotice) {
-      const userKey = getCurrentUserId();
-      localStorage.setItem(`notice_read_${userKey}_${popupNotice.id}`, 'true');
+      markBoardItemAsRead('notice', popupNotice.id, popupNotice.updated_at || popupNotice.created_at);
 
-      const unreadExists = notices.some((notice) => {
-        const isRead = localStorage.getItem(`notice_read_${userKey}_${notice.id}`);
-        return !isRead;
-      });
+      const unreadExists = notices.some((notice) =>
+        isBoardItemNew('notice', notice.id, notice.updated_at || notice.created_at)
+      );
       setHasUnreadNotice(unreadExists);
     }
     setShowPopupModal(false);
@@ -269,29 +310,31 @@ export default function NoticeBoard({
       const userKey = getCurrentUserId();
       const todayStr = new Date().toDateString();
       localStorage.setItem(`notice_hide_until_${userKey}_${popupNotice.id}`, todayStr);
-      localStorage.setItem(`notice_read_${userKey}_${popupNotice.id}`, 'true');
+      markBoardItemAsRead('notice', popupNotice.id, popupNotice.updated_at || popupNotice.created_at);
 
-      const unreadExists = notices.some((notice) => {
-        const isRead = localStorage.getItem(`notice_read_${userKey}_${notice.id}`);
-        return !isRead;
-      });
+      const unreadExists = notices.some((notice) =>
+        isBoardItemNew('notice', notice.id, notice.updated_at || notice.created_at)
+      );
       setHasUnreadNotice(unreadExists);
     }
     setShowPopupModal(false);
   };
 
   const handleSelectNotice = (notice: NoticeItem) => {
-    const userKey = getCurrentUserId();
-    localStorage.setItem(`notice_read_${userKey}_${notice.id}`, 'true');
+    markBoardItemAsRead('notice', notice.id, notice.updated_at || notice.created_at);
 
-    const unreadExists = notices.some((n) => {
-      if (n.id === notice.id) return false;
-      const isRead = localStorage.getItem(`notice_read_${userKey}_${n.id}`);
-      return !isRead;
-    });
+    const unreadExists = notices.some((n) =>
+      isBoardItemNew('notice', n.id, n.updated_at || n.created_at)
+    );
     setHasUnreadNotice(unreadExists);
 
     setSelectedNotice(notice);
+  };
+
+  const handleSelectSuggestion = (item: SuggestionItem) => {
+    markBoardItemAsRead('suggestion', item.id, item.updated_at || item.created_at);
+    setSelectedSuggestion(item);
+    fetchComments(item.id);
   };
 
   // --- 작성 / 수정 모달 핸들러 ---
@@ -623,6 +666,9 @@ export default function NoticeBoard({
                         </span>
                       )}
                       <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate">{notice.title}</h3>
+                      {isBoardItemNew('notice', notice.id, notice.updated_at || notice.created_at) && (
+                        <span className="text-[10px] font-extrabold text-red-600 shrink-0">N</span>
+                      )}
                     </div>
                     <div className="flex items-center gap-3 text-[10px] text-[#64748B]">
                       <span>작성자: {notice.author_name}</span>
@@ -679,10 +725,7 @@ export default function NoticeBoard({
               return (
                 <div
                   key={item.id}
-                  onClick={() => {
-                    setSelectedSuggestion(item);
-                    fetchComments(item.id);
-                  }}
+                  onClick={() => handleSelectSuggestion(item)}
                   className="px-4 py-3.5 hover:bg-[#F8FAFC] cursor-pointer transition"
                 >
                   <div className="flex items-start gap-3">
@@ -693,6 +736,9 @@ export default function NoticeBoard({
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 mb-1">
                         <h3 className="text-xs sm:text-sm font-bold text-[#1F2937] truncate">{item.title}</h3>
+                        {isBoardItemNew('suggestion', item.id, item.updated_at || item.created_at) && (
+                          <span className="text-[10px] font-extrabold text-red-600 shrink-0">N</span>
+                        )}
                         {item.has_comment && (
                           <span className="text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full shrink-0">
                             댓글 등록 완료
