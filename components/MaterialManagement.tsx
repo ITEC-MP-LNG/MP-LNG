@@ -65,6 +65,7 @@ export interface InventoryLog {
   returned_by?: string;
   memo?: string;
   batch_id?: string | null;
+  is_new?: boolean;
   created_at: string;
 }
 
@@ -1117,6 +1118,11 @@ export default function MaterialManagement({
         return;
       }
 
+      const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const operationAt = new Date().toISOString();
+
       let currentQty = targetItem.quantity || 0;
       let newQty = currentQty;
 
@@ -1139,9 +1145,33 @@ export default function MaterialManagement({
         newQty = currentQty + qtyChange;
       }
 
+      let openIssueLogForReturn: any | null = null;
+      if (logType === '반납') {
+        const { data: openIssueLog, error: openIssueLogError } = await supabase
+          .from('inventory_logs')
+          .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
+          .eq('inventory_id', targetItem.id)
+          .eq('type', '불출')
+          .not('type', 'ilike', '%반납완료%')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (openIssueLogError) throw openIssueLogError;
+        if (!openIssueLog) {
+          showCenterToast('반납 처리할 미반납 불출 이력을 찾을 수 없습니다. 먼저 불출 이력을 확인해주세요.');
+          return;
+        }
+        if (qtyChange > Number(openIssueLog.quantity || 0)) {
+          showCenterToast(`반납 수량은 해당 불출 수량(${openIssueLog.quantity} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
+          return;
+        }
+        openIssueLogForReturn = openIssueLog;
+      }
+
       let updateQuery = supabase
         .from('inventory')
-        .update({ quantity: newQty, updated_at: new Date().toISOString() })
+        .update({ quantity: newQty, updated_at: operationAt })
         .eq('id', targetItem.id);
 
       if (logType === '반납') {
@@ -1158,25 +1188,69 @@ export default function MaterialManagement({
 
       let finalLogType = logType === '소모성 사용' ? '소모성 사용' : logType;
       if (logType === '반납') {
-        finalLogType = logHasIssue ? '불출, 반납완료, 이상알림' : '반납완료';
+        finalLogType = logHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료';
+
+        // 중요: 개별 반납은 절대로 새 inventory_logs 행을 만들지 않습니다.
+        // 가장 최근의 미반납 불출 이력 원본 행을 찾아 그 행 자체를 반납완료로 갱신합니다.
+        const returnMemo = logMemo.trim()
+          ? `${openIssueLogForReturn.memo ? `${openIssueLogForReturn.memo} / ` : ''}반납메모: ${logMemo.trim()}`
+          : openIssueLogForReturn.memo || null;
+        const returnedAt = operationAt;
+        const returnedBy = currentUser?.name || '작업자';
+
+        const { error: logUpdateError } = await supabase
+          .from('inventory_logs')
+          .update({
+            type: finalLogType,
+            quantity: qtyChange,
+            worker_name: openIssueLogForReturn.worker_name || openIssueLogForReturn.issued_by || '불출자 미기록',
+            issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
+            returned_by: returnedBy,
+            memo: returnMemo,
+            is_new: true,
+            updated_at: returnedAt
+          })
+          .eq('id', openIssueLogForReturn.id)
+          .not('type', 'ilike', '%반납완료%');
+
+        if (logUpdateError) throw logUpdateError;
+
+        const { error: returnHistoryError } = await supabase
+          .from('inventory_return_history')
+          .insert([{
+            inventory_id: targetItem.id,
+            item_code: targetItem.type === 'CABIN' ? (targetItem.no || targetItem.code || null) : (targetItem.code || null),
+            item_name: targetItem.name || targetItem.item || null,
+            quantity: qtyChange,
+            issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
+            returned_by: returnedBy,
+            issued_at: openIssueLogForReturn.created_at || null,
+            returned_at: returnedAt,
+            memo: returnMemo,
+            created_at: returnedAt
+          }]);
+
+        if (returnHistoryError) throw returnHistoryError;
+      } else {
+        const { error: logError } = await supabase
+          .from('inventory_logs')
+          .insert([{
+            inventory_id: targetItem.id,
+            item_code: targetItem.type === 'CABIN' ? (targetItem.no || targetItem.code || null) : (targetItem.code || null),
+            item_name: targetItem.name || targetItem.item,
+            type: finalLogType,
+            quantity: qtyChange,
+            worker_name: currentUser?.name || '작업자',
+            issued_by: currentUser?.name || '작업자',
+            returned_by: null,
+            memo: logMemo.trim() || null,
+            batch_id: operationBatchId,
+            is_new: true,
+            created_at: operationAt
+          }]);
+
+        if (logError) throw logError;
       }
-
-      const { error: logError } = await supabase
-        .from('inventory_logs')
-        .insert([{
-          inventory_id: targetItem.id,
-          item_code: targetItem.type === 'CABIN' ? (targetItem.no || targetItem.code || null) : (targetItem.code || null),
-          item_name: targetItem.name || targetItem.item,
-          type: finalLogType,
-          quantity: qtyChange,
-          worker_name: currentUser?.name || '작업자',
-          issued_by: logType === '반납' ? null : (currentUser?.name || '작업자'),
-          returned_by: logType === '반납' ? (currentUser?.name || '작업자') : null,
-          memo: logMemo.trim() || null,
-          created_at: new Date().toISOString()
-        }]);
-
-      if (logError) throw logError;
 
       showCenterToast(`${logType} 처리가 완료되었습니다.`);
       setShowLogSheet(false);
@@ -1321,6 +1395,7 @@ export default function MaterialManagement({
         returned_by: null,
         memo: `${memoText} / 총 ${totalUsedQuantity}개`,
         batch_id: batchId,
+        is_new: true,
         created_at: usedAt
       }]);
       if (logError) throw logError;
@@ -1466,6 +1541,7 @@ export default function MaterialManagement({
         issued_by: issuedBy,
         memo: `${memoText} / 총 ${totalIssuedQuantity}개`,
         batch_id: batchId,
+        is_new: true,
         created_at: issuedAt
       }]);
       if (logError) throw logError;
@@ -1557,9 +1633,9 @@ export default function MaterialManagement({
 
       const { data: batchLog, error: batchLogFetchError } = await supabase
         .from('inventory_logs')
-        .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, created_at')
+        .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, created_at, is_new')
         .eq('batch_id', batchId)
-        .eq('type', '불출')
+        .not('type', 'ilike', '%반납완료%')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -1582,7 +1658,9 @@ export default function MaterialManagement({
           worker_name: batchLog.worker_name || batchLog.issued_by || '불출자 미기록',
           issued_by: batchLog.issued_by || batchLog.worker_name || '불출자 미기록',
           returned_by: returnedBy,
-          memo: returnMemo
+          memo: returnMemo,
+          is_new: true,
+          updated_at: returnedAt
         })
         .eq('id', batchLog.id);
       if (logUpdateError) throw logUpdateError;
@@ -1871,6 +1949,7 @@ export default function MaterialManagement({
           quantity: qtyToReturn, 
           returned_by: currentUser?.name || '작업자',
           memo: memoText,
+          is_new: true,
           updated_at: new Date().toISOString() 
         })
         .eq('id', targetReturnLog.id)
@@ -3406,7 +3485,7 @@ export default function MaterialManagement({
                 const isConsumableUsage = log.type.includes('소모성 사용');
                 const matchedHistoryItem = findInventoryItemForLog(log);
                 const historyItemCode = log.item_code || matchedHistoryItem?.code || (matchedHistoryItem?.type === 'CABIN' ? matchedHistoryItem?.no : undefined);
-                const issuedBy = log.issued_by || (!isReturnCompleted ? log.worker_name : undefined);
+                const issuedBy = log.issued_by || log.worker_name;
                 const returnedBy = log.returned_by;
                 const samePerson = Boolean(issuedBy && returnedBy && issuedBy === returnedBy);
 
@@ -3428,6 +3507,9 @@ export default function MaterialManagement({
                       )}
                       <div className="min-w-0 space-y-0.5">
                         <div className="flex items-center space-x-2 flex-wrap gap-y-1">
+                          {log.is_new && (
+                            <span className="text-red-600 font-extrabold text-xs leading-none" title="신규/변경 이력">N</span>
+                          )}
                           <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
                             isReturnCompleted ? 'bg-emerald-100 text-emerald-800' : isConsumableUsage ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-800'
                           }`}>
