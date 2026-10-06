@@ -855,7 +855,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       {renderStatusBadge(t)}
                     </div>
                     <h4 className="font-bold text-sm text-[#1F2937] cursor-pointer hover:underline" onClick={() => handleOpenTaskDetail(t)}>
-                      {t.title}
+                      {t.title}{renderTaskNewBadge(t)}
                     </h4>
                   </div>
 
