@@ -5,7 +5,7 @@ import {
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, Check, AlertCircle, PlayCircle, PlusCircle,
-  Download, Users, History, FileSpreadsheet, Layers, FileText
+  Download, Users, History, FileSpreadsheet, Layers
 } from 'lucide-react';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
@@ -27,7 +27,8 @@ export interface Task {
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
   task_type: 'DAILY' | 'WEEKLY' | 'CABIN';
   category?: string;
-  remarks?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface CabinVessel {
@@ -46,7 +47,6 @@ export interface AppUser {
   id?: string;
   name: string;
   department?: string;
-  phone?: string;
 }
 
 const formatDateToYYYYMMDD = (d: Date) => {
@@ -89,42 +89,27 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   });
 
   // 커스텀 통일 알림 모달 상태
-  const [customAlert, setCustomAlert] = useState<{ open: boolean; title: string; message: string; type?: 'info' | 'confirm'; onConfirm?: () => void; confirmLabel?: string; cancelLabel?: string }>({
+  const [customAlert, setCustomAlert] = useState<{ open: boolean; title: string; message: string; type?: 'info' | 'confirm'; onConfirm?: () => void }>({
     open: false,
     title: '',
     message: '',
-    type: 'info',
-    confirmLabel: '확인',
-    cancelLabel: '취소'
+    type: 'info'
   });
 
   const showCustomAlert = (title: string, message: string) => {
     setCustomAlert({ open: true, title, message, type: 'info' });
   };
 
-  const showCustomConfirm = (title: string, message: string, onConfirm: () => void, confirmLabel = '확인', cancelLabel = '취소') => {
-    setCustomAlert({ open: true, title, message, type: 'confirm', onConfirm, confirmLabel, cancelLabel });
+  const showCustomConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setCustomAlert({ open: true, title, message, type: 'confirm', onConfirm });
   };
 
   // 팝업 미완료 알림 상태
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [myAssignedTasks, setMyAssignedTasks] = useState<Task[]>([]);
 
-  // 바텀시트 모달 (상세보기)
+  // 바텀시트 모달
   const [selectedTaskForSheet, setSelectedTaskForSheet] = useState<Task | null>(null);
-
-  // 상태 변경 모달 (상세보기, 버튼 직접 선택 및 비고 수정)
-  const [statusChangeModal, setStatusChangeModal] = useState<{
-    open: boolean;
-    task: Task | null;
-    targetStatus: Task['status'];
-    remarks: string;
-  }>({
-    open: false,
-    task: null,
-    targetStatus: 'PENDING',
-    remarks: ''
-  });
 
   // 호선 관리 모달
   const [isVesselManagerOpen, setIsVesselManagerOpen] = useState(false);
@@ -151,7 +136,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     time_slot: '09:00 - 18:00',
     task_type: 'DAILY' as 'DAILY' | 'WEEKLY' | 'CABIN',
     category: '',
-    remarks: '',
   });
 
   // 개별 인원 목록 관리
@@ -163,7 +147,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   // app_users 인원 및 부서(department) 불러오기
   const fetchAppUsers = async () => {
     try {
-      const { data, error } = await supabase.from('app_users').select('name, department, phone');
+      const { data, error } = await supabase.from('app_users').select('name, department');
       if (error) throw error;
       if (data) {
         setAppUsers(data);
@@ -209,6 +193,48 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
   };
 
+  // 업무 N(신규/수정) 표시용 읽음 처리
+  const getTaskReadKey = (taskId: string) => {
+    const userKey = currentUser?.id || currentUser?.name || 'guest';
+    return `work_task_read_${userKey}_${taskId}`;
+  };
+
+  const getTaskChangeTime = (task: Task) => {
+    const value = task.updated_at || task.created_at;
+    const time = value ? new Date(value).getTime() : 0;
+    return Number.isFinite(time) ? time : 0;
+  };
+
+  const isTaskNew = (task: Task) => {
+    if (typeof window === 'undefined') return false;
+    const changeTime = getTaskChangeTime(task);
+    if (!changeTime) return false;
+
+    const readAt = Number(localStorage.getItem(getTaskReadKey(task.id)) || '0');
+    if (readAt > 0) return changeTime > readAt;
+
+    const userKey = currentUser?.id || currentUser?.name || 'guest';
+    const initializedAt = Number(localStorage.getItem(`work_task_n_initialized_${userKey}`) || '0');
+    if (!initializedAt) return true;
+    return changeTime > initializedAt;
+  };
+
+  const markTaskAsRead = (task: Task) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem(getTaskReadKey(task.id), String(Date.now()));
+    setTasks(prev => [...prev]);
+  };
+
+  const handleOpenTaskDetail = (task: Task) => {
+    markTaskAsRead(task);
+    setSelectedTaskForSheet(task);
+  };
+
+  const renderTaskNewBadge = (task: Task) => {
+    if (!isTaskNew(task)) return null;
+    return <span className="text-[10px] font-extrabold text-red-600 ml-1">N</span>;
+  };
+
   // 전체 업무 데이터 및 팝업 알림 체크
   const fetchTasks = async () => {
     setIsLoading(true);
@@ -224,6 +250,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           day_workers: Array.isArray(t.day_workers) ? t.day_workers : (t.day_workers ? t.day_workers.split(',').map((s: string) => s.trim()) : []),
           night_workers: Array.isArray(t.night_workers) ? t.night_workers : (t.night_workers ? t.night_workers.split(',').map((s: string) => s.trim()) : []),
         }));
+
+        const userKey = currentUser?.id || currentUser?.name || 'guest';
+        const initializedKey = `work_task_n_initialized_${userKey}`;
+        if (!localStorage.getItem(initializedKey)) {
+          localStorage.setItem(initializedKey, String(Date.now()));
+        }
 
         setTasks(formatted);
 
@@ -257,20 +289,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     fetchTeams();
     fetchTasks();
   }, [currentUser]);
-
-  // 해당 업무 변경 권한 확인 (현재 로직 그대로 유지)
-  const canModifyTaskStatus = (task: Task) => {
-    if (isAdmin) return true;
-    if (task.task_type === 'WEEKLY' || task.task_type === 'CABIN') return false;
-    if (!currentUser || !currentUser.name) return false;
-
-    const name = currentUser.name.trim().toLowerCase();
-    const assigned = (task.assigned_names || []).map(n => n.trim().toLowerCase());
-    const day = (task.day_workers || []).map(n => n.trim().toLowerCase());
-    const night = (task.night_workers || []).map(n => n.trim().toLowerCase());
-
-    return assigned.includes(name) || day.includes(name) || night.includes(name);
-  };
 
   // 호선 관리 관련
   const handleAddVessel = async () => {
@@ -309,7 +327,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   };
 
-  // Team 관리 관련
+  // Team 관리 관련 (추가 / 수정 / 삭제)
   const handleAddTeam = async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     if (!newTeamName.trim()) { showCustomAlert('입력 오류', 'Team 이름을 입력해주세요.'); return; }
@@ -372,6 +390,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   };
 
+  // app_users 부서 선택 시 해당 부서의 전체 사용자 자동 세팅
   const handleSelectDepartmentUsersToNewTeam = (dept: string) => {
     setNewTeamDept(dept);
     const deptMembers = appUsers
@@ -382,70 +401,23 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setNewTeamMembersText(deptMembers.join(', '));
   };
 
-  // 일일업무 담당자 전화 연결
-  const handleCallWorker = (workerName: string) => {
-    const worker = appUsers.find(
-      (u) => u.name?.trim().toLowerCase() === workerName.trim().toLowerCase()
-    );
-    const phone = worker?.phone?.trim();
-
-    if (!phone) {
-      showCustomAlert('전화 연결', `${workerName}님의 전화번호가 등록되어 있지 않습니다.`);
-      return;
-    }
-
-    showCustomConfirm(
-      '전화 연결',
-      `${workerName}님에게 전화 연결 하시겠습니까?`,
-      () => {
-        window.location.href = `tel:${phone.replace(/[^0-9+]/g, '')}`;
-      },
-      '예',
-      '아니오'
-    );
-  };
-
-  // 상태 변경 버튼 클릭 시 (상세보기 및 비고 입력 모달 호출)
-  const handleNextStatus = (e: React.MouseEvent, task: Task) => {
+  // 상태 변경
+  const handleNextStatus = async (e: React.MouseEvent, task: Task) => {
     e.stopPropagation();
+    const statusOrder: Task['status'][] = ['PENDING', 'IN_PROGRESS', 'COMPLETED'];
+    const currentIndex = statusOrder.indexOf(task.status);
+    const nextStatus = statusOrder[(currentIndex + 1) % statusOrder.length];
 
-    if (!canModifyTaskStatus(task)) {
-      if (task.task_type === 'WEEKLY' || task.task_type === 'CABIN') {
-        showCustomAlert('권한 없음', '주간 업무 및 CABIN 업무의 상태는 관리자만 변경할 수 있습니다.');
-      } else {
-        showCustomAlert('권한 없음', '해당 업무를 진행하는 인원만 상태 변경이 가능합니다.');
-      }
-      return;
-    }
-
-    setStatusChangeModal({
-      open: true,
-      task: task,
-      targetStatus: task.status,
-      remarks: task.remarks || ''
-    });
-  };
-
-  // 상태 및 비고 정보 최종 저장 처리
-  const handleConfirmStatusChange = async () => {
-    if (!statusChangeModal.task) return;
-    const task = statusChangeModal.task;
-    const nextStatus = statusChangeModal.targetStatus;
-    const remarks = statusChangeModal.remarks;
-
-    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus, remarks } : t)));
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus } : t)));
     if (selectedTaskForSheet?.id === task.id) {
-      setSelectedTaskForSheet({ ...selectedTaskForSheet, status: nextStatus, remarks });
+      setSelectedTaskForSheet({ ...selectedTaskForSheet, status: nextStatus });
     }
 
     try {
-      const { error } = await supabase.from('tasks').update({ status: nextStatus, remarks }).eq('id', task.id);
-      if (error) throw error;
-      setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
+      await supabase.from('tasks').update({ status: nextStatus }).eq('id', task.id);
       fetchTasks();
-      showCustomAlert('성공', '업무 상태 및 비고란이 업데이트 되었습니다.');
-    } catch (err: any) {
-      showCustomAlert('오류', `상태 변경 실패: ${err.message}`);
+    } catch (err) {
+      console.error('상태 변경 실패:', err);
     }
   };
 
@@ -461,7 +433,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return (
       <button
         onClick={(e) => handleNextStatus(e, task)}
-        title="클릭 시 상태 및 비고란 변경 모달 호출"
+        title="클릭 시 상태 변경 (대기 -> 진행중 -> 완료)"
         className={`px-2.5 py-1 rounded-full border text-[11px] font-bold flex items-center gap-1 transition-all shrink-0 ${config.bg}`}
       >
         <Icon className="h-3.5 w-3.5" />
@@ -482,7 +454,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       time_slot: '09:00 - 18:00',
       task_type: defaultType || taskTab,
       category: defaultCategory || (vessels.length > 0 ? vessels[0].name : ''),
-      remarks: '',
     });
     setAssignedList([]);
     setDayWorkerList([]);
@@ -503,7 +474,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       time_slot: task.time_slot || '09:00 - 18:00',
       task_type: task.task_type || 'CABIN',
       category: task.category || (vessels.length > 0 ? vessels[0].name : ''),
-      remarks: task.remarks || '',
     });
     setAssignedList(task.assigned_names || []);
     setDayWorkerList(task.day_workers || []);
@@ -522,6 +492,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSingleWorkerInput('');
   };
 
+  // 단순 app_users 기반으로 형성된 그룹 데이터 반영
   const handleApplyTeamOrDept = (value: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (!value) return;
     
@@ -558,81 +529,44 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자 권한이 없습니다.'); return; }
     if (!formData.title.trim()) return;
 
+    let payload: any = {
+      title: formData.title.trim(),
+      description: formData.description.trim(),
+      start_date: formData.start_date,
+      task_type: formData.task_type,
+      status: editingTask ? editingTask.status : 'PENDING',
+    };
+
+    if (formData.task_type === 'CABIN') {
+      payload = {
+        ...payload,
+        end_date: formData.end_date,
+        day_workers: dayWorkerList,
+        night_workers: nightWorkerList,
+        category: formData.category,
+        time_slot: null,
+        assigned_names: null,
+      };
+    } else {
+      payload = {
+        ...payload,
+        end_date: formData.start_date,
+        time_slot: formData.time_slot.trim(),
+        assigned_names: assignedList,
+        category: null,
+        day_workers: null,
+        night_workers: null,
+      };
+    }
+
     try {
-      if (formData.task_type === 'WEEKLY' && !editingTask) {
-        const start = new Date(formData.start_date);
-        const end = new Date(formData.end_date);
-
-        if (start > end) {
-          showCustomAlert('입력 오류', '종료일은 시작일보다 이전일 수 없습니다.');
-          return;
-        }
-
-        const insertPayloads = [];
-        const current = new Date(start);
-
-        while (current <= end) {
-          const dateStr = formatDateToYYYYMMDD(current);
-          insertPayloads.push({
-            title: formData.title.trim(),
-            description: formData.description.trim(),
-            start_date: dateStr,
-            end_date: dateStr,
-            time_slot: formData.time_slot.trim(),
-            task_type: 'WEEKLY',
-            status: 'PENDING',
-            assigned_names: assignedList,
-            remarks: formData.remarks.trim(),
-            category: null,
-            day_workers: null,
-            night_workers: null,
-          });
-          current.setDate(current.getDate() + 1);
-        }
-
-        const { error } = await supabase.from('tasks').insert(insertPayloads);
+      if (editingTask) {
+        const { error } = await supabase.from('tasks').update(payload).eq('id', editingTask.id);
         if (error) throw error;
       } else {
-        let payload: any = {
-          title: formData.title.trim(),
-          description: formData.description.trim(),
-          start_date: formData.start_date,
-          task_type: formData.task_type,
-          status: editingTask ? editingTask.status : 'PENDING',
-          remarks: formData.remarks.trim(),
-        };
-
-        if (formData.task_type === 'CABIN') {
-          payload = {
-            ...payload,
-            end_date: formData.end_date,
-            day_workers: dayWorkerList,
-            night_workers: nightWorkerList,
-            category: formData.category,
-            time_slot: null,
-            assigned_names: null,
-          };
-        } else {
-          payload = {
-            ...payload,
-            end_date: formData.task_type === 'WEEKLY' ? formData.end_date : formData.start_date,
-            time_slot: formData.time_slot.trim(),
-            assigned_names: assignedList,
-            category: null,
-            day_workers: null,
-            night_workers: null,
-          };
-        }
-
-        if (editingTask) {
-          const { error } = await supabase.from('tasks').update(payload).eq('id', editingTask.id);
-          if (error) throw error;
-        } else {
-          const { error } = await supabase.from('tasks').insert([payload]);
-          if (error) throw error;
-        }
+        const { error } = await supabase.from('tasks').insert([payload]);
+        if (error) throw error;
       }
-
       setIsModalOpen(false);
       setSelectedTaskForSheet(null);
       fetchTasks();
@@ -655,7 +589,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   };
 
-  // 달력 형식 주간 업무 엑셀 다운로드
+  // 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수 (해당 일의 모든 업무 N개 저장)
   const handleExportWeeklyExcel = () => {
     const [yearStr, monthStr] = selectedExportMonth.split('-');
     const year = parseInt(yearStr, 10);
@@ -690,14 +624,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         weekRowDates.push(isCurrentMonth ? `${dayNum}일` : `(${dayNum}일)`);
 
         if (isCurrentMonth) {
+          // 일치하는 일자의 모든 업무를 필터링하여 포함
           const matchedTasks = monthlyWeeklyTasks.filter(t => t.start_date === dateStr);
           if (matchedTasks.length > 0) {
             const taskText = matchedTasks.map((t, idx) => {
               const statusStr = t.status === 'COMPLETED' ? '완료' : t.status === 'IN_PROGRESS' ? '진행중' : '대기';
               const assignees = t.assigned_names?.length ? `[${t.assigned_names.join(', ')}]` : '';
               const timeSlotStr = t.time_slot ? `(${t.time_slot}) ` : '';
-              const remarksStr = t.remarks ? ` [비고: ${t.remarks}]` : '';
-              return `${idx + 1}. ${timeSlotStr}${t.title} ${assignees} - ${statusStr}${remarksStr}`;
+              return `${idx + 1}. ${timeSlotStr}${t.title} ${assignees} - ${statusStr}`;
             }).join('\n');
             weekRowTasksText.push(taskText);
           } else {
@@ -762,7 +696,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   return (
     <div className="bg-[#F5F6F8] min-h-screen w-full text-[#1F2937] p-0 m-0">
-      <div className="w-full bg-white border-b border-[#E2E5E9] space-y-4">
+      <div className="w-full bg-white border-b border-[#E2E5E9] p-3 sm:p-4 space-y-4">
         
         {/* Header */}
         <div className="flex flex-col gap-3 pb-3 border-b border-[#E2E5E9]">
@@ -788,7 +722,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             )}
           </div>
 
-          {/* 컨트롤바 */}
+          {/* 모바일 대응 컨트롤바 */}
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1">
             <button
               onClick={() => {
@@ -836,7 +770,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         </div>
 
-        {/* 일일 업무 서브탭 */}
+        {/* 일일 업무 완료 이력 서브탭 */}
         {taskTab === 'DAILY' && (
           <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
             <div className="flex space-x-1">
@@ -920,46 +854,24 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <span className="text-xs text-[#64748B] font-mono">({t.start_date})</span>
                       {renderStatusBadge(t)}
                     </div>
-                    <h4 className="font-bold text-sm text-[#1F2937] cursor-pointer hover:underline" onClick={() => setSelectedTaskForSheet(t)}>
+                    <h4 className="font-bold text-sm text-[#1F2937] cursor-pointer hover:underline" onClick={() => handleOpenTaskDetail(t)}>
                       {t.title}
                     </h4>
-                    {t.remarks && (
-                      <p className="text-xs text-[#243B5A] bg-blue-50/60 border border-blue-100 px-2.5 py-1 rounded-md mt-1 font-medium">
-                        <span className="font-bold">비고:</span> {t.remarks}
-                      </p>
-                    )}
                   </div>
 
                   <div className="flex items-center justify-between md:justify-end space-x-3">
                     <div className="flex items-center space-x-1.5 text-xs text-[#64748B] bg-[#F5F6F8] px-2.5 py-1 rounded-md border">
-                      <User className="h-3.5 w-3.5 shrink-0" />
-                      <div className="flex flex-wrap items-center gap-1">
-                        {t.assigned_names?.length ? (
-                          t.assigned_names.map((name) => (
-                            <button
-                              key={`${t.id}-${name}`}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (dailySubTab === 'ACTIVE') handleCallWorker(name);
-                              }}
-                              className={`font-medium text-[#1F2937] rounded px-1.5 py-0.5 transition ${
-                                dailySubTab === 'ACTIVE'
-                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
-                                  : 'cursor-default'
-                              }`}
-                            >
-                              {name}
-                            </button>
-                          ))
-                        ) : (
-                          <span className="font-medium text-[#1F2937]">미지정</span>
-                        )}
-                      </div>
+                      <User className="h-3.5 w-3.5" />
+                      <span className="font-medium text-[#1F2937]">{t.assigned_names?.join(', ') || '미지정'}</span>
                     </div>
 
-                    {dailySubTab === 'HISTORY' && isAdmin && (
-                      <div className="flex items-center space-x-1">
+                    <div className="flex items-center space-x-1">
+                      <button onClick={() => handleOpenTaskDetail(t)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#243B5A]/10 text-[#243B5A] flex items-center gap-1">
+                        <Eye className="h-3.5 w-3.5" />
+                        <span>상세</span>
+                      </button>
+
+                      {dailySubTab === 'HISTORY' && isAdmin && (
                         <button
                           onClick={() => handleDeleteTask(t.id)}
                           className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 flex items-center gap-1 hover:bg-red-100 transition"
@@ -967,8 +879,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           <Trash2 className="h-3.5 w-3.5" />
                           <span>삭제</span>
                         </button>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
               ))
@@ -984,6 +896,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <button onClick={() => setCurrentWeekMonday(getMonday(new Date()))} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2">오늘</button>
               </div>
 
+              {/* 엑셀 추출 컨트롤 영역 */}
               <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
                 <input
                   type="month"
@@ -996,7 +909,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
                 >
                   <FileSpreadsheet className="h-3.5 w-3.5" />
-                  <span>엑셀 저장(수정중)</span>
+                  <span>달력 엑셀 저장</span>
                 </button>
 
                 <div className="bg-[#F5F6F8] p-1 rounded-lg border flex space-x-1">
@@ -1038,19 +951,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           {dayTasks.map((t) => (
                             <div
                               key={t.id}
-                              onClick={() => setSelectedTaskForSheet(t)}
+                              onClick={() => handleOpenTaskDetail(t)}
                               className="bg-white border rounded-lg p-2 text-xs space-y-1 shadow-2xs cursor-pointer hover:border-[#243B5A]"
                             >
                               <div className="flex justify-between items-center">
                                 <span className="text-[10px] text-[#2563EB] font-mono">{t.time_slot || '시간미정'}</span>
                                 {renderStatusBadge(t)}
                               </div>
-                              <div className="font-bold text-[#1F2937] leading-tight line-clamp-2">{t.title}</div>
-                              {t.remarks && (
-                                <div className="text-[10px] text-[#243B5A] bg-blue-50/80 px-1.5 py-0.5 rounded truncate">
-                                  비고: {t.remarks}
-                                </div>
-                              )}
+                              <div className="font-bold text-[#1F2937] leading-tight line-clamp-2">{t.title}{renderTaskNewBadge(t)}</div>
                               <div className="text-[10px] text-[#64748B] truncate">{t.assigned_names?.join(', ') || '미지정'}</div>
                             </div>
                           ))}
@@ -1081,18 +989,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       ) : (
                         <div className="space-y-2">
                           {dayTasks.map((t) => (
-                            <div key={t.id} onClick={() => setSelectedTaskForSheet(t)} className="flex items-center justify-between bg-white border rounded-lg p-2.5 text-xs cursor-pointer hover:border-[#243B5A]">
+                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="flex items-center justify-between bg-white border rounded-lg p-2.5 text-xs cursor-pointer hover:border-[#243B5A]">
                               <div className="space-y-1">
                                 <div className="flex items-center space-x-2">
-                                  <div className="font-bold text-[#1F2937]">{t.title}</div>
+                                  <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
                                   {renderStatusBadge(t)}
                                 </div>
-                                <div className="text-[11px] text-[#64748B]">
-                                  시간: {t.time_slot || '시간미정'} | 인원: {t.assigned_names?.join(', ') || '미지정'}
-                                </div>
-                                {t.remarks && (
-                                  <div className="text-[11px] text-[#243B5A] font-medium">비고: {t.remarks}</div>
-                                )}
+                                <div className="text-[11px] text-[#64748B]">시간: {t.time_slot || '시간미정'} | 인원: {t.assigned_names?.join(', ') || '미지정'}</div>
                               </div>
                               <Eye className="h-4 w-4 text-[#64748B]" />
                             </div>
@@ -1130,70 +1033,21 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </span>
                       {renderStatusBadge(t)}
                     </div>
-                    <h4 className="font-bold text-sm text-[#1F2937]">{t.title}</h4>
+                    <h4 className="font-bold text-sm text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</h4>
                     {t.description && <p className="text-xs text-[#64748B]">{t.description}</p>}
-                    {t.remarks && (
-                      <p className="text-xs text-[#243B5A] bg-blue-50/60 border border-blue-100 px-2.5 py-1 rounded-md mt-1 font-medium">
-                        <span className="font-bold">비고:</span> {t.remarks}
-                      </p>
-                    )}
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg text-xs">
                       <Sun className="h-3.5 w-3.5 text-amber-600" />
                       <span className="font-bold text-amber-900">주간:</span>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {t.day_workers?.length ? (
-                          t.day_workers.map((name) => (
-                            <button
-                              key={`${t.id}-day-${name}`}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (t.status !== 'COMPLETED') handleCallWorker(name);
-                              }}
-                              className={`font-medium text-amber-800 rounded px-1 transition ${
-                                t.status !== 'COMPLETED'
-                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
-                                  : 'cursor-default'
-                              }`}
-                            >
-                              {name}
-                            </button>
-                          ))
-                        ) : (
-                          <span className="text-amber-800 font-medium">없음</span>
-                        )}
-                      </div>
+                      <span className="text-amber-800 font-medium">{t.day_workers?.join(', ') || '없음'}</span>
                     </div>
 
                     <div className="flex items-center space-x-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg text-xs">
                       <Moon className="h-3.5 w-3.5 text-indigo-600" />
                       <span className="font-bold text-indigo-900">야간:</span>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {t.night_workers?.length ? (
-                          t.night_workers.map((name) => (
-                            <button
-                              key={`${t.id}-night-${name}`}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (t.status !== 'COMPLETED') handleCallWorker(name);
-                              }}
-                              className={`font-medium text-indigo-800 rounded px-1 transition ${
-                                t.status !== 'COMPLETED'
-                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
-                                  : 'cursor-default'
-                              }`}
-                            >
-                              {name}
-                            </button>
-                          ))
-                        ) : (
-                          <span className="text-indigo-800 font-medium">없음</span>
-                        )}
-                      </div>
+                      <span className="text-indigo-800 font-medium">{t.night_workers?.join(', ') || '없음'}</span>
                     </div>
 
                     {isAdmin && (
@@ -1221,7 +1075,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <div className="flex justify-end space-x-2 pt-2 border-t text-xs">
                 {customAlert.type === 'confirm' ? (
                   <>
-                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">{customAlert.cancelLabel || '취소'}</button>
+                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">취소</button>
                     <button
                       onClick={() => {
                         setCustomAlert({ ...customAlert, open: false });
@@ -1229,7 +1083,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       }}
                       className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold"
                     >
-                      {customAlert.confirmLabel || '확인'}
+                      확인
                     </button>
                   </>
                 ) : (
@@ -1263,7 +1117,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   myAssignedTasks.map((t) => (
                     <div key={t.id} className="p-2.5 bg-[#F5F6F8] rounded-lg text-xs space-y-1 border flex items-center justify-between">
                       <div>
-                        <div className="font-bold text-[#1F2937]">{t.title}</div>
+                        <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
                         <div className="text-[11px] text-[#64748B] font-mono">
                           {t.task_type === 'CABIN' ? `${t.start_date} ~ ${t.end_date}` : `${t.start_date} (${t.time_slot || ''})`}
                         </div>
@@ -1290,108 +1144,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 상태 변경 및 비고 입력 모달 (버튼 직접 선택 구현) */}
-        {statusChangeModal.open && statusChangeModal.task && (
-          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between border-b pb-3">
-                <div className="flex items-center space-x-2">
-                  <FileText className="h-5 w-5 text-[#243B5A]" />
-                  <h3 className="text-sm font-bold text-[#1F2937]">상세보기 및 상태 변경</h3>
-                </div>
-                <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <div className="p-3 bg-[#F5F6F8] rounded-lg border space-y-2">
-                  <div className="font-bold text-sm text-[#1F2937]">{statusChangeModal.task.title}</div>
-                  <div className="text-[#64748B] font-mono">
-                    일시: {statusChangeModal.task.start_date} {statusChangeModal.task.time_slot ? `(${statusChangeModal.task.time_slot})` : ''}
-                  </div>
-                  {statusChangeModal.task.description && (
-                    <div className="text-[#64748B]">설명: {statusChangeModal.task.description}</div>
-                  )}
-                  <div className="text-[#64748B]">
-                    담당자: {statusChangeModal.task.assigned_names?.join(', ') || 
-                            [...(statusChangeModal.task.day_workers || []), ...(statusChangeModal.task.night_workers || [])].join(', ') || 
-                            '지정 안됨'}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })}
-                      className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
-                        statusChangeModal.targetStatus === 'PENDING'
-                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                      }`}
-                    >
-                      <AlertCircle className="h-3.5 w-3.5" />
-                      <span>대기</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })}
-                      className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
-                        statusChangeModal.targetStatus === 'IN_PROGRESS'
-                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                          : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                      }`}
-                    >
-                      <PlayCircle className="h-3.5 w-3.5" />
-                      <span>진행중</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })}
-                      className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
-                        statusChangeModal.targetStatus === 'COMPLETED'
-                          ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
-                          : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
-                      }`}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      <span>완료</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#1F2937] mb-1">비고란 (내용 작성)</label>
-                  <textarea
-                    rows={3}
-                    placeholder="작업 관련 비고 사항을 작성해주세요..."
-                    value={statusChangeModal.remarks}
-                    onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-xs resize-none focus:outline-none focus:border-[#243B5A]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3 border-t text-xs">
-                <button
-                  onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })}
-                  className="px-3.5 py-1.5 border rounded-lg hover:bg-slate-50"
-                >
-                  취소
-                </button>
-                <button
-                  onClick={handleConfirmStatusChange}
-                  className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1b2c44]"
-                >
-                  상태 변경 및 저장
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* 상세 바텀시트 */}
         {selectedTaskForSheet && (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 backdrop-blur-xs">
@@ -1407,20 +1159,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
 
               <div className="space-y-2">
-                <h3 className="text-base font-bold text-[#1F2937]">{selectedTaskForSheet.title}</h3>
+                <h3 className="text-base font-bold text-[#1F2937]">{selectedTaskForSheet.title}{renderTaskNewBadge(selectedTaskForSheet)}</h3>
                 {selectedTaskForSheet.description && (
                   <p className="text-xs text-[#64748B] bg-[#F5F6F8] p-3 rounded-lg border">{selectedTaskForSheet.description}</p>
                 )}
               </div>
-
-              {selectedTaskForSheet.remarks && (
-                <div className="space-y-1 text-xs">
-                  <div className="font-bold text-[#1F2937]">비고:</div>
-                  <div className="text-[#243B5A] bg-blue-50/70 p-2.5 rounded-lg border border-blue-100">
-                    {selectedTaskForSheet.remarks}
-                  </div>
-                </div>
-              )}
 
               <div className="space-y-1 text-xs">
                 <div className="font-bold text-[#1F2937]">인원 목록:</div>
@@ -1563,7 +1306,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 </button>
               </div>
 
-              {/* Team 목록 */}
+              {/* Team 목록 및 수정/삭제 */}
               <div className="space-y-2">
                 <span className="text-xs font-bold text-[#1F2937]">등록된 Team 목록 ({presetTeams.length})</span>
                 <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
@@ -1752,7 +1495,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     </div>
 
-                    {/* CABIN 주간/야간 인원 선택 */}
+                    {/* CABIN 주간/야간 인원 선택 및 Team 불러오기 */}
                     <div className="space-y-3 pt-2">
                       <div>
                         <div className="flex justify-between items-center mb-1">
@@ -1841,55 +1584,17 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       />
                     </div>
 
-                    {formData.task_type === 'WEEKLY' ? (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-semibold mb-1">시작일</label>
-                          <input
-                            type="date"
-                            required
-                            value={formData.start_date}
-                            onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                            className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold mb-1">종료일</label>
-                          <input
-                            type="date"
-                            required
-                            value={formData.end_date}
-                            onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
-                            className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono"
-                          />
-                        </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">일자</label>
+                        <input
+                          type="date"
+                          required
+                          value={formData.start_date}
+                          onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                          className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono"
+                        />
                       </div>
-                    ) : (
-                      <div className="grid grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-[11px] font-semibold mb-1">일자</label>
-                          <input
-                            type="date"
-                            required
-                            value={formData.start_date}
-                            onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
-                            className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-semibold mb-1">시간대</label>
-                          <input
-                            type="text"
-                            placeholder="예) 09:00 - 18:00"
-                            value={formData.time_slot}
-                            onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
-                            className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono"
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {formData.task_type === 'WEEKLY' && (
                       <div>
                         <label className="block text-[11px] font-semibold mb-1">시간대</label>
                         <input
@@ -1900,7 +1605,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono"
                         />
                       </div>
-                    )}
+                    </div>
 
                     {/* 인원 추가 & Team 불러오기 */}
                     <div className="space-y-1.5">
@@ -1947,6 +1652,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         </button>
                       </div>
 
+                      {/* 추가된 인원 태그 리스트 */}
                       <div className="flex flex-wrap gap-1 pt-1">
                         {assignedList.length === 0 ? (
                           <span className="text-[11px] text-[#64748B]">지정된 인원이 없습니다.</span>
@@ -1970,17 +1676,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     value={formData.description}
                     onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                     className="w-full px-3 py-1.5 border rounded-lg text-xs resize-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold mb-1">비고란</label>
-                  <input
-                    type="text"
-                    placeholder="비고 사항 입력 (선택)"
-                    value={formData.remarks}
-                    onChange={(e) => setFormData({ ...formData, remarks: e.target.value })}
-                    className="w-full px-3 py-1.5 border rounded-lg text-xs"
                   />
                 </div>
 
