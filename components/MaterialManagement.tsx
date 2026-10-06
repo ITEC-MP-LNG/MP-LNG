@@ -288,6 +288,7 @@ export default function MaterialManagement({
 
   // --- 기자재 일괄 불출 상태 ---
   const [selectedFixedIds, setSelectedFixedIds] = useState<string[]>([]);
+  const [fixedBatchQuantities, setFixedBatchQuantities] = useState<Record<string, number>>({});
   const [showFixedBatchModal, setShowFixedBatchModal] = useState<boolean>(false);
   const [fixedBatchMemo, setFixedBatchMemo] = useState<string>('');
   const [cabinCalibrationOnly, setCabinCalibrationOnly] = useState<boolean>(false);
@@ -489,9 +490,12 @@ export default function MaterialManagement({
           .eq('inventory_type', 'CABIN')
           .order('sort_order', { ascending: true, nullsFirst: false });
         if (!savedSheetError && savedSheets && savedSheets.length > 0) {
-          const savedNames = savedSheets.map((row: any) => row.name).filter((name: string) => sortedSheets.includes(name));
-          const newSheets = sortedSheets.filter(name => !savedNames.includes(name));
-          orderedSheets = [...savedNames, ...newSheets];
+          const savedNames = savedSheets
+            .map((row: any) => cleanSheetName(String(row.name || '')))
+            .filter(Boolean);
+          const uniqueSavedNames = Array.from(new Set(savedNames));
+          const newSheets = sortedSheets.filter(name => !uniqueSavedNames.includes(name));
+          orderedSheets = [...uniqueSavedNames, ...newSheets];
         }
       } catch (savedOrderError) {
         console.error('CABIN 서브탭 순서 불러오기 실패:', savedOrderError);
@@ -1179,17 +1183,51 @@ export default function MaterialManagement({
 
   const toggleSelectFixedItem = (id: string | number) => {
     const strId = String(id);
-    setSelectedFixedIds(prev =>
-      prev.includes(strId) ? prev.filter(item => item !== strId) : [...prev, strId]
-    );
+    const target = inventoryList.find(item => String(item.id) === strId && item.type === '고정');
+    const isSelected = selectedFixedIds.includes(strId);
+    if (isSelected) {
+      setSelectedFixedIds(prev => prev.filter(item => item !== strId));
+      setFixedBatchQuantities(current => {
+        const next = { ...current };
+        delete next[strId];
+        return next;
+      });
+      return;
+    }
+    setSelectedFixedIds(prev => [...prev, strId]);
+    if (target) {
+      setFixedBatchQuantities(current => ({ ...current, [strId]: Number(target.quantity || 0) > 0 ? 1 : 0 }));
+    }
   };
 
   const toggleSelectAllFixed = () => {
     if (selectedFixedIds.length === filteredInventory.length) {
       setSelectedFixedIds([]);
+      setFixedBatchQuantities({});
     } else {
-      setSelectedFixedIds(filteredInventory.map(item => String(item.id)));
+      const ids = filteredInventory.map(item => String(item.id));
+      const quantities: Record<string, number> = {};
+      filteredInventory.forEach(item => {
+        quantities[String(item.id)] = Math.max(1, Math.min(1, Number(item.quantity || 0)));
+      });
+      setSelectedFixedIds(ids);
+      setFixedBatchQuantities(quantities);
     }
+  };
+
+  const openFixedBatchModal = () => {
+    const selectedItems = inventoryList.filter(item =>
+      item.type === '고정' && selectedFixedIds.includes(String(item.id))
+    );
+    const quantities: Record<string, number> = {};
+    selectedItems.forEach(item => {
+      const id = String(item.id);
+      const available = Number(item.quantity || 0);
+      const current = Number(fixedBatchQuantities[id] || 1);
+      quantities[id] = available > 0 ? Math.max(1, Math.min(current, available)) : 0;
+    });
+    setFixedBatchQuantities(quantities);
+    setShowFixedBatchModal(true);
   };
 
   const handleFixedBatchIssue = async (e: React.FormEvent) => {
@@ -1208,6 +1246,21 @@ export default function MaterialManagement({
         return;
       }
 
+      const issueItems = selectedItems.map(item => {
+        const id = String(item.id);
+        const available = Number(item.quantity || 0);
+        const quantity = Number(fixedBatchQuantities[id] || 0);
+        return { item, available, quantity };
+      });
+
+      const invalidQuantityItem = issueItems.find(({ quantity, available }) =>
+        !Number.isInteger(quantity) || quantity < 1 || quantity > available
+      );
+      if (invalidQuantityItem) {
+        showCenterToast(`${invalidQuantityItem.item.name || invalidQuantityItem.item.code || '기자재'}의 불출 수량은 1개 이상, 현재 보유수량 이하로 입력해주세요.`);
+        return;
+      }
+
       const batchId = typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -1215,12 +1268,12 @@ export default function MaterialManagement({
       const issuedBy = currentUser?.name || '작업자';
       const memoText = fixedBatchMemo.trim() || '기자재 일괄 불출';
 
-      for (const item of selectedItems) {
+      for (const { item, quantity } of issueItems) {
         const { data: updatedRows, error: updateError } = await supabase
           .from('inventory')
-          .update({ quantity: Number(item.quantity || 0) - 1, updated_at: issuedAt })
+          .update({ quantity: Number(item.quantity || 0) - quantity, updated_at: issuedAt })
           .eq('id', item.id)
-          .gte('quantity', 1)
+          .gte('quantity', quantity)
           .select('id, quantity');
         if (updateError) throw updateError;
         if (!updatedRows || updatedRows.length === 0) {
@@ -1228,13 +1281,13 @@ export default function MaterialManagement({
         }
       }
 
-      const batchRows = selectedItems.map(item => ({
+      const batchRows = issueItems.map(({ item, quantity }) => ({
         batch_id: batchId,
         inventory_id: item.id,
         inventory_type: '고정',
         item_code: item.code || null,
         item_name: item.name || null,
-        quantity: 1,
+        quantity,
         issued_by: issuedBy,
         issued_at: issuedAt,
         status: 'ISSUED',
@@ -1243,24 +1296,28 @@ export default function MaterialManagement({
       const { error: batchError } = await supabase.from('inventory_batch_items').insert(batchRows);
       if (batchError) throw batchError;
 
-      const firstItemName = selectedItems[0].name || selectedItems[0].code || '기자재';
-      const integratedItemName = selectedItems.length === 1 ? firstItemName : `${firstItemName} 외 ${selectedItems.length - 1}건`;
+      const firstItemName = issueItems[0].item.name || issueItems[0].item.code || '기자재';
+      const totalIssuedQuantity = issueItems.reduce((sum, entry) => sum + entry.quantity, 0);
+      const integratedItemName = issueItems.length === 1
+        ? `${firstItemName} ${issueItems[0].quantity}개`
+        : `${firstItemName} 외 ${issueItems.length - 1}건`;
       const { error: logError } = await supabase.from('inventory_logs').insert([{
         inventory_id: null,
         item_name: `[기자재 일괄 불출] ${integratedItemName}`,
         type: '불출',
-        quantity: selectedItems.length,
+        quantity: totalIssuedQuantity,
         worker_name: issuedBy,
         issued_by: issuedBy,
-        memo: memoText,
+        memo: `${memoText} / 총 ${totalIssuedQuantity}개`,
         batch_id: batchId,
         created_at: issuedAt
       }]);
       if (logError) throw logError;
 
-      showCenterToast(`선택된 ${selectedItems.length}개 기자재가 일괄 불출되었습니다.`);
+      showCenterToast(`선택된 ${issueItems.length}개 기자재에서 총 ${totalIssuedQuantity}개가 일괄 불출되었습니다.`);
       setShowFixedBatchModal(false);
       setSelectedFixedIds([]);
+      setFixedBatchQuantities({});
       setFixedBatchMemo('');
       await fetchInventory();
       await fetchInventoryLogs();
@@ -1917,6 +1974,39 @@ export default function MaterialManagement({
               <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200 space-y-1">
                 <span className="text-[10px] text-blue-700 block font-semibold">선택된 기자재</span>
                 <p className="font-bold text-blue-900 text-sm">총 {selectedFixedIds.length}건 일괄 불출</p>
+              </div>
+              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                <label className="block text-[#64748B] font-semibold mb-1">품목별 불출 수량</label>
+                {inventoryList
+                  .filter(item => item.type === '고정' && selectedFixedIds.includes(String(item.id)))
+                  .map(item => {
+                    const id = String(item.id);
+                    const available = Number(item.quantity || 0);
+                    const quantity = Number(fixedBatchQuantities[id] || 0);
+                    return (
+                      <div key={id} className="flex items-center justify-between gap-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md px-2.5 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-semibold text-[#1F2937] truncate">{item.name || item.code || '기자재'}</p>
+                          <p className="text-[10px] text-[#64748B]">보유수량: {available} {item.unit || 'EA'}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <input
+                            type="number"
+                            min={available > 0 ? 1 : 0}
+                            max={available}
+                            step={1}
+                            value={quantity}
+                            onChange={e => {
+                              const next = Number(e.target.value);
+                              setFixedBatchQuantities(prev => ({ ...prev, [id]: Number.isFinite(next) ? next : 0 }));
+                            }}
+                            className="w-16 px-2 py-1.5 text-center bg-white border border-[#CBD5E1] rounded-md text-xs font-bold text-[#1F2937]"
+                          />
+                          <span className="text-[10px] text-[#64748B]">{item.unit || 'EA'}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
               </div>
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">불출 메모 / 목적</label>
@@ -2845,7 +2935,7 @@ export default function MaterialManagement({
           <div className="flex items-center space-x-1 shrink-0">
             {selectedFixedIds.length > 0 && (
               <button
-                onClick={() => setShowFixedBatchModal(true)}
+                onClick={openFixedBatchModal}
                 className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-semibold shadow-2xs transition flex items-center gap-1"
               >
                 <ArrowUpRight className="h-3.5 w-3.5" />
