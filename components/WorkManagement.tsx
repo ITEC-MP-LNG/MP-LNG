@@ -456,9 +456,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       `${workerName}님에게 전화 연결 하시겠습니까?`,
       () => {
         window.location.href = `tel:${phone.replace(/[^0-9+]/g, '')}`;
-      },
-      '예',
-      '아니오'
+      }
     );
   };
 
