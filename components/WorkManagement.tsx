@@ -221,8 +221,17 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const markTaskAsRead = (task: Task) => {
     if (typeof window === 'undefined') return;
+
+    // N 제거를 위한 재렌더링 후에도 현재 스크롤 위치 유지
+    const scrollY = window.scrollY;
     localStorage.setItem(getTaskReadKey(task.id), String(Date.now()));
     setTasks(prev => [...prev]);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.scrollTo(0, scrollY);
+      });
+    });
   };
 
   const handleOpenTaskDetail = (task: Task) => {
