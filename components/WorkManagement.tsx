@@ -48,6 +48,7 @@ export interface AppUser {
   id?: string;
   name: string;
   department?: string;
+  phone?: string;
 }
 
 const formatDateToYYYYMMDD = (d: Date) => {
@@ -161,7 +162,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   // app_users 인원 및 부서(department) 불러오기
   const fetchAppUsers = async () => {
     try {
-      const { data, error } = await supabase.from('app_users').select('name, department');
+      const { data, error } = await supabase.from('app_users').select('name, department, phone');
       if (error) throw error;
       if (data) {
         setAppUsers(data);
@@ -436,6 +437,29 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       .filter(Boolean);
     
     setNewTeamMembersText(deptMembers.join(', '));
+  };
+
+  // 업무 담당자 전화 연결
+  const handleCallWorker = (workerName: string) => {
+    const worker = appUsers.find(
+      (u) => u.name?.trim().toLowerCase() === workerName.trim().toLowerCase()
+    );
+    const phone = worker?.phone?.trim();
+
+    if (!phone) {
+      showCustomAlert('전화 연결', `${workerName}님의 전화번호가 등록되어 있지 않습니다.`);
+      return;
+    }
+
+    showCustomConfirm(
+      '전화 연결',
+      `${workerName}님에게 전화 연결 하시겠습니까?`,
+      () => {
+        window.location.href = `tel:${phone.replace(/[^0-9+]/g, '')}`;
+      },
+      '예',
+      '아니오'
+    );
   };
 
   // 상태 변경 버튼 클릭 시 (상세보기 및 비고 입력 모달 호출)
@@ -923,7 +947,29 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <div className="flex items-center justify-between md:justify-end space-x-3">
                     <div className="flex items-center space-x-1.5 text-xs text-[#64748B] bg-[#F5F6F8] px-2.5 py-1 rounded-md border">
                       <User className="h-3.5 w-3.5" />
-                      <span className="font-medium text-[#1F2937]">{t.assigned_names?.join(', ') || '미지정'}</span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {t.assigned_names?.length ? (
+                          t.assigned_names.map((name) => (
+                            <button
+                              key={`${t.id}-${name}`}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (dailySubTab === 'ACTIVE') handleCallWorker(name);
+                              }}
+                              className={`font-medium text-[#1F2937] rounded px-1 transition ${
+                                dailySubTab === 'ACTIVE'
+                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
+                                  : 'cursor-default'
+                              }`}
+                            >
+                              {name}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="font-medium text-[#1F2937]">미지정</span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center space-x-1">
@@ -1020,7 +1066,29 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                 {renderStatusBadge(t)}
                               </div>
                               <div className="font-bold text-[#1F2937] leading-tight line-clamp-2">{t.title}{renderTaskNewBadge(t)}</div>
-                              <div className="text-[10px] text-[#64748B] truncate">{t.assigned_names?.join(', ') || '미지정'}</div>
+                              <div className="text-[10px] text-[#64748B] flex flex-wrap items-center gap-1">
+                                {t.assigned_names?.length ? (
+                                  t.assigned_names.map((name) => (
+                                    <button
+                                      key={`${t.id}-weekly-grid-${name}`}
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (t.status !== 'COMPLETED') handleCallWorker(name);
+                                      }}
+                                      className={`font-medium text-[#64748B] rounded px-0.5 transition ${
+                                        t.status !== 'COMPLETED'
+                                          ? 'hover:text-[#2563EB] hover:underline cursor-pointer'
+                                          : 'cursor-default'
+                                      }`}
+                                    >
+                                      {name}
+                                    </button>
+                                  ))
+                                ) : (
+                                  <span>미지정</span>
+                                )}
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1056,7 +1124,30 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                   <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
                                   {renderStatusBadge(t)}
                                 </div>
-                                <div className="text-[11px] text-[#64748B]">시간: {t.time_slot || '시간미정'} | 인원: {t.assigned_names?.join(', ') || '미지정'}</div>
+                                <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-1">
+                                  <span>시간: {t.time_slot || '시간미정'} | 인원:</span>
+                                  {t.assigned_names?.length ? (
+                                    t.assigned_names.map((name) => (
+                                      <button
+                                        key={`${t.id}-weekly-list-${name}`}
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (t.status !== 'COMPLETED') handleCallWorker(name);
+                                        }}
+                                        className={`font-medium text-[#64748B] rounded px-0.5 transition ${
+                                          t.status !== 'COMPLETED'
+                                            ? 'hover:text-[#2563EB] hover:underline cursor-pointer'
+                                            : 'cursor-default'
+                                        }`}
+                                      >
+                                        {name}
+                                      </button>
+                                    ))
+                                  ) : (
+                                    <span>미지정</span>
+                                  )}
+                                </div>
                               </div>
                               <Eye className="h-4 w-4 text-[#64748B]" />
                             </div>
@@ -1102,13 +1193,57 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg text-xs">
                       <Sun className="h-3.5 w-3.5 text-amber-600" />
                       <span className="font-bold text-amber-900">주간:</span>
-                      <span className="text-amber-800 font-medium">{t.day_workers?.join(', ') || '없음'}</span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {t.day_workers?.length ? (
+                          t.day_workers.map((name) => (
+                            <button
+                              key={`${t.id}-day-${name}`}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (t.status !== 'COMPLETED') handleCallWorker(name);
+                              }}
+                              className={`font-medium text-amber-800 rounded px-1 transition ${
+                                t.status !== 'COMPLETED'
+                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
+                                  : 'cursor-default'
+                              }`}
+                            >
+                              {name}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="text-amber-800 font-medium">없음</span>
+                        )}
+                      </div>
                     </div>
 
                     <div className="flex items-center space-x-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg text-xs">
                       <Moon className="h-3.5 w-3.5 text-indigo-600" />
                       <span className="font-bold text-indigo-900">야간:</span>
-                      <span className="text-indigo-800 font-medium">{t.night_workers?.join(', ') || '없음'}</span>
+                      <div className="flex flex-wrap items-center gap-1">
+                        {t.night_workers?.length ? (
+                          t.night_workers.map((name) => (
+                            <button
+                              key={`${t.id}-night-${name}`}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (t.status !== 'COMPLETED') handleCallWorker(name);
+                              }}
+                              className={`font-medium text-indigo-800 rounded px-1 transition ${
+                                t.status !== 'COMPLETED'
+                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
+                                  : 'cursor-default'
+                              }`}
+                            >
+                              {name}
+                            </button>
+                          ))
+                        ) : (
+                          <span className="text-indigo-800 font-medium">없음</span>
+                        )}
+                      </div>
                     </div>
 
                     {isAdmin && (
