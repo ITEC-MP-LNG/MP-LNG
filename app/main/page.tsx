@@ -96,6 +96,9 @@ export default function MainPage() {
   const normalizedRole = String(currentUser?.role || '').trim().toUpperCase();
   const isAdmin = normalizedRole === 'ADMIN';
 
+  // 불필요한 재생성을 막기 위한 인증 초기화 완료 여부 Ref
+  const isInitializedRef = useRef(false);
+
   // 읽지 않은 공지 체크 함수
   const checkUnreadNotices = useCallback(async (userKey: string) => {
     try {
@@ -262,8 +265,11 @@ export default function MainPage() {
     };
   }, [showExitModal]);
 
-  // 세션 및 사용자 인증 1회 초기화
+  // ✅ 세션 및 사용자 인증 1회 초기화 (무한 루프 방지 가드 적용)
   useEffect(() => {
+    if (isInitializedRef.current) return;
+    isInitializedRef.current = true;
+
     const initAuthAndData = async () => {
       try {
         const { data: { user: authUser } } = await supabase.auth.getUser();
@@ -318,7 +324,7 @@ export default function MainPage() {
 
         const userKey = targetUser.id || targetUser.email || targetUser.name || 'guest';
         await checkUnreadNotices(String(userKey));
-        await fetchTasks(targetUser); // 필수 업무만 우선 로드
+        await fetchTasks(targetUser);
 
       } catch (e) {
         console.error('세션 및 인증 초기화 실패:', e);
@@ -330,7 +336,7 @@ export default function MainPage() {
     initAuthAndData();
   }, [router, checkUnreadNotices, fetchTasks]);
 
-  // 탭 변경 시 필요한 데이터만 지연 로딩 (Lazy Loading)
+  // 탭 변경 시 필요한 데이터만 최초 1회 지연 로딩 (Lazy Loading)
   useEffect(() => {
     if (!currentUser) return;
 
@@ -343,19 +349,15 @@ export default function MainPage() {
     }
   }, [mainTab, currentUser, inventoryList.length, educations.length, fetchInventory, fetchInventoryLogs, fetchEducations, fetchEducationRecords]);
 
-  // 🔴 🔥 Realtime 실시간 이벤트 수신 + document.hidden (탭 비활성화 감지) 최적화!
+  // ✅ 실시간 이벤트 수신 (로그인 상태 및 탭 포커스 가드 적용으로 무한 호출 방지)
   useEffect(() => {
     if (!currentUser) return;
 
     const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
 
-    // 탭 복귀 시 최신 데이터 갱신 이벤트 핸들러
     const handleVisibilityChange = () => {
       if (!document.hidden && currentUser) {
         checkUnreadNotices(String(userKey));
-        if (mainTab === 'TASKS') fetchTasks(currentUser);
-        else if (mainTab === 'INVENTORY') fetchInventory();
-        else if (mainTab === 'EDUCATION') fetchEducations();
       }
     };
 
@@ -364,14 +366,14 @@ export default function MainPage() {
     const globalChannel = supabase
       .channel('app-global-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, () => {
-        if (document.hidden) return; // 탭이 숨겨져 있을 땐 API 호출 차단
+        if (document.hidden) return;
         setNavNewFlags(prev => ({ ...prev, NOTICE: true }));
         checkUnreadNotices(String(userKey));
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
         if (document.hidden) return;
         setNavNewFlags(prev => ({ ...prev, TASKS: true }));
-        if (mainTab === 'TASKS') fetchTasks(currentUser);
+        if (mainTab === 'TASKS' && currentUser) fetchTasks(currentUser);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
         if (document.hidden) return;
@@ -385,7 +387,6 @@ export default function MainPage() {
       })
       .subscribe();
 
-    // ✅ Clean-up: 컴포넌트 해제 또는 변경 시 수신기 및 리스너 완벽 해제
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
       supabase.removeChannel(globalChannel);
