@@ -1,4 +1,5 @@
 import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import pptxgen from 'pptxgenjs';
 
 export interface HRExportUser {
@@ -44,52 +45,158 @@ function fileDate() {
   return `${y}${m}${day}`;
 }
 
-export function exportHRToExcel(users: HRExportUser[]) {
-  const rows = orderedUsers(users).map((u, index) => ({
-    'No.': index + 1,
-    '이름': u.name || '',
-    '로그인 ID': u.id || '',
-    '부서/팀': u.department || '',
-    '직급': u.position || '',
-    '직책': u.job_title || '',
-    '담당분야': u.field || '',
-    '전화번호': u.phone || '',
-    '이메일': u.email || '',
-    '주소': u.address || '',
-    '입사일': u.join_date || '',
-    '경력 시작일': u.career_start_date || '',
-    '경력': u.experience || '',
-    '사내자격': u.internal_certificates || '',
-    '국가자격': u.national_certificates || u.certificates || '',
-    '권한': u.role || '',
-  }));
+export async function exportHRToExcel(users: HRExportUser[]) {
+  const ordered = orderedUsers(users);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = '인사 관리';
+  workbook.company = 'MP-LNG';
+  workbook.subject = '구성원 인사 정보';
+  workbook.title = '인사 관리';
 
-  const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.json_to_sheet(rows);
-  sheet['!cols'] = [
-    { wch: 7 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
-    { wch: 14 }, { wch: 17 }, { wch: 28 }, { wch: 30 }, { wch: 13 }, { wch: 15 },
-    { wch: 24 }, { wch: 28 }, { wch: 28 }, { wch: 14 },
+  const sheet = workbook.addWorksheet('구성원정보');
+  sheet.columns = [
+    { header: '사진', key: 'photo', width: 12 },
+    { header: 'No.', key: 'no', width: 7 },
+    { header: '이름', key: 'name', width: 12 },
+    { header: '로그인 ID', key: 'id', width: 18 },
+    { header: '부서/팀', key: 'department', width: 12 },
+    { header: '직급', key: 'position', width: 10 },
+    { header: '직책', key: 'job_title', width: 10 },
+    { header: '담당분야', key: 'field', width: 16 },
+    { header: '전화번호', key: 'phone', width: 17 },
+    { header: '이메일', key: 'email', width: 28 },
+    { header: '주소', key: 'address', width: 30 },
+    { header: '입사일', key: 'join_date', width: 13 },
+    { header: '경력 시작일', key: 'career_start_date', width: 15 },
+    { header: '경력', key: 'experience', width: 24 },
+    { header: '사내자격', key: 'internal_certificates', width: 28 },
+    { header: '국가자격', key: 'national_certificates', width: 28 },
+    { header: '권한', key: 'role', width: 14 },
   ];
-  XLSX.utils.book_append_sheet(workbook, sheet, '구성원정보');
 
-  const orgRows = orderedUsers(users).map((u, index) => ({
-    '순서': index + 1,
-    '부서/팀': u.department || '',
-    '이름': u.name || '',
-    '직책': u.job_title || '',
-    '직급': u.position || '',
-    '담당분야': u.field || '',
-    '상위 구성원 ID': u.parent_id || '',
-    '표시순서': u.display_order ?? '',
-  }));
-  const orgSheet = XLSX.utils.json_to_sheet(orgRows);
-  orgSheet['!cols'] = [
-    { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 22 }, { wch: 12 },
+  const header = sheet.getRow(1);
+  header.height = 28;
+  header.eachCell((cell) => {
+    cell.font = { name: '맑은 고딕', bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243B5A' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FFD7DEE8' } },
+      left: { style: 'thin', color: { argb: 'FFD7DEE8' } },
+      bottom: { style: 'thin', color: { argb: 'FFD7DEE8' } },
+      right: { style: 'thin', color: { argb: 'FFD7DEE8' } },
+    };
+  });
+
+  const photoCache = new Map<string, string | null>();
+  const getPhoto = async (user: HRExportUser) => {
+    if (!user.photo_url) return null;
+    if (!photoCache.has(user.photo_url)) {
+      photoCache.set(user.photo_url, await imageUrlToData(user.photo_url));
+    }
+    return photoCache.get(user.photo_url) || null;
+  };
+
+  for (let index = 0; index < ordered.length; index += 1) {
+    const u = ordered[index];
+    const row = sheet.addRow({
+      photo: '',
+      no: index + 1,
+      name: u.name || '',
+      id: u.id || '',
+      department: u.department || '',
+      position: u.position || '',
+      job_title: u.job_title || '',
+      field: u.field || '',
+      phone: u.phone || '',
+      email: u.email || '',
+      address: u.address || '',
+      join_date: u.join_date || '',
+      career_start_date: u.career_start_date || '',
+      experience: u.experience || '',
+      internal_certificates: u.internal_certificates || '',
+      national_certificates: u.national_certificates || u.certificates || '',
+      role: u.role || '',
+    });
+
+    row.height = 64;
+    row.eachCell((cell) => {
+      cell.font = { name: '맑은 고딕', size: 10, color: { argb: 'FF1F2937' } };
+      cell.alignment = { vertical: 'middle', wrapText: true };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        left: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+        right: { style: 'thin', color: { argb: 'FFE2E8F0' } },
+      };
+    });
+    row.getCell('no').alignment = { horizontal: 'center', vertical: 'middle' };
+    row.getCell('photo').alignment = { horizontal: 'center', vertical: 'middle' };
+
+    const photo = await getPhoto(u);
+    if (photo) {
+      const extension = photo.startsWith('data:image/png') ? 'png' : 'jpeg';
+      const imageId = workbook.addImage({ base64: photo, extension });
+      sheet.addImage(imageId, {
+        tl: { col: 0.2, row: row.number - 0.82 },
+        ext: { width: 58, height: 58 },
+      });
+    } else {
+      row.getCell('photo').value = '사진 없음';
+      row.getCell('photo').font = { name: '맑은 고딕', size: 9, color: { argb: 'FF94A3B8' } };
+    }
+  }
+
+  sheet.views = [{ state: 'frozen', ySplit: 1 }];
+  sheet.autoFilter = { from: 'A1', to: `Q${Math.max(1, ordered.length + 1)}` };
+
+  const orgSheet = workbook.addWorksheet('조직구조');
+  orgSheet.columns = [
+    { header: '순서', key: 'order', width: 8 },
+    { header: '부서/팀', key: 'department', width: 14 },
+    { header: '이름', key: 'name', width: 14 },
+    { header: '직책', key: 'job_title', width: 12 },
+    { header: '직급', key: 'position', width: 10 },
+    { header: '담당분야', key: 'field', width: 16 },
+    { header: '상위 구성원 ID', key: 'parent_id', width: 22 },
+    { header: '표시순서', key: 'display_order', width: 12 },
   ];
-  XLSX.utils.book_append_sheet(workbook, orgSheet, '조직구조');
+  orgSheet.getRow(1).eachCell((cell) => {
+    cell.font = { name: '맑은 고딕', bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243B5A' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  });
+  ordered.forEach((u, index) => {
+    const row = orgSheet.addRow({
+      order: index + 1,
+      department: u.department || '',
+      name: u.name || '',
+      job_title: u.job_title || '',
+      position: u.position || '',
+      field: u.field || '',
+      parent_id: u.parent_id || '',
+      display_order: u.display_order ?? '',
+    });
+    row.eachCell((cell) => {
+      cell.font = { name: '맑은 고딕', size: 10 };
+      cell.alignment = { vertical: 'middle', wrapText: true };
+    });
+  });
+  orgSheet.views = [{ state: 'frozen', ySplit: 1 }];
+  orgSheet.autoFilter = { from: 'A1', to: `H${Math.max(1, ordered.length + 1)}` };
 
-  XLSX.writeFile(workbook, `인사관리_${fileDate()}.xlsx`);
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `인사관리_${fileDate()}.xlsx`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 async function imageUrlToData(url: string): Promise<string | null> {
