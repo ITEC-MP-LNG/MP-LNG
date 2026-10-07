@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   Plus,
   Pencil,
@@ -115,7 +115,7 @@ export default function NoticeBoard({
     type: 'success',
   });
 
-  const showAlert = (
+  const showAlert = useCallback((
     title: string,
     message: string,
     type: 'success' | 'error' | 'info' = 'success',
@@ -128,26 +128,26 @@ export default function NoticeBoard({
       type,
       onConfirm,
     });
-  };
+  }, []);
 
   // 중요 공지 팝업 알림 상태
   const [popupNotice, setPopupNotice] = useState<NoticeItem | null>(null);
   const [showPopupModal, setShowPopupModal] = useState(false);
   const [hasUnreadNotice, setHasUnreadNotice] = useState(false);
 
-  const getCurrentUserId = () => {
+  const getCurrentUserId = useCallback(() => {
     return String(currentUser?.id || currentUser?.email || currentUser?.name || 'guest');
-  };
+  }, [currentUser]);
 
   // N 표시 상태는 사용자별로 localStorage에 기록합니다.
-  // 최초 기능 적용 시 기존 자료에는 N이 붙지 않도록 기준 시각을 1회 생성합니다.
-  const getBoardBaselineKey = (type: 'notice' | 'suggestion') =>
-    `notice_board_baseline_${type}_${getCurrentUserId()}`;
+  const getBoardBaselineKey = useCallback((type: 'notice' | 'suggestion') =>
+    `notice_board_baseline_${type}_${getCurrentUserId()}`, [getCurrentUserId]);
 
-  const getBoardReadKey = (type: 'notice' | 'suggestion', id: string | number) =>
-    `notice_board_read_${type}_${getCurrentUserId()}_${id}`;
+  const getBoardReadKey = useCallback((type: 'notice' | 'suggestion', id: string | number) =>
+    `notice_board_read_${type}_${getCurrentUserId()}_${id}`, [getCurrentUserId]);
 
-  const ensureBoardBaseline = (type: 'notice' | 'suggestion') => {
+  const ensureBoardBaseline = useCallback((type: 'notice' | 'suggestion') => {
+    if (typeof window === 'undefined') return '';
     const key = getBoardBaselineKey(type);
     const existing = localStorage.getItem(key);
 
@@ -156,13 +156,14 @@ export default function NoticeBoard({
     const now = new Date().toISOString();
     localStorage.setItem(key, now);
     return now;
-  };
+  }, [getBoardBaselineKey]);
 
-  const isBoardItemNew = (
+  const isBoardItemNew = useCallback((
     type: 'notice' | 'suggestion',
     id: string | number,
     updatedAt: string
   ) => {
+    if (typeof window === 'undefined') return false;
     const baseline = ensureBoardBaseline(type);
     const readAt = localStorage.getItem(getBoardReadKey(type, id));
 
@@ -171,18 +172,19 @@ export default function NoticeBoard({
     }
 
     return new Date(updatedAt).getTime() > new Date(baseline).getTime();
-  };
+  }, [ensureBoardBaseline, getBoardReadKey]);
 
-  const markBoardItemAsRead = (
+  const markBoardItemAsRead = useCallback((
     type: 'notice' | 'suggestion',
     id: string | number,
     updatedAt: string
   ) => {
+    if (typeof window === 'undefined') return;
     localStorage.setItem(getBoardReadKey(type, id), updatedAt || new Date().toISOString());
-  };
+  }, [getBoardReadKey]);
 
   // --- 데이터 불러오기 ---
-  const fetchNotices = async () => {
+  const fetchNotices = useCallback(async () => {
     try {
       setLoading(true);
       const { data, error } = await supabase
@@ -214,7 +216,7 @@ export default function NoticeBoard({
 
       const userKey = getCurrentUserId();
       const pinnedNotices = fetchedNotices.filter((n) => n.is_pinned);
-      if (pinnedNotices.length > 0) {
+      if (pinnedNotices.length > 0 && typeof window !== 'undefined') {
         const targetNotice = pinnedNotices[0];
         const hideUntil = localStorage.getItem(`notice_hide_until_${userKey}_${targetNotice.id}`);
         const todayStr = new Date().toDateString();
@@ -234,9 +236,9 @@ export default function NoticeBoard({
     } finally {
       setLoading(false);
     }
-  };
+  }, [ensureBoardBaseline, getCurrentUserId, isBoardItemNew, showAlert]);
 
-  const fetchSuggestions = async () => {
+  const fetchSuggestions = useCallback(async () => {
     try {
       const { data: sugData, error: sugError } = await supabase
         .from('suggestions')
@@ -262,9 +264,9 @@ export default function NoticeBoard({
       console.error('개선/건의사항 불러오기 실패:', err);
       showAlert('불러오기 실패', '개선/건의사항을 불러오지 못했습니다.', 'error');
     }
-  };
+  }, [ensureBoardBaseline, showAlert]);
 
-  const fetchComments = async (suggestionId: string) => {
+  const fetchComments = useCallback(async (suggestionId: string) => {
     try {
       const { data, error } = await supabase
         .from('suggestion_comments')
@@ -277,20 +279,19 @@ export default function NoticeBoard({
     } catch (err: any) {
       console.error('댓글 불러오기 실패:', err);
     }
-  };
-
-  const fetchAllData = async () => {
-    setLoading(true);
-    await Promise.all([
-      fetchNotices(),
-      fetchSuggestions(),
-    ]);
-    setLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
+    const fetchAllData = async () => {
+      setLoading(true);
+      await Promise.all([
+        fetchNotices(),
+        fetchSuggestions(),
+      ]);
+      setLoading(false);
+    };
     fetchAllData();
-  }, [isAdmin]);
+  }, [isAdmin, fetchNotices, fetchSuggestions]);
 
   // --- 공지사항 팝업 처리 ---
   const handleClosePopup = () => {
@@ -306,7 +307,7 @@ export default function NoticeBoard({
   };
 
   const handleHideToday = () => {
-    if (popupNotice) {
+    if (popupNotice && typeof window !== 'undefined') {
       const userKey = getCurrentUserId();
       const todayStr = new Date().toDateString();
       localStorage.setItem(`notice_hide_until_${userKey}_${popupNotice.id}`, todayStr);
