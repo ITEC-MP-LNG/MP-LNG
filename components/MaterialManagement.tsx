@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
-// 자체 정의된 타입 (에러 방지용)
+// 자체 정의된 타입
 export interface AppUser {
   id: string | number;
   name: string;
@@ -1084,7 +1084,7 @@ export default function MaterialManagement({
     setShowLogSheet(true);
   };
 
-  // ✅ [수정 3] 전체 목록에서 반납/불출 처리시 DB 연결 보완
+  // ✅ [수정사항 3] 전체 목록에서 반납/불출 처리시 초과 수량 토스트 메시지 교정
   const handleSubmitLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetItem) return;
@@ -1189,7 +1189,7 @@ export default function MaterialManagement({
 
       if (invError) throw invError;
       if (logType === '반납' && (!updatedRows || updatedRows.length === 0)) {
-        showCenterToast('반납 수량이 최초 보유수량을 초과했거나 이미 다른 반납 처리가 완료되었습니다.');
+        showCenterToast(`반납 후 수량이 최초 보유수량(${targetItem.initial_quantity} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
         return;
       }
 
@@ -1593,6 +1593,7 @@ export default function MaterialManagement({
     }
   };
 
+  // ✅ [수정사항 2] batch_id 기반 일괄 반납 및 재고 원복 수정
   const handleBatchReturnById = async (batchId: string, customMemo?: string, hasIssue: boolean = false) => {
     if (!batchId || batchReturnProcessingId) return;
     setBatchReturnProcessingId(batchId);
@@ -1626,15 +1627,14 @@ export default function MaterialManagement({
 
           const currentQty = Number(currentItem.quantity || 0);
           const initialQty = Number(currentItem.initial_quantity);
-          if (!Number.isFinite(initialQty) || currentQty + Number(batchItem.quantity || 1) > initialQty) {
-            throw new Error(`${currentItem.name || currentItem.code || '기자재'}는 반납 후 최초 보유수량을 초과하게 되어 반납할 수 없습니다.`);
+          if (Number.isFinite(initialQty) && currentQty + Number(batchItem.quantity || 1) > initialQty) {
+            throw new Error(`${currentItem.name || currentItem.code || '기자재'}는 반납 후 최초 보유수량(${initialQty} ${currentItem.unit || 'EA'})을 초과할 수 없습니다.`);
           }
 
           const { data: updatedRows, error: updateError } = await supabase
             .from('inventory')
             .update({ quantity: currentQty + Number(batchItem.quantity || 1), updated_at: returnedAt })
             .eq('id', batchItem.inventory_id)
-            .lte('quantity', initialQty - Number(batchItem.quantity || 1))
             .select('id, quantity');
           if (updateError) throw updateError;
           if (!updatedRows || updatedRows.length === 0) {
@@ -1676,26 +1676,24 @@ export default function MaterialManagement({
         .maybeSingle();
       if (batchLogFetchError) throw batchLogFetchError;
 
-      if (!batchLog) {
-        throw new Error('해당 일괄 불출 이력을 찾을 수 없습니다.');
+      if (batchLog) {
+        const returnMemoText = customMemo?.trim()
+          ? `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납메모: ${customMemo.trim()}`
+          : `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납 완료 (${returnHistoryRows.length}건)`;
+        const { error: logUpdateError } = await supabase
+          .from('inventory_logs')
+          .update({
+            type: hasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료',
+            worker_name: batchLog.worker_name || batchLog.issued_by || '불출자 미기록',
+            issued_by: batchLog.issued_by || batchLog.worker_name || '불출자 미기록',
+            returned_by: returnedBy,
+            memo: returnMemoText,
+            is_new: true,
+            updated_at: returnedAt
+          })
+          .eq('id', batchLog.id);
+        if (logUpdateError) throw logUpdateError;
       }
-
-      const returnMemoText = customMemo?.trim()
-        ? `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납메모: ${customMemo.trim()}`
-        : `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납 완료 (${returnHistoryRows.length}건)`;
-      const { error: logUpdateError } = await supabase
-        .from('inventory_logs')
-        .update({
-          type: hasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료',
-          worker_name: batchLog.worker_name || batchLog.issued_by || '불출자 미기록',
-          issued_by: batchLog.issued_by || batchLog.worker_name || '불출자 미기록',
-          returned_by: returnedBy,
-          memo: returnMemoText,
-          is_new: true,
-          updated_at: returnedAt
-        })
-        .eq('id', batchLog.id);
-      if (logUpdateError) throw logUpdateError;
 
       showCenterToast(`일괄 불출된 ${returnHistoryRows.length}개 품목이 모두 반납되었습니다.`);
       await fetchInventory();
@@ -1896,7 +1894,7 @@ export default function MaterialManagement({
     setShowReturnModal(true);
   };
 
-  // ✅ [수정 1] 불출 자재 반납 매칭 보완
+  // ✅ [수정사항 1] 불출자와 반납자가 다를 때 반납 처리 완벽 작동
   const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetReturnLog || returnSubmittingRef.current) return;
@@ -1946,11 +1944,8 @@ export default function MaterialManagement({
       if (foundItem.type !== 'CABIN') {
         const currentQty = Number(foundItem.quantity || 0);
         const initialQty = Number(foundItem.initial_quantity);
-        if (!Number.isFinite(initialQty) || initialQty < 0) {
-          showCenterToast('최초 보유수량이 등록되지 않은 자재입니다. 관리자에게 최초 보유수량을 확인해주세요.');
-          return;
-        }
-        if (currentQty + qtyToReturn > initialQty) {
+
+        if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty + qtyToReturn > initialQty) {
           showCenterToast(`반납 후 수량이 최초 보유수량(${initialQty} ${foundItem.unit || 'EA'})을 초과할 수 없습니다.`);
           return;
         }
@@ -1970,6 +1965,7 @@ export default function MaterialManagement({
       const returnHistoryIssuedAt = targetReturnLog.created_at || null;
       const returnHistoryReturnedAt = new Date().toISOString();
 
+      // 불출자와 상관없이 선택한 targetReturnLog.id 기준 업데이트
       const { error: logErr } = await supabase
         .from('inventory_logs')
         .update({ 
@@ -2056,7 +2052,7 @@ export default function MaterialManagement({
     }
   };
 
-  // ✅ [수정 2] 단건 삭제 ID 매칭 보완
+  // ✅ [수정사항 2] 이력 단건 삭제 처리 함수
   const handleOpenDeleteLog = (logId: string | number) => {
     if (!isAdmin) {
       showCenterToast('관리자 권한이 있는 인원만 삭제할 수 있습니다.');
