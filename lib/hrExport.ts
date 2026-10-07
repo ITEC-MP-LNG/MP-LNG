@@ -122,17 +122,15 @@ function addText(slide: pptxgen.Slide, text: string, x: number, y: number, w: nu
 
 export async function exportHRToPptx(users: HRExportUser[]) {
   const pptx = new pptxgen();
-  pptx.layout = 'LAYOUT_WIDE';
-  pptx.author = '인사 관리';
-  pptx.subject = '구성원 조직도';
-  pptx.title = '인사 관리 조직도';
-  pptx.company = 'MP-LNG';
-  pptx.lang = 'ko-KR';
-  pptx.theme = {
-    headFontFace: 'Malgun Gothic',
-    bodyFontFace: 'Malgun Gothic',
-    lang: 'ko-KR',
-  };
+pptx.layout = 'LAYOUT_WIDE';
+pptx.author = '인사 관리';
+pptx.subject = '구성원 조직도';
+pptx.title = '인사 관리 조직도';
+pptx.company = 'MP-LNG';
+pptx.theme = {
+  headFontFace: 'Malgun Gothic',
+  bodyFontFace: 'Malgun Gothic',
+};
 
   const ordered = orderedUsers(users);
   const departments = DEPT_ORDER.filter(d => ordered.some(u => (u.department || '') === d));
