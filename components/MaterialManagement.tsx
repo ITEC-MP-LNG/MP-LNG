@@ -131,7 +131,7 @@ export default function MaterialManagement({
     setToastMessage(msg);
     setTimeout(() => {
       setToastMessage(null);
-    }, 2500);
+    }, 4500);
   };
 
   // --- 매일 23시 이력 자동 정리/삭제 스케줄러 ---
@@ -420,7 +420,7 @@ export default function MaterialManagement({
   const [isReturnHistoryOpen, setIsReturnHistoryOpen] = useState(false);
   const [returnHistories, setReturnHistories] = useState<InventoryReturnHistory[]>([]);
   const [loadingReturnHistories, setLoadingReturnHistories] = useState(false);
-  const [pendingDeleteReturnHistoryId, setPendingDeleteReturnHistoryId] = useState<string | number | null>(null);
+  const [selectedReturnHistoryIds, setSelectedReturnHistoryIds] = useState<string[]>([]);
   const [calibrationAlertItems, setCalibrationAlertItems] = useState<{ item: any; daysLeft: number; calDate: string; nextCalDate: string }[]>([]);
 
   const cleanSheetName = (rawName: string) => {
@@ -1600,178 +1600,26 @@ export default function MaterialManagement({
     setBatchReturnProcessingId(cleanBatchId);
 
     try {
-      const returnedAt = new Date().toISOString();
-      const returnedBy = currentUser?.name || '작업자';
+      const { data, error } = await supabase.rpc('return_inventory_batch', {
+        p_batch_id: cleanBatchId,
+        p_returned_by: currentUser?.name || '작업자',
+        p_memo: customMemo?.trim() || null,
+        p_has_issue: hasIssue,
+      });
 
-      // 1. inventory_batch_items 조회
-      const { data: batchItems, error: batchFetchError } = await supabase
-        .from('inventory_batch_items')
-        .select('*')
-        .eq('batch_id', cleanBatchId);
-      
-      if (batchFetchError) {
-        console.error('batch_items 조회 오류:', batchFetchError);
-      }
+      if (error) throw error;
 
-      // 'ISSUED' 상태인 항목만 필터링 (대소문자 구분 방지)
-      const activeBatchItems = (batchItems || []).filter(
-        item => String(item.status).toUpperCase() === 'ISSUED'
-      );
+      const returnedCount = Number(data?.returned_count || 0);
+      showCenterToast(`일괄 반납 처리가 완료되었습니다. 총 ${returnedCount}개 품목이 반납되었습니다.`);
 
-      // 2. 만약 batch_items에 데이터가 없다면, inventory_logs 기반으로 직접 처리 진행
-      if (activeBatchItems.length === 0) {
-        // 이미 반납 완료되었는지 확인
-        const { data: existingLog } = await supabase
-          .from('inventory_logs')
-          .select('*')
-          .eq('batch_id', cleanBatchId)
-          .ilike('type', '%반납완료%')
-          .maybeSingle();
-
-        if (existingLog) {
-          showCenterToast('해당 일괄 불출 건은 이미 반납 처리 완료되었습니다.');
-          setBatchReturnProcessingId(null);
-          return;
-        }
-
-        // 미반납된 메인 이력 업데이트 처리
-        const { data: targetLog } = await supabase
-          .from('inventory_logs')
-          .select('*')
-          .eq('batch_id', cleanBatchId)
-          .not('type', 'ilike', '%반납완료%')
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
-
-        if (targetLog) {
-          const returnMemoText = customMemo?.trim() 
-            ? `${targetLog.memo ? `${targetLog.memo} / ` : ''}일괄 반납메모: ${customMemo.trim()}`
-            : `${targetLog.memo ? `${targetLog.memo} / ` : ''}일괄 반납 완료`;
-
-          await supabase
-            .from('inventory_logs')
-            .update({
-              type: hasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료',
-              returned_by: returnedBy,
-              memo: returnMemoText,
-              is_new: true,
-              updated_at: returnedAt
-            })
-            .eq('id', targetLog.id);
-
-          showCenterToast('일괄 반납 처리가 완료되었습니다.');
-          await fetchInventory();
-          await fetchInventoryLogs();
-          setBatchReturnProcessingId(null);
-          return;
-        }
-
-        showCenterToast('해당 batch_id에 해당하는 불출 이력을 찾을 수 없습니다.');
-        setBatchReturnProcessingId(null);
-        return;
-      }
-
-      // 3. activeBatchItems가 존재하는 경우 정상 수량 원복 진행
-      const returnHistoryRows: any[] = [];
-
-      for (const batchItem of activeBatchItems) {
-        const invId = batchItem.inventory_id;
-        const qtyToReturn = Number(batchItem.quantity || 1);
-
-        if (batchItem.inventory_type === '고정' && invId) {
-          const { data: currentItem } = await supabase
-            .from('inventory')
-            .select('id, quantity, initial_quantity, unit, code, name')
-            .eq('id', invId)
-            .maybeSingle();
-
-          if (currentItem) {
-            const currentQty = Number(currentItem.quantity || 0);
-            const initialQty = Number(currentItem.initial_quantity);
-
-            // 초과 수량 검증
-            if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty <= initialQty && (currentQty + qtyToReturn > initialQty)) {
-              showCenterToast(`'${currentItem.name || currentItem.code}' 자재의 수량이 최초 보유수량(${initialQty}${currentItem.unit || 'EA'})을 초과하여 반납할 수 없습니다.`);
-              setBatchReturnProcessingId(null);
-              return;
-            }
-
-            await supabase
-              .from('inventory')
-              .update({ 
-                quantity: currentQty + qtyToReturn, 
-                updated_at: returnedAt 
-              })
-              .eq('id', invId);
-          }
-        }
-
-        returnHistoryRows.push({
-          inventory_id: invId || null,
-          item_code: batchItem.item_code || null,
-          item_name: batchItem.item_name || null,
-          quantity: qtyToReturn,
-          issued_by: batchItem.issued_by || '불출자 미기록',
-          returned_by: returnedBy,
-          issued_at: batchItem.issued_at || null,
-          returned_at: returnedAt,
-          memo: customMemo?.trim() 
-            ? `일괄 반납메모: ${customMemo.trim()}` 
-            : (batchItem.memo ? `일괄 반납: ${batchItem.memo}` : '일괄 반납'),
-          created_at: returnedAt
-        });
-      }
-
-      // 4. 반납 이력 저장
-      if (returnHistoryRows.length > 0) {
-        await supabase.from('inventory_return_history').insert(returnHistoryRows);
-      }
-
-      // 5. batch_items 상태 업데이트
-      await supabase
-        .from('inventory_batch_items')
-        .update({ 
-          status: 'RETURNED', 
-          returned_by: returnedBy, 
-          returned_at: returnedAt 
-        })
-        .eq('batch_id', cleanBatchId);
-
-      // 6. inventory_logs 메인 이력 업데이트
-      const { data: batchLog } = await supabase
-        .from('inventory_logs')
-        .select('id, memo')
-        .eq('batch_id', cleanBatchId)
-        .not('type', 'ilike', '%반납완료%')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-
-      if (batchLog) {
-        const returnMemoText = customMemo?.trim()
-          ? `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납메모: ${customMemo.trim()}`
-          : `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납 완료 (${returnHistoryRows.length}건)`;
-
-        await supabase
-          .from('inventory_logs')
-          .update({
-            type: hasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료',
-            returned_by: returnedBy,
-            memo: returnMemoText,
-            is_new: true,
-            updated_at: returnedAt
-          })
-          .eq('id', batchLog.id);
-      }
-
-      showCenterToast(`일괄 불출된 ${returnHistoryRows.length}개 품목이 모두 반납되었습니다.`);
-      await fetchInventory();
-      await fetchInventoryLogs();
-      if (typeof fetchReturnHistories === 'function') await fetchReturnHistories();
+      await Promise.all([
+        fetchInventory(),
+        fetchInventoryLogs(),
+        isReturnHistoryOpen ? fetchReturnHistories() : Promise.resolve(),
+      ]);
     } catch (err: any) {
-      console.error('일괄 반납 예외 발생:', err);
-      showCenterToast('일괄 반납 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
+      const message = err?.message || '알 수 없는 오류';
+      showCenterToast(message);
     } finally {
       setBatchReturnProcessingId(null);
     }
@@ -1785,7 +1633,6 @@ export default function MaterialManagement({
 
   const toggleSelectAllCabin = () => {
     if (selectedCabinIds.length === filteredInventory.length) {
-      setSelectedCabinIds([]);
     } else {
       setSelectedCabinIds(filteredInventory.map(item => String(item.id)));
     }
@@ -1845,7 +1692,6 @@ export default function MaterialManagement({
 
       showCenterToast(`선택된 ${selectedItems.length}개 품목이 일괄 불출되었습니다.`);
       setShowCabinBatchModal(false);
-      setSelectedCabinIds([]);
       setCabinBatchMemo('');
       await fetchInventoryLogs();
     } catch (err: any) {
@@ -1890,10 +1736,6 @@ export default function MaterialManagement({
       }
 
       await handleBatchReturnById(targetBatchId, cabinBatchReturnMemo, cabinBatchReturnHasIssue);
-      setShowCabinBatchReturnModal(false);
-      setSelectedCabinIds([]);
-      setCabinBatchReturnMemo('');
-      setCabinBatchReturnHasIssue(false);
     } catch (err: any) {
       showCenterToast('CABIN 일괄 반납 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
     }
@@ -1917,43 +1759,90 @@ export default function MaterialManagement({
 
   const handleOpenReturnHistory = async () => {
     setIsReturnHistoryOpen(true);
+    setSelectedReturnHistoryIds([]);
     await fetchReturnHistories();
   };
 
-  const handleDeleteReturnHistory = async (id: string | number) => {
+  const toggleSelectReturnHistory = (id: string | number) => {
+    const strId = String(id);
+    setSelectedReturnHistoryIds(prev =>
+      prev.includes(strId) ? prev.filter(v => v !== strId) : [...prev, strId]
+    );
+  };
+
+  const toggleSelectAllReturnHistories = () => {
+    if (returnHistories.length > 0 && selectedReturnHistoryIds.length === returnHistories.length) {
+      setSelectedReturnHistoryIds([]);
+    } else {
+      setSelectedReturnHistoryIds(returnHistories.map(history => String(history.id)));
+    }
+  };
+
+  const handleDeleteReturnHistory = (id: string | number) => {
     if (!isAdmin) {
       showCenterToast('관리자 권한이 있는 인원만 반납 이력을 삭제할 수 있습니다.');
       return;
     }
-    setPendingDeleteReturnHistoryId(id);
+    showConfirm(
+      '반납 이력 삭제',
+      '선택한 반납 이력을 삭제하시겠습니까? 삭제한 이력은 복구할 수 없습니다.',
+      async () => {
+        try {
+          const { error } = await supabase
+            .from('inventory_return_history')
+            .delete()
+            .eq('id', id);
+          if (error) throw error;
+          setReturnHistories(prev => prev.filter(history => String(history.id) !== String(id)));
+          setSelectedReturnHistoryIds(prev => prev.filter(v => v !== String(id)));
+          showCenterToast('반납 이력이 삭제되었습니다.');
+        } catch (err: any) {
+          showCenterToast('반납 이력 삭제 실패: ' + (err?.message || '알 수 없는 오류'));
+        }
+      }
+    );
   };
 
-  const executeDeleteReturnHistory = async () => {
-    const id = pendingDeleteReturnHistoryId;
-    if (id === null) return;
-    setPendingDeleteReturnHistoryId(null);
-    try {
-      const { error } = await supabase
-        .from('inventory_return_history')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      setReturnHistories(prev => prev.filter(history => String(history.id) !== String(id)));
-      showCenterToast('반납 이력이 삭제되었습니다.');
-    } catch (err: any) {
-      showCenterToast('반납 이력 삭제 실패: ' + (err?.message || '알 수 없는 오류'));
+  const handleBatchDeleteReturnHistories = () => {
+    if (!isAdmin) {
+      showCenterToast('관리자만 반납 이력을 삭제할 수 있습니다.');
+      return;
     }
+    if (selectedReturnHistoryIds.length === 0) {
+      showCenterToast('삭제할 반납 이력을 선택해주세요.');
+      return;
+    }
+
+    showConfirm(
+      '반납 이력 일괄 삭제',
+      `선택한 ${selectedReturnHistoryIds.length}건의 반납 이력을 삭제하시겠습니까? 삭제한 이력은 복구할 수 없습니다.`,
+      async () => {
+        try {
+          const idsToDelete = [...selectedReturnHistoryIds];
+          const { error } = await supabase
+            .from('inventory_return_history')
+            .delete()
+            .in('id', idsToDelete);
+          if (error) throw error;
+          setReturnHistories(prev => prev.filter(history => !idsToDelete.includes(String(history.id))));
+          setSelectedReturnHistoryIds([]);
+          showCenterToast(`선택한 ${idsToDelete.length}건의 반납 이력이 삭제되었습니다.`);
+        } catch (err: any) {
+          showCenterToast('반납 이력 일괄 삭제 실패: ' + (err?.message || '알 수 없는 오류'));
+        }
+      }
+    );
   };
 
   const handleOpenReturnModal = (log: InventoryLog) => {
     if (log.item_name && log.item_name.includes('[CABIN 일괄 불출]')) {
-      showCenterToast('CABIN 일괄 불출된 항목은 개별적으로 항목을 찾아 반납 처리해야 합니다. CABIN 탭에서 해당 항목을 확인 후 반납하세요.');
+      showCenterToast('CABIN 일괄 불출된 항목은 개별 반납이 아니라 해당 일괄 불출 건의 일괄 반납으로 처리해주세요.');
       return;
     }
 
     const foundItem = findInventoryItemForLog(log);
     if (foundItem && foundItem.type === '소모성') {
-      showCenterToast('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
+      showCenterToast('소모성 자재는 반납 처리를 할 수 없습니다.');
       return;
     }
 
@@ -1964,7 +1853,6 @@ export default function MaterialManagement({
     setShowReturnModal(true);
   };
 
-  // ✅ [수정사항 1] 불출자와 반납자가 다를 때 반납 처리 완벽 작동
   const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetReturnLog || returnSubmittingRef.current) return;
@@ -1972,109 +1860,39 @@ export default function MaterialManagement({
 
     try {
       const qtyToReturn = Number(returnQty);
-      if (qtyToReturn <= 0) {
-        showCenterToast('반납 수량은 1 이상이어야 합니다.');
+      if (!Number.isInteger(qtyToReturn) || qtyToReturn <= 0) {
+        showCenterToast('반납 수량은 1 이상인 정수로 입력해주세요.');
         return;
       }
 
-      let foundItem: any | null = null;
-      
-      if (targetReturnLog.inventory_id) {
-        const { data: invData } = await supabase.from('inventory').select('*').eq('id', targetReturnLog.inventory_id).maybeSingle();
-        if (invData) {
-          foundItem = invData;
-        } else {
-          const { data: cabinData } = await supabase.from('cabin_inventory').select('*').eq('id', targetReturnLog.inventory_id).maybeSingle();
-          if (cabinData) foundItem = { ...cabinData, type: 'CABIN', quantity: 1, unit: 'EA' };
-        }
-      }
-
-      if (!foundItem) {
-        const matchedInventoryItem = findInventoryItemForLog(targetReturnLog);
-        if (matchedInventoryItem) {
-          foundItem = matchedInventoryItem;
-        } else if (targetReturnLog.item_name) {
-          const { data: cabinDataByName } = await supabase.from('cabin_inventory').select('*').eq('item', targetReturnLog.item_name).limit(1);
-          if (cabinDataByName && cabinDataByName.length > 0) {
-            foundItem = { ...cabinDataByName[0], type: 'CABIN', quantity: 1, unit: 'EA' };
-          }
-        }
-      }
-
-      if (!foundItem) {
-        showCenterToast(`'${targetReturnLog.item_name}'에 해당하는 자재 정보를 데이터베이스에서 찾을 수 없습니다.`);
-        return;
-      }
-
-      if (foundItem.type === '소모성') {
+      // 화면 캐시로 소모성 여부만 빠르게 확인합니다. 실제 반납 검증/처리는 RPC에서 원자적으로 수행합니다.
+      const cachedItem = findInventoryItemForLog(targetReturnLog);
+      if (cachedItem?.type === '소모성') {
         showCenterToast('소모성 자재는 반납 처리를 할 수 없습니다.');
         return;
       }
 
-      if (foundItem.type !== 'CABIN') {
-        const currentQty = Number(foundItem.quantity || 0);
-        const initialQty = Number(foundItem.initial_quantity);
+      const { error } = await supabase.rpc('return_inventory_item', {
+        p_inventory_id: String(targetReturnLog.inventory_id || cachedItem?.id || ''),
+        p_quantity: qtyToReturn,
+        p_returned_by: currentUser?.name || '작업자',
+        p_has_issue: returnHasIssue,
+        p_memo: returnMemo.trim() || null,
+      });
 
-        if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty <= initialQty && currentQty + qtyToReturn > initialQty) {
-          showCenterToast(`반납 후 수량이 최초 보유수량(${initialQty} ${foundItem.unit || 'EA'})을 초과할 수 없습니다.`);
-          return;
-        }
-
-        const { data: updatedRows, error: invErr } = await supabase
-          .from('inventory')
-          .update({ quantity: currentQty + qtyToReturn, updated_at: new Date().toISOString() })
-          .eq('id', foundItem.id)
-          .select('id, quantity');
-        if (invErr) throw invErr;
-      }
-
-      const finalLogType = returnHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료';
-      const memoText = returnMemo.trim() ? `반납메모: ${returnMemo.trim()}` : targetReturnLog.memo;
-      const returnHistoryIssuedBy = targetReturnLog.issued_by || targetReturnLog.worker_name || '불출자 미기록';
-      const returnHistoryItemCode = targetReturnLog.item_code || foundItem.code || foundItem.no || null;
-      const returnHistoryIssuedAt = targetReturnLog.created_at || null;
-      const returnHistoryReturnedAt = new Date().toISOString();
-
-      // 불출자와 상관없이 선택한 targetReturnLog.id 기준 업데이트
-      const { error: logErr } = await supabase
-        .from('inventory_logs')
-        .update({ 
-          type: finalLogType, 
-          quantity: qtyToReturn, 
-          returned_by: currentUser?.name || '작업자',
-          memo: memoText,
-          is_new: true,
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', targetReturnLog.id);
-      if (logErr) throw logErr;
-
-      const { error: returnHistoryError } = await supabase
-        .from('inventory_return_history')
-        .insert([{
-          inventory_id: foundItem.id ?? targetReturnLog.inventory_id ?? null,
-          item_code: returnHistoryItemCode,
-          item_name: targetReturnLog.item_name || foundItem.name || foundItem.item || null,
-          quantity: qtyToReturn,
-          issued_by: returnHistoryIssuedBy,
-          returned_by: currentUser?.name || '작업자',
-          issued_at: returnHistoryIssuedAt,
-          returned_at: returnHistoryReturnedAt,
-          memo: memoText || null,
-          created_at: returnHistoryReturnedAt
-        }]);
-      if (returnHistoryError) throw returnHistoryError;
+      if (error) throw error;
 
       showCenterToast('반납 처리가 완료되었습니다.');
       setShowReturnModal(false);
-      if (foundItem.type === 'CABIN') {
-        await fetchCabinInventory();
-      } else {
-        await fetchInventory();
-      }
-      await fetchInventoryLogs();
+      setTargetReturnLog(null);
+
+      await Promise.all([
+        fetchInventory(),
+        fetchInventoryLogs(),
+        isReturnHistoryOpen ? fetchReturnHistories() : Promise.resolve(),
+      ]);
     } catch (err: any) {
-      showCenterToast('반납 처리 중 오류가 발생했습니다: ' + err.message);
+      showCenterToast(err?.message || '반납 처리 중 오류가 발생했습니다.');
     } finally {
       returnSubmittingRef.current = false;
     }
@@ -2292,10 +2110,10 @@ export default function MaterialManagement({
       )}
 
       {toastMessage && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/35 backdrop-blur-xs p-4">
-          <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-xs text-center">
-            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-            <span className="truncate">{toastMessage}</span>
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/35 backdrop-blur-xs p-4 pointer-events-none">
+          <div className="bg-[#243B5A] text-white px-5 py-4 rounded-xl shadow-2xl flex items-start space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 w-[min(92vw,680px)] max-h-[60vh] overflow-y-auto text-center leading-5">
+            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+            <span className="whitespace-pre-wrap break-words overflow-wrap-anywhere flex-1">{toastMessage}</span>
           </div>
         </div>
       )}
@@ -3701,65 +3519,84 @@ export default function MaterialManagement({
         )}
       </div>
 
-      {pendingDeleteReturnHistoryId !== null && (
-        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
-            <div className="mx-auto w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600">
-              <AlertTriangle className="h-5 w-5" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-[#1F2937] mb-1">반납 이력 삭제 확인</h3>
-              <p className="text-xs text-[#64748B]">정말 이 반납 이력을 삭제하시겠습니까?</p>
-            </div>
-            <div className="flex space-x-2 pt-2">
-              <button onClick={() => setPendingDeleteReturnHistoryId(null)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-              <button onClick={executeDeleteReturnHistory} className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg transition">삭제하기</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {isReturnHistoryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-5xl w-full p-5 shadow-2xl space-y-4 text-[#1F2937] max-h-[90vh] overflow-hidden">
             <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
-              <div className="flex items-center space-x-2">
-                <History className="h-4 w-4 text-[#243B5A]" />
+              <div className="flex items-center space-x-2 min-w-0">
+                <History className="h-4 w-4 text-[#243B5A] shrink-0" />
                 <h3 className="text-sm font-bold">반납 이력</h3>
                 <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold">{returnHistories.length}건</span>
               </div>
-              <button type="button" onClick={() => setIsReturnHistoryOpen(false)} className="text-[#64748B] hover:text-[#1F2937] p-1"><X className="h-4 w-4" /></button>
+              <button type="button" onClick={() => { setIsReturnHistoryOpen(false); setSelectedReturnHistoryIds([]); }} className="text-[#64748B] hover:text-[#1F2937] p-1"><X className="h-4 w-4" /></button>
             </div>
-            <div className="overflow-y-auto max-h-[70vh] space-y-1.5">
+
+            {isAdmin && !loadingReturnHistories && returnHistories.length > 0 && (
+              <div className="flex items-center justify-between gap-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg px-3 py-2">
+                <label className="flex items-center gap-2 text-[11px] font-semibold text-[#64748B] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={selectedReturnHistoryIds.length === returnHistories.length}
+                    onChange={toggleSelectAllReturnHistories}
+                    className="h-3.5 w-3.5 rounded accent-[#243B5A]"
+                  />
+                  전체 선택
+                </label>
+                <button
+                  type="button"
+                  onClick={handleBatchDeleteReturnHistories}
+                  disabled={selectedReturnHistoryIds.length === 0}
+                  className="px-2.5 py-1.5 bg-red-600 hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded text-[10px] font-semibold transition flex items-center gap-1"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  선택 삭제 ({selectedReturnHistoryIds.length})
+                </button>
+              </div>
+            )}
+
+            <div className="overflow-y-auto max-h-[65vh] space-y-1.5">
               {loadingReturnHistories ? (
                 <div className="text-center py-8 text-[#64748B] text-xs">반납 이력을 불러오는 중입니다.</div>
               ) : returnHistories.length === 0 ? (
                 <div className="text-center py-8 text-[#64748B] text-xs">등록된 반납 이력이 없습니다.</div>
               ) : (
-                returnHistories.map((history) => (
-                  <div key={history.id} className="p-2.5 rounded-lg border bg-[#F5F6F8]/50 border-[#E2E5E9] text-xs flex flex-col lg:flex-row justify-between gap-2">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center flex-wrap gap-1.5">
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">반납완료</span>
-                        <span className="font-bold text-[#1F2937] truncate">{history.item_name || '-'}</span>
-                        <span className="text-[10px] font-mono bg-white border border-[#E2E5E9] text-[#475569] px-1.5 py-0.2 rounded">자재코드: {history.item_code || '-'}</span>
-                        <span className="text-[10px] text-[#64748B]">({history.quantity} EA)</span>
+                returnHistories.map((history) => {
+                  const isSelected = selectedReturnHistoryIds.includes(String(history.id));
+                  return (
+                    <div key={history.id} className={`p-2.5 rounded-lg border text-xs flex flex-col lg:flex-row justify-between gap-2 ${isSelected ? 'bg-blue-50/40 border-blue-300' : 'bg-[#F5F6F8]/50 border-[#E2E5E9]'}`}>
+                      <div className="flex items-start gap-2 min-w-0 flex-1">
+                        {isAdmin && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectReturnHistory(history.id)}
+                            className="mt-0.5 h-3.5 w-3.5 rounded accent-[#243B5A] cursor-pointer shrink-0"
+                          />
+                        )}
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">반납완료</span>
+                            <span className="font-bold text-[#1F2937] break-words">{history.item_name || '-'}</span>
+                            <span className="text-[10px] font-mono bg-white border border-[#E2E5E9] text-[#475569] px-1.5 py-0.2 rounded">자재코드: {history.item_code || '-'}</span>
+                            <span className="text-[10px] text-[#64748B]">({history.quantity} EA)</span>
+                          </div>
+                          <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-x-2 gap-y-1 break-words">
+                            <span>불출자: <strong className="text-[#1F2937]">{history.issued_by || '-'}</strong></span><span>|</span>
+                            <span>반납자: <strong className="text-[#1F2937]">{history.returned_by || '-'}</strong></span><span>|</span>
+                            <span>불출일시: {history.issued_at ? new Date(history.issued_at).toLocaleString('ko-KR') : '-'}</span><span>|</span>
+                            <span>반납일시: {history.returned_at ? new Date(history.returned_at).toLocaleString('ko-KR') : '-'}</span>
+                            {history.memo && <><span>|</span><span className="text-slate-600 break-words">메모: {history.memo}</span></>}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span>불출자: <strong className="text-[#1F2937]">{history.issued_by || '-'}</strong></span><span>|</span>
-                        <span>반납자: <strong className="text-[#1F2937]">{history.returned_by || '-'}</strong></span><span>|</span>
-                        <span>불출일시: {history.issued_at ? new Date(history.issued_at).toLocaleString('ko-KR') : '-'}</span><span>|</span>
-                        <span>반납일시: {history.returned_at ? new Date(history.returned_at).toLocaleString('ko-KR') : '-'}</span>
-                        {history.memo && <><span>|</span><span className="text-slate-600 truncate max-w-xs">메모: {history.memo}</span></>}
-                      </div>
+                      {isAdmin && (
+                        <button type="button" onClick={() => handleDeleteReturnHistory(history.id)} className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition self-end lg:self-center" title="반납 이력 삭제">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
-                    {isAdmin && (
-                      <button type="button" onClick={() => handleDeleteReturnHistory(history.id)} className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition self-end lg:self-center" title="반납 이력 삭제">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
