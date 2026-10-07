@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Users, 
   Building2, 
@@ -191,15 +191,7 @@ export default function HRManagement({
     return isAdmin || isSelf(targetUser);
   };
 
-  useEffect(() => {
-    fetchUsers();
-  }, []);
-
-  useEffect(() => {
-    setSelectedSubCategory('ALL');
-  }, [subGroupType]);
-
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
       const { data, error } = await supabase
@@ -220,7 +212,15 @@ export default function HRManagement({
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    fetchUsers();
+  }, [fetchUsers]);
+
+  useEffect(() => {
+    setSelectedSubCategory('ALL');
+  }, [subGroupType]);
 
   const toggleGroup = (groupName: string) => {
     setCollapsedGroups(prev => ({
@@ -281,7 +281,6 @@ export default function HRManagement({
       throw new Error('프로필 사진 공개 URL을 생성하지 못했습니다.');
     }
 
-    // 동일 파일명으로 교체할 때 브라우저 캐시로 이전 사진이 보이지 않도록 버전 값을 붙입니다.
     return `${data.publicUrl}?v=${Date.now()}`;
   };
 
@@ -1540,7 +1539,5 @@ function renderMemberCard(
         </div>
       </div>
     </div>
-
-
   );
 }
