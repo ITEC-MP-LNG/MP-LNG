@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { 
   Plus, 
   Pencil, 
@@ -238,9 +238,9 @@ export default function MaterialManagement({
     };
 
     processDailyCleanup();
-  }, []);
+  }, [fetchInventoryLogs]);
 
-  const findInventoryItemForLog = (log: InventoryLog) => {
+  const findInventoryItemForLog = useCallback((log: InventoryLog) => {
     if (log.inventory_id !== undefined && log.inventory_id !== null && log.inventory_id !== '') {
       const byId = inventoryList.find(i => String(i.id) === String(log.inventory_id));
       if (byId) return byId;
@@ -249,7 +249,7 @@ export default function MaterialManagement({
       return inventoryList.find(i => i.name === log.item_name);
     }
     return undefined;
-  };
+  }, [inventoryList]);
 
   // 반납 모달 상태
   const [showReturnModal, setShowReturnModal] = useState<boolean>(false);
@@ -428,7 +428,7 @@ export default function MaterialManagement({
     return rawName.replace(/^\d+[\.\-\s]+/, '').trim();
   };
 
-  const fetchCabinInventory = async () => {
+  const fetchCabinInventory = useCallback(async () => {
     setLoadingCabin(true);
     try {
       const { data, error } = await supabase.from('cabin_inventory').select('*');
@@ -498,13 +498,14 @@ export default function MaterialManagement({
     } finally {
       setLoadingCabin(false);
     }
-  };
+  }, [selectedCabinSheet]);
 
   useEffect(() => {
     if (inventoryTab === 'CABIN') {
       fetchCabinInventory();
     }
-  }, [inventoryTab]);
+  }, [inventoryTab, fetchCabinInventory]);
+
   const cabinTextSubTagsForSheet = useMemo(() => {
     const filteredBySheet = cabinInventoryList.filter(item => cleanSheetName(item.sheet_name) === selectedCabinSheet);
     const tags = new Set<string>();
@@ -537,7 +538,7 @@ export default function MaterialManagement({
     } else {
       setSelectedCabinTextSubTag('');
     }
-  }, [cabinTextSubTagsForSheet]);
+  }, [cabinTextSubTagsForSheet, selectedCabinTextSubTag]);
 
   useEffect(() => {
     const targetList = inventoryTab === 'CABIN' ? cabinInventoryList : inventoryList;
@@ -1084,7 +1085,6 @@ export default function MaterialManagement({
     setShowLogSheet(true);
   };
 
-  // ✅ [수정사항 3] 전체 목록에서 반납/불출 처리시 초과 수량 토스트 메시지 교정
   const handleSubmitLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetItem) return;
@@ -1319,21 +1319,6 @@ export default function MaterialManagement({
     }
   };
 
-  const toggleSelectAllConsumable = () => {
-    if (selectedConsumableIds.length === filteredInventory.length) {
-      setSelectedConsumableIds([]);
-      setConsumableBatchQuantities({});
-    } else {
-      const ids = filteredInventory.map(item => String(item.id));
-      const quantities: Record<string, number> = {};
-      filteredInventory.forEach(item => {
-        quantities[String(item.id)] = Number(item.quantity || 0) > 0 ? 1 : 0;
-      });
-      setSelectedConsumableIds(ids);
-      setConsumableBatchQuantities(quantities);
-    }
-  };
-
   const openConsumableBatchModal = () => {
     const selectedItems = inventoryList.filter(item =>
       item.type === '소모성' && selectedConsumableIds.includes(String(item.id))
@@ -1361,7 +1346,7 @@ export default function MaterialManagement({
 
       const unavailable = selectedItems.filter(item => Number(item.quantity || 0) < 1);
       if (unavailable.length > 0) {
-        showCenterToast(`보유수량이 없는 소모성 자재 ${unavailable.length}건이 포함되어 있어  사용 처리할 수 없습니다.`);
+        showCenterToast(`보유수량이 없는 소모성 자재 ${unavailable.length}건이 포함되어 있어 사용 처리할 수 없습니다.`);
         return;
       }
 
@@ -1385,7 +1370,7 @@ export default function MaterialManagement({
         : `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       const usedAt = new Date().toISOString();
       const usedBy = currentUser?.name || '작업자';
-      const memoText = consumableBatchMemo.trim() || '소모성 자재  사용';
+      const memoText = consumableBatchMemo.trim() || '소모성 자재 사용';
 
       for (const { item, quantity } of useItems) {
         const { data: updatedRows, error: updateError } = await supabase
@@ -1422,7 +1407,7 @@ export default function MaterialManagement({
         : `${firstItemName} 외 ${useItems.length - 1}건`;
       const { error: logError } = await supabase.from('inventory_logs').insert([{
         inventory_id: null,
-        item_name: `[소모성  사용] ${integratedItemName}`,
+        item_name: `[소모성 사용] ${integratedItemName}`,
         type: '소모성 사용',
         quantity: totalUsedQuantity,
         worker_name: usedBy,
@@ -1443,7 +1428,7 @@ export default function MaterialManagement({
       await fetchInventory();
       await fetchInventoryLogs();
     } catch (err: any) {
-      showCenterToast('소모성 자재  사용 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
+      showCenterToast('소모성 자재 사용 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
     }
   };
 
@@ -1463,21 +1448,6 @@ export default function MaterialManagement({
     setSelectedFixedIds(prev => [...prev, strId]);
     if (target) {
       setFixedBatchQuantities(current => ({ ...current, [strId]: Number(target.quantity || 0) > 0 ? 1 : 0 }));
-    }
-  };
-
-  const toggleSelectAllFixed = () => {
-    if (selectedFixedIds.length === filteredInventory.length) {
-      setSelectedFixedIds([]);
-      setFixedBatchQuantities({});
-    } else {
-      const ids = filteredInventory.map(item => String(item.id));
-      const quantities: Record<string, number> = {};
-      filteredInventory.forEach(item => {
-        quantities[String(item.id)] = Math.max(1, Math.min(1, Number(item.quantity || 0)));
-      });
-      setSelectedFixedIds(ids);
-      setFixedBatchQuantities(quantities);
     }
   };
 
@@ -1508,7 +1478,7 @@ export default function MaterialManagement({
 
       const unavailable = selectedItems.filter(item => Number(item.quantity || 0) < 1);
       if (unavailable.length > 0) {
-        showCenterToast(`보유수량이 없는 기자재 ${unavailable.length}건이 포함되어 있어  불출할 수 없습니다.`);
+        showCenterToast(`보유수량이 없는 기자재 ${unavailable.length}건이 포함되어 있어 불출할 수 없습니다.`);
         return;
       }
 
@@ -1532,7 +1502,7 @@ export default function MaterialManagement({
         : `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       const issuedAt = new Date().toISOString();
       const issuedBy = currentUser?.name || '작업자';
-      const memoText = fixedBatchMemo.trim() || '기자재  불출';
+      const memoText = fixedBatchMemo.trim() || '기자재 불출';
 
       for (const { item, quantity } of issueItems) {
         const { data: updatedRows, error: updateError } = await supabase
@@ -1569,7 +1539,7 @@ export default function MaterialManagement({
         : `${firstItemName} 외 ${issueItems.length - 1}건`;
       const { error: logError } = await supabase.from('inventory_logs').insert([{
         inventory_id: null,
-        item_name: `[기자재  불출] ${integratedItemName}`,
+        item_name: `[기자재 불출] ${integratedItemName}`,
         type: '불출',
         quantity: totalIssuedQuantity,
         worker_name: issuedBy,
@@ -1593,7 +1563,22 @@ export default function MaterialManagement({
     }
   };
 
-  // ✅ [수정] 데이터 미매칭 시에도 예외 없이 동작하는 일괄 반납 함수
+  const fetchReturnHistories = useCallback(async () => {
+    setLoadingReturnHistories(true);
+    try {
+      const { data, error } = await supabase
+        .from('inventory_return_history')
+        .select('*')
+        .order('returned_at', { ascending: false });
+      if (error) throw error;
+      setReturnHistories((data || []) as InventoryReturnHistory[]);
+    } catch (err: any) {
+      showCenterToast('반납 이력 조회 실패: ' + (err?.message || '알 수 없는 오류'));
+    } finally {
+      setLoadingReturnHistories(false);
+    }
+  }, []);
+
   const handleBatchReturnById = async (batchId: string, customMemo?: string, hasIssue: boolean = false) => {
     if (!batchId || batchReturnProcessingId) return;
 
@@ -1608,8 +1593,6 @@ export default function MaterialManagement({
     try {
       const returnedBy = currentUser?.name || '작업자';
 
-      // 일괄 반납은 DB RPC 한 번으로 처리합니다.
-      // 재고, batch item, 반납 이력, 메인 로그가 하나의 트랜잭션으로 처리됩니다.
       const { data, error } = await supabase.rpc('return_inventory_batch', {
         p_batch_id: cleanBatchId,
         p_returned_by: returnedBy,
@@ -1631,11 +1614,10 @@ export default function MaterialManagement({
           : '일괄 반납 처리가 완료되었습니다.'
       );
 
-      // DB 반영 후 필요한 화면 데이터만 새로고침합니다.
       await Promise.all([
         fetchInventory(),
         fetchInventoryLogs(),
-        ...(typeof fetchReturnHistories === 'function' ? [fetchReturnHistories()] : []),
+        fetchReturnHistories(),
       ]);
     } catch (err: any) {
       console.error('일괄 반납 예외 발생:', err);
@@ -1650,14 +1632,6 @@ export default function MaterialManagement({
     setSelectedCabinIds(prev => 
       prev.includes(strId) ? prev.filter(item => item !== strId) : [...prev, strId]
     );
-  };
-
-  const toggleSelectAllCabin = () => {
-    if (selectedCabinIds.length === filteredInventory.length) {
-      setSelectedCabinIds([]);
-    } else {
-      setSelectedCabinIds(filteredInventory.map(item => String(item.id)));
-    }
   };
 
   const handleCabinBatchIssue = async (e: React.FormEvent) => {
@@ -1768,22 +1742,6 @@ export default function MaterialManagement({
     }
   };
 
-  const fetchReturnHistories = async () => {
-    setLoadingReturnHistories(true);
-    try {
-      const { data, error } = await supabase
-        .from('inventory_return_history')
-        .select('*')
-        .order('returned_at', { ascending: false });
-      if (error) throw error;
-      setReturnHistories((data || []) as InventoryReturnHistory[]);
-    } catch (err: any) {
-      showCenterToast('반납 이력 조회 실패: ' + (err?.message || '알 수 없는 오류'));
-    } finally {
-      setLoadingReturnHistories(false);
-    }
-  };
-
   const handleOpenReturnHistory = async () => {
     setIsReturnHistoryOpen(true);
     await fetchReturnHistories();
@@ -1814,26 +1772,6 @@ export default function MaterialManagement({
     }
   };
 
-  const handleOpenReturnModal = (log: InventoryLog) => {
-    if (log.item_name && log.item_name.includes('[CABIN 일괄 불출]')) {
-      showCenterToast('CABIN 일괄 불출된 항목은 개별적으로 항목을 찾아 반납 처리해야 합니다. CABIN 탭에서 해당 항목을 확인 후 반납하세요.');
-      return;
-    }
-
-    const foundItem = findInventoryItemForLog(log);
-    if (foundItem && foundItem.type === '소모성') {
-      showCenterToast('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
-      return;
-    }
-
-    setTargetReturnLog(log);
-    setReturnQty(log.quantity || 1);
-    setReturnHasIssue(false);
-    setReturnMemo('');
-    setShowReturnModal(true);
-  };
-
-  // ✅ [수정사항 1] 불출자와 반납자가 다를 때 반납 처리 완벽 작동
   const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetReturnLog || returnSubmittingRef.current) return;
@@ -1846,8 +1784,6 @@ export default function MaterialManagement({
         return;
       }
 
-      // 일괄 불출 이력은 inventory_id가 메인 로그에 없을 수 있으므로
-      // 개별 inventory 조회로 처리하지 않고 batch RPC로 바로 반납합니다.
       if (targetReturnLog.batch_id) {
         const batchId = String(targetReturnLog.batch_id).trim();
         const batchQuantity = Number(targetReturnLog.quantity || 0);
@@ -1911,11 +1847,10 @@ export default function MaterialManagement({
           return;
         }
 
-        const { data: updatedRows, error: invErr } = await supabase
+        const { error: invErr } = await supabase
           .from('inventory')
           .update({ quantity: currentQty + qtyToReturn, updated_at: new Date().toISOString() })
-          .eq('id', foundItem.id)
-          .select('id, quantity');
+          .eq('id', foundItem.id);
         if (invErr) throw invErr;
       }
 
@@ -1926,7 +1861,6 @@ export default function MaterialManagement({
       const returnHistoryIssuedAt = targetReturnLog.created_at || null;
       const returnHistoryReturnedAt = new Date().toISOString();
 
-      // 불출자와 상관없이 선택한 targetReturnLog.id 기준 업데이트
       const { error: logErr } = await supabase
         .from('inventory_logs')
         .update({ 
@@ -2013,7 +1947,6 @@ export default function MaterialManagement({
     }
   };
 
-  // ✅ [수정사항 2] 이력 단건 삭제 처리 함수
   const handleOpenDeleteLog = (logId: string | number) => {
     if (!isAdmin) {
       showCenterToast('관리자 권한이 있는 인원만 삭제할 수 있습니다.');
@@ -2151,14 +2084,50 @@ export default function MaterialManagement({
     selectedFixedSubCategory,
     selectedVbtSubCategory,
     selectedCabinSheet,
-    selectedCabinTextSubTag,
     cabinCalibrationOnly,
     selectedItemSubCategory,
     currentItemSubCategoryEntries
   ]);
 
-  const currentActiveSubCatName = getCurrentSelectedCategory();
+  const toggleSelectAllConsumable = () => {
+    if (selectedConsumableIds.length === filteredInventory.length) {
+      setSelectedConsumableIds([]);
+      setConsumableBatchQuantities({});
+    } else {
+      const ids = filteredInventory.map(item => String(item.id));
+      const quantities: Record<string, number> = {};
+      filteredInventory.forEach(item => {
+        quantities[String(item.id)] = Number(item.quantity || 0) > 0 ? 1 : 0;
+      });
+      setSelectedConsumableIds(ids);
+      setConsumableBatchQuantities(quantities);
+    }
+  };
 
+  const toggleSelectAllFixed = () => {
+    if (selectedFixedIds.length === filteredInventory.length) {
+      setSelectedFixedIds([]);
+      setFixedBatchQuantities({});
+    } else {
+      const ids = filteredInventory.map(item => String(item.id));
+      const quantities: Record<string, number> = {};
+      filteredInventory.forEach(item => {
+        quantities[String(item.id)] = Math.max(1, Math.min(1, Number(item.quantity || 0)));
+      });
+      setSelectedFixedIds(ids);
+      setFixedBatchQuantities(quantities);
+    }
+  };
+
+  const toggleSelectAllCabin = () => {
+    if (selectedCabinIds.length === filteredInventory.length) {
+      setSelectedCabinIds([]);
+    } else {
+      setSelectedCabinIds(filteredInventory.map(item => String(item.id)));
+    }
+  };
+
+  const currentActiveSubCatName = getCurrentSelectedCategory();
   return (
     <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
       
