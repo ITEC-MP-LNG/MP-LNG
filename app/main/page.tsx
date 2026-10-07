@@ -343,38 +343,54 @@ export default function MainPage() {
     }
   }, [mainTab, currentUser, inventoryList.length, educations.length, fetchInventory, fetchInventoryLogs, fetchEducations, fetchEducationRecords]);
 
-  // 🔴 🔥 20초 주기 폴링 제거 ➔ Realtime 실시간 이벤트 수신으로 대체!
-  // DB에 실제 변경(INSERT/UPDATE/DELETE)이 있을 때만 동작하며, 언마운트 시 removeChannel로 완벽 해제됩니다.
+  // 🔴 🔥 Realtime 실시간 이벤트 수신 + document.hidden (탭 비활성화 감지) 최적화!
   useEffect(() => {
     if (!currentUser) return;
 
     const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
 
+    // 탭 복귀 시 최신 데이터 갱신 이벤트 핸들러
+    const handleVisibilityChange = () => {
+      if (!document.hidden && currentUser) {
+        checkUnreadNotices(String(userKey));
+        if (mainTab === 'TASKS') fetchTasks(currentUser);
+        else if (mainTab === 'INVENTORY') fetchInventory();
+        else if (mainTab === 'EDUCATION') fetchEducations();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     const globalChannel = supabase
       .channel('app-global-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, () => {
+        if (document.hidden) return; // 탭이 숨겨져 있을 땐 API 호출 차단
         setNavNewFlags(prev => ({ ...prev, NOTICE: true }));
         checkUnreadNotices(String(userKey));
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        if (document.hidden) return;
         setNavNewFlags(prev => ({ ...prev, TASKS: true }));
-        fetchTasks(currentUser);
+        if (mainTab === 'TASKS') fetchTasks(currentUser);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
+        if (document.hidden) return;
         setNavNewFlags(prev => ({ ...prev, INVENTORY: true }));
         if (mainTab === 'INVENTORY') fetchInventory();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'educations' }, () => {
+        if (document.hidden) return;
         setNavNewFlags(prev => ({ ...prev, EDUCATION: true }));
         if (mainTab === 'EDUCATION') fetchEducations();
       })
       .subscribe();
 
-    // ✅ Clean-up: 컴포넌트 해제 또는 변경 시 Realtime 채널 닫기 (로그 폭증 완전 방지)
+    // ✅ Clean-up: 컴포넌트 해제 또는 변경 시 수신기 및 리스너 완벽 해제
     return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       supabase.removeChannel(globalChannel);
     };
-  }, [currentUser?.id, mainTab, checkUnreadNotices, fetchTasks, fetchInventory, fetchEducations]);
+  }, [currentUser, mainTab, checkUnreadNotices, fetchTasks, fetchInventory, fetchEducations]);
 
   const markNavigationAsRead = (tabId: string) => {
     setNavNewFlags((prev) => ({ ...prev, [tabId]: false }));
