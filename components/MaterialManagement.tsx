@@ -1070,7 +1070,7 @@ export default function MaterialManagement({
     if (type === '반납' && item.type !== '소모성') {
       const currentQty = Number(item.quantity || 0);
       const initialQty = Number(item.initial_quantity);
-      if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty >= initialQty) {
+      if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty === initialQty) {
         showCenterToast(`현재 보유수량이 최초 보유수량(${initialQty} ${item.unit || 'EA'})과 같습니다. 이미 반납이 완료된 자재입니다.`);
         return;
       }
@@ -1116,7 +1116,7 @@ export default function MaterialManagement({
           showCenterToast('최초 보유수량이 등록되지 않은 자재입니다. 관리자에게 최초 보유수량을 확인해주세요.');
           return;
         }
-        if (currentQty + qtyChange > initialQty) {
+        if (currentQty <= initialQty && currentQty + qtyChange > initialQty) {
           showCenterToast(`반납 후 수량이 최초 보유수량(${initialQty} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
           return;
         }
@@ -1181,7 +1181,7 @@ export default function MaterialManagement({
         .update({ quantity: newQty, updated_at: operationAt })
         .eq('id', targetItem.id);
 
-      if (logType === '반납') {
+      if (logType === '반납' && Number(targetItem.quantity || 0) <= Number(targetItem.initial_quantity)) {
         updateQuery = updateQuery.lte('quantity', Number(targetItem.initial_quantity) - qtyChange);
       }
 
@@ -1691,7 +1691,7 @@ export default function MaterialManagement({
             const initialQty = Number(currentItem.initial_quantity);
 
             // 초과 수량 검증
-            if (Number.isFinite(initialQty) && initialQty >= 0 && (currentQty + qtyToReturn > initialQty)) {
+            if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty <= initialQty && (currentQty + qtyToReturn > initialQty)) {
               showCenterToast(`'${currentItem.name || currentItem.code}' 자재의 수량이 최초 보유수량(${initialQty}${currentItem.unit || 'EA'})을 초과하여 반납할 수 없습니다.`);
               setBatchReturnProcessingId(null);
               return;
@@ -2015,7 +2015,7 @@ export default function MaterialManagement({
         const currentQty = Number(foundItem.quantity || 0);
         const initialQty = Number(foundItem.initial_quantity);
 
-        if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty + qtyToReturn > initialQty) {
+        if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty <= initialQty && currentQty + qtyToReturn > initialQty) {
           showCenterToast(`반납 후 수량이 최초 보유수량(${initialQty} ${foundItem.unit || 'EA'})을 초과할 수 없습니다.`);
           return;
         }
@@ -2272,7 +2272,7 @@ export default function MaterialManagement({
     <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
       
       {confirmModal.isOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
             <div className="flex items-center space-x-3">
               <div className="p-2.5 bg-red-50 rounded-xl text-red-600 border border-red-100">
@@ -2292,7 +2292,7 @@ export default function MaterialManagement({
       )}
 
       {toastMessage && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/35 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/35 backdrop-blur-xs p-4">
           <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-xs text-center">
             <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
             <span className="truncate">{toastMessage}</span>
@@ -2613,7 +2613,7 @@ export default function MaterialManagement({
       )}
 
       {pendingDeleteLogId !== null && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
             <div className="mx-auto w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600">
               <AlertTriangle className="h-5 w-5" />
@@ -2631,7 +2631,7 @@ export default function MaterialManagement({
       )}
 
       {showBatchDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
             <div className="mx-auto w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600">
               <Trash2 className="h-5 w-5" />
@@ -3702,7 +3702,7 @@ export default function MaterialManagement({
       </div>
 
       {pendingDeleteReturnHistoryId !== null && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
             <div className="mx-auto w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600">
               <AlertTriangle className="h-5 w-5" />
