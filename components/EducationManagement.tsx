@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { 
   Plus, 
   Pencil, 
@@ -193,8 +193,8 @@ export default function EducationManagement({
     return <span className="text-[10px] font-extrabold text-red-600 ml-1">N</span>;
   };
 
-  // 이벤트 데이터 불러오기
-  const fetchEvents = async () => {
+  // 이벤트 데이터 불러오기 (useCallback 최적화)
+  const fetchEvents = useCallback(async () => {
     try {
       setLoadingEvents(true);
       const { data, error } = await supabase
@@ -208,11 +208,11 @@ export default function EducationManagement({
     } finally {
       setLoadingEvents(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchEvents();
-  }, []);
+  }, [fetchEvents]);
 
   // 교육 당일 알림 기능 유지
   useEffect(() => {
@@ -346,7 +346,7 @@ export default function EducationManagement({
     }, 'EVENT 삭제');
   };
 
-  // 통합 폼 제출 핸들러
+  // 통합 폼 제출 핸들러 (중복 시도 없이 단일 명확 실행으로 에러 로그 방지)
   const handleSubmitSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -355,8 +355,9 @@ export default function EducationManagement({
       if (!formTitle.trim()) return showAlert('교육명을 입력해주세요.', '입력 항목 누락', 'error');
 
       try {
-        const basePayload: any = {
+        const payload: any = {
           title: formTitle,
+          edu_date: formDate,
           time_slot: formTimeSlot,
           location: formLocation,
           assigned_workers: assignedWorkers,
@@ -364,18 +365,12 @@ export default function EducationManagement({
         };
 
         if (editingScheduleId) {
-          let { error } = await supabase.from('educations').update({ ...basePayload, edu_date: formDate }).eq('id', editingScheduleId);
-          if (error) {
-            const { error: retryError } = await supabase.from('educations').update(basePayload).eq('id', editingScheduleId);
-            if (retryError) throw retryError;
-          }
+          const { error } = await supabase.from('educations').update(payload).eq('id', editingScheduleId);
+          if (error) throw error;
           showAlert('교육 일정이 수정되었습니다.', '수정 완료', 'success');
         } else {
-          let { error } = await supabase.from('educations').insert([{ ...basePayload, edu_date: formDate }]);
-          if (error) {
-            const { error: retryError } = await supabase.from('educations').insert([basePayload]);
-            if (retryError) throw retryError;
-          }
+          const { error } = await supabase.from('educations').insert([payload]);
+          if (error) throw error;
           showAlert('신규 교육 일정이 등록되었습니다.', '등록 완료', 'success');
         }
 
@@ -583,7 +578,7 @@ export default function EducationManagement({
             </div>
           </div>
 
-          {/* 하단 전체 목록 영역 - 목록은 최소화하고 선택 시 상세 팝업에서 확인 */}
+          {/* 하단 전체 목록 영역 */}
           <div className="mt-6 space-y-5">
             {/* 1. 전체 교육 목록 */}
             <div className="space-y-2">
@@ -803,7 +798,7 @@ export default function EducationManagement({
             </h2>
             
             <form onSubmit={handleSubmitSchedule} className="space-y-3 text-xs">
-              {/* 등록 유형 선택 (신규 등록일 때 활성화) */}
+              {/* 등록 구분 선택 */}
               <div>
                 <label className="block font-semibold text-[#64748B] mb-1">등록 구분</label>
                 <div className="flex bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9]">
