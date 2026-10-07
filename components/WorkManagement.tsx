@@ -307,12 +307,28 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
   };
 
-  useEffect(() => {
-    fetchAppUsers();
-    fetchVessels();
-    fetchTeams();
-    fetchTasks();
-  }, [currentUser]);
+  uuseEffect(() => {
+  fetchAppUsers();
+  fetchVessels();
+  fetchTeams();
+  fetchTasks();
+
+  // 💡 Realtime 구독 추가: DB 변경 발생 시에만 fetchTasks 실행
+  const channel = supabase
+    .channel('public:tasks')
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'tasks' },
+      () => {
+        fetchTasks();
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}, [currentUser]);
 
   // 해당 업무 변경 권한 확인
   const canModifyTaskStatus = (task: Task) => {
