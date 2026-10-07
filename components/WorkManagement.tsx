@@ -455,7 +455,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setNewTeamMembersText(deptMembers.join(', '));
   };
 
-  // 업무 담당자 전화 연결
+  // 업무 담당자 전화 연결 (동일 스타일의 커스텀 알림 모달 활용)
   const handleCallWorker = (workerName: string) => {
     const worker = appUsers.find(
       (u) => u.name?.trim().toLowerCase() === workerName.trim().toLowerCase()
@@ -968,13 +968,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (dailySubTab === 'ACTIVE') handleCallWorker(name);
+                                handleCallWorker(name); // 진행중/대기 및 완료 이력보기 모두 전화 연결 가능하도록 복원
                               }}
-                              className={`font-medium text-[#1F2937] rounded px-1 transition ${
-                                dailySubTab === 'ACTIVE'
-                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
-                                  : 'cursor-default'
-                              }`}
+                              className="font-medium text-[#1F2937] rounded px-1 transition hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer"
                             >
                               {name}
                             </button>
@@ -1082,13 +1078,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                       type="button"
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        if (t.status !== 'COMPLETED') handleCallWorker(name);
+                                        handleCallWorker(name);
                                       }}
-                                      className={`font-medium text-[#64748B] rounded px-0.5 transition ${
-                                        t.status !== 'COMPLETED'
-                                          ? 'hover:text-[#2563EB] hover:underline cursor-pointer'
-                                          : 'cursor-default'
-                                      }`}
+                                      className="font-medium text-[#64748B] hover:text-[#2563EB] hover:underline cursor-pointer rounded px-0.5 transition"
                                     >
                                       {name}
                                     </button>
@@ -1141,13 +1133,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                         type="button"
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          if (t.status !== 'COMPLETED') handleCallWorker(name);
+                                          handleCallWorker(name);
                                         }}
-                                        className={`font-medium text-[#64748B] rounded px-0.5 transition ${
-                                          t.status !== 'COMPLETED'
-                                            ? 'hover:text-[#2563EB] hover:underline cursor-pointer'
-                                            : 'cursor-default'
-                                        }`}
+                                        className="font-medium text-[#64748B] hover:text-[#2563EB] hover:underline cursor-pointer rounded px-0.5 transition"
                                       >
                                         {name}
                                       </button>
@@ -1209,13 +1197,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (t.status !== 'COMPLETED') handleCallWorker(name);
+                                handleCallWorker(name);
                               }}
-                              className={`font-medium text-amber-800 rounded px-1 transition ${
-                                t.status !== 'COMPLETED'
-                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
-                                  : 'cursor-default'
-                              }`}
+                              className="font-medium text-amber-800 hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer rounded px-1 transition"
                             >
                               {name}
                             </button>
@@ -1237,13 +1221,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (t.status !== 'COMPLETED') handleCallWorker(name);
+                                handleCallWorker(name);
                               }}
-                              className={`font-medium text-indigo-800 rounded px-1 transition ${
-                                t.status !== 'COMPLETED'
-                                  ? 'hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer'
-                                  : 'cursor-default'
-                              }`}
+                              className="font-medium text-indigo-800 hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer rounded px-1 transition"
                             >
                               {name}
                             </button>
