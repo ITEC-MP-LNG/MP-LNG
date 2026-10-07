@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
@@ -75,7 +75,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [isLoading, setIsLoading] = useState(true);
 
   // 관리자 권한 여부 확인
-  const isAdmin = currentUser?.role === 'ADMIN' || currentUser?.role === 'admin' || currentUser?.role === '관리자';
+  const isAdmin = useMemo(() => {
+    return currentUser?.role === 'ADMIN' || currentUser?.role === 'admin' || currentUser?.role === '관리자';
+  }, [currentUser]);
 
   // 탭 및 서브탭 상태
   const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN'>('DAILY');
@@ -98,13 +100,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     type: 'info'
   });
 
-  const showCustomAlert = (title: string, message: string) => {
+  const showCustomAlert = useCallback((title: string, message: string) => {
     setCustomAlert({ open: true, title, message, type: 'info' });
-  };
+  }, []);
 
-  const showCustomConfirm = (title: string, message: string, onConfirm: () => void) => {
+  const showCustomConfirm = useCallback((title: string, message: string, onConfirm: () => void) => {
     setCustomAlert({ open: true, title, message, type: 'confirm', onConfirm });
-  };
+  }, []);
 
   // 팝업 미완료 알림 상태
   const [isAlertOpen, setIsAlertOpen] = useState(false);
@@ -160,7 +162,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [singleWorkerInput, setSingleWorkerInput] = useState('');
 
   // app_users 인원 및 부서(department) 불러오기
-  const fetchAppUsers = async () => {
+  const fetchAppUsers = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('app_users').select('name, department, phone');
       if (error) throw error;
@@ -177,10 +179,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err) {
       console.error('app_users 로드 실패:', err);
     }
-  };
+  }, []);
 
   // CABIN 호선 목록 조회
-  const fetchVessels = async () => {
+  const fetchVessels = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('cabin_vessels').select('*').order('created_at', { ascending: true });
       if (error) throw error;
@@ -193,10 +195,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err) {
       console.error('vessels 로드 실패:', err);
     }
-  };
+  }, [formData.category]);
 
   // Preset Teams 조회
-  const fetchTeams = async () => {
+  const fetchTeams = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('preset_teams').select('*').order('created_at', { ascending: true });
       if (error) throw error;
@@ -206,21 +208,21 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err) {
       console.error('preset_teams 로드 실패:', err);
     }
-  };
+  }, []);
 
   // 업무 N(신규/수정) 표시용 읽음 처리
-  const getTaskReadKey = (taskId: string) => {
+  const getTaskReadKey = useCallback((taskId: string) => {
     const userKey = currentUser?.id || currentUser?.name || 'guest';
     return `work_task_read_${userKey}_${taskId}`;
-  };
+  }, [currentUser]);
 
-  const getTaskChangeTime = (task: Task) => {
+  const getTaskChangeTime = useCallback((task: Task) => {
     const value = task.updated_at || task.created_at;
     const time = value ? new Date(value).getTime() : 0;
     return Number.isFinite(time) ? time : 0;
-  };
+  }, []);
 
-  const isTaskNew = (task: Task) => {
+  const isTaskNew = useCallback((task: Task) => {
     if (typeof window === 'undefined') return false;
     const changeTime = getTaskChangeTime(task);
     if (!changeTime) return false;
@@ -232,12 +234,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const initializedAt = Number(localStorage.getItem(`work_task_n_initialized_${userKey}`) || '0');
     if (!initializedAt) return true;
     return changeTime > initializedAt;
-  };
+  }, [currentUser, getTaskChangeTime, getTaskReadKey]);
 
-  const markTaskAsRead = (task: Task) => {
+  const markTaskAsRead = useCallback((task: Task) => {
     if (typeof window === 'undefined') return;
 
-    // N 제거를 위한 재렌더링 후에도 현재 스크롤 위치 유지
     const scrollY = window.scrollY;
     localStorage.setItem(getTaskReadKey(task.id), String(Date.now()));
     setTasks(prev => [...prev]);
@@ -247,20 +248,20 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         window.scrollTo(0, scrollY);
       });
     });
-  };
+  }, [getTaskReadKey]);
 
-  const handleOpenTaskDetail = (task: Task) => {
+  const handleOpenTaskDetail = useCallback((task: Task) => {
     markTaskAsRead(task);
     setSelectedTaskForSheet(task);
-  };
+  }, [markTaskAsRead]);
 
-  const renderTaskNewBadge = (task: Task) => {
+  const renderTaskNewBadge = useCallback((task: Task) => {
     if (!isTaskNew(task)) return null;
     return <span className="text-[10px] font-extrabold text-red-600 ml-1">N</span>;
-  };
+  }, [isTaskNew]);
 
   // 전체 업무 데이터 및 팝업 알림 체크
-  const fetchTasks = async () => {
+  const fetchTasks = useCallback(async () => {
     setIsLoading(true);
     try {
       const { data, error } = await supabase.from('tasks').select('*').order('start_date', { ascending: true });
@@ -305,7 +306,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [currentUser]);
 
   useEffect(() => {
     fetchAppUsers();
@@ -313,7 +314,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     fetchTeams();
     fetchTasks();
 
-    // 💡 Realtime 구독: DB 변경 발생 시에만 fetchTasks 실행 (API 호출 최소화)
     const channel = supabase
       .channel('public:tasks')
       .on(
@@ -328,10 +328,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [currentUser]);
+  }, [currentUser, fetchAppUsers, fetchVessels, fetchTeams, fetchTasks]);
 
   // 해당 업무 변경 권한 확인
-  const canModifyTaskStatus = (task: Task) => {
+  const canModifyTaskStatus = useCallback((task: Task) => {
     if (isAdmin) return true;
     if (task.task_type === 'WEEKLY' || task.task_type === 'CABIN') return false;
     if (!currentUser || !currentUser.name) return false;
@@ -342,10 +342,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const night = (task.night_workers || []).map(n => n.trim().toLowerCase());
 
     return assigned.includes(name) || day.includes(name) || night.includes(name);
-  };
+  }, [isAdmin, currentUser]);
 
   // 호선 관리 관련
-  const handleAddVessel = async () => {
+  const handleAddVessel = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     if (!newVesselName.trim()) return;
     try {
@@ -355,9 +355,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       fetchVessels();
       showCustomAlert('성공', '호선이 추가되었습니다.');
     } catch (err: any) { showCustomAlert('오류', `호선 추가 실패: ${err.message}`); }
-  };
+  }, [isAdmin, newVesselName, fetchVessels, showCustomAlert]);
 
-  const handleUpdateVessel = async (id: string, name: string) => {
+  const handleUpdateVessel = useCallback(async (id: string, name: string) => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     if (!name.trim()) return;
     try {
@@ -367,9 +367,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       fetchVessels();
       showCustomAlert('성공', '호선 정보가 수정되었습니다.');
     } catch (err: any) { showCustomAlert('오류', `호선 수정 실패: ${err.message}`); }
-  };
+  }, [isAdmin, fetchVessels, showCustomAlert]);
 
-  const handleDeleteVessel = async (id: string) => {
+  const handleDeleteVessel = useCallback(async (id: string) => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     showCustomConfirm('호선 삭제', '이 호선을 삭제하시겠습니까?', async () => {
       try {
@@ -379,10 +379,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         showCustomAlert('완료', '호선이 삭제되었습니다.');
       } catch (err: any) { showCustomAlert('오류', `호선 삭제 실패: ${err.message}`); }
     });
-  };
+  }, [isAdmin, showCustomConfirm, fetchVessels, showCustomAlert]);
 
   // Team 관리 관련 (추가 / 수정 / 삭제)
-  const handleAddTeam = async () => {
+  const handleAddTeam = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     if (!newTeamName.trim()) { showCustomAlert('입력 오류', 'Team 이름을 입력해주세요.'); return; }
     
@@ -404,9 +404,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       fetchTeams();
       showCustomAlert('성공', 'Team이 추가되었습니다.');
     } catch (err: any) { showCustomAlert('오류', `Team 추가 실패: ${err.message}`); }
-  };
+  }, [isAdmin, newTeamName, newTeamMembersText, newTeamDept, fetchTeams, showCustomAlert]);
 
-  const handleUpdateTeam = async (id: string) => {
+  const handleUpdateTeam = useCallback(async (id: string) => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     if (!editingTeam || !editingTeam.name.trim()) return;
 
@@ -430,9 +430,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       fetchTeams();
       showCustomAlert('성공', 'Team 정보가 수정되었습니다.');
     } catch (err: any) { showCustomAlert('오류', `Team 수정 실패: ${err.message}`); }
-  };
+  }, [isAdmin, editingTeam, editTeamMembersText, fetchTeams, showCustomAlert]);
 
-  const handleDeleteTeam = async (id: string) => {
+  const handleDeleteTeam = useCallback(async (id: string) => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     showCustomConfirm('Team 삭제', '해당 Team을 정말 삭제하시겠습니까?', async () => {
       try {
@@ -442,10 +442,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         showCustomAlert('완료', 'Team이 삭제되었습니다.');
       } catch (err: any) { showCustomAlert('오류', `Team 삭제 실패: ${err.message}`); }
     });
-  };
+  }, [isAdmin, showCustomConfirm, fetchTeams, showCustomAlert]);
 
   // app_users 부서 선택 시 해당 부서의 전체 사용자 자동 세팅
-  const handleSelectDepartmentUsersToNewTeam = (dept: string) => {
+  const handleSelectDepartmentUsersToNewTeam = useCallback((dept: string) => {
     setNewTeamDept(dept);
     const deptMembers = appUsers
       .filter(u => u.department === dept)
@@ -453,10 +453,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       .filter(Boolean);
     
     setNewTeamMembersText(deptMembers.join(', '));
-  };
+  }, [appUsers]);
 
-  // 업무 담당자 전화 연결 (동일 스타일의 커스텀 알림 모달 활용)
-  const handleCallWorker = (workerName: string) => {
+  // 업무 담당자 전화 연결
+  const handleCallWorker = useCallback((workerName: string) => {
     const worker = appUsers.find(
       (u) => u.name?.trim().toLowerCase() === workerName.trim().toLowerCase()
     );
@@ -474,10 +474,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         window.location.href = `tel:${phone.replace(/[^0-9+]/g, '')}`;
       }
     );
-  };
+  }, [appUsers, showCustomAlert, showCustomConfirm]);
 
-  // 상태 변경 버튼 클릭 시 (상세보기 및 비고 입력 모달 호출)
-  const handleNextStatus = (e: React.MouseEvent, task: Task) => {
+  // 상태 변경 버튼 클릭 시
+  const handleNextStatus = useCallback((e: React.MouseEvent, task: Task) => {
     e.stopPropagation();
 
     if (!canModifyTaskStatus(task)) {
@@ -495,10 +495,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       targetStatus: task.status,
       remarks: task.remarks || ''
     });
-  };
+  }, [canModifyTaskStatus, showCustomAlert]);
 
   // 상태 및 비고 정보 최종 저장 처리
-  const handleConfirmStatusChange = async () => {
+  const handleConfirmStatusChange = useCallback(async () => {
     if (!statusChangeModal.task) return;
     const task = statusChangeModal.task;
     const nextStatus = statusChangeModal.targetStatus;
@@ -518,9 +518,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) {
       showCustomAlert('오류', `상태 변경 실패: ${err.message}`);
     }
-  };
+  }, [statusChangeModal, selectedTaskForSheet, fetchTasks, showCustomAlert]);
 
-  const renderStatusBadge = (task: Task) => {
+  const renderStatusBadge = useCallback((task: Task) => {
     const statusConfig = {
       PENDING: { label: '대기', bg: 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200', icon: AlertCircle },
       IN_PROGRESS: { label: '진행중', bg: 'bg-emerald-500 text-white border-emerald-600 hover:bg-emerald-600 shadow-xs', icon: PlayCircle },
@@ -539,10 +539,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         <span>{config.label}</span>
       </button>
     );
-  };
+  }, [handleNextStatus]);
 
   // 모달 열기 (등록)
-  const handleOpenCreateModal = (defaultDate?: string, defaultType?: 'DAILY' | 'WEEKLY' | 'CABIN', defaultCategory?: string) => {
+  const handleOpenCreateModal = useCallback((defaultDate?: string, defaultType?: 'DAILY' | 'WEEKLY' | 'CABIN', defaultCategory?: string) => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 업무를 등록할 수 있습니다.'); return; }
     setEditingTask(null);
     setFormData({
@@ -559,10 +559,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setNightWorkerList([]);
     setSingleWorkerInput('');
     setIsModalOpen(true);
-  };
+  }, [isAdmin, taskTab, vessels, showCustomAlert]);
 
   // 모달 열기 (수정)
-  const handleOpenTaskEdit = (task: Task) => {
+  const handleOpenTaskEdit = useCallback((task: Task) => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 업무를 수정할 수 있습니다.'); return; }
     setEditingTask(task);
     setFormData({
@@ -579,20 +579,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setNightWorkerList(task.night_workers || []);
     setSingleWorkerInput('');
     setIsModalOpen(true);
-  };
+  }, [isAdmin, vessels, showCustomAlert]);
 
   // 인원 1명씩 추가 / Team 불러오기 반영 핸들러
-  const handleAddWorkerSingle = (target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
+  const handleAddWorkerSingle = useCallback((target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (!singleWorkerInput.trim()) return;
     const name = singleWorkerInput.trim();
     if (target === 'ASSIGNED' && !assignedList.includes(name)) setAssignedList([...assignedList, name]);
     if (target === 'DAY' && !dayWorkerList.includes(name)) setDayWorkerList([...dayWorkerList, name]);
     if (target === 'NIGHT' && !nightWorkerList.includes(name)) setNightWorkerList([...nightWorkerList, name]);
     setSingleWorkerInput('');
-  };
+  }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList]);
 
-  // 단순 app_users 기반으로 형성된 그룹 데이터 반영
-  const handleApplyTeamOrDept = (value: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
+  const handleApplyTeamOrDept = useCallback((value: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (!value) return;
     
     let selectedMembers: string[] = [];
@@ -614,16 +613,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (target === 'ASSIGNED') setAssignedList(Array.from(new Set([...assignedList, ...selectedMembers])));
     if (target === 'DAY') setDayWorkerList(Array.from(new Set([...dayWorkerList, ...selectedMembers])));
     if (target === 'NIGHT') setNightWorkerList(Array.from(new Set([...nightWorkerList, ...selectedMembers])));
-  };
+  }, [presetTeams, appUsers, assignedList, dayWorkerList, nightWorkerList]);
 
-  const handleRemoveWorker = (name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
+  const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
     if (target === 'DAY') setDayWorkerList(dayWorkerList.filter(n => n !== name));
     if (target === 'NIGHT') setNightWorkerList(nightWorkerList.filter(n => n !== name));
-  };
+  }, [assignedList, dayWorkerList, nightWorkerList]);
 
   // 업무 저장
-  const handleSubmitTask = async (e: React.FormEvent) => {
+  const handleSubmitTask = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자 권한이 없습니다.'); return; }
     if (!formData.title.trim()) return;
@@ -671,10 +670,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       fetchTasks();
       showCustomAlert('성공', '업무가 정상적으로 저장되었습니다.');
     } catch (err: any) { showCustomAlert('오류', `저장 중 오류: ${err.message}`); }
-  };
+  }, [isAdmin, formData, editingTask, dayWorkerList, nightWorkerList, assignedList, fetchTasks, showCustomAlert]);
 
   // 업무 삭제
-  const handleDeleteTask = async (id: string) => {
+  const handleDeleteTask = useCallback(async (id: string) => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 업무를 삭제할 수 있습니다.'); return; }
     showCustomConfirm('업무 삭제', '해당 항목을 정말로 삭제하시겠습니까?', async () => {
       const { error } = await supabase.from('tasks').delete().eq('id', id);
@@ -686,10 +685,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         showCustomAlert('오류', `삭제 실패: ${error.message}`);
       }
     });
-  };
+  }, [isAdmin, showCustomConfirm, fetchTasks, showCustomAlert]);
 
   // 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수
-  const handleExportWeeklyExcel = () => {
+  const handleExportWeeklyExcel = useCallback(() => {
     const [yearStr, monthStr] = selectedExportMonth.split('-');
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
@@ -757,40 +756,44 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     XLSX.utils.book_append_sheet(workbook, worksheet, `${month}월 달력 업무`);
     XLSX.writeFile(workbook, `주간업무_달력_${year}_${month}월.xlsx`);
     showCustomAlert('엑셀 다운로드', `${year}년 ${month}월 주간 업무 달력이 엑셀 파일로 추출되었습니다.`);
-  };
+  }, [selectedExportMonth, tasks, showCustomAlert]);
 
   // 주간 날짜 계산
-  const weekDays = Array.from({ length: 7 }, (_, i) => {
-    const day = new Date(currentWeekMonday);
-    day.setDate(currentWeekMonday.getDate() + i);
-    const dateStr = formatDateToYYYYMMDD(day);
-    const dayNames = ['월', '화', '수', '목', '금', '토', '일'];
-    return {
-      label: `${dayNames[i]}요일`,
-      dateStr: dateStr,
-      displayDate: `${day.getMonth() + 1}/${day.getDate()}`,
-      isToday: dateStr === formatDateToYYYYMMDD(new Date()),
-    };
-  });
+  const weekDays = useMemo(() => {
+    return Array.from({ length: 7 }, (_, i) => {
+      const day = new Date(currentWeekMonday);
+      day.setDate(currentWeekMonday.getDate() + i);
+      const dateStr = formatDateToYYYYMMDD(day);
+      const dayNames = ['월', '화', '수', '목', '금', '토', '일'];
+      return {
+        label: `${dayNames[i]}요일`,
+        dateStr: dateStr,
+        displayDate: `${day.getMonth() + 1}/${day.getDate()}`,
+        isToday: dateStr === formatDateToYYYYMMDD(new Date()),
+      };
+    });
+  }, [currentWeekMonday]);
 
-  const changeWeek = (direction: 'prev' | 'next') => {
+  const changeWeek = useCallback((direction: 'prev' | 'next') => {
     const newMonday = new Date(currentWeekMonday);
     newMonday.setDate(currentWeekMonday.getDate() + (direction === 'next' ? 7 : -7));
     setCurrentWeekMonday(newMonday);
-  };
+  }, [currentWeekMonday]);
 
   // 필터링된 업무 목록
-  const filteredTasks = tasks.filter((t) => {
-    if ((t.task_type || 'CABIN') !== taskTab) return false;
-    
-    if (taskTab === 'DAILY') {
-      if (dailySubTab === 'ACTIVE') return t.status !== 'COMPLETED';
-      if (dailySubTab === 'HISTORY') return t.status === 'COMPLETED';
-    }
+  const filteredTasks = useMemo(() => {
+    return tasks.filter((t) => {
+      if ((t.task_type || 'CABIN') !== taskTab) return false;
+      
+      if (taskTab === 'DAILY') {
+        if (dailySubTab === 'ACTIVE') return t.status !== 'COMPLETED';
+        if (dailySubTab === 'HISTORY') return t.status === 'COMPLETED';
+      }
 
-    if (taskTab === 'CABIN' && cabinSubTab !== 'ALL') return t.category === cabinSubTab;
-    return true;
-  });
+      if (taskTab === 'CABIN' && cabinSubTab !== 'ALL') return t.category === cabinSubTab;
+      return true;
+    });
+  }, [tasks, taskTab, dailySubTab, cabinSubTab]);
 
   return (
     <div className="bg-[#F5F6F8] min-h-screen w-full text-[#1F2937] p-0 m-0">
@@ -968,7 +971,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                handleCallWorker(name); // 진행중/대기 및 완료 이력보기 모두 전화 연결 가능하도록 복원
+                                handleCallWorker(name);
                               }}
                               className="font-medium text-[#1F2937] rounded px-1 transition hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer"
                             >
@@ -1328,7 +1331,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 상태 변경 및 비고 입력 모달 (버튼 직접 선택 구현) */}
+        {/* 상태 변경 및 비고 입력 모달 */}
         {statusChangeModal.open && statusChangeModal.task && (
           <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border animate-in fade-in zoom-in-95 duration-150">
