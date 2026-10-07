@@ -1904,7 +1904,13 @@ export default function MaterialManagement({
       returnSubmittingRef.current = false;
     }
   };
-
+const handleOpenReturnModal = (log: InventoryLog) => {
+    setTargetReturnLog(log);
+    setReturnQty(log.quantity || 1);
+    setReturnHasIssue(false);
+    setReturnMemo('');
+    setShowReturnModal(true);
+  };
   const handleOpenEditLog = (log: InventoryLog) => {
     if (!isAdmin) {
       showCenterToast('관리자 권한이 있는 인원만 수정할 수 있습니다.');
