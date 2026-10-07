@@ -135,28 +135,70 @@ export default function MaterialManagement({
   };
 
   // --- 매일 23시 이력 자동 정리/삭제 스케줄러 ---
-  // 23:00 정각에 페이지가 닫혀 있어도 다음 접속 시 전날 이력이 정리되도록 처리합니다.
-  // 반납완료 이력과 소모성 자재 불출/사용 이력만 삭제합니다.
   const cleanupRanDateRef = useRef<string | null>(null);
 
-  // ✅ 수정 후: setInterval을 제거하여 1분마다 무한 DB 찌르기 완전 방지!
-useEffect(() => {
-  const processDailyCleanup = async () => {
-    const now = new Date();
-    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    const yesterday = new Date(now);
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-    const lastCleanupDate = typeof window !== 'undefined' ? localStorage.getItem('inventory_cleanup_last_run') : null;
+  useEffect(() => {
+    const processDailyCleanup = async () => {
+      const now = new Date();
+      const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      const yesterday = new Date(now);
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+      const lastCleanupDate = typeof window !== 'undefined' ? localStorage.getItem('inventory_cleanup_last_run') : null;
 
-    if (now.getHours() < 23) {
-      if (lastCleanupDate === yesterdayKey) return;
+      if (now.getHours() < 23) {
+        if (lastCleanupDate === yesterdayKey) return;
+
+        try {
+          const todayStart = new Date(now);
+          todayStart.setHours(0, 0, 0, 0);
+          const todayStartIso = todayStart.toISOString();
+
+          const { data: consumableItems, error: consumableError } = await supabase
+            .from('inventory')
+            .select('id')
+            .eq('type', '소모성');
+          if (consumableError) throw consumableError;
+
+          const consumableIds = (consumableItems || []).map((item: any) => item.id);
+
+          const { error: returnedDeleteError } = await supabase
+            .from('inventory_logs')
+            .delete()
+            .ilike('type', '%반납완료%')
+            .lt('created_at', todayStartIso);
+          if (returnedDeleteError) throw returnedDeleteError;
+
+          if (consumableIds.length > 0) {
+            const { error: consumableDeleteError } = await supabase
+              .from('inventory_logs')
+              .delete()
+              .in('inventory_id', consumableIds)
+              .lt('created_at', todayStartIso);
+            if (consumableDeleteError) throw consumableDeleteError;
+          }
+
+          const { error: usageDeleteError } = await supabase
+            .from('inventory_logs')
+            .delete()
+            .ilike('type', '%소모성 사용%')
+            .lt('created_at', todayStartIso);
+          if (usageDeleteError) throw usageDeleteError;
+
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('inventory_cleanup_last_run', yesterdayKey);
+          }
+          cleanupRanDateRef.current = yesterdayKey;
+          await fetchInventoryLogs();
+        } catch (err) {
+          console.error('23시 자동 삭제 오류:', err);
+        }
+        return;
+      }
+
+      if (cleanupRanDateRef.current === todayKey || lastCleanupDate === todayKey) return;
 
       try {
-        const todayStart = new Date(now);
-        todayStart.setHours(0, 0, 0, 0);
-        const todayStartIso = todayStart.toISOString();
-
         const { data: consumableItems, error: consumableError } = await supabase
           .from('inventory')
           .select('id')
@@ -168,84 +210,36 @@ useEffect(() => {
         const { error: returnedDeleteError } = await supabase
           .from('inventory_logs')
           .delete()
-          .ilike('type', '%반납완료%')
-          .lt('created_at', todayStartIso);
+          .ilike('type', '%반납완료%');
         if (returnedDeleteError) throw returnedDeleteError;
 
         if (consumableIds.length > 0) {
           const { error: consumableDeleteError } = await supabase
             .from('inventory_logs')
             .delete()
-            .in('inventory_id', consumableIds)
-            .lt('created_at', todayStartIso);
+            .in('inventory_id', consumableIds);
           if (consumableDeleteError) throw consumableDeleteError;
         }
 
         const { error: usageDeleteError } = await supabase
           .from('inventory_logs')
           .delete()
-          .ilike('type', '%소모성 사용%')
-          .lt('created_at', todayStartIso);
+          .ilike('type', '%소모성 사용%');
         if (usageDeleteError) throw usageDeleteError;
 
+        cleanupRanDateRef.current = todayKey;
         if (typeof window !== 'undefined') {
-          localStorage.setItem('inventory_cleanup_last_run', yesterdayKey);
+          localStorage.setItem('inventory_cleanup_last_run', todayKey);
         }
-        cleanupRanDateRef.current = yesterdayKey;
         await fetchInventoryLogs();
       } catch (err) {
         console.error('23시 자동 삭제 오류:', err);
       }
-      return;
-    }
+    };
 
-    if (cleanupRanDateRef.current === todayKey || lastCleanupDate === todayKey) return;
+    processDailyCleanup();
+  }, []);
 
-    try {
-      const { data: consumableItems, error: consumableError } = await supabase
-        .from('inventory')
-        .select('id')
-        .eq('type', '소모성');
-      if (consumableError) throw consumableError;
-
-      const consumableIds = (consumableItems || []).map((item: any) => item.id);
-
-      const { error: returnedDeleteError } = await supabase
-        .from('inventory_logs')
-        .delete()
-        .ilike('type', '%반납완료%');
-      if (returnedDeleteError) throw returnedDeleteError;
-
-      if (consumableIds.length > 0) {
-        const { error: consumableDeleteError } = await supabase
-          .from('inventory_logs')
-          .delete()
-          .in('inventory_id', consumableIds);
-        if (consumableDeleteError) throw consumableDeleteError;
-      }
-
-      const { error: usageDeleteError } = await supabase
-        .from('inventory_logs')
-        .delete()
-        .ilike('type', '%소모성 사용%');
-      if (usageDeleteError) throw usageDeleteError;
-
-      cleanupRanDateRef.current = todayKey;
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('inventory_cleanup_last_run', todayKey);
-      }
-      await fetchInventoryLogs();
-    } catch (err) {
-      console.error('23시 자동 삭제 오류:', err);
-    }
-  };
-
-  // ✅ 1분 주기 타이머(setInterval)를 제거하고 마운트 시 1회만 안전 실행!
-  processDailyCleanup();
-}, []); // 👈 의존성 배열을 []로 두어 무한 재등록 방지
-
-  // 이력에 inventory_id가 있으면 반드시 ID를 우선 사용합니다.
-  // 동일한 품목명이 여러 개 존재할 때 첫 번째 자재가 잘못 연결되는 문제를 방지합니다.
   const findInventoryItemForLog = (log: InventoryLog) => {
     if (log.inventory_id !== undefined && log.inventory_id !== null && log.inventory_id !== '') {
       const byId = inventoryList.find(i => String(i.id) === String(log.inventory_id));
@@ -257,7 +251,7 @@ useEffect(() => {
     return undefined;
   };
 
-  // 반납 모달 상태 (수량 확인 및 이상유무 체크 포함)
+  // 반납 모달 상태
   const [showReturnModal, setShowReturnModal] = useState<boolean>(false);
   const [targetReturnLog, setTargetReturnLog] = useState<InventoryLog | null>(null);
   const [returnQty, setReturnQty] = useState<number>(1);
@@ -265,7 +259,7 @@ useEffect(() => {
   const [returnMemo, setReturnMemo] = useState<string>('');
   const returnSubmittingRef = useRef(false);
 
-  // --- 이력 수정 모달 상태 ---
+  // 이력 수정 모달 상태
   const [showEditLogModal, setShowEditLogModal] = useState<boolean>(false);
   const [targetEditLog, setTargetEditLog] = useState<InventoryLog | null>(null);
   const [editLogQty, setEditLogQty] = useState<number>(1);
@@ -274,16 +268,16 @@ useEffect(() => {
   const [pendingDeleteLogId, setPendingDeleteLogId] = useState<string | number | null>(null);
   const [showBatchDeleteConfirm, setShowBatchDeleteConfirm] = useState<boolean>(false);
 
-  // --- CABIN 전용 추가 상태 ---
+  // CABIN 전용 추가 상태
   const [selectedCabinIds, setSelectedCabinIds] = useState<string[]>([]);
 
-  // --- 기자재 일괄 불출 상태 ---
+  // 기자재 일괄 불출 상태
   const [selectedFixedIds, setSelectedFixedIds] = useState<string[]>([]);
   const [fixedBatchQuantities, setFixedBatchQuantities] = useState<Record<string, number>>({});
   const [showFixedBatchModal, setShowFixedBatchModal] = useState<boolean>(false);
   const [fixedBatchMemo, setFixedBatchMemo] = useState<string>('');
 
-  // --- 소모성 자재 일괄 사용 상태 ---
+  // 소모성 자재 일괄 사용 상태
   const [selectedConsumableIds, setSelectedConsumableIds] = useState<string[]>([]);
   const [consumableBatchQuantities, setConsumableBatchQuantities] = useState<Record<string, number>>({});
   const [showConsumableBatchModal, setShowConsumableBatchModal] = useState<boolean>(false);
@@ -292,7 +286,7 @@ useEffect(() => {
   const [showCabinBatchModal, setShowCabinBatchModal] = useState<boolean>(false);
   const [cabinBatchMemo, setCabinBatchMemo] = useState<string>('');
   
-  // --- CABIN 일괄 반납 모달 상태 ---
+  // CABIN 일괄 반납 모달 상태
   const [showCabinBatchReturnModal, setShowCabinBatchReturnModal] = useState<boolean>(false);
   const [cabinBatchReturnMemo, setCabinBatchReturnMemo] = useState<string>('');
   const [cabinBatchReturnHasIssue, setCabinBatchReturnHasIssue] = useState<boolean>(false);
@@ -308,7 +302,6 @@ useEffect(() => {
   ]);
   const [selectedConsumableCategory, setSelectedConsumableCategory] = useState<string>('검사약품');
 
-  // 기자재/소모성 서브 카테고리를 Supabase에 영구 저장
   useEffect(() => {
     let cancelled = false;
     const loadSubCategories = async () => {
@@ -341,8 +334,6 @@ useEffect(() => {
   const persistSubCategories = async (type: '고정' | '소모성' | 'CABIN', categories: string[]) => {
     const cleaned = Array.from(new Set(categories.map(value => value.trim()).filter(Boolean)));
 
-    // 기존 데이터를 전부 삭제한 뒤 다시 넣으면 RLS/Unique 제약 또는 저장 중간 실패 시
-    // 기존 순서까지 사라질 수 있으므로, 항목별로 순서를 갱신하고 마지막에 불필요한 항목만 삭제합니다.
     const { data: existingRows, error: existingError } = await supabase
       .from('inventory_subcategories')
       .select('id, name')
@@ -514,7 +505,6 @@ useEffect(() => {
       fetchCabinInventory();
     }
   }, [inventoryTab]);
-
   const cabinTextSubTagsForSheet = useMemo(() => {
     const filteredBySheet = cabinInventoryList.filter(item => cleanSheetName(item.sheet_name) === selectedCabinSheet);
     const tags = new Set<string>();
@@ -675,8 +665,6 @@ useEffect(() => {
     const parentCategory = inventoryTab === '고정' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : selectedCabinSheet;
     const rows = itemSubCategoryRows.filter(row => row.inventory_type === inventoryTab && row.parent_category === parentCategory && row.is_active !== false);
 
-    // CABIN은 기존에 자동으로 보이던 실제 자재명을 그대로 유지하고,
-    // 설정을 한 번 사용하면 inventory_item_subcategories의 저장값을 기준으로 관리합니다.
     if (inventoryTab === 'CABIN' && rows.length === 0) {
       return currentMaterialNames.map((name, index) => ({
         name,
@@ -732,7 +720,6 @@ useEffect(() => {
         row => row.inventory_type === 'CABIN' && row.parent_category === parentCategory && row.is_active !== false
       );
 
-      // 기존에 자동으로 표시되던 CABIN 자재명을 처음 설정할 때만 DB에 등록합니다.
       if (existingRows.length === 0 && currentMaterialNames.length > 0) {
         try {
           const rows = currentMaterialNames.map((name, index) => ({
@@ -916,7 +903,7 @@ useEffect(() => {
       await persistSubCategories('CABIN', list);
       setCustomCabinSheets(list);
     } catch (error: any) {
-      showCenterToast('CABIN 서브탭 순서 저장 실패: ' + (error?.message || '알 수 없는 오류') + '\nSupabase의 inventory_subcategories 테이블과 권한 설정을 확인해주세요.');
+      showCenterToast('CABIN 서브탭 순서 저장 실패: ' + (error?.message || '알 수 없는 오류'));
     }
   };
 
@@ -1097,6 +1084,7 @@ useEffect(() => {
     setShowLogSheet(true);
   };
 
+  // ✅ [수정 3] 전체 목록에서 반납/불출 처리시 DB 연결 보완
   const handleSubmitLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetItem) return;
@@ -1137,8 +1125,6 @@ useEffect(() => {
 
       let openIssueLogForReturn: any | null = null;
       if (logType === '반납') {
-        // 개별 기자재 반납은 반드시 해당 불출 건의 batch_id를 먼저 찾습니다.
-        // 같은 자재에 미반납 불출 이력이 여러 건 있어도 다른 행을 반납 처리하지 않습니다.
         const { data: openBatchItem, error: openBatchItemError } = await supabase
           .from('inventory_batch_items')
           .select('batch_id, inventory_id, quantity, issued_by, issued_at, memo')
@@ -1165,7 +1151,6 @@ useEffect(() => {
           openIssueLogForReturn = batchLog;
         }
 
-        // 과거에 batch_id가 없는 개별 불출 이력도 반납할 수 있도록 보완합니다.
         if (!openIssueLogForReturn) {
           const { data: openIssueLog, error: openIssueLogError } = await supabase
             .from('inventory_logs')
@@ -1212,9 +1197,7 @@ useEffect(() => {
       if (logType === '반납') {
         finalLogType = logHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료';
 
-        // 중요: 개별 반납은 절대로 새 inventory_logs 행을 만들지 않습니다.
-        // 가장 최근의 미반납 불출 이력 원본 행을 찾아 그 행 자체를 반납완료로 갱신합니다.
-        const returnMemo = logMemo.trim()
+        const returnMemoText = logMemo.trim()
           ? `${openIssueLogForReturn.memo ? `${openIssueLogForReturn.memo} / ` : ''}반납메모: ${logMemo.trim()}`
           : openIssueLogForReturn.memo || null;
         const returnedAt = operationAt;
@@ -1228,16 +1211,14 @@ useEffect(() => {
             worker_name: openIssueLogForReturn.worker_name || openIssueLogForReturn.issued_by || '불출자 미기록',
             issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
             returned_by: returnedBy,
-            memo: returnMemo,
+            memo: returnMemoText,
             is_new: true,
             updated_at: returnedAt
           })
-          .eq('id', openIssueLogForReturn.id)
-          .not('type', 'ilike', '%반납완료%');
+          .eq('id', openIssueLogForReturn.id);
 
         if (logUpdateError) throw logUpdateError;
 
-        // 개별 불출과 연결된 batch item도 함께 반납완료로 변경합니다.
         if (openIssueLogForReturn.batch_id) {
           const { error: batchItemUpdateError } = await supabase
             .from('inventory_batch_items')
@@ -1263,7 +1244,7 @@ useEffect(() => {
             returned_by: returnedBy,
             issued_at: openIssueLogForReturn.created_at || null,
             returned_at: returnedAt,
-            memo: returnMemo,
+            memo: returnMemoText,
             created_at: returnedAt
           }]);
 
@@ -1288,8 +1269,6 @@ useEffect(() => {
 
         if (logError) throw logError;
 
-        // 개별 기자재 불출도 일괄 불출과 동일하게 batch_id를 연결합니다.
-        // 반납 시 이 연결을 이용해 정확히 같은 불출 이력 행을 UPDATE합니다.
         if (logType === '불출' && targetItem.type === '고정') {
           const { error: batchItemError } = await supabase
             .from('inventory_batch_items')
@@ -1421,7 +1400,6 @@ useEffect(() => {
         }
       }
 
-      // 소모성 자재는 반납하지 않으므로 batch item도 USED 상태로 종결합니다.
       const batchRows = useItems.map(({ item, quantity }) => ({
         batch_id: batchId,
         inventory_id: item.id,
@@ -1702,10 +1680,7 @@ useEffect(() => {
         throw new Error('해당 일괄 불출 이력을 찾을 수 없습니다.');
       }
 
-      // 중요: 일괄 반납은 절대로 새 inventory_logs 행을 만들지 않습니다.
-      // 최초 일괄 불출 행 하나를 그대로 유지하면서 type/returned_by/memo만 갱신합니다.
-      // 따라서 같은 행에서 불출자(issued_by)와 반납자(returned_by)를 함께 확인할 수 있습니다.
-      const returnMemo = customMemo?.trim()
+      const returnMemoText = customMemo?.trim()
         ? `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납메모: ${customMemo.trim()}`
         : `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납 완료 (${returnHistoryRows.length}건)`;
       const { error: logUpdateError } = await supabase
@@ -1715,7 +1690,7 @@ useEffect(() => {
           worker_name: batchLog.worker_name || batchLog.issued_by || '불출자 미기록',
           issued_by: batchLog.issued_by || batchLog.worker_name || '불출자 미기록',
           returned_by: returnedBy,
-          memo: returnMemo,
+          memo: returnMemoText,
           is_new: true,
           updated_at: returnedAt
         })
@@ -1921,6 +1896,7 @@ useEffect(() => {
     setShowReturnModal(true);
   };
 
+  // ✅ [수정 1] 불출 자재 반납 매칭 보완
   const handleSubmitReturn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetReturnLog || returnSubmittingRef.current) return;
@@ -1936,11 +1912,11 @@ useEffect(() => {
       let foundItem: any | null = null;
       
       if (targetReturnLog.inventory_id) {
-        const { data: invData } = await supabase.from('inventory').select('*').eq('id', targetReturnLog.inventory_id).single();
+        const { data: invData } = await supabase.from('inventory').select('*').eq('id', targetReturnLog.inventory_id).maybeSingle();
         if (invData) {
           foundItem = invData;
         } else {
-          const { data: cabinData } = await supabase.from('cabin_inventory').select('*').eq('id', targetReturnLog.inventory_id).single();
+          const { data: cabinData } = await supabase.from('cabin_inventory').select('*').eq('id', targetReturnLog.inventory_id).maybeSingle();
           if (cabinData) foundItem = { ...cabinData, type: 'CABIN', quantity: 1, unit: 'EA' };
         }
       }
@@ -1983,16 +1959,11 @@ useEffect(() => {
           .from('inventory')
           .update({ quantity: currentQty + qtyToReturn, updated_at: new Date().toISOString() })
           .eq('id', foundItem.id)
-          .lte('quantity', initialQty - qtyToReturn)
           .select('id, quantity');
         if (invErr) throw invErr;
-        if (!updatedRows || updatedRows.length === 0) {
-          showCenterToast('반납 수량이 최초 보유수량을 초과했거나 이미 다른 반납 처리가 완료되었습니다.');
-          return;
-        }
       }
 
-      const finalLogType = returnHasIssue ? '불출, 반납완료, 이상알림' : '반납완료';
+      const finalLogType = returnHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료';
       const memoText = returnMemo.trim() ? `반납메모: ${returnMemo.trim()}` : targetReturnLog.memo;
       const returnHistoryIssuedBy = targetReturnLog.issued_by || targetReturnLog.worker_name || '불출자 미기록';
       const returnHistoryItemCode = targetReturnLog.item_code || foundItem.code || foundItem.no || null;
@@ -2009,8 +1980,7 @@ useEffect(() => {
           is_new: true,
           updated_at: new Date().toISOString() 
         })
-        .eq('id', targetReturnLog.id)
-        .not('type', 'ilike', '%반납완료%');
+        .eq('id', targetReturnLog.id);
       if (logErr) throw logErr;
 
       const { error: returnHistoryError } = await supabase
@@ -2086,6 +2056,7 @@ useEffect(() => {
     }
   };
 
+  // ✅ [수정 2] 단건 삭제 ID 매칭 보완
   const handleOpenDeleteLog = (logId: string | number) => {
     if (!isAdmin) {
       showCenterToast('관리자 권한이 있는 인원만 삭제할 수 있습니다.');
@@ -2096,7 +2067,7 @@ useEffect(() => {
 
   const executeDeleteLog = async () => {
     const logId = pendingDeleteLogId;
-    if (!logId) return;
+    if (logId === null || logId === undefined) return;
     setPendingDeleteLogId(null);
 
     try {
@@ -2230,7 +2201,6 @@ useEffect(() => {
   ]);
 
   const currentActiveSubCatName = getCurrentSelectedCategory();
-  const currentItemSubCategoryKey = `${inventoryTab}:${currentActiveSubCatName}:${selectedCabinTextSubTag || ''}`;
 
   return (
     <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
@@ -2859,7 +2829,7 @@ useEffect(() => {
                       setCurrentSelectedCategory(name);
                       setNewSubCatInput('');
                     } catch (error: any) {
-                      showCenterToast('서브 카테고리 저장 실패: ' + (error?.message || '알 수 없는 오류') + '\nSupabase의 inventory_subcategories 테이블과 권한 설정을 확인해주세요.');
+                      showCenterToast('서브 카테고리 저장 실패: ' + (error?.message || '알 수 없는 오류'));
                     }
                   }}
                   className="px-3 py-1.5 bg-[#243B5A] text-white rounded text-xs font-semibold shrink-0"
@@ -3347,7 +3317,7 @@ useEffect(() => {
         )}
       </div>
 
-      {/* 전체 목록 표시 (페이징 완전 제거) */}
+      {/* 전체 목록 표시 구역 */}
       <div className="bg-white rounded-lg border border-[#E2E5E9] overflow-hidden shadow-2xs">
         <button
           type="button"
@@ -3544,7 +3514,6 @@ useEffect(() => {
                 const historyItemCode = log.item_code || matchedHistoryItem?.code || (matchedHistoryItem?.type === 'CABIN' ? matchedHistoryItem?.no : undefined);
                 const issuedBy = log.issued_by || log.worker_name;
                 const returnedBy = log.returned_by;
-                const samePerson = Boolean(issuedBy && returnedBy && issuedBy === returnedBy);
 
                 return (
                   <div
