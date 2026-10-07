@@ -139,75 +139,24 @@ export default function MaterialManagement({
   // 반납완료 이력과 소모성 자재 불출/사용 이력만 삭제합니다.
   const cleanupRanDateRef = useRef<string | null>(null);
 
-  useEffect(() => {
-    const processDailyCleanup = async () => {
-      const now = new Date();
-      const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
-      const lastCleanupDate = typeof window !== 'undefined' ? localStorage.getItem('inventory_cleanup_last_run') : null;
+  // ✅ 수정 후: setInterval을 제거하여 1분마다 무한 DB 찌르기 완전 방지!
+useEffect(() => {
+  const processDailyCleanup = async () => {
+    const now = new Date();
+    const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const yesterday = new Date(now);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const yesterdayKey = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
+    const lastCleanupDate = typeof window !== 'undefined' ? localStorage.getItem('inventory_cleanup_last_run') : null;
 
-      // 23시 이전에 접속한 경우: 어제 23시 정리를 놓쳤다면 오늘 00시 이전의 대상 이력만 정리합니다.
-      // 오늘 생성된 이력까지 미리 삭제하지 않도록 날짜 기준을 적용합니다.
-      if (now.getHours() < 23) {
-        if (lastCleanupDate === yesterdayKey) return;
-
-        try {
-          const todayStart = new Date(now);
-          todayStart.setHours(0, 0, 0, 0);
-          const todayStartIso = todayStart.toISOString();
-
-          const { data: consumableItems, error: consumableError } = await supabase
-            .from('inventory')
-            .select('id')
-            .eq('type', '소모성');
-          if (consumableError) throw consumableError;
-
-          const consumableIds = (consumableItems || []).map((item: any) => item.id);
-
-          // 1. 전날까지의 반납완료 이력 삭제
-          const { error: returnedDeleteError } = await supabase
-            .from('inventory_logs')
-            .delete()
-            .ilike('type', '%반납완료%')
-            .lt('created_at', todayStartIso);
-          if (returnedDeleteError) throw returnedDeleteError;
-
-          // 2. 전날까지의 소모성 자재 불출/사용 이력 삭제
-          if (consumableIds.length > 0) {
-            const { error: consumableDeleteError } = await supabase
-              .from('inventory_logs')
-              .delete()
-              .in('inventory_id', consumableIds)
-              .lt('created_at', todayStartIso);
-            if (consumableDeleteError) throw consumableDeleteError;
-          }
-
-          // 3. 전날까지의 소모성 사용 이력 정리
-          const { error: usageDeleteError } = await supabase
-            .from('inventory_logs')
-            .delete()
-            .ilike('type', '%소모성 사용%')
-            .lt('created_at', todayStartIso);
-          if (usageDeleteError) throw usageDeleteError;
-
-          if (typeof window !== 'undefined') {
-            localStorage.setItem('inventory_cleanup_last_run', yesterdayKey);
-          }
-          cleanupRanDateRef.current = yesterdayKey;
-          await fetchInventoryLogs();
-        } catch (err) {
-          console.error('23시 자동 삭제 오류:', err);
-        }
-        return;
-      }
-
-      // 23시 이후에는 오늘 날짜 기준으로 한 번만 전체 대상 이력을 정리합니다.
-      if (cleanupRanDateRef.current === todayKey || lastCleanupDate === todayKey) return;
+    if (now.getHours() < 23) {
+      if (lastCleanupDate === yesterdayKey) return;
 
       try {
-        // 소모성 자재의 실제 inventory ID를 먼저 조회하여 이름 중복으로 인한 오삭제를 방지합니다.
+        const todayStart = new Date(now);
+        todayStart.setHours(0, 0, 0, 0);
+        const todayStartIso = todayStart.toISOString();
+
         const { data: consumableItems, error: consumableError } = await supabase
           .from('inventory')
           .select('id')
@@ -216,43 +165,84 @@ export default function MaterialManagement({
 
         const consumableIds = (consumableItems || []).map((item: any) => item.id);
 
-        // 1. 반납완료 이력 삭제
         const { error: returnedDeleteError } = await supabase
           .from('inventory_logs')
           .delete()
-          .ilike('type', '%반납완료%');
+          .ilike('type', '%반납완료%')
+          .lt('created_at', todayStartIso);
         if (returnedDeleteError) throw returnedDeleteError;
 
-        // 2. 소모성 자재의 불출/사용 이력 삭제
         if (consumableIds.length > 0) {
           const { error: consumableDeleteError } = await supabase
             .from('inventory_logs')
             .delete()
-            .in('inventory_id', consumableIds);
+            .in('inventory_id', consumableIds)
+            .lt('created_at', todayStartIso);
           if (consumableDeleteError) throw consumableDeleteError;
         }
 
-        // 3. 기존 데이터 중 inventory_id가 없지만 유형에 소모성 사용이 기록된 이력도 정리
         const { error: usageDeleteError } = await supabase
           .from('inventory_logs')
           .delete()
-          .ilike('type', '%소모성 사용%');
+          .ilike('type', '%소모성 사용%')
+          .lt('created_at', todayStartIso);
         if (usageDeleteError) throw usageDeleteError;
 
-        cleanupRanDateRef.current = todayKey;
         if (typeof window !== 'undefined') {
-          localStorage.setItem('inventory_cleanup_last_run', todayKey);
+          localStorage.setItem('inventory_cleanup_last_run', yesterdayKey);
         }
+        cleanupRanDateRef.current = yesterdayKey;
         await fetchInventoryLogs();
       } catch (err) {
         console.error('23시 자동 삭제 오류:', err);
       }
-    };
+      return;
+    }
 
-    processDailyCleanup();
-    const timer = setInterval(processDailyCleanup, 60000);
-    return () => clearInterval(timer);
-  }, [fetchInventoryLogs]);
+    if (cleanupRanDateRef.current === todayKey || lastCleanupDate === todayKey) return;
+
+    try {
+      const { data: consumableItems, error: consumableError } = await supabase
+        .from('inventory')
+        .select('id')
+        .eq('type', '소모성');
+      if (consumableError) throw consumableError;
+
+      const consumableIds = (consumableItems || []).map((item: any) => item.id);
+
+      const { error: returnedDeleteError } = await supabase
+        .from('inventory_logs')
+        .delete()
+        .ilike('type', '%반납완료%');
+      if (returnedDeleteError) throw returnedDeleteError;
+
+      if (consumableIds.length > 0) {
+        const { error: consumableDeleteError } = await supabase
+          .from('inventory_logs')
+          .delete()
+          .in('inventory_id', consumableIds);
+        if (consumableDeleteError) throw consumableDeleteError;
+      }
+
+      const { error: usageDeleteError } = await supabase
+        .from('inventory_logs')
+        .delete()
+        .ilike('type', '%소모성 사용%');
+      if (usageDeleteError) throw usageDeleteError;
+
+      cleanupRanDateRef.current = todayKey;
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('inventory_cleanup_last_run', todayKey);
+      }
+      await fetchInventoryLogs();
+    } catch (err) {
+      console.error('23시 자동 삭제 오류:', err);
+    }
+  };
+
+  // ✅ 1분 주기 타이머(setInterval)를 제거하고 마운트 시 1회만 안전 실행!
+  processDailyCleanup();
+}, []); // 👈 의존성 배열을 []로 두어 무한 재등록 방지
 
   // 이력에 inventory_id가 있으면 반드시 ID를 우선 사용합니다.
   // 동일한 품목명이 여러 개 존재할 때 첫 번째 자재가 잘못 연결되는 문제를 방지합니다.
