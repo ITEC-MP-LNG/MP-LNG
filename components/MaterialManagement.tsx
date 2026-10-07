@@ -1846,6 +1846,28 @@ export default function MaterialManagement({
         return;
       }
 
+      // 일괄 불출 이력은 inventory_id가 메인 로그에 없을 수 있으므로
+      // 개별 inventory 조회로 처리하지 않고 batch RPC로 바로 반납합니다.
+      if (targetReturnLog.batch_id) {
+        const batchId = String(targetReturnLog.batch_id).trim();
+        const batchQuantity = Number(targetReturnLog.quantity || 0);
+
+        if (!batchId) {
+          showCenterToast('일괄 불출 번호를 확인할 수 없습니다.');
+          return;
+        }
+
+        if (batchQuantity > 0 && qtyToReturn !== batchQuantity) {
+          showCenterToast(`일괄 불출 건은 전체 수량(${batchQuantity}개)을 한 번에 반납해야 합니다.`);
+          return;
+        }
+
+        await handleBatchReturnById(batchId, returnMemo, returnHasIssue);
+        setShowReturnModal(false);
+        setTargetReturnLog(null);
+        return;
+      }
+
       let foundItem: any | null = null;
       
       if (targetReturnLog.inventory_id) {
