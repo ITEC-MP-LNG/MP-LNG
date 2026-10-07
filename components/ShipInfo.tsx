@@ -433,12 +433,10 @@ const handleNightShiftChange = (inputText: string) => {
     }
   };
 
-  const handleDayShiftChange = async (inputText: string) => {
-    setFormData(prev => ({ ...prev, day_shift: inputText, day_shift_user_ids: [] }));
-    if (!inputText.trim()) {
-      setDayCheckStatus({ status: 'idle', invalidNames: [] });
-      return;
-    }
+// ✅ 주간 근무자 (기존 async 코드 완전 대체)
+const handleDayShiftChange = (inputText: string) => {
+  setFormData(prev => ({ ...prev, day_shift: inputText, day_shift_user_ids: [] }));
+};
 
     setDayCheckStatus({ status: 'checking', invalidNames: [] });
     const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(inputText);
@@ -451,12 +449,10 @@ const handleNightShiftChange = (inputText: string) => {
     }
   };
 
-  const handleNightShiftChange = async (inputText: string) => {
-    setFormData(prev => ({ ...prev, night_shift: inputText, night_shift_user_ids: [] }));
-    if (!inputText.trim()) {
-      setNightCheckStatus({ status: 'idle', invalidNames: [] });
-      return;
-    }
+ // ✅ 야간 근무자 (기존 async 코드 완전 대체)
+const handleNightShiftChange = (inputText: string) => {
+  setFormData(prev => ({ ...prev, night_shift: inputText, night_shift_user_ids: [] }));
+};
 
     setNightCheckStatus({ status: 'checking', invalidNames: [] });
     const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(inputText);
