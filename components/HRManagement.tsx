@@ -275,7 +275,12 @@ export default function HRManagement({
       .from('profile-photos')
       .getPublicUrl(objectPath);
 
-    return data.publicUrl;
+    if (!data?.publicUrl) {
+      throw new Error('프로필 사진 공개 URL을 생성하지 못했습니다.');
+    }
+
+    // 동일 파일명으로 교체할 때 브라우저 캐시로 이전 사진이 보이지 않도록 버전 값을 붙입니다.
+    return `${data.publicUrl}?v=${Date.now()}`;
   };
 
   const handleOpenAddModal = () => {
@@ -440,7 +445,7 @@ export default function HRManagement({
             if (photoUpdateError) throw photoUpdateError;
           } catch (photoError: any) {
             console.error('사진 업로드 실패:', photoError);
-            showNotice('인사 정보는 저장되었지만 사진 업로드에 실패했습니다.', 'warning');
+            showNotice(`인사 정보는 저장되었지만 사진 업로드에 실패했습니다: ${photoError?.message || 'Storage 설정을 확인해주세요.'}`, 'warning');
           }
         }
 
@@ -470,7 +475,7 @@ export default function HRManagement({
             if (photoUpdateError) throw photoUpdateError;
           } catch (photoError: any) {
             console.error('사진 업로드 실패:', photoError);
-            showNotice('구성원은 등록되었지만 사진 업로드에 실패했습니다.', 'warning');
+            showNotice(`구성원은 등록되었지만 사진 업로드에 실패했습니다: ${photoError?.message || 'Storage 설정을 확인해주세요.'}`, 'warning');
           }
         }
 
@@ -719,19 +724,6 @@ export default function HRManagement({
                   </div>
 
                   <div className="flex items-center space-x-2">
-                    {isAdmin && subGroupType === 'DEPT' && (
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedUser(null);
-                          setFormData(prev => ({ ...prev, department: catName }));
-                          setIsModalOpen(true);
-                        }}
-                        className="px-2 py-1 bg-[#243B5A] text-white rounded text-[11px] font-bold hover:bg-[#1d3049]"
-                      >
-                        + 구성원 추가
-                      </button>
-                    )}
                     <button className="text-[#64748B] hover:text-[#1F2937] p-1 flex items-center gap-1 text-xs font-medium">
                       <span>{isCollapsed ? '펼치기' : '접기'}</span>
                       {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
@@ -1452,10 +1444,22 @@ function renderMemberCard(
 
       <div className="pt-1.5 border-t border-[#E2E5E9] text-[10px] space-y-1">
         <div className="flex items-center justify-between text-[#64748B]">
-          <span className="flex items-center gap-1 font-medium">
-            <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
-            {member.phone || '-'}
-          </span>
+          {member.phone ? (
+            <a
+              href={`tel:${member.phone.replace(/[^0-9+]/g, '')}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1 font-medium text-[#243B5A] hover:underline"
+              title="전화 연결"
+            >
+              <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
+              {member.phone}
+            </a>
+          ) : (
+            <span className="flex items-center gap-1 font-medium">
+              <Phone className="h-3 w-3 text-[#94A3B8] shrink-0" />
+              -
+            </span>
+          )}
           <div className="space-x-1.5">
             <span className="font-semibold text-[#16A34A]">근속 {joinCareer || '-'}</span>
             <span className="font-semibold text-[#2563EB]">총경력 {totalCareer || '-'}</span>
