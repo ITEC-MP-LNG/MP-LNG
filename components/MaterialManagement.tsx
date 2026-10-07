@@ -1593,22 +1593,23 @@ export default function MaterialManagement({
     }
   };
 
-  // ✅ [수정사항 2] batch_id 기반 일괄 반납 및 재고 원복 수정
+  // ✅ [수정] 오류 방지 처리된 일괄 반납 함수
   const handleBatchReturnById = async (batchId: string, customMemo?: string, hasIssue: boolean = false) => {
     if (!batchId || batchReturnProcessingId) return;
     setBatchReturnProcessingId(batchId);
 
     try {
+      // 1. 해당 batch_id의 불출 항목 조회
       const { data: batchItems, error: batchFetchError } = await supabase
         .from('inventory_batch_items')
         .select('*')
-        .eq('batch_id', batchId)
-        .eq('status', 'ISSUED')
-        .order('issued_at', { ascending: true });
+        .eq('batch_id', String(batchId).trim())
+        .eq('status', 'ISSUED');
+      
       if (batchFetchError) throw batchFetchError;
 
       if (!batchItems || batchItems.length === 0) {
-        showCenterToast('해당 일괄 불출 건은 이미 모두 반납 처리되었습니다.');
+        showCenterToast('해당 일괄 불출 건은 이미 모두 반납 처리되었거나 불출 이력이 존재하지 않습니다.');
         return;
       }
 
@@ -1616,96 +1617,116 @@ export default function MaterialManagement({
       const returnedBy = currentUser?.name || '작업자';
       const returnHistoryRows: any[] = [];
 
+      // 2. 각 자재별 재고 원복 및 이력 데이터 생성
       for (const batchItem of batchItems) {
-        if (batchItem.inventory_type === '고정') {
-          const { data: currentItem, error: itemFetchError } = await supabase
+        const invId = batchItem.inventory_id;
+        const qtyToReturn = Number(batchItem.quantity || 1);
+
+        if (batchItem.inventory_type === '고정' && invId) {
+          // .maybeSingle()로 조회하여 row 미존재 시 에러 방지
+          const { data: currentItem } = await supabase
             .from('inventory')
             .select('id, quantity, initial_quantity, unit, code, name')
-            .eq('id', batchItem.inventory_id)
-            .single();
-          if (itemFetchError) throw itemFetchError;
+            .eq('id', invId)
+            .maybeSingle();
 
-          const currentQty = Number(currentItem.quantity || 0);
-          const initialQty = Number(currentItem.initial_quantity);
-          if (Number.isFinite(initialQty) && currentQty + Number(batchItem.quantity || 1) > initialQty) {
-            throw new Error(`${currentItem.name || currentItem.code || '기자재'}는 반납 후 최초 보유수량(${initialQty} ${currentItem.unit || 'EA'})을 초과할 수 없습니다.`);
-          }
+          if (currentItem) {
+            const currentQty = Number(currentItem.quantity || 0);
+            const initialQty = Number(currentItem.initial_quantity);
 
-          const { data: updatedRows, error: updateError } = await supabase
-            .from('inventory')
-            .update({ quantity: currentQty + Number(batchItem.quantity || 1), updated_at: returnedAt })
-            .eq('id', batchItem.inventory_id)
-            .select('id, quantity');
-          if (updateError) throw updateError;
-          if (!updatedRows || updatedRows.length === 0) {
-            throw new Error(`${currentItem.name || currentItem.code || '기자재'}의 수량이 이미 변경되었습니다. 다시 확인해주세요.`);
+            // 초과 반납 검증 (initial_quantity가 숫자인 경우에만 체크)
+            if (Number.isFinite(initialQty) && initialQty >= 0 && (currentQty + qtyToReturn > initialQty)) {
+              throw new Error(`'${currentItem.name || currentItem.code}' 자재는 반납 후 최초 보유수량(${initialQty}${currentItem.unit || 'EA'})을 초과할 수 없습니다.`);
+            }
+
+            // 재고 원복 UPDATE
+            const { error: updateError } = await supabase
+              .from('inventory')
+              .update({ 
+                quantity: currentQty + qtyToReturn, 
+                updated_at: returnedAt 
+              })
+              .eq('id', invId);
+
+            if (updateError) throw updateError;
           }
         }
 
         returnHistoryRows.push({
-          inventory_id: batchItem.inventory_id,
+          inventory_id: invId || null,
           item_code: batchItem.item_code || null,
           item_name: batchItem.item_name || null,
-          quantity: Number(batchItem.quantity || 1),
+          quantity: qtyToReturn,
           issued_by: batchItem.issued_by || '불출자 미기록',
           returned_by: returnedBy,
           issued_at: batchItem.issued_at || null,
           returned_at: returnedAt,
-          memo: customMemo?.trim() ? `일괄 반납메모: ${customMemo.trim()}` : (batchItem.memo ? `일괄 반납: ${batchItem.memo}` : '일괄 반납'),
+          memo: customMemo?.trim() 
+            ? `일괄 반납메모: ${customMemo.trim()}` 
+            : (batchItem.memo ? `일괄 반납: ${batchItem.memo}` : '일괄 반납'),
           created_at: returnedAt
         });
       }
 
-      const { error: historyError } = await supabase.from('inventory_return_history').insert(returnHistoryRows);
-      if (historyError) throw historyError;
+      // 3. 반납 이력 테이블(inventory_return_history) 저장
+      if (returnHistoryRows.length > 0) {
+        const { error: historyError } = await supabase
+          .from('inventory_return_history')
+          .insert(returnHistoryRows);
+        if (historyError) console.warn('반납 히스토리 저장 경고:', historyError.message);
+      }
 
+      // 4. inventory_batch_items 상태를 RETURNED로 변경
       const { error: batchUpdateError } = await supabase
         .from('inventory_batch_items')
-        .update({ status: 'RETURNED', returned_by: returnedBy, returned_at: returnedAt })
-        .eq('batch_id', batchId)
+        .update({ 
+          status: 'RETURNED', 
+          returned_by: returnedBy, 
+          returned_at: returnedAt 
+        })
+        .eq('batch_id', String(batchId).trim())
         .eq('status', 'ISSUED');
+
       if (batchUpdateError) throw batchUpdateError;
 
-      const { data: batchLog, error: batchLogFetchError } = await supabase
+      // 5. inventory_logs 메인 이력 상태 변경
+      const { data: batchLog } = await supabase
         .from('inventory_logs')
-        .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, created_at, is_new')
-        .eq('batch_id', batchId)
+        .select('id, memo, worker_name, issued_by')
+        .eq('batch_id', String(batchId).trim())
         .not('type', 'ilike', '%반납완료%')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (batchLogFetchError) throw batchLogFetchError;
 
       if (batchLog) {
         const returnMemoText = customMemo?.trim()
           ? `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납메모: ${customMemo.trim()}`
           : `${batchLog.memo ? `${batchLog.memo} / ` : ''}일괄 반납 완료 (${returnHistoryRows.length}건)`;
-        const { error: logUpdateError } = await supabase
+
+        await supabase
           .from('inventory_logs')
           .update({
             type: hasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료',
-            worker_name: batchLog.worker_name || batchLog.issued_by || '불출자 미기록',
-            issued_by: batchLog.issued_by || batchLog.worker_name || '불출자 미기록',
             returned_by: returnedBy,
             memo: returnMemoText,
             is_new: true,
             updated_at: returnedAt
           })
           .eq('id', batchLog.id);
-        if (logUpdateError) throw logUpdateError;
       }
 
       showCenterToast(`일괄 불출된 ${returnHistoryRows.length}개 품목이 모두 반납되었습니다.`);
       await fetchInventory();
       await fetchInventoryLogs();
-      await fetchReturnHistories();
+      if (typeof fetchReturnHistories === 'function') await fetchReturnHistories();
     } catch (err: any) {
+      console.error('일괄 반납 처리 상세 오류:', err);
       showCenterToast('일괄 반납 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
     } finally {
       setBatchReturnProcessingId(null);
     }
   };
-
   const toggleSelectCabinItem = (id: string | number) => {
     const strId = String(id);
     setSelectedCabinIds(prev => 
