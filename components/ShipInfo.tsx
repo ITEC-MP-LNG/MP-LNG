@@ -304,22 +304,53 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   });
 
   // 컴포넌트 마운트 시 Supabase에서 호선 데이터 불러오기
-  useEffect(() => {
-    fetchShips();
-  }, []);
+ // ✅ 1. 상단 useEffect 영역에 Debounce 처리용 타이머 추가
+useEffect(() => {
+  const timer = setTimeout(async () => {
+    if (formData.day_shift.trim()) {
+      setDayCheckStatus({ status: 'checking', invalidNames: [] });
+      const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(formData.day_shift);
+      if (invalidNames.length === 0) {
+        setDayCheckStatus({ status: 'valid', invalidNames: [] });
+        setFormData(prev => ({ ...prev, day_shift_user_ids: validUserIds }));
+      } else {
+        setDayCheckStatus({ status: 'invalid', invalidNames });
+      }
+    } else {
+      setDayCheckStatus({ status: 'idle', invalidNames: [] });
+    }
+  }, 400); // 0.4초 동안 추가 입력이 없을 때만 DB 1회 조회
 
-  // 선택 모달이 열려 있는 동안 뒤쪽 페이지가 스크롤되지 않도록 고정
-  useEffect(() => {
-    const isSelectionModalOpen = isShipSelectionModalOpen || isInfoOwnerSelectionModalOpen;
-    if (!isSelectionModalOpen) return;
+  return () => clearTimeout(timer);
+}, [formData.day_shift]);
 
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
+useEffect(() => {
+  const timer = setTimeout(async () => {
+    if (formData.night_shift.trim()) {
+      setNightCheckStatus({ status: 'checking', invalidNames: [] });
+      const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(formData.night_shift);
+      if (invalidNames.length === 0) {
+        setNightCheckStatus({ status: 'valid', invalidNames: [] });
+        setFormData(prev => ({ ...prev, night_shift_user_ids: validUserIds }));
+      } else {
+        setNightCheckStatus({ status: 'invalid', invalidNames });
+      }
+    } else {
+      setNightCheckStatus({ status: 'idle', invalidNames: [] });
+    }
+  }, 400);
 
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [isShipSelectionModalOpen, isInfoOwnerSelectionModalOpen]);
+  return () => clearTimeout(timer);
+}, [formData.night_shift]);
+
+// ✅ 2. Change 핸들러는 단순 입력 처리만 담당 (DB 조회 즉시 제거)
+const handleDayShiftChange = (inputText: string) => {
+  setFormData(prev => ({ ...prev, day_shift: inputText, day_shift_user_ids: [] }));
+};
+
+const handleNightShiftChange = (inputText: string) => {
+  setFormData(prev => ({ ...prev, night_shift: inputText, night_shift_user_ids: [] }));
+};
 
   const normalizeTankStatus = (raw: any): ShipTankStatus => {
     const defaultStatus = getDefaultTankStatus();
