@@ -228,17 +228,18 @@ export default function LoginPage() {
             </p>
 
             <button
-              onClick={() => {
-                const isSuccess = alertMessage.includes('로그인 되었습니다');
-                setAlertMessage(null);
-                if (isSuccess) {
-                  router.push('/main');
-                }
-              }}
-              className="w-full py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer"
-            >
-              확인
-            </button>
+  onClick={() => {
+    const isSuccess = alertMessage.includes('로그인 되었습니다');
+    setAlertMessage(null);
+    if (isSuccess) {
+      // ✅ router.push 대신 router.replace를 사용해 로그인 페이지 뒤로가기 방지 및 깔끔한 이동
+      router.replace('/main');
+    }
+  }}
+  className="w-full py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer"
+>
+  확인
+</button>
           </div>
         </div>
       )}
