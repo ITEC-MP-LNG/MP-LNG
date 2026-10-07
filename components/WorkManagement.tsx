@@ -307,7 +307,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
   };
 
-  uuseEffect(() => {
+  useEffect(() => {
   fetchAppUsers();
   fetchVessels();
   fetchTeams();
