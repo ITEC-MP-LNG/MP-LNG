@@ -303,7 +303,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     invalidNames: []
   });
 
-// 1. 사용자 유효성 검증 함수 (useEffect보다 먼저 선언되어야 함)
+// 1. 사용자 유효성 검증 함수
   const verifyMultipleUsersInSupabase = async (namesString: string): Promise<{ validUserIds: string[]; invalidNames: string[] }> => {
     const nameArray = namesString.split(',').map(n => n.trim()).filter(Boolean);
     if (nameArray.length === 0) return { validUserIds: [], invalidNames: [] };
@@ -329,7 +329,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // 2. 주간 근무자 Debounce 검증 (타이핑 멈춘 후 0.4초 뒤 실행)
+  // 2. 주간/야간 근무자 Debounce 검증 useEffect
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (formData.day_shift.trim()) {
@@ -349,7 +349,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     return () => clearTimeout(timer);
   }, [formData.day_shift]);
 
-  // 3. 야간 근무자 Debounce 검증 (타이핑 멈춘 후 0.4초 뒤 실행)
   useEffect(() => {
     const timer = setTimeout(async () => {
       if (formData.night_shift.trim()) {
@@ -369,7 +368,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     return () => clearTimeout(timer);
   }, [formData.night_shift]);
 
-  // 4. 단순 입력 핸들러 (입력 렉 및 무한 DB 쿼리 연사 방지)
+  // 3. 근무자 단순 입력 핸들러
   const handleDayShiftChange = (inputText: string) => {
     setFormData(prev => ({ ...prev, day_shift: inputText, day_shift_user_ids: [] }));
   };
@@ -378,7 +377,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     setFormData(prev => ({ ...prev, night_shift: inputText, night_shift_user_ids: [] }));
   };
 
-  // 5. 탱크 상태 정규화 함수
+  // 4. 탱크 상태 정규화 함수
   const normalizeTankStatus = (raw: any): ShipTankStatus => {
     const defaultStatus = getDefaultTankStatus();
     if (!raw || typeof raw !== 'object') return defaultStatus;
@@ -406,7 +405,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     return result;
   };
 
-  // 6. 호선 데이터 로딩 함수
+  // 5. DB에서 기존 호선 데이터 가져오기
   const fetchShips = async () => {
     try {
       const { data, error } = await supabase
@@ -425,7 +424,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         }));
         setShips(parsedShips);
 
-        // 첫 번째 호선 번호로 서브탭 기본 선택
         if (parsedShips.length > 0 && !selectedHullNo) {
           setSelectedHullNo(parsedShips[0].ship_no);
         }
@@ -435,6 +433,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
+  // 💡 핵심: 컴포넌트 진입 시 fetchShips()를 실행하여 DB 데이터 복구/화면 표시
+  useEffect(() => {
+    fetchShips();
+  }, []);
   const handleStatusChange = (newStatus: ShipStatus) => {
     const calculatedProgress = STATUS_PROGRESS_MAP[newStatus];
     setFormData(prev => ({
