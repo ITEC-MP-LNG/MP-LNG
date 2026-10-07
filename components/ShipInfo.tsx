@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import * as XLSX from 'xlsx';
 import {
@@ -98,11 +98,6 @@ export const normalizeCommissioningStatus = (raw: any, legacyStatus: ShipStatus)
     });
   }
   return result;
-};
-
-const isCommissioningComplete = (ship: ShipItem) => {
-  const processStatuses = normalizeCommissioningStatus(ship.commissioning_status, ship.status);
-  return STATUS_LIST.every((step) => processStatuses[step] === '완료');
 };
 
 // Tank 항목 및 단계 정의
@@ -220,8 +215,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const [isShipNoTitleEditModalOpen, setIsShipNoTitleEditModalOpen] = useState(false);
   const [shipNoTitleEditId, setShipNoTitleEditId] = useState('');
   const [shipNoTitleEditValue, setShipNoTitleEditValue] = useState('');
+
   // Status 호선 선택 서브탭 설정 모달 상태
-  // Status 선택 방식: 전체 호선 선택 / 선주사별 호선 선택
   const [statusSelectorTab, setStatusSelectorTab] = useState<'SHIP' | 'OWNER'>('SHIP');
   const [isShipSelectionModalOpen, setIsShipSelectionModalOpen] = useState(false);
   const [isInfoOwnerSelectionModalOpen, setIsInfoOwnerSelectionModalOpen] = useState(false);
@@ -270,9 +265,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     type: 'info',
   });
 
-  const showAlert = (title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
+  const showAlert = useCallback((title: string, message: string, type: 'info' | 'success' | 'warning' | 'error' = 'info') => {
     setAlertInfo({ isOpen: true, title, message, type });
-  };
+  }, []);
 
   // 호선 제원 Form Field States
   const [formData, setFormData] = useState<Omit<ShipItem, 'id'>>({
@@ -303,8 +298,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     invalidNames: []
   });
 
-// 1. 사용자 유효성 검증 함수
-  const verifyMultipleUsersInSupabase = async (namesString: string): Promise<{ validUserIds: string[]; invalidNames: string[] }> => {
+  // 1. 사용자 유효성 검증 함수
+  const verifyMultipleUsersInSupabase = useCallback(async (namesString: string): Promise<{ validUserIds: string[]; invalidNames: string[] }> => {
     const nameArray = namesString.split(',').map(n => n.trim()).filter(Boolean);
     if (nameArray.length === 0) return { validUserIds: [], invalidNames: [] };
 
@@ -327,7 +322,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       console.error('Supabase 연동 검증 실패:', e);
       return { validUserIds: [], invalidNames: nameArray };
     }
-  };
+  }, []);
 
   // 2. 주간/야간 근무자 Debounce 검증 useEffect
   useEffect(() => {
@@ -347,7 +342,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [formData.day_shift]);
+  }, [formData.day_shift, verifyMultipleUsersInSupabase]);
 
   useEffect(() => {
     const timer = setTimeout(async () => {
@@ -366,7 +361,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [formData.night_shift]);
+  }, [formData.night_shift, verifyMultipleUsersInSupabase]);
 
   // 3. 근무자 단순 입력 핸들러
   const handleDayShiftChange = (inputText: string) => {
@@ -378,7 +373,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   };
 
   // 4. 탱크 상태 정규화 함수
-  const normalizeTankStatus = (raw: any): ShipTankStatus => {
+  const normalizeTankStatus = useCallback((raw: any): ShipTankStatus => {
     const defaultStatus = getDefaultTankStatus();
     if (!raw || typeof raw !== 'object') return defaultStatus;
 
@@ -403,10 +398,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       }
     });
     return result;
-  };
+  }, []);
 
   // 5. DB에서 기존 호선 데이터 가져오기
-  const fetchShips = async () => {
+  const fetchShips = useCallback(async () => {
     try {
       const { data, error } = await supabase
         .from(TABLE_NAME)
@@ -431,12 +426,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     } catch (e) {
       console.error('호선 데이터 로딩 실패:', e);
     }
-  };
+  }, [normalizeTankStatus, selectedHullNo]);
 
-  // 💡 핵심: 컴포넌트 진입 시 fetchShips()를 실행하여 DB 데이터 복구/화면 표시
   useEffect(() => {
     fetchShips();
-  }, []);
+  }, [fetchShips]);
+
   const handleStatusChange = (newStatus: ShipStatus) => {
     const calculatedProgress = STATUS_PROGRESS_MAP[newStatus];
     setFormData(prev => ({
@@ -487,35 +482,39 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  const filteredShips = ships.filter(s =>
-    s.ship_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.ship_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.shipowner && s.shipowner.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    s.dock.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.dwt && s.dwt.toLowerCase().includes(searchQuery.toLowerCase())) ||
-    s.day_shift.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.night_shift.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredShips = useMemo(() => {
+    return ships.filter(s =>
+      s.ship_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.ship_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.shipowner && s.shipowner.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      s.dock.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (s.dwt && s.dwt.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      s.day_shift.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.night_shift.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [ships, searchQuery]);
 
-  // 현재 Status 탭에서 활성화된 호선 객체 찾기
-  const currentStatusShip = ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
+  const currentStatusShip = useMemo(() => {
+    return ships.find(s => s.ship_no === selectedHullNo) || ships[0] || null;
+  }, [ships, selectedHullNo]);
 
-  // 호선 제원 정보 하단 목록은 선택된 선주사의 호선만 표시
-  // - 선주사 선택: 선택된 선주사의 호선 전체 표시
-  // - 검색어가 입력된 경우에는 기존 검색 조건도 함께 적용
-  const infoFilteredShips = selectedOwnerFilter
-    ? filteredShips.filter((ship) => (ship.shipowner || '').trim() === selectedOwnerFilter)
-    : filteredShips;
+  const infoFilteredShips = useMemo(() => {
+    return selectedOwnerFilter
+      ? filteredShips.filter((ship) => (ship.shipowner || '').trim() === selectedOwnerFilter)
+      : filteredShips;
+  }, [filteredShips, selectedOwnerFilter]);
 
-  // Status 선택용 선주사 목록 및 현재 선택 선주사
-  const shipOwners = Array.from(
-    new Set(ships.map(ship => (ship.shipowner || '').trim()).filter(Boolean))
-  ).sort((a, b) => a.localeCompare(b, 'ko'));
+  const shipOwners = useMemo(() => {
+    return Array.from(
+      new Set(ships.map(ship => (ship.shipowner || '').trim()).filter(Boolean))
+    ).sort((a, b) => a.localeCompare(b, 'ko'));
+  }, [ships]);
 
   const currentStatusOwner = currentStatusShip?.shipowner?.trim() || '';
-  const ownerFilteredShips = ships.filter(ship =>
-    (ship.shipowner || '').trim() === selectedOwnerFilter
-  );
+  
+  const ownerFilteredShips = useMemo(() => {
+    return ships.filter(ship => (ship.shipowner || '').trim() === selectedOwnerFilter);
+  }, [ships, selectedOwnerFilter]);
 
   const openShipSelectionModal = () => {
     setIsShipSelectionModalOpen(true);
@@ -542,9 +541,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     setIsShipSelectionModalOpen(false);
   };
 
-  // =========================================================================
-  // Status 탱크별 공정 일자 종합 비교표 XLSX 다운로드
-  // =========================================================================
   const handleDownloadExcel = () => {
     if (!isAdmin) {
       showAlert('권한 필요', '엑셀 다운로드는 관리자 권한만 가능합니다.', 'warning');
@@ -559,7 +555,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     try {
       const ship = currentStatusShip;
 
-      // 화면의 "탱크별 공정 일자 종합 비교표"와 동일한 구조로 Excel 표 생성
       const rows: (string | number)[][] = [
         ['Ship No.', ship.ship_no],
         ['호선명 / 프로젝트명', ship.ship_name || ''],
@@ -606,7 +601,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
       const worksheet = XLSX.utils.aoa_to_sheet(rows);
 
-      // 화면의 표와 같은 5열 구조 및 가독성 확보
       worksheet['!cols'] = [
         { wch: 22 },
         { wch: 27 },
@@ -621,7 +615,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
       worksheet['!freeze'] = { xSplit: 1, ySplit: 9 };
 
-      // 비교표 영역에 테두리/정렬 스타일 적용
       const tableStartRow = 8;
       const tableEndRow = 8 + TANK_STEPS.length;
       for (let r = tableStartRow; r <= tableEndRow; r++) {
@@ -668,11 +661,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // =========================================================================
-  // Status 탭 전용 핸들러 (선택, 등록, 수정, 삭제)
-  // =========================================================================
-
-  // [등록] Status 탭에서 신규 Ship 등록 모달 열기
   const handleOpenStatusCreateModal = () => {
     if (!isAdmin) {
       showAlert('권한 필요', '신규 등록은 관리자 권한만 가능합니다.', 'warning');
@@ -700,7 +688,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     setIsStatusCreateModalOpen(true);
   };
 
-  // [등록 처리] Status 탭에서 신규 Ship 생성 저장
   const handleSaveStatusCreateModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) return;
@@ -710,14 +697,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       return;
     }
 
-    // 중복 Ship No 검사
     if (ships.some(s => s.ship_no.trim().toLowerCase() === statusCreateFormData.ship_no.trim().toLowerCase())) {
       showAlert('중복 안내', `이미 존재하는 호선 번호 [${statusCreateFormData.ship_no}] 입니다. 다른 번호를 입력하세요.`, 'warning');
       return;
     }
 
     try {
-      // 날짜 빈 문자열 → null 변환 (Supabase date 타입 오류 방지)
       const sanitizedCreateData = {
         ...statusCreateFormData,
         commissioning_status: getDefaultCommissioningStatus(),
@@ -753,7 +738,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           commissioning_status: normalizeCommissioningStatus(data[0].commissioning_status, data[0].status),
         };
         setShips(prev => [...prev, newShip]);
-        setSelectedHullNo(newShip.ship_no); // 새로 만든 Ship 서브탭으로 바로 선택!
+        setSelectedHullNo(newShip.ship_no);
       }
 
       setIsStatusCreateModalOpen(false);
@@ -764,7 +749,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // [수정] Status 탭에서 선택된 Ship 수정 모달 열기
   const handleOpenStatusEditModal = (ship: ShipItem) => {
     if (!isAdmin) {
       showAlert('권한 필요', '수정은 관리자 권한만 가능합니다.', 'warning');
@@ -786,7 +770,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     setIsStatusEditModalOpen(true);
   };
 
-  // Status 수정 모달에서 호선의 화면상 위치를 좌/우로 이동하고 Supabase에 저장
   const handleMoveShipFromEditModal = async (direction: 'left' | 'right') => {
     if (!isAdmin || !statusEditFormData.id) return;
 
@@ -832,7 +815,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // Ship No. 서브탭의 TITLE(Ship No.)만 수정
   const handleOpenShipNoTitleEdit = (ship: ShipItem) => {
     if (!isAdmin) {
       showAlert('권한 필요', '수정은 관리자 권한만 가능합니다.', 'warning');
@@ -901,7 +883,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // [수정 처리] Status 수정 모달 저장
   const handleSaveStatusEditModal = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin || !statusEditFormData.id) return;
@@ -949,7 +930,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // [삭제] Status 탭에서 선택된 Ship 삭제 요청
   const handleRequestDeleteStatusShip = (ship: ShipItem) => {
     if (!isAdmin) {
       showAlert('권한 필요', '삭제는 관리자 권한만 가능합니다.', 'warning');
@@ -959,7 +939,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     setIsDeleteModalOpen(true);
   };
 
-  // [삭제 확인 처리]
   const handleConfirmDelete = async () => {
     if (!isAdmin || !targetDeleteShip) return;
 
@@ -977,7 +956,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       const remainingShips = ships.filter(s => s.id !== targetDeleteShip.id);
       setShips(remainingShips);
 
-      // 삭제된 호선이 현재 서브탭이었을 경우 다른 호선으로 자동 전환
       if (selectedHullNo === targetDeleteShip.ship_no) {
         if (remainingShips.length > 0) {
           setSelectedHullNo(remainingShips[0].ship_no);
@@ -999,9 +977,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // =========================================================================
-  // 호선 제원 정보 탭 전용 핸들러 (신규 등록 및 수정)
-  // =========================================================================
   const handleOpenAddModal = () => {
     if (!isAdmin) {
       showAlert('권한 필요', '관리자만 등록할 수 있습니다.', 'warning');
@@ -1019,7 +994,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       dwt: '',
       status: initialStatus,
       progress: STATUS_PROGRESS_MAP[initialStatus],
-      delivery_date: new Date().toISOString().split('T')[0],
+      delivery_date: '',
       day_shift: '',
       day_shift_user_ids: [],
       night_shift: '',
@@ -1079,7 +1054,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
 
     try {
-      // 날짜 빈 문자열 → null 변환 (Supabase date 타입 오류 방지)
       const sanitizedFormData = {
         ...formData,
         commissioning_status: editingShip?.commissioning_status || normalizeCommissioningStatus(undefined, editingShip?.status || formData.status),
@@ -1090,7 +1064,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       };
 
       if (editingShip) {
-        // 수정 (Update)
         const { error } = await supabase
           .from(TABLE_NAME)
           .update(sanitizedFormData)
@@ -1108,7 +1081,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         }
         showAlert('수정 완료', `호선 [${formData.ship_no}] 정보가 수정되었습니다.`, 'success');
       } else {
-        // 신규 등록 (Insert)
         const { data, error } = await supabase
           .from(TABLE_NAME)
           .insert([{ ...sanitizedFormData, sort_order: ships.length }])
@@ -1137,7 +1109,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     }
   };
 
-  // Tank 전체 공정 완료율 통계 계산 (총 28개 검사 항목: 4 탱크 * 7 단계)
   const calculateTankStats = (tankStatus?: ShipTankStatus) => {
     if (!tankStatus) return { completed: 0, total: 28, percent: 0 };
     let completed = 0;
@@ -1153,7 +1124,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     return { completed, total: 28, percent };
   };
 
-  // 각 Tank별 완료율 계산 (총 7개 검사 항목)
   const calculateSingleTankStats = (tankDetail?: TankDetail) => {
     if (!tankDetail) return { completed: 0, total: 7, percent: 0 };
     let completed = 0;
@@ -1166,9 +1136,13 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     return { completed, total: 7, percent: Math.round((completed / 7) * 100) };
   };
 
+  const isCommissioningComplete = (ship: ShipItem) => {
+    const processStatuses = normalizeCommissioningStatus(ship.commissioning_status, ship.status);
+    return STATUS_LIST.every((step) => processStatuses[step] === '완료');
+  };
+
   return (
     <div className="space-y-4 font-sans text-[#1F2937]">
-      {/* 알림 Modal */}
       {alertInfo.isOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
           <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-3">
@@ -1192,7 +1166,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         </div>
       )}
 
-      {/* 0. 대분류 메인 탭 네비게이션 (호선 정보 vs Status 공정 현황) */}
+      {/* 0. 대분류 메인 탭 네비게이션 */}
       <div className="bg-white p-2 rounded-xl border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2">
         <div className="flex items-center space-x-1.5">
           <button
@@ -1247,7 +1221,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* ============================================================== */}
       {activeMainTab === 'INFO' && (
         <>
-          {/* 호선 제원 정보: 선주사 선택 */}
           <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs space-y-3">
             <div className="flex items-center justify-between gap-3 bg-slate-50 border border-[#E2E5E9] rounded-lg px-3 py-2.5">
               <div className="min-w-0">
@@ -1275,7 +1248,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             </div>
           </div>
 
-          {/* 상단 검색 컨트롤 바 */}
           <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
             <div className="flex items-center space-x-2">
               <div className="bg-[#243B5A]/10 p-2 rounded-lg text-[#243B5A]">
@@ -1299,7 +1271,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             </div>
           </div>
 
-          {/* Desktop Table View */}
           <div className="hidden lg:block bg-white border border-[#E2E5E9] rounded-xl shadow-2xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
@@ -1434,7 +1405,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             </div>
           </div>
 
-          {/* Mobile Card View */}
           <div className="block lg:hidden space-y-2.5">
             {infoFilteredShips.map((ship) => {
               const processStatuses = normalizeCommissioningStatus(ship.commissioning_status, ship.status);
@@ -1512,11 +1482,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 탭 2: Status (서브탭 순서 이동, PBGT 추가, DWT 일자 등록 가능) */}
+      {/* 탭 2: Status (공정 현황) */}
       {/* ============================================================== */}
       {activeMainTab === 'STATUS' && (
         <div className="space-y-4">
-          {/* Status 컨트롤 바 (서브탭 순서 변경 및 관리자 등록 버튼) */}
           <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs space-y-3">
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
               <div className="flex items-center space-x-2">
@@ -1527,11 +1496,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <h3 className="text-xs font-bold text-[#1F2937] flex items-center gap-1.5">
                     Ship No. 선택 서브탭
                   </h3>
-                  <p className="text-[11px] text-[#64748B]">호선을 선택하여 TK1~TK4 공정 및 상세 데이터를 관리합니다. </p>
+                  <p className="text-[11px] text-[#64748B]">호선을 선택하여 TK1~TK4 공정 및 상세 데이터를 관리합니다.</p>
                 </div>
               </div>
 
-              {/* 관리자 전용: Status 신규 등록 버튼 */}
               {isAdmin && (
                 <button
                   onClick={handleOpenStatusCreateModal}
@@ -1543,7 +1511,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               )}
             </div>
 
-            {/* Status 선택 방식: 호선 선택 / 선주사 선택 */}
             <div className="border-t border-[#E2E5E9] pt-3">
               <div className="flex items-center gap-1.5 mb-3">
                 <button
@@ -1632,10 +1599,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             </div>
           </div>
 
-          {/* 선택된 호선의 Status 대시보드 */}
           {currentStatusShip ? (
             <div className="space-y-4">
-              {/* 호선 상세 요약 카드 및 관리자 액션 버튼 */}
               <div className="bg-white p-4 rounded-xl border border-[#E2E5E9] shadow-2xs flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -1664,7 +1629,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto justify-between md:justify-end border-t md:border-t-0 pt-3 md:pt-0 border-[#E2E5E9] flex-wrap">
-                  {/* 탱크 공정 진행률 바 */}
                   {(() => {
                     const stats = calculateTankStats(currentStatusShip.tank_status);
                     return (
@@ -1682,7 +1646,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     );
                   })()}
 
-                  {/* 관리자 권한 전용: 엑셀 다운로드 */}
                   {isAdmin && (
                     <button
                       onClick={handleDownloadExcel}
@@ -1693,7 +1656,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     </button>
                   )}
 
-                  {/* 관리자 권한 전용 액션: 수정 & 삭제 */}
                   {isAdmin && (
                     <div className="flex items-center space-x-1.5">
                       <button
@@ -1718,7 +1680,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
               </div>
 
-              {/* Tank(TK1, TK2, TK3, TK4) 4분할 개별 카드 뷰 */}
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                 {TANKS.map((tkKey) => {
                   const tankDetail = currentStatusShip.tank_status?.[tkKey] || getDefaultTankStatus()[tkKey];
@@ -1729,7 +1690,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       key={tkKey}
                       className="bg-white rounded-xl border border-[#E2E5E9] shadow-2xs overflow-hidden flex flex-col"
                     >
-                      {/* 카드 헤더 */}
                       <div className="bg-[#F5F6F8] p-3 border-b border-[#E2E5E9] flex justify-between items-center">
                         <div className="flex items-center space-x-2">
                           <span className="bg-[#243B5A] text-white font-mono font-bold text-xs px-2 py-0.5 rounded">
@@ -1742,7 +1702,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                         </div>
                       </div>
 
-                      {/* 7개 공정 항목 목록 (PBGT 포함) */}
                       <div className="p-3 divide-y divide-[#E2E5E9]/60 flex-1 space-y-2.5">
                         {TANK_STEPS.map((step) => {
                           const stepInfo = tankDetail[step.key] || { status: '대기' };
@@ -1775,14 +1734,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     {stepInfo.status || '대기'}
                                   </span>
 
-                                  {/* 일반 공정 값 */}
                                   {step.key !== 'pbgt' && stepInfo.value && (
                                     <span className="font-mono text-[10px] font-bold text-[#243B5A] bg-blue-50/80 px-1.5 py-0.5 rounded border border-blue-200" title="입력값/측정값">
                                       값: {stepInfo.value}
                                     </span>
                                   )}
 
-                                  {/* 일반 공정 일자 */}
                                   {step.key !== 'pbgt' && (
                                     <span className="font-mono text-[11px] text-[#475569] flex items-center gap-0.5 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 min-w-[76px] justify-center">
                                       <Calendar className="h-2.5 w-2.5 text-slate-400" />
@@ -1792,7 +1749,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 </div>
                               </div>
 
-                              {/* PBGT 공정 전용 UI (시작일/종료일, Ref/Final 2개 값 입력) */}
                               {step.key === 'pbgt' && (
                                 <div className="ml-5 text-[10.5px] bg-slate-50 border border-slate-200 rounded p-1.5 space-y-1">
                                   <div className="flex items-center justify-between font-mono text-[#475569]">
@@ -1812,7 +1768,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 </div>
                               )}
 
-                              {/* NH3 항목 전용 특이사항 / 텍스트 표시 */}
                               {step.key === 'nh3' && stepInfo.text && (
                                 <div className="ml-5 text-[10.5px] text-[#334155] bg-amber-50/70 border border-amber-200/80 rounded px-2 py-0.5 flex items-start gap-1">
                                   <span className="font-bold text-amber-800 shrink-0">NH3 비고:</span>
@@ -1828,7 +1783,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 })}
               </div>
 
-              {/* 종합 현황 Matrix Table (TK1 ~ TK4 한눈에 보기) */}
               <div className="bg-white rounded-xl border border-[#E2E5E9] shadow-2xs overflow-hidden">
                 <div className="p-3 bg-[#F5F6F8] border-b border-[#E2E5E9] flex justify-between items-center">
                   <h4 className="text-xs font-bold text-[#1F2937] flex items-center gap-1.5">
@@ -1837,7 +1791,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </h4>
                   <div className="flex items-center gap-2">
                     <span className="hidden md:inline text-[11px] text-[#64748B]">S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT</span>
-                    {/* 기존 XLSX 다운로드 버튼은 요청에 따라 제거 */}
                   </div>
                 </div>
 
@@ -1883,7 +1836,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     )}
                                   </div>
 
-                                  {/* 일자 표기 */}
                                   {step.key === 'pbgt' ? (
                                     <span className="font-mono text-[10.5px] text-[#64748B]">
                                       {stepInfo.startDate || stepInfo.endDate ? `${stepInfo.startDate || '-'} ~ ${stepInfo.endDate || '-'}` : '일자 미입력'}
@@ -1894,7 +1846,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     </span>
                                   )}
 
-                                  {/* PBGT Ref / Final 값 */}
                                   {step.key === 'pbgt' && (stepInfo.value || stepInfo.finalValue) && (
                                     <div className="flex gap-1 text-[9.5px] font-mono font-semibold">
                                       <span className="bg-blue-50 text-[#243B5A] px-1 rounded border border-blue-200">Ref: {stepInfo.value || '-'}</span>
@@ -1902,7 +1853,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     </div>
                                   )}
 
-                                  {/* NH3 비고 */}
                                   {step.key === 'nh3' && stepInfo.text && (
                                     <span className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded max-w-[120px] truncate" title={stepInfo.text}>
                                       📝 {stepInfo.text}
@@ -1960,7 +1910,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </div>
             </div>
 
-            {/* 호선 기본 제원 */}
             <div className="bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9] text-xs space-y-2">
               <span className="text-[11px] font-bold text-[#243B5A] flex items-center gap-1 border-b border-[#E2E5E9] pb-1">
                 <Ship className="h-3.5 w-3.5" /> 호선 기본 제원
@@ -1975,7 +1924,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </div>
             </div>
 
-            {/* Cabin 근무자 편성 */}
             <div className="bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9] text-xs space-y-1.5">
               <div className="flex items-center space-x-1.5 border-b border-[#E2E5E9] pb-1">
                 <User className="h-3.5 w-3.5 text-[#243B5A]" />
@@ -1993,7 +1941,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </div>
             </div>
 
-            {/* 시운전 공정 단계 현황 */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <h4 className="text-xs font-bold text-[#1F2937] flex items-center gap-1">
@@ -2114,7 +2061,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 4. 호선 정보 탭 전용: 등록 및 수정 모달 (DWT 일자/자유 형식) */}
+      {/* 4. 호선 정보 탭 전용: 등록 및 수정 모달 */}
       {/* ============================================================== */}
       {isFormModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
@@ -2352,7 +2299,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 5. Status 탭 전용 [신규 등록]: Ship 기반 신규 호선 & TK1~4 공정 모달 */}
+      {/* 5. Status 탭 전용 [신규 등록] 모달 */}
       {/* ============================================================== */}
       {isStatusCreateModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
@@ -2374,7 +2321,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             </div>
 
             <form onSubmit={handleSaveStatusCreateModal} className="space-y-4">
-              {/* 1. 호선 기본 제원 필드 */}
               <div className="bg-[#F5F6F8] p-3.5 rounded-xl border border-[#E2E5E9] space-y-3">
                 <span className="text-xs font-bold text-[#243B5A] flex items-center gap-1">
                   <Ship className="h-3.5 w-3.5" /> 1단계: 호선 기본 제원 입력
@@ -2470,7 +2416,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
               </div>
 
-              {/* 2. Tank(TK1, TK2, TK3, TK4)별 공정 및 일자 설정 */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-[#243B5A] flex items-center gap-1">
@@ -2518,7 +2463,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </div>
                 </div>
 
-                {/* Tank 탭 선택 (TK1, TK2, TK3, TK4) */}
                 <div className="grid grid-cols-4 gap-2">
                   {TANKS.map((tk) => {
                     const isTabActive = (statusCreateTankTab === tk);
@@ -2544,7 +2488,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   })}
                 </div>
 
-                {/* 선택된 Tank의 7개 항목 리스트 (S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT) */}
                 <div className="bg-slate-50/80 p-3 rounded-xl border border-[#E2E5E9] space-y-2">
                   <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-1.5">
                     <span className="text-xs font-bold text-[#1F2937]">
@@ -2570,7 +2513,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             </div>
 
                             <div className="flex items-center gap-1.5 flex-1 justify-end flex-wrap">
-                              {/* 상태 선택 */}
                               <select
                                 value={currentStepData.status}
                                 onChange={(e) => {
@@ -2604,7 +2546,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 <option value="완료">완료</option>
                               </select>
 
-                              {/* 일반 공정: 단일 날짜 선택 */}
                               {step.key !== 'pbgt' && (
                                 <input
                                   type="date"
@@ -2630,7 +2571,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 />
                               )}
 
-                              {/* PBGT 전용: 시작일/종료일 선택 */}
                               {step.key === 'pbgt' && (
                                 <div className="flex items-center space-x-1 shrink-0">
                                   <input
@@ -2681,7 +2621,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 </div>
                               )}
 
-                              {/* 값(측정값/검사값 또는 Ref 값) 입력 */}
                               <input
                                 type="text"
                                 placeholder={step.key === 'pbgt' ? "Ref. 값 입력" : "값 (예: 250 mbar)"}
@@ -2705,7 +2644,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                               />
 
-                              {/* PBGT 전용: Final 값 입력 */}
                               {step.key === 'pbgt' && (
                                 <input
                                   type="text"
@@ -2733,7 +2671,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             </div>
                           </div>
 
-                          {/* NH3 전용 텍스트 입력창 */}
                           {step.key === 'nh3' && (
                             <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
                               <span className="text-[11px] font-bold text-amber-800 shrink-0">
@@ -2791,7 +2728,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 6. Status 탭 전용 [수정]: 기존 호선 정보 & TK1~4 공정 수정 모달 */}
+      {/* 6. Status 탭 전용 [수정] 모달 */}
       {/* ============================================================== */}
       {isStatusEditModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
@@ -2840,7 +2777,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             </div>
 
             <form onSubmit={handleSaveStatusEditModal} className="space-y-4">
-              {/* 호선 기본 정보 수정 */}
               <div className="bg-[#F5F6F8] p-3.5 rounded-xl border border-[#E2E5E9] space-y-3">
                 <span className="text-xs font-bold text-[#243B5A] flex items-center gap-1">
                   <Ship className="h-3.5 w-3.5" /> 1단계: 호선 기본 제원 수정
@@ -2931,7 +2867,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
               </div>
 
-              {/* Tank별 공정 수정 */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-xs font-bold text-[#243B5A] flex items-center gap-1">
@@ -3021,7 +2956,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 <option value="완료">완료</option>
                               </select>
 
-                              {/* 일반 공정 단일 날짜 */}
                               {step.key !== 'pbgt' && (
                                 <input
                                   type="date"
@@ -3047,7 +2981,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 />
                               )}
 
-                              {/* PBGT 공정 전용 시작일/종료일 */}
                               {step.key === 'pbgt' && (
                                 <div className="flex items-center space-x-1 shrink-0">
                                   <input
@@ -3098,7 +3031,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 </div>
                               )}
 
-                              {/* 값/Ref. 값 입력 */}
                               <input
                                 type="text"
                                 placeholder={step.key === 'pbgt' ? "Ref. 값" : "값"}
@@ -3122,7 +3054,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                               />
 
-                              {/* PBGT Final 값 입력 */}
                               {step.key === 'pbgt' && (
                                 <input
                                   type="text"
@@ -3150,7 +3081,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             </div>
                           </div>
 
-                          {/* NH3 텍스트 */}
                           {step.key === 'nh3' && (
                             <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
                               <span className="text-[11px] font-bold text-amber-800 shrink-0">
@@ -3413,7 +3343,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 7. Ship No. TITLE 수정 모달 */}
+      {/* 9. Ship No. TITLE 수정 모달 */}
       {/* ============================================================== */}
       {isShipNoTitleEditModalOpen && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
@@ -3472,7 +3402,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       )}
 
       {/* ============================================================== */}
-      {/* 8. 삭제 확인 모달 */}
+      {/* 10. 삭제 확인 모달 */}
       {/* ============================================================== */}
       {isDeleteModalOpen && targetDeleteShip && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
