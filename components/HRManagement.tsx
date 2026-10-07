@@ -22,6 +22,7 @@ import {
   Shield
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
 
 export interface HRUser {
   id: string;          
@@ -161,6 +162,7 @@ export default function HRManagement({
     message: string;
   } | null>(null);
   const [confirmUser, setConfirmUser] = useState<HRUser | null>(null);
+  const [callConfirmUser, setCallConfirmUser] = useState<HRUser | null>(null);
 
   const showNotice = (
     message: string,
@@ -361,6 +363,25 @@ export default function HRManagement({
       console.error('삭제 실패:', err);
       showNotice('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'), 'error');
     }
+  };
+
+  const handleCallUser = (user: HRUser) => {
+    const phone = user.phone?.trim();
+
+    if (!phone) {
+      showNotice(`${user.name}님의 전화번호가 등록되어 있지 않습니다.`, 'warning');
+      return;
+    }
+
+    setCallConfirmUser(user);
+  };
+
+  const handleConfirmCall = () => {
+    if (!callConfirmUser?.phone) return;
+
+    const phone = callConfirmUser.phone.replace(/[^0-9+]/g, '');
+    setCallConfirmUser(null);
+    window.location.href = `tel:${phone}`;
   };
 
   const handleDeleteUser = async (user: HRUser) => {
@@ -583,6 +604,22 @@ export default function HRManagement({
               <span>구성원 추가</span>
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={() => exportHRToExcel(users)}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8] transition"
+          >
+            Excel 출력
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void exportHRToPptx(users)}
+            className="px-3 py-1.5 rounded-lg text-xs font-bold border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8] transition"
+          >
+            PPT 출력
+          </button>
         </div>
       </div>
 
@@ -740,7 +777,7 @@ export default function HRManagement({
                           <span>파트 리더 (본부장/소장/팀장)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin))}
+                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser))}
                         </div>
                       </div>
                     )}
@@ -758,7 +795,7 @@ export default function HRManagement({
                           <span>소속 구성원 ({members.length}명)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin))}
+                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser))}
                         </div>
                       </div>
                     )}
@@ -1001,9 +1038,13 @@ export default function HRManagement({
                     <Phone className="h-3.5 w-3.5 text-[#243B5A]" /> 연락처
                   </span>
                   {detailUser.phone ? (
-                    <a href={`tel:${detailUser.phone}`} className="font-bold text-[#243B5A] hover:underline flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => handleCallUser(detailUser)}
+                      className="font-bold text-[#243B5A] hover:underline flex items-center gap-1"
+                    >
                       {detailUser.phone}
-                    </a>
+                    </button>
                   ) : (
                     <span className="font-bold text-[#1F2937]">미등록</span>
                   )}
@@ -1325,6 +1366,34 @@ export default function HRManagement({
         </div>
       )}
 
+      {callConfirmUser && (
+        <div className="fixed inset-0 z-[115] bg-black/40 flex items-center justify-center p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-6">
+            <h3 className="text-lg font-bold text-[#1F2937]">전화 연결</h3>
+            <p className="mt-2 text-sm text-[#64748B] leading-6">
+              <span className="font-bold text-[#1F2937]">[{callConfirmUser.name}]</span>님에게 전화 연결하시겠습니까?
+              <br />{callConfirmUser.phone}
+            </p>
+            <div className="mt-6 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setCallConfirmUser(null)}
+                className="px-4 py-2 rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCall}
+                className="px-4 py-2 rounded-lg bg-[#243B5A] text-white text-sm font-semibold hover:bg-[#1d3049]"
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {confirmUser && (
         <div className="fixed inset-0 z-[110] bg-black/40 flex items-center justify-center p-4">
           <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-6">
@@ -1364,7 +1433,8 @@ function renderMemberCard(
   handleOpenEditModal: (user: HRUser) => void,
   handleDeleteUser: (user: HRUser) => void,
   canEditUser: (user: HRUser) => boolean,
-  isAdmin: boolean
+  isAdmin: boolean,
+  handleCallUser: (user: HRUser) => void
 ) {
   const joinCareer = calculateCareerDetails(member.join_date);
   const totalCareer = calculateCareerDetails(member.career_start_date);
@@ -1445,15 +1515,18 @@ function renderMemberCard(
       <div className="pt-1.5 border-t border-[#E2E5E9] text-[10px] space-y-1">
         <div className="flex items-center justify-between text-[#64748B]">
           {member.phone ? (
-            <a
-              href={`tel:${member.phone.replace(/[^0-9+]/g, '')}`}
-              onClick={(e) => e.stopPropagation()}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleCallUser(member);
+              }}
               className="flex items-center gap-1 font-medium text-[#243B5A] hover:underline"
               title="전화 연결"
             >
               <Phone className="h-3 w-3 text-[#243B5A] shrink-0" />
               {member.phone}
-            </a>
+            </button>
           ) : (
             <span className="flex items-center gap-1 font-medium">
               <Phone className="h-3 w-3 text-[#94A3B8] shrink-0" />
