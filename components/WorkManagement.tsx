@@ -955,9 +955,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <span className="text-xs text-[#64748B] font-mono">({t.start_date})</span>
                       {renderStatusBadge(t)}
                     </div>
-                    <h4 className="font-bold text-sm text-[#1F2937] cursor-pointer hover:underline" onClick={() => handleOpenTaskDetail(t)}>
-                      {t.title}{renderTaskNewBadge(t)}
-                    </h4>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-bold text-sm text-[#1F2937] cursor-pointer hover:underline" onClick={() => handleOpenTaskDetail(t)}>
+                        {t.title}{renderTaskNewBadge(t)}
+                      </h4>
+                      {/* 요청하신 수정 사항: 일일 업무 배정 인원수 표시 */}
+                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full shrink-0">
+                        배정 인원: {t.assigned_names?.length || 0}명
+                      </span>
+                    </div>
                   </div>
 
                   <div className="flex items-center justify-between md:justify-end space-x-3">
