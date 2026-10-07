@@ -308,27 +308,27 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   };
 
   useEffect(() => {
-  fetchAppUsers();
-  fetchVessels();
-  fetchTeams();
-  fetchTasks();
+    fetchAppUsers();
+    fetchVessels();
+    fetchTeams();
+    fetchTasks();
 
-  // 💡 Realtime 구독 추가: DB 변경 발생 시에만 fetchTasks 실행
-  const channel = supabase
-    .channel('public:tasks')
-    .on(
-      'postgres_changes',
-      { event: '*', schema: 'public', table: 'tasks' },
-      () => {
-        fetchTasks();
-      }
-    )
-    .subscribe();
+    // 💡 Realtime 구독: DB 변경 발생 시에만 fetchTasks 실행 (API 호출 최소화)
+    const channel = supabase
+      .channel('public:tasks')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tasks' },
+        () => {
+          fetchTasks();
+        }
+      )
+      .subscribe();
 
-  return () => {
-    supabase.removeChannel(channel);
-  };
-}, [currentUser]);
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser]);
 
   // 해당 업무 변경 권한 확인
   const canModifyTaskStatus = (task: Task) => {
@@ -688,7 +688,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   };
 
-  // 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수 (해당 일의 모든 업무 N개 저장)
+  // 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수
   const handleExportWeeklyExcel = () => {
     const [yearStr, monthStr] = selectedExportMonth.split('-');
     const year = parseInt(yearStr, 10);
@@ -723,7 +723,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         weekRowDates.push(isCurrentMonth ? `${dayNum}일` : `(${dayNum}일)`);
 
         if (isCurrentMonth) {
-          // 일치하는 일자의 모든 업무를 필터링하여 포함
           const matchedTasks = monthlyWeeklyTasks.filter(t => t.start_date === dateStr);
           if (matchedTasks.length > 0) {
             const taskText = matchedTasks.map((t, idx) => {
@@ -987,11 +986,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     </div>
 
                     <div className="flex items-center space-x-1">
-                      <button onClick={() => handleOpenTaskDetail(t)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-[#243B5A]/10 text-[#243B5A] flex items-center gap-1">
-                        <Eye className="h-3.5 w-3.5" />
-                        <span>상세</span>
-                      </button>
-
                       {dailySubTab === 'HISTORY' && isAdmin && (
                         <button
                           onClick={() => handleDeleteTask(t.id)}
