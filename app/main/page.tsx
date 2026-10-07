@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   LogOut, 
@@ -72,7 +72,7 @@ export default function MainPage() {
   const [mainTab, setMainTab] = useState<'NOTICE' | 'TASKS' | 'INVENTORY' | 'SHIP' | 'EDUCATION' | 'HR'>('NOTICE');
 
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [loadingTasks, setLoadingTasks] = useState(true);
+  const [loadingTasks, setLoadingTasks] = useState(false);
   const [showNoticeModal, setShowNoticeModal] = useState(false);
   const [myPendingTasks, setMyPendingTasks] = useState<Task[]>([]);
 
@@ -92,15 +92,12 @@ export default function MainPage() {
   // 모바일 종 모양 버튼 색상 제어용 (읽지 않은 새 공지 유무)
   const [hasUnreadNotice, setHasUnreadNotice] = useState(false);
   const [navNewFlags, setNavNewFlags] = useState<Record<string, boolean>>({});
-  const isUserEditingRef = useRef(false);
-  const refreshPendingRef = useRef(false);
-  const lastInputAtRef = useRef(0);
 
   const normalizedRole = String(currentUser?.role || '').trim().toUpperCase();
   const isAdmin = normalizedRole === 'ADMIN';
 
   // 읽지 않은 공지 체크 함수
-  const checkUnreadNotices = async (userKey: string) => {
+  const checkUnreadNotices = useCallback(async (userKey: string) => {
     try {
       const { data, error } = await supabase
         .from('notices')
@@ -121,20 +118,109 @@ export default function MainPage() {
     } catch (err) {
       console.error('공지 읽음 상태 확인 실패:', err);
     }
-  };
+  }, []);
 
-  // ============================================================
+  // 데이터 불러오기 함수들 (useCallback 최적화)
+  const fetchTasks = useCallback(async (user: AppUser) => {
+    setLoadingTasks(true);
+    try {
+      const { data, error } = await supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      
+      const formattedTasks: Task[] = (data || []).map((t: any) => ({
+        id: t.id,
+        title: t.title,
+        description: t.description,
+        task_type: t.task_type,
+        status: t.status,
+        assigned_names: Array.isArray(t.assigned_names) 
+          ? t.assigned_names 
+          : (t.assigned_name ? [t.assigned_name] : ['홍길동']),
+        time_slot: t.time_slot || '09:00~',
+        start_date: t.start_date || new Date().toISOString().split('T')[0],
+      }));
+
+      setTasks(formattedTasks);
+
+      const pending = formattedTasks.filter(t => t.assigned_names.includes(user.name) && t.status !== 'COMPLETED');
+      if (pending.length > 0) {
+        setMyPendingTasks(pending);
+        setShowNoticeModal(true);
+      }
+    } catch (err: any) {
+      console.error('업무 목록 불러오기 실패:', err);
+    } finally {
+      setLoadingTasks(false);
+    }
+  }, []);
+
+  const fetchInventory = useCallback(async () => {
+    setLoadingInventory(true);
+    try {
+      const { data, error } = await supabase.from('inventory').select('*').order('code', { ascending: true });
+      if (error) throw error;
+      const list: InventoryItem[] = data || [];
+      setInventoryList(list);
+
+      const lows = list.filter(i => i.type === '소모성' && i.quantity <= i.min_quantity);
+      if (lows.length > 0) {
+        setLowStockItems(lows);
+        setShowMinStockAlert(true);
+      }
+    } catch (err: any) {
+      console.error('자재 목록 불러오기 실패:', err);
+    } finally {
+      setLoadingInventory(false);
+    }
+  }, []);
+
+  const fetchInventoryLogs = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('inventory_logs').select('*').order('created_at', { ascending: false }).limit(20);
+      if (error) throw error;
+      setInventoryLogs(data || []);
+    } catch (err: any) {
+      console.error('이력 목록 불러오기 실패:', err);
+    }
+  }, []);
+
+  const fetchEducations = useCallback(async () => {
+    try {
+      setLoadingEdu(true);
+      const { data, error } = await supabase
+        .from('educations')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      
+      const list = (data || []).map((e: any) => ({
+        ...e,
+        edu_date: e.edu_date || e.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
+      }));
+      
+      setEducations(list);
+    } catch (err: any) {
+      console.error('교육 목록 불러오기 실패:', err);
+    } finally {
+      setLoadingEdu(false);
+    }
+  }, []);
+
+  const fetchEducationRecords = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('education_records').select('*');
+      if (error) throw error;
+      setEduRecords(data || []);
+    } catch (err: any) {
+      console.error('교육 이수 기록 불러오기 실패:', err);
+    }
+  }, []);
+
   // 모바일 뒤로가기 처리
-  // ============================================================
-  //
-  // 먼저 현재 열려 있는 자식 화면/모달에게
-  // 'app-back' 이벤트를 전달한다.
-  //
-  // 자식 컴포넌트가 이벤트를 처리했다면
-  // event.detail.handled = true 로 표시할 수 있다.
-  //
-  // 자식이 처리하지 않은 경우에만 시스템 종료 확인창을 표시한다.
-  //
   useEffect(() => {
     let lastBackPressTime = 0;
 
@@ -143,40 +229,29 @@ export default function MainPage() {
     const handlePopState = () => {
       const currentTime = new Date().getTime();
 
-      // 현재 종료 확인창이 이미 열려 있으면
-      // 페이지를 그대로 유지한다.
       if (showExitModal) {
         window.history.pushState(null, '', window.location.href);
         return;
       }
 
-      // 뒤로 이동한 것을 다시 현재 페이지로 되돌린다.
       window.history.pushState(null, '', window.location.href);
 
-      // 자식 컴포넌트에 뒤로가기 이벤트 전달
       const backEvent = new CustomEvent('app-back', {
-        detail: {
-          handled: false
-        }
+        detail: { handled: false }
       });
 
       window.dispatchEvent(backEvent);
 
-      // 자식 컴포넌트가 열린 모달/입력창 등을 처리했다면
-      // 시스템 종료창을 띄우지 않는다.
       if (backEvent.detail?.handled) {
         lastBackPressTime = currentTime;
         return;
       }
 
-      // 너무 짧은 시간에 중복 발생하는 Back 이벤트 방지
       if (currentTime - lastBackPressTime < 500) {
         return;
       }
 
       lastBackPressTime = currentTime;
-
-      // 자식이 처리하지 않은 경우에만 시스템 종료창 표시
       setShowExitModal(true);
     };
 
@@ -187,6 +262,7 @@ export default function MainPage() {
     };
   }, [showExitModal]);
 
+  // 세션 및 사용자 인증 1회 초기화
   useEffect(() => {
     const initAuthAndData = async () => {
       try {
@@ -242,14 +318,7 @@ export default function MainPage() {
 
         const userKey = targetUser.id || targetUser.email || targetUser.name || 'guest';
         await checkUnreadNotices(String(userKey));
-
-        await Promise.all([
-          fetchTasks(targetUser),
-          fetchInventory(),
-          fetchInventoryLogs(),
-          fetchEducations(),
-          fetchEducationRecords()
-        ]);
+        await fetchTasks(targetUser); // 필수 업무만 우선 로드
 
       } catch (e) {
         console.error('세션 및 인증 초기화 실패:', e);
@@ -259,332 +328,56 @@ export default function MainPage() {
     };
 
     initAuthAndData();
-  }, [router]);
+  }, [router, checkUnreadNotices, fetchTasks]);
 
-  // 네비게이션별 새 업데이트 확인 (created_at + updated_at 기준)
-  // 교육 & EVENT는 educations + education_records를 함께 확인한다.
-  const updateSources: { id: string; tables: string[] }[] = [
-    { id: 'NOTICE', tables: ['notices'] },
-    { id: 'TASKS', tables: ['tasks'] },
-    { id: 'INVENTORY', tables: ['inventory', 'inventory_logs'] },
-    { id: 'EDUCATION', tables: ['educations', 'education_records', 'events'] },
-  ];
-
-  const getLatestUpdateTime = async (tables: string[]) => {
-    const timestamps: string[] = [];
-
-    for (const table of tables) {
-      try {
-        const [createdResult, updatedResult] = await Promise.all([
-          supabase
-            .from(table)
-            .select('created_at')
-            .order('created_at', { ascending: false, nullsFirst: false })
-            .limit(1),
-          supabase
-            .from(table)
-            .select('updated_at')
-            .order('updated_at', { ascending: false, nullsFirst: false })
-            .limit(1),
-        ]);
-
-        if (!createdResult.error && createdResult.data?.[0]?.created_at) {
-          timestamps.push(createdResult.data[0].created_at);
-        }
-
-        if (!updatedResult.error && updatedResult.data?.[0]?.updated_at) {
-          timestamps.push(updatedResult.data[0].updated_at);
-        }
-      } catch (err) {
-        console.error(`${table} 업데이트 시간 확인 실패:`, err);
-      }
-    }
-
-    if (timestamps.length === 0) return null;
-
-    return timestamps.reduce((latest, current) =>
-      new Date(current).getTime() > new Date(latest).getTime() ? current : latest
-    );
-  };
-
-  const checkNavigationUpdates = async (userKey: string) => {
-    const nextFlags: Record<string, boolean> = {};
-
-    await Promise.all(updateSources.map(async ({ id, tables }) => {
-      const latest = await getLatestUpdateTime(tables);
-      if (!latest) {
-        nextFlags[id] = false;
-        return;
-      }
-
-      const storageKey = `nav_seen_${userKey}_${id}`;
-      const seenAt = localStorage.getItem(storageKey);
-
-      if (!seenAt) {
-        // 최초 진입 시 기존 데이터는 새 항목으로 표시하지 않고 기준 시점으로 저장
-        localStorage.setItem(storageKey, latest);
-        nextFlags[id] = false;
-      } else {
-        nextFlags[id] = new Date(latest).getTime() > new Date(seenAt).getTime();
-      }
-    }));
-
-    setNavNewFlags(nextFlags);
-  };
-
-  const markNavigationAsRead = async (tabId: string) => {
+  // 탭 변경 시 필요한 데이터만 지연 로딩 (Lazy Loading)
+  useEffect(() => {
     if (!currentUser) return;
+
+    if (mainTab === 'INVENTORY' && inventoryList.length === 0) {
+      fetchInventory();
+      fetchInventoryLogs();
+    } else if (mainTab === 'EDUCATION' && educations.length === 0) {
+      fetchEducations();
+      fetchEducationRecords();
+    }
+  }, [mainTab, currentUser, inventoryList.length, educations.length, fetchInventory, fetchInventoryLogs, fetchEducations, fetchEducationRecords]);
+
+  // 🔴 🔥 20초 주기 폴링 제거 ➔ Realtime 실시간 이벤트 수신으로 대체!
+  // DB에 실제 변경(INSERT/UPDATE/DELETE)이 있을 때만 동작하며, 언마운트 시 removeChannel로 완벽 해제됩니다.
+  useEffect(() => {
+    if (!currentUser) return;
+
     const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
-    const source = updateSources.find(item => item.id === tabId);
-    if (!source) return;
 
-    try {
-      const latest = await getLatestUpdateTime(source.tables);
-      if (latest) {
-        localStorage.setItem(`nav_seen_${userKey}_${tabId}`, latest);
-      }
+    const globalChannel = supabase
+      .channel('app-global-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, () => {
+        setNavNewFlags(prev => ({ ...prev, NOTICE: true }));
+        checkUnreadNotices(String(userKey));
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        setNavNewFlags(prev => ({ ...prev, TASKS: true }));
+        fetchTasks(currentUser);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
+        setNavNewFlags(prev => ({ ...prev, INVENTORY: true }));
+        if (mainTab === 'INVENTORY') fetchInventory();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'educations' }, () => {
+        setNavNewFlags(prev => ({ ...prev, EDUCATION: true }));
+        if (mainTab === 'EDUCATION') fetchEducations();
+      })
+      .subscribe();
 
-      setNavNewFlags((prev) => ({ ...prev, [tabId]: false }));
-    } catch (err) {
-      console.error(`${tabId} 읽음 기준 저장 실패:`, err);
-    }
-  };
-
-  // 탭이 변경될 때마다 게시판 탭의 안 읽은 공지 상태 갱신
-  useEffect(() => {
-    if (currentUser) {
-      const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
-      checkUnreadNotices(String(userKey));
-    }
-  }, [mainTab, currentUser]);
-
-  // 로그인 직후 네비게이션별 새 업데이트 기준을 확인
-  useEffect(() => {
-    if (currentUser) {
-      const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
-      checkNavigationUpdates(String(userKey));
-    }
-  }, [currentUser]);
-
-  // 20초마다 변경 여부만 확인하고, 실제 데이터 갱신은 변경된 경우에만 수행한다.
-  // 사용자가 작성 중이면 변경 사실만 보류하고 작성 완료 후 실제 갱신한다.
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const checkForChangesAndRefresh = async () => {
-      const user = currentUser;
-      const userKey = user.id || user.email || user.name || 'guest';
-      const changedTabs: Record<string, boolean> = {};
-      const latestByTab: Record<string, string> = {};
-
-      await Promise.all(updateSources.map(async ({ id, tables }) => {
-        const latest = await getLatestUpdateTime(tables);
-        if (!latest) return;
-
-        latestByTab[id] = latest;
-
-        const refreshKey = `nav_refresh_${userKey}_${id}`;
-        const lastRefreshAt = localStorage.getItem(refreshKey);
-
-        if (!lastRefreshAt) {
-          // 최초 기준 시점은 저장만 하고 기존 데이터를 새 업데이트로 처리하지 않는다.
-          localStorage.setItem(refreshKey, latest);
-          return;
-        }
-
-        if (new Date(latest).getTime() > new Date(lastRefreshAt).getTime()) {
-          changedTabs[id] = true;
-        }
-      }));
-
-      if (Object.keys(changedTabs).length === 0) {
-        return;
-      }
-
-      // 새 항목/수정이 발생한 경우에만 N 상태를 먼저 반영한다.
-      await checkNavigationUpdates(String(userKey));
-
-      if (isUserEditingRef.current || Date.now() - lastInputAtRef.current < 1500) {
-        refreshPendingRef.current = true;
-        return;
-      }
-
-      refreshPendingRef.current = false;
-
-      const refreshPromises: Promise<any>[] = [];
-
-      if (changedTabs.TASKS) {
-        refreshPromises.push(fetchTasks(user));
-      }
-
-      if (changedTabs.INVENTORY) {
-        refreshPromises.push(fetchInventory(), fetchInventoryLogs());
-      }
-
-      if (changedTabs.EDUCATION) {
-        refreshPromises.push(fetchEducations(), fetchEducationRecords());
-        // EVENT는 EducationManagement 내부에서 events를 직접 조회하므로
-        // 변경 시 컴포넌트를 재생성하여 최신 EVENT 목록을 다시 불러오게 한다.
-        setEducationRefreshVersion((prev) => prev + 1);
-      }
-
-      if (changedTabs.NOTICE) {
-        refreshPromises.push(checkUnreadNotices(String(userKey)));
-      }
-
-      await Promise.all(refreshPromises);
-
-      // 이번 변경을 실제로 반영했으므로, 다음 20초 검사에서는 같은 변경을 다시 갱신하지 않는다.
-      Object.keys(changedTabs).forEach((id) => {
-        const latest = latestByTab[id];
-        if (latest) {
-          localStorage.setItem(`nav_refresh_${userKey}_${id}`, latest);
-        }
-      });
-    };
-
-    const intervalId = window.setInterval(checkForChangesAndRefresh, 20000);
-
-    const handleInput = () => {
-      isUserEditingRef.current = true;
-      refreshPendingRef.current = true;
-      lastInputAtRef.current = Date.now();
-    };
-
-    const handleFocusOut = (event: FocusEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target) return;
-
-      const tagName = target.tagName;
-      const isEditable = tagName === 'INPUT' || tagName === 'TEXTAREA' || tagName === 'SELECT' || target.isContentEditable;
-      if (!isEditable) return;
-
-      window.setTimeout(async () => {
-        const active = document.activeElement as HTMLElement | null;
-        const stillEditing = !!active && (
-          active.tagName === 'INPUT' ||
-          active.tagName === 'TEXTAREA' ||
-          active.tagName === 'SELECT' ||
-          active.isContentEditable
-        );
-
-        if (!stillEditing) {
-          isUserEditingRef.current = false;
-          if (refreshPendingRef.current) {
-            refreshPendingRef.current = false;
-            await checkForChangesAndRefresh();
-          }
-        }
-      }, 0);
-    };
-
-    document.addEventListener('input', handleInput, true);
-    document.addEventListener('focusout', handleFocusOut, true);
-
+    // ✅ Clean-up: 컴포넌트 해제 또는 변경 시 Realtime 채널 닫기 (로그 폭증 완전 방지)
     return () => {
-      window.clearInterval(intervalId);
-      document.removeEventListener('input', handleInput, true);
-      document.removeEventListener('focusout', handleFocusOut, true);
+      supabase.removeChannel(globalChannel);
     };
-  }, [currentUser]);
+  }, [currentUser?.id, mainTab, checkUnreadNotices, fetchTasks, fetchInventory, fetchEducations]);
 
-  const fetchTasks = async (user: AppUser) => {
-    setLoadingTasks(true);
-    try {
-      const { data, error } = await supabase
-        .from('tasks')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (error) throw error;
-      
-      const formattedTasks: Task[] = (data || []).map((t: any) => ({
-        id: t.id,
-        title: t.title,
-        description: t.description,
-        task_type: t.task_type,
-        status: t.status,
-        assigned_names: Array.isArray(t.assigned_names) 
-          ? t.assigned_names 
-          : (t.assigned_name ? [t.assigned_name] : ['홍길동']),
-        time_slot: t.time_slot || '09:00~',
-        start_date: t.start_date || new Date().toISOString().split('T')[0],
-      }));
-
-      setTasks(formattedTasks);
-
-      const pending = formattedTasks.filter(t => t.assigned_names.includes(user.name) && t.status !== 'COMPLETED');
-      if (pending.length > 0) {
-        setMyPendingTasks(pending);
-        setShowNoticeModal(true);
-      }
-    } catch (err: any) {
-      console.error('업무 목록 불러오기 실패:', err);
-    } finally {
-      setLoadingTasks(false);
-    }
-  };
-
-  const fetchInventory = async () => {
-    setLoadingInventory(true);
-    try {
-      const { data, error } = await supabase.from('inventory').select('*').order('code', { ascending: true });
-      if (error) throw error;
-      const list: InventoryItem[] = data || [];
-      setInventoryList(list);
-
-      const lows = list.filter(i => i.type === '소모성' && i.quantity <= i.min_quantity);
-      if (lows.length > 0) {
-        setLowStockItems(lows);
-        setShowMinStockAlert(true);
-      }
-    } catch (err: any) {
-      console.error('자재 목록 불러오기 실패:', err);
-    } finally {
-      setLoadingInventory(false);
-    }
-  };
-
-  const fetchInventoryLogs = async () => {
-    try {
-      const { data, error } = await supabase.from('inventory_logs').select('*').order('created_at', { ascending: false }).limit(20);
-      if (error) throw error;
-      setInventoryLogs(data || []);
-    } catch (err: any) {
-      console.error('이력 목록 불러오기 실패:', err);
-    }
-  };
-
-  const fetchEducations = async () => {
-    try {
-      setLoadingEdu(true);
-      const { data, error } = await supabase
-        .from('educations')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      
-      const list = (data || []).map((e: any) => ({
-        ...e,
-        edu_date: e.edu_date || e.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
-      }));
-      
-      setEducations(list);
-    } catch (err: any) {
-      console.error('교육 목록 불러오기 실패:', err);
-    } finally {
-      setLoadingEdu(false);
-    }
-  };
-
-  const fetchEducationRecords = async () => {
-    try {
-      const { data, error } = await supabase.from('education_records').select('*');
-      if (error) throw error;
-      setEduRecords(data || []);
-    } catch (err: any) {
-      console.error('교육 이수 기록 불러오기 실패:', err);
-    }
+  const markNavigationAsRead = (tabId: string) => {
+    setNavNewFlags((prev) => ({ ...prev, [tabId]: false }));
   };
 
   const handleLogout = async () => {
@@ -637,7 +430,6 @@ export default function MainPage() {
             </div>
           </div>
 
-          {/* 우측 유저 정보 및 모바일 버튼 영역 (찌그러짐 방지 간격 및 사이즈 최적화) */}
           <div className="flex items-center space-x-1.5 sm:space-x-3">
             <div className="hidden lg:flex items-center space-x-2 text-xs">
               {companyCareer && (
@@ -654,7 +446,6 @@ export default function MainPage() {
               )}
             </div>
 
-            {/* 모바일 전용 게시판 이동 종 모양 버튼 (새 글 유무에 따라 빨간색 / 옅은 파란색 동적 변경) */}
             <button
               type="button"
               onClick={() => setMainTab('NOTICE')}
@@ -669,7 +460,6 @@ export default function MainPage() {
               <Bell className="h-4 w-4" />
             </button>
 
-            {/* 로그인 계정 영역 (사이즈 압축 및 유연한 뷰 적용으로 찌그러짐 방지) */}
             <div className="flex items-center space-x-1.5 sm:space-x-2 bg-[#F5F6F8] px-2 sm:px-3 py-1 rounded-lg border border-[#E2E5E9] max-w-[130px] sm:max-w-none shrink">
               <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#243B5A] shrink-0" />
               <span className="text-xs font-semibold text-[#1F2937] truncate">{currentUser.name}</span>
@@ -778,7 +568,6 @@ export default function MainPage() {
         </main>
       </div>
 
-      {/* 모바일 하단 네비게이션 */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E5E9] z-40 px-1 py-1.5 flex justify-between items-center shadow-lg">
         {menuItems.map((item) => {
           const Icon = item.icon;
