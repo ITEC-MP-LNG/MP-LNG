@@ -303,55 +303,82 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     invalidNames: []
   });
 
-  // 컴포넌트 마운트 시 Supabase에서 호선 데이터 불러오기
- // ✅ 1. 상단 useEffect 영역에 Debounce 처리용 타이머 추가
-useEffect(() => {
-  const timer = setTimeout(async () => {
-    if (formData.day_shift.trim()) {
-      setDayCheckStatus({ status: 'checking', invalidNames: [] });
-      const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(formData.day_shift);
-      if (invalidNames.length === 0) {
-        setDayCheckStatus({ status: 'valid', invalidNames: [] });
-        setFormData(prev => ({ ...prev, day_shift_user_ids: validUserIds }));
-      } else {
-        setDayCheckStatus({ status: 'invalid', invalidNames });
+// 1. 사용자 유효성 검증 함수 (useEffect보다 먼저 선언되어야 함)
+  const verifyMultipleUsersInSupabase = async (namesString: string): Promise<{ validUserIds: string[]; invalidNames: string[] }> => {
+    const nameArray = namesString.split(',').map(n => n.trim()).filter(Boolean);
+    if (nameArray.length === 0) return { validUserIds: [], invalidNames: [] };
+
+    try {
+      const { data, error } = await supabase
+        .from('app_users')
+        .select('id, name')
+        .in('name', nameArray);
+
+      if (error || !data) {
+        return { validUserIds: [], invalidNames: nameArray };
       }
-    } else {
-      setDayCheckStatus({ status: 'idle', invalidNames: [] });
+
+      const foundNames = data.map(u => u.name);
+      const validUserIds = data.map(u => u.id);
+      const invalidNames = nameArray.filter(n => !foundNames.includes(n));
+
+      return { validUserIds, invalidNames };
+    } catch (e) {
+      console.error('Supabase 연동 검증 실패:', e);
+      return { validUserIds: [], invalidNames: nameArray };
     }
-  }, 400); // 0.4초 동안 추가 입력이 없을 때만 DB 1회 조회
+  };
 
-  return () => clearTimeout(timer);
-}, [formData.day_shift]);
-
-useEffect(() => {
-  const timer = setTimeout(async () => {
-    if (formData.night_shift.trim()) {
-      setNightCheckStatus({ status: 'checking', invalidNames: [] });
-      const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(formData.night_shift);
-      if (invalidNames.length === 0) {
-        setNightCheckStatus({ status: 'valid', invalidNames: [] });
-        setFormData(prev => ({ ...prev, night_shift_user_ids: validUserIds }));
+  // 2. 주간 근무자 Debounce 검증 (타이핑 멈춘 후 0.4초 뒤 실행)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (formData.day_shift.trim()) {
+        setDayCheckStatus({ status: 'checking', invalidNames: [] });
+        const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(formData.day_shift);
+        if (invalidNames.length === 0) {
+          setDayCheckStatus({ status: 'valid', invalidNames: [] });
+          setFormData(prev => ({ ...prev, day_shift_user_ids: validUserIds }));
+        } else {
+          setDayCheckStatus({ status: 'invalid', invalidNames });
+        }
       } else {
-        setNightCheckStatus({ status: 'invalid', invalidNames });
+        setDayCheckStatus({ status: 'idle', invalidNames: [] });
       }
-    } else {
-      setNightCheckStatus({ status: 'idle', invalidNames: [] });
-    }
-  }, 400);
+    }, 400);
 
-  return () => clearTimeout(timer);
-}, [formData.night_shift]);
+    return () => clearTimeout(timer);
+  }, [formData.day_shift]);
 
-// ✅ 2. Change 핸들러는 단순 입력 처리만 담당 (DB 조회 즉시 제거)
-const handleDayShiftChange = (inputText: string) => {
-  setFormData(prev => ({ ...prev, day_shift: inputText, day_shift_user_ids: [] }));
-};
+  // 3. 야간 근무자 Debounce 검증 (타이핑 멈춘 후 0.4초 뒤 실행)
+  useEffect(() => {
+    const timer = setTimeout(async () => {
+      if (formData.night_shift.trim()) {
+        setNightCheckStatus({ status: 'checking', invalidNames: [] });
+        const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(formData.night_shift);
+        if (invalidNames.length === 0) {
+          setNightCheckStatus({ status: 'valid', invalidNames: [] });
+          setFormData(prev => ({ ...prev, night_shift_user_ids: validUserIds }));
+        } else {
+          setNightCheckStatus({ status: 'invalid', invalidNames });
+        }
+      } else {
+        setNightCheckStatus({ status: 'idle', invalidNames: [] });
+      }
+    }, 400);
 
-const handleNightShiftChange = (inputText: string) => {
-  setFormData(prev => ({ ...prev, night_shift: inputText, night_shift_user_ids: [] }));
-};
+    return () => clearTimeout(timer);
+  }, [formData.night_shift]);
 
+  // 4. 단순 입력 핸들러 (입력 렉 및 무한 DB 쿼리 연사 방지)
+  const handleDayShiftChange = (inputText: string) => {
+    setFormData(prev => ({ ...prev, day_shift: inputText, day_shift_user_ids: [] }));
+  };
+
+  const handleNightShiftChange = (inputText: string) => {
+    setFormData(prev => ({ ...prev, night_shift: inputText, night_shift_user_ids: [] }));
+  };
+
+  // 5. 탱크 상태 정규화 함수
   const normalizeTankStatus = (raw: any): ShipTankStatus => {
     const defaultStatus = getDefaultTankStatus();
     if (!raw || typeof raw !== 'object') return defaultStatus;
@@ -379,6 +406,7 @@ const handleNightShiftChange = (inputText: string) => {
     return result;
   };
 
+  // 6. 호선 데이터 로딩 함수
   const fetchShips = async () => {
     try {
       const { data, error } = await supabase
@@ -407,41 +435,6 @@ const handleNightShiftChange = (inputText: string) => {
     }
   };
 
-  // 사용자 유효성 검증
-  const verifyMultipleUsersInSupabase = async (namesString: string): Promise<{ validUserIds: string[]; invalidNames: string[] }> => {
-    const nameArray = namesString.split(',').map(n => n.trim()).filter(Boolean);
-    if (nameArray.length === 0) return { validUserIds: [], invalidNames: [] };
-
-    try {
-      const { data, error } = await supabase
-        .from('app_users')
-        .select('id, name')
-        .in('name', nameArray);
-
-      if (error || !data) {
-        return { validUserIds: [], invalidNames: nameArray };
-      }
-
-      const foundNames = data.map(u => u.name);
-      const validUserIds = data.map(u => u.id);
-      const invalidNames = nameArray.filter(n => !foundNames.includes(n));
-
-      return { validUserIds, invalidNames };
-    } catch (e) {
-      console.error('Supabase 연동 검증 실패:', e);
-      return { validUserIds: [], invalidNames: nameArray };
-    }
-  };
-
-// ✅ 주간 근무자 (아래 로직 완전 삭제 후 세 줄로 단순화)
-const handleDayShiftChange = (inputText: string) => {
-  setFormData(prev => ({ ...prev, day_shift: inputText, day_shift_user_ids: [] }));
-};
-
-// ✅ 야간 근무자 (아래 로직 완전 삭제 후 세 줄로 단순화)
-const handleNightShiftChange = (inputText: string) => {
-  setFormData(prev => ({ ...prev, night_shift: inputText, night_shift_user_ids: [] }));
-};
   const handleStatusChange = (newStatus: ShipStatus) => {
     const calculatedProgress = STATUS_PROGRESS_MAP[newStatus];
     setFormData(prev => ({
@@ -472,7 +465,6 @@ const handleNightShiftChange = (inputText: string) => {
       selectedShip.commissioning_status,
       selectedShip.status
     );
-
     try {
       const { error } = await supabase
         .from(TABLE_NAME)
