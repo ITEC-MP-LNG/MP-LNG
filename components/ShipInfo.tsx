@@ -433,38 +433,15 @@ const handleNightShiftChange = (inputText: string) => {
     }
   };
 
-// ✅ 주간 근무자 (기존 async 코드 완전 대체)
+// ✅ 주간 근무자 (아래 로직 완전 삭제 후 세 줄로 단순화)
 const handleDayShiftChange = (inputText: string) => {
   setFormData(prev => ({ ...prev, day_shift: inputText, day_shift_user_ids: [] }));
 };
 
-    setDayCheckStatus({ status: 'checking', invalidNames: [] });
-    const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(inputText);
-
-    if (invalidNames.length === 0) {
-      setDayCheckStatus({ status: 'valid', invalidNames: [] });
-      setFormData(prev => ({ ...prev, day_shift_user_ids: validUserIds }));
-    } else {
-      setDayCheckStatus({ status: 'invalid', invalidNames });
-    }
-  };
-
- // ✅ 야간 근무자 (기존 async 코드 완전 대체)
+// ✅ 야간 근무자 (아래 로직 완전 삭제 후 세 줄로 단순화)
 const handleNightShiftChange = (inputText: string) => {
   setFormData(prev => ({ ...prev, night_shift: inputText, night_shift_user_ids: [] }));
 };
-
-    setNightCheckStatus({ status: 'checking', invalidNames: [] });
-    const { validUserIds, invalidNames } = await verifyMultipleUsersInSupabase(inputText);
-
-    if (invalidNames.length === 0) {
-      setNightCheckStatus({ status: 'valid', invalidNames: [] });
-      setFormData(prev => ({ ...prev, night_shift_user_ids: validUserIds }));
-    } else {
-      setNightCheckStatus({ status: 'invalid', invalidNames });
-    }
-  };
-
   const handleStatusChange = (newStatus: ShipStatus) => {
     const calculatedProgress = STATUS_PROGRESS_MAP[newStatus];
     setFormData(prev => ({
