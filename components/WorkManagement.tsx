@@ -883,7 +883,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 transition ${dailySubTab === 'HISTORY' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}
               >
                 <History className="h-3.5 w-3.5" />
-                <span>완료 이력 보기 (매주 일요일 23시 초기화)</span>
+                <span>완료 이력 보기</span>
               </button>
             </div>
           </div>
@@ -1025,7 +1025,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
                 >
                   <FileSpreadsheet className="h-3.5 w-3.5" />
-                  <span>달력 엑셀 저장</span>
+                  <span> 저장(수정중) </span>
                 </button>
 
                 <div className="bg-[#F5F6F8] p-1 rounded-lg border flex space-x-1">
