@@ -1,4 +1,4 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import pptxgen from 'pptxgenjs';
 
 export interface HRExportUser {
@@ -21,82 +21,148 @@ export interface HRExportUser {
   photo_url?: string | null;
   parent_id?: string | null;
   display_order?: number;
+  is_retired?: boolean;
+  resignation_date?: string | null;
 }
 
-const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
+const COLORS = {
+  pageBg: 'F5F6F8',
+  white: 'FFFFFF',
+  primary: '243B5A',
+  primaryHover: '1D3049',
+  text: '1F2937',
+  muted: '64748B',
+  border: 'E2E5E9',
+  leaderBorder: '243B5A',
+  leaderRing: 'DCE5F0',
+  memberAvatar: 'E2E8F0',
+  memberAvatarText: '243B5A',
+  sectionBg: 'F5F6F8',
+  line: 'AAB7C6',
+  blueLight: 'EFF6FF',
+  blueBorder: 'BFDBFE',
+};
 
-function orderedUsers(users: HRExportUser[]) {
+const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
+const TEAM_NAMES = ['1팀', '2팀', '3팀', '4팀'];
+const LEADER_TITLES = ['본부장', '소장', '팀장'];
+
+function isActiveUser(user: HRExportUser) {
+  return !user.is_retired && user.department !== '퇴사자';
+}
+
+function clean(value?: string | null) {
+  return String(value || '').trim();
+}
+
+function isLeader(user: HRExportUser) {
+  return LEADER_TITLES.includes(clean(user.job_title));
+}
+
+function sortUsers(users: HRExportUser[]) {
   return [...users].sort((a, b) => {
-    const da = DEPT_ORDER.indexOf(a.department || '');
-    const db = DEPT_ORDER.indexOf(b.department || '');
-    const deptA = da === -1 ? 99 : da;
-    const deptB = db === -1 ? 99 : db;
+    const da = DEPT_ORDER.indexOf(clean(a.department));
+    const db = DEPT_ORDER.indexOf(clean(b.department));
+    const deptA = da < 0 ? 99 : da;
+    const deptB = db < 0 ? 99 : db;
     if (deptA !== deptB) return deptA - deptB;
-    return (a.display_order ?? 9999) - (b.display_order ?? 9999) || a.name.localeCompare(b.name, 'ko');
+
+    const leaderA = isLeader(a) ? 0 : 1;
+    const leaderB = isLeader(b) ? 0 : 1;
+    if (leaderA !== leaderB) return leaderA - leaderB;
+
+    const orderA = a.display_order ?? 9999;
+    const orderB = b.display_order ?? 9999;
+    if (orderA !== orderB) return orderA - orderB;
+    return clean(a.name).localeCompare(clean(b.name), 'ko');
   });
+}
+
+function activeUsers(users: HRExportUser[]) {
+  return sortUsers(users.filter(isActiveUser));
 }
 
 function fileDate() {
   const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}${m}${day}`;
+  return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`;
 }
 
-export function exportHRToExcel(users: HRExportUser[]) {
-  const rows = orderedUsers(users).map((u, index) => ({
-    'No.': index + 1,
-    '이름': u.name || '',
-    '로그인 ID': u.id || '',
-    '부서/팀': u.department || '',
-    '직급': u.position || '',
-    '직책': u.job_title || '',
-    '담당분야': u.field || '',
-    '전화번호': u.phone || '',
-    '이메일': u.email || '',
-    '주소': u.address || '',
-    '입사일': u.join_date || '',
-    '경력 시작일': u.career_start_date || '',
-    '경력': u.experience || '',
-    '사내자격': u.internal_certificates || '',
-    '국가자격': u.national_certificates || u.certificates || '',
-    '권한': u.role || '',
-  }));
-
-  const workbook = XLSX.utils.book_new();
-  const sheet = XLSX.utils.json_to_sheet(rows);
-  sheet['!cols'] = [
-    { wch: 7 }, { wch: 12 }, { wch: 18 }, { wch: 12 }, { wch: 10 }, { wch: 10 },
-    { wch: 14 }, { wch: 17 }, { wch: 28 }, { wch: 30 }, { wch: 13 }, { wch: 15 },
-    { wch: 24 }, { wch: 28 }, { wch: 28 }, { wch: 14 },
-  ];
-  XLSX.utils.book_append_sheet(workbook, sheet, '구성원정보');
-
-  const orgRows = orderedUsers(users).map((u, index) => ({
-    '순서': index + 1,
-    '부서/팀': u.department || '',
-    '이름': u.name || '',
-    '직책': u.job_title || '',
-    '직급': u.position || '',
-    '담당분야': u.field || '',
-    '상위 구성원 ID': u.parent_id || '',
-    '표시순서': u.display_order ?? '',
-  }));
-  const orgSheet = XLSX.utils.json_to_sheet(orgRows);
-  orgSheet['!cols'] = [
-    { wch: 8 }, { wch: 14 }, { wch: 14 }, { wch: 12 }, { wch: 10 }, { wch: 16 }, { wch: 22 }, { wch: 12 },
-  ];
-  XLSX.utils.book_append_sheet(workbook, orgSheet, '조직구조');
-
-  XLSX.writeFile(workbook, `인사관리_${fileDate()}.xlsx`);
+function formatPhone(phone?: string) {
+  return clean(phone) || '-';
 }
 
-async function imageUrlToData(url: string): Promise<string | null> {
+function formatCareer(user: HRExportUser) {
+  return clean(user.experience) || '-';
+}
+
+/**
+ * 출력 규칙
+ * - 운영/관리: 담당분야(field) 표시
+ * - 운영의 본부장/소장: field가 '사무'인 경우 표시하지 않음
+ * - 1~4팀: field는 표시하지 않음
+ * - 1~4팀 팀장: 직급 + '팀장'
+ * - 1~4팀 팀원: 직급만
+ */
+function getDisplayLines(user: HRExportUser) {
+  const department = clean(user.department);
+  const position = clean(user.position) || '사원';
+  const title = clean(user.job_title);
+  const field = clean(user.field);
+
+  const lines: string[] = [];
+
+  if (department === '1팀' || department === '2팀' || department === '3팀' || department === '4팀') {
+    if (title === '팀장') lines.push(`${position} · 팀장`);
+    else lines.push(position);
+    return lines;
+  }
+
+  if (position && title && title !== '없음') lines.push(`${position} · ${title}`);
+  else lines.push(position);
+
+  if (field && !(department === '운영' && ['본부장', '소장'].includes(title) && field === '사무')) {
+    lines.push(field);
+  }
+
+  return lines;
+}
+
+async function imageUrlToData(url?: string | null): Promise<string | null> {
+  if (!url) return null;
   try {
     const response = await fetch(url, { mode: 'cors' });
     if (!response.ok) return null;
     const blob = await response.blob();
+
+    // ExcelJS는 브라우저에서 WebP를 그대로 이미지 객체로 넣는 경우 호환성이 떨어질 수 있으므로
+    // WebP는 PNG data URL로 변환합니다. JPG/PNG는 원본을 그대로 사용합니다.
+    if (blob.type === 'image/webp') {
+      const objectUrl = URL.createObjectURL(blob);
+      try {
+        const pngData = await new Promise<string | null>((resolve) => {
+          const image = new Image();
+          image.onload = () => {
+            try {
+              const canvas = document.createElement('canvas');
+              canvas.width = image.naturalWidth || image.width;
+              canvas.height = image.naturalHeight || image.height;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) { resolve(null); return; }
+              ctx.drawImage(image, 0, 0);
+              resolve(canvas.toDataURL('image/png'));
+            } catch {
+              resolve(null);
+            }
+          };
+          image.onerror = () => resolve(null);
+          image.src = objectUrl;
+        });
+        if (pngData) return pngData;
+      } finally {
+        URL.revokeObjectURL(objectUrl);
+      }
+    }
+
     return await new Promise((resolve) => {
       const reader = new FileReader();
       reader.onloadend = () => resolve(typeof reader.result === 'string' ? reader.result : null);
@@ -108,65 +174,283 @@ async function imageUrlToData(url: string): Promise<string | null> {
   }
 }
 
-function addText(slide: pptxgen.Slide, text: string, x: number, y: number, w: number, h: number, options: any = {}) {
-  slide.addText(text || '', {
-    x, y, w, h,
-    margin: 0,
-    fontFace: 'Malgun Gothic',
-    color: '1F2937',
-    breakLine: false,
-    fit: 'shrink',
-    ...options,
-  });
+function photoExtension(data: string) {
+  return data.startsWith('data:image/png') ? 'png' : 'jpeg';
 }
 
+/* =========================================================
+ * Excel
+ * ========================================================= */
+export async function exportHRToExcel(users: HRExportUser[]) {
+  const usersActive = activeUsers(users);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = '인사 관리';
+  workbook.company = 'MP-LNG';
+  workbook.subject = '인사 관리 조직도';
+  workbook.title = '인사 관리 조직도';
+
+  const sheet = workbook.addWorksheet('조직도');
+  sheet.sheetView.showGridLines = false;
+  sheet.pageSetup = {
+    orientation: 'landscape',
+    paperSize: 9,
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 1,
+    horizontalDpi: 300,
+    verticalDpi: 300,
+  };
+  sheet.pageMargins = { left: 0.15, right: 0.15, top: 0.25, bottom: 0.25, header: 0.1, footer: 0.1 };
+
+  // 29 columns. Four teams occupy the lower section in a tree-like layout.
+  for (let c = 1; c <= 29; c += 1) sheet.getColumn(c).width = 4.1;
+  sheet.getColumn(1).width = 1.8;
+  sheet.getColumn(2).width = 5.0;
+  sheet.getColumn(29).width = 2.0;
+
+  const merge = (range: string, value: string, style: Partial<ExcelJS.Style> = {}) => {
+    sheet.mergeCells(range);
+    const cell = sheet.getCell(range.split(':')[0]);
+    cell.value = value;
+    Object.assign(cell, style);
+    cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true, ...(style.alignment || {}) };
+    return cell;
+  };
+
+  const applyBox = (range: string, fill = COLORS.white, line = COLORS.border, width: 'thin' | 'medium' = 'thin') => {
+    const [start, end] = range.split(':');
+    const s = sheet.getCell(start);
+    const e = sheet.getCell(end);
+    const minRow = Math.min(s.row, e.row);
+    const maxRow = Math.max(s.row, e.row);
+    const minCol = Math.min(s.col, e.col);
+    const maxCol = Math.max(s.col, e.col);
+    for (let r = minRow; r <= maxRow; r += 1) {
+      for (let c = minCol; c <= maxCol; c += 1) {
+        const cell = sheet.getCell(r, c);
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${fill}` } };
+        cell.border = {
+          top: { style: r === minRow ? width : 'hair', color: { argb: `FF${line}` } },
+          bottom: { style: r === maxRow ? width : 'hair', color: { argb: `FF${line}` } },
+          left: { style: c === minCol ? width : 'hair', color: { argb: `FF${line}` } },
+          right: { style: c === maxCol ? width : 'hair', color: { argb: `FF${line}` } },
+        };
+      }
+    }
+  };
+
+  const setRow = (row: number, height: number) => { sheet.getRow(row).height = height; };
+  for (let r = 1; r <= 43; r += 1) setRow(r, 16);
+
+  // Title / date / rank summary.
+  merge('B2:Q3', '인사 관리 조직도', {
+    font: { name: '맑은 고딕', size: 20, bold: true, color: { argb: `FF${COLORS.primary}` } },
+    alignment: { horizontal: 'left', vertical: 'middle' },
+  });
+  merge('S2:AB2', '직급별 인원현황', {
+    font: { name: '맑은 고딕', size: 11, bold: true, color: { argb: `FFFFFFFF` } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${COLORS.primary}` } },
+  });
+
+  const positionCounts = new Map<string, number>();
+  usersActive.forEach((u) => {
+    const p = clean(u.position) || '미지정';
+    positionCounts.set(p, (positionCounts.get(p) || 0) + 1);
+  });
+  const positionOrder = ['본부장', '소장', '책임', '프로', '매니저', '사원'];
+  const positions = [...positionCounts.keys()].sort((a, b) => {
+    const ia = positionOrder.indexOf(a); const ib = positionOrder.indexOf(b);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib);
+  });
+  positions.slice(0, 6).forEach((p, i) => {
+    const r = 3 + i;
+    merge(`S${r}:V${r}`, p, { font: { name: '맑은 고딕', size: 9, bold: true, color: { argb: `FF${COLORS.text}` } } });
+    merge(`W${r}:X${r}`, String(positionCounts.get(p) || 0), { font: { name: '맑은 고딕', size: 9, bold: true, color: { argb: `FF${COLORS.primary}` } } });
+    merge(`Y${r}:AB${r}`, '명', { font: { name: '맑은 고딕', size: 9, color: { argb: `FF${COLORS.muted}` } } });
+    applyBox(`S${r}:AB${r}`);
+  });
+  const totalRow = 3 + Math.min(positions.length, 6) + 1;
+  merge(`S${totalRow}:V${totalRow}`, '총 인원', { font: { name: '맑은 고딕', size: 10, bold: true, color: { argb: `FF${COLORS.primary}` } } });
+  merge(`W${totalRow}:X${totalRow}`, String(usersActive.length), { font: { name: '맑은 고딕', size: 11, bold: true, color: { argb: `FF${COLORS.primary}` } } });
+  merge(`Y${totalRow}:AB${totalRow}`, '명', { font: { name: '맑은 고딕', size: 9, color: { argb: `FF${COLORS.muted}` } } });
+  applyBox(`S${totalRow}:AB${totalRow}`, COLORS.sectionBg, COLORS.primary, 'medium');
+
+  const photoCache = new Map<string, string | null>();
+  const getPhoto = async (u: HRExportUser) => {
+    const key = clean(u.photo_url);
+    if (!key) return null;
+    if (!photoCache.has(key)) photoCache.set(key, await imageUrlToData(key));
+    return photoCache.get(key) || null;
+  };
+
+  const writePerson = async (
+    u: HRExportUser,
+    startCol: number,
+    row: number,
+    cardRows: number,
+    cardCols: number,
+    compact = false,
+  ) => {
+    const endCol = startCol + cardCols - 1;
+    const endRow = row + cardRows - 1;
+    const range = `${sheet.getCell(row, startCol).address}:${sheet.getCell(endRow, endCol).address}`;
+    applyBox(range, COLORS.white, isLeader(u) ? COLORS.primary : COLORS.border, isLeader(u) ? 'medium' : 'thin');
+
+    // Photo occupies the left part of the card.
+    const photoEndCol = startCol + 1;
+    const photo = await getPhoto(u);
+    const photoCell = sheet.getCell(row, startCol);
+    photoCell.value = '';
+    if (photo) {
+      const imageId = workbook.addImage({ base64: photo, extension: photoExtension(photo) });
+      sheet.addImage(imageId, {
+        tl: { col: startCol - 1 + 0.16, row: row - 1 + 0.10 },
+        ext: { width: compact ? 42 : 52, height: compact ? 42 : 52 },
+      });
+    } else {
+      merge(`${sheet.getCell(row, startCol).address}:${sheet.getCell(endRow, photoEndCol).address}`, clean(u.name).charAt(0) || '유', {
+        font: { name: '맑은 고딕', size: compact ? 13 : 16, bold: true, color: { argb: `FF${COLORS.memberAvatarText}` } },
+        fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${COLORS.memberAvatar}` } },
+      });
+    }
+
+    const textStart = startCol + 2;
+    const textEnd = endCol;
+    merge(`${sheet.getCell(row, textStart).address}:${sheet.getCell(row, textEnd).address}`, clean(u.name), {
+      font: { name: '맑은 고딕', size: compact ? 9 : 10, bold: true, color: { argb: `FF${COLORS.text}` } },
+      alignment: { horizontal: 'left', vertical: 'middle' },
+    });
+    const lines = getDisplayLines(u);
+    merge(`${sheet.getCell(row + 1, textStart).address}:${sheet.getCell(row + 1, textEnd).address}`, lines[0] || '', {
+      font: { name: '맑은 고딕', size: compact ? 7.5 : 8.5, bold: true, color: { argb: `FF${COLORS.primary}` } },
+      alignment: { horizontal: 'left', vertical: 'middle' },
+    });
+    if (lines[1]) {
+      merge(`${sheet.getCell(row + 2, textStart).address}:${sheet.getCell(row + 2, textEnd).address}`, lines[1], {
+        font: { name: '맑은 고딕', size: compact ? 7 : 8, color: { argb: `FF${COLORS.muted}` } },
+        alignment: { horizontal: 'left', vertical: 'middle' },
+      });
+    }
+    merge(`${sheet.getCell(endRow - 1, textStart).address}:${sheet.getCell(endRow - 1, textEnd).address}`, formatPhone(u.phone), {
+      font: { name: '맑은 고딕', size: compact ? 6.5 : 7.5, color: { argb: `FF${COLORS.primary}` } },
+      alignment: { horizontal: 'left', vertical: 'middle' },
+    });
+    merge(`${sheet.getCell(endRow, textStart).address}:${sheet.getCell(endRow, textEnd).address}`, `경력 ${formatCareer(u)}`, {
+      font: { name: '맑은 고딕', size: compact ? 6.5 : 7.5, color: { argb: `FF${COLORS.muted}` } },
+      alignment: { horizontal: 'left', vertical: 'middle' },
+    });
+  };
+
+  // 운영
+  merge('B9:Q10', '운영', {
+    font: { name: '맑은 고딕', size: 12, bold: true, color: { argb: `FFFFFFFF` } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${COLORS.primary}` } },
+  });
+  const operation = usersActive.filter(u => clean(u.department) === '운영');
+  const opPositions = operation.slice(0, 5);
+  const opCols = [2, 5, 8, 11, 14];
+  for (let i = 0; i < opPositions.length; i += 1) await writePerson(opPositions[i], opCols[i], 11, 5, 3, true);
+
+  // Tree connector between operation and management.
+  merge('H16:K16', '│', { font: { name: '맑은 고딕', size: 12, bold: true, color: { argb: `FF${COLORS.line}` } } });
+  merge('H17:K17', '▼', { font: { name: '맑은 고딕', size: 10, bold: true, color: { argb: `FF${COLORS.line}` } } });
+
+  // 관리
+  merge('B18:Q19', '관리', {
+    font: { name: '맑은 고딕', size: 12, bold: true, color: { argb: `FF${COLORS.primary}` } },
+    fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${COLORS.sectionBg}` } },
+  });
+  const management = usersActive.filter(u => clean(u.department) === '관리');
+  const mgCols = [2, 5, 8, 11, 14];
+  for (let i = 0; i < Math.min(management.length, 5); i += 1) await writePerson(management[i], mgCols[i], 20, 5, 3, true);
+
+  // Management to team trunk.
+  merge('H25:K25', '│', { font: { name: '맑은 고딕', size: 12, bold: true, color: { argb: `FF${COLORS.line}` } } });
+  merge('D26:O26', '──────────────┬──────────────┬──────────────┬──────────────', {
+    font: { name: '맑은 고딕', size: 7, color: { argb: `FF${COLORS.line}` } },
+  });
+
+  // Four team columns.
+  const teamStartCols = [2, 9, 16, 23];
+  const teamMembers = TEAM_NAMES.map((team) => usersActive.filter(u => clean(u.department) === team));
+  for (let i = 0; i < TEAM_NAMES.length; i += 1) {
+    const startCol = teamStartCols[i];
+    const endCol = startCol + 5;
+    const team = TEAM_NAMES[i];
+    merge(`${sheet.getCell(27, startCol).address}:${sheet.getCell(28, endCol).address}`, `${team}  ·  ${teamMembers[i].length}명`, {
+      font: { name: '맑은 고딕', size: 11, bold: true, color: { argb: `FF${COLORS.primary}` } },
+      fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${COLORS.sectionBg}` } },
+    });
+
+    const members = [...teamMembers[i]].sort((a, b) => {
+      const la = clean(a.job_title) === '팀장' ? 0 : 1;
+      const lb = clean(b.job_title) === '팀장' ? 0 : 1;
+      return la - lb || (a.display_order ?? 9999) - (b.display_order ?? 9999) || clean(a.name).localeCompare(clean(b.name), 'ko');
+    });
+
+    // Each team has 9 compact cards vertically. If there are more, continue inside the same page.
+    for (let j = 0; j < Math.min(members.length, 9); j += 1) {
+      await writePerson(members[j], startCol, 29 + j * 3, 3, 6, true);
+    }
+  }
+
+  merge('B42:AB42', `총 ${usersActive.length}명 · ${new Date().toLocaleDateString('ko-KR')}`, {
+    font: { name: '맑은 고딕', size: 8, color: { argb: `FF${COLORS.muted}` } },
+    alignment: { horizontal: 'right', vertical: 'middle' },
+  });
+
+  sheet.printArea = 'A1:AB42';
+  sheet.views = [{ state: 'frozen', ySplit: 0 }];
+
+  const buffer = await workbook.xlsx.writeBuffer();
+  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `인사관리_조직도_${fileDate()}.xlsx`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
+/* =========================================================
+ * PowerPoint
+ * ========================================================= */
 export async function exportHRToPptx(users: HRExportUser[]) {
+  const usersActive = activeUsers(users);
   const pptx = new pptxgen();
   pptx.layout = 'LAYOUT_WIDE';
   pptx.author = '인사 관리';
-  pptx.subject = '구성원 조직도';
-  pptx.title = '인사 관리 조직도';
   pptx.company = 'MP-LNG';
-  pptx.theme = {
-    headFontFace: 'Malgun Gothic',
-    bodyFontFace: 'Malgun Gothic',
-  };
+  pptx.subject = '인사 관리 조직도';
+  pptx.title = '인사 관리 조직도';
+  pptx.theme = { headFontFace: 'Malgun Gothic', bodyFontFace: 'Malgun Gothic' };
 
-  const ordered = orderedUsers(users);
-  const byDepartment = (department: string) =>
-    ordered.filter(u => (u.department || '미지정') === department);
+  const slide = pptx.addSlide();
+  slide.background = { color: COLORS.pageBg };
 
   const photoCache = new Map<string, string | null>();
-  const getPhoto = async (user: HRExportUser) => {
-    if (!user.photo_url) return null;
-    if (!photoCache.has(user.photo_url)) {
-      photoCache.set(user.photo_url, await imageUrlToData(user.photo_url));
-    }
-    return photoCache.get(user.photo_url) || null;
+  const getPhoto = async (u: HRExportUser) => {
+    const key = clean(u.photo_url);
+    if (!key) return null;
+    if (!photoCache.has(key)) photoCache.set(key, await imageUrlToData(key));
+    return photoCache.get(key) || null;
   };
 
-  const addText = (
-    slide: pptxgen.Slide,
-    text: string,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    options: any = {},
-  ) => {
+  const addText = (text: string, x: number, y: number, w: number, h: number, opts: any = {}) => {
     slide.addText(text || '', {
       x, y, w, h,
       margin: 0,
       fontFace: 'Malgun Gothic',
-      color: '1F2937',
+      color: COLORS.text,
       fit: 'shrink',
       valign: 'mid',
-      ...options,
+      ...opts,
     });
   };
 
-  const addPersonRow = async (
-    slide: pptxgen.Slide,
+  const addCard = async (
     user: HRExportUser,
     x: number,
     y: number,
@@ -174,215 +458,137 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     h: number,
     compact = false,
   ) => {
-    const leader = ['본부장', '소장', '팀장'].includes((user.job_title || '').trim());
-    const photo = await getPhoto(user);
-    const photoSize = Math.min(h - 0.08, compact ? 0.25 : 0.34);
-    const photoY = y + (h - photoSize) / 2;
-
+    const leader = isLeader(user);
     slide.addShape(pptx.ShapeType.roundRect, {
       x, y, w, h,
-      rectRadius: 0.04,
-      fill: { color: 'FFFFFF' },
-      line: { color: leader ? '9AAEC5' : 'DCE3EA', width: leader ? 1.1 : 0.7 },
+      rectRadius: 0.05,
+      fill: { color: COLORS.white },
+      line: { color: leader ? COLORS.primary : COLORS.border, width: leader ? 1.1 : 0.65 },
     });
 
+    const photo = await getPhoto(user);
+    const p = compact ? Math.min(0.32, h - 0.10) : Math.min(0.52, h - 0.12);
+    const px = x + 0.07;
+    const py = y + (h - p) / 2;
     if (photo) {
-      slide.addImage({ data: photo, x: x + 0.06, y: photoY, w: photoSize, h: photoSize });
+      slide.addImage({ data: photo, x: px, y: py, w: p, h: p });
     } else {
       slide.addShape(pptx.ShapeType.ellipse, {
-        x: x + 0.06, y: photoY, w: photoSize, h: photoSize,
-        fill: { color: leader ? '243B5A' : 'E8EDF3' },
-        line: { color: leader ? '243B5A' : 'D7DEE8', width: 0.6 },
+        x: px, y: py, w: p, h: p,
+        fill: { color: leader ? COLORS.primary : COLORS.memberAvatar },
+        line: { color: leader ? COLORS.primary : COLORS.border, width: 0.5 },
       });
-      addText(slide, user.name?.[0] || '유', x + 0.06, photoY + photoSize * 0.18, photoSize, photoSize * 0.62, {
-        fontSize: compact ? 5.5 : 7,
+      addText(clean(user.name).charAt(0) || '유', px, py + p * 0.18, p, p * 0.60, {
+        fontSize: compact ? 6.5 : 9,
         bold: true,
-        color: leader ? 'FFFFFF' : '243B5A',
         align: 'center',
+        color: leader ? COLORS.white : COLORS.memberAvatarText,
       });
     }
 
-    const textX = x + photoSize + 0.13;
-    const textW = w - photoSize - 0.18;
-    const title = [user.name, user.position, user.job_title].filter(Boolean).join(' · ');
-    const sub = user.field || '';
-
-    addText(slide, title, textX, y + 0.025, textW, h * 0.52, {
-      fontSize: compact ? 6.6 : 8,
+    const tx = px + p + 0.09;
+    const tw = w - p - 0.17;
+    const lines = getDisplayLines(user);
+    addText(clean(user.name), tx, y + 0.06, tw, compact ? 0.13 : 0.18, {
+      fontSize: compact ? 7.0 : 9.2,
       bold: true,
-      color: leader ? '243B5A' : '1F2937',
+      color: COLORS.text,
     });
-    if (sub) {
-      addText(slide, sub, textX, y + h * 0.53, textW, h * 0.36, {
-        fontSize: compact ? 5.2 : 6.3,
-        color: '64748B',
+    addText(lines[0] || '', tx, y + (compact ? 0.20 : 0.27), tw, compact ? 0.12 : 0.15, {
+      fontSize: compact ? 5.9 : 7.2,
+      bold: true,
+      color: COLORS.primary,
+    });
+    if (lines[1]) {
+      addText(lines[1], tx, y + (compact ? 0.32 : 0.43), tw, compact ? 0.11 : 0.13, {
+        fontSize: compact ? 5.4 : 6.4,
+        color: COLORS.muted,
       });
     }
-  };
-
-  const addSection = (
-    slide: pptxgen.Slide,
-    title: string,
-    subtitle: string,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    dark = false,
-  ) => {
-    slide.addShape(pptx.ShapeType.roundRect, {
-      x, y, w, h,
-      fill: { color: dark ? '243B5A' : 'FFFFFF' },
-      line: { color: dark ? '243B5A' : 'B8C4D2', width: dark ? 1.2 : 1 },
+    addText(formatPhone(user.phone), tx, y + h - (compact ? 0.22 : 0.29), tw, compact ? 0.10 : 0.13, {
+      fontSize: compact ? 5.0 : 6.2,
+      color: COLORS.primary,
     });
-    addText(slide, title, x + 0.12, y + 0.10, w - 0.24, 0.25, {
-      fontSize: 12,
-      bold: true,
-      color: dark ? 'FFFFFF' : '243B5A',
-      align: 'center',
-    });
-    addText(slide, subtitle, x + 0.12, y + 0.38, w - 0.24, 0.16, {
-      fontSize: 6.5,
-      color: dark ? 'D9E4F2' : '64748B',
-      align: 'center',
+    addText(`경력 ${formatCareer(user)}`, tx, y + h - (compact ? 0.11 : 0.15), tw, compact ? 0.09 : 0.10, {
+      fontSize: compact ? 4.8 : 5.8,
+      color: COLORS.muted,
     });
   };
 
-  const operation = byDepartment('운영');
-  const management = byDepartment('관리');
-  const teams = ['1팀', '2팀', '3팀', '4팀'].map(name => ({
-    name,
-    members: byDepartment(name),
-  }));
+  const operation = usersActive.filter(u => clean(u.department) === '운영');
+  const management = usersActive.filter(u => clean(u.department) === '관리');
+  const teams = TEAM_NAMES.map(name => usersActive.filter(u => clean(u.department) === name));
 
-  const hasOrgData = operation.length || management.length || teams.some(t => t.members.length);
+  // Title
+  addText('인사 관리 조직도', 0.35, 0.20, 5.2, 0.35, { fontSize: 19, bold: true, color: COLORS.primary });
+  addText(`총 ${usersActive.length}명 · ${new Date().toLocaleDateString('ko-KR')}`, 5.65, 0.25, 3.0, 0.20, { fontSize: 7.5, color: COLORS.muted });
 
-  if (hasOrgData) {
-    // =====================================================
-    // 1장짜리 실제 조직도
-    // 운영 → 관리 → 1~4팀을 한 슬라이드 안에 모두 배치합니다.
-    // 모든 박스/선/텍스트/사진은 개별 PPT 객체입니다.
-    // =====================================================
-    const slide = pptx.addSlide();
-    slide.background = { color: 'F5F6F8' };
+  // Rank summary: right top.
+  const rankX = 9.20;
+  const rankY = 0.18;
+  const rankW = 3.75;
+  const rankH = 1.16;
+  slide.addShape(pptx.ShapeType.roundRect, { x: rankX, y: rankY, w: rankW, h: rankH, rectRadius: 0.04, fill: { color: COLORS.white }, line: { color: COLORS.border, width: 0.7 } });
+  addText('직급별 인원현황', rankX + 0.12, rankY + 0.08, rankW - 0.24, 0.16, { fontSize: 7.5, bold: true, color: COLORS.primary });
+  const counts = new Map<string, number>();
+  usersActive.forEach(u => counts.set(clean(u.position) || '미지정', (counts.get(clean(u.position) || '미지정') || 0) + 1));
+  const rankOrder = ['본부장', '소장', '책임', '프로', '매니저', '사원'];
+  const ranks = [...counts.keys()].sort((a,b) => (rankOrder.indexOf(a) < 0 ? 99 : rankOrder.indexOf(a)) - (rankOrder.indexOf(b) < 0 ? 99 : rankOrder.indexOf(b))).slice(0, 6);
+  const cols = ranks.length > 3 ? 2 : 1;
+  const cellW = (rankW - 0.24) / cols;
+  ranks.forEach((r, i) => {
+    const c = i % cols; const rr = Math.floor(i / cols);
+    addText(`${r} ${counts.get(r)}명`, rankX + 0.12 + c * cellW, rankY + 0.30 + rr * 0.16, cellW - 0.05, 0.13, { fontSize: 5.7, color: COLORS.muted });
+  });
+  addText(`총 ${usersActive.length}명`, rankX + 0.12, rankY + rankH - 0.20, rankW - 0.24, 0.14, { fontSize: 6.8, bold: true, color: COLORS.primary, align: 'right' });
 
-    addText(slide, '인사 관리 조직도', 0.45, 0.20, 5.0, 0.42, {
-      fontSize: 20,
-      bold: true,
-      color: '243B5A',
-    });
-    addText(slide, `총 ${ordered.length}명 · ${new Date().toLocaleDateString('ko-KR')}`, 9.6, 0.25, 3.2, 0.25, {
-      fontSize: 8,
-      color: '64748B',
-      align: 'right',
-    });
+  // Operation: 3~5 cards centered.
+  const opY = 0.95;
+  addText('운영', 0.35, opY, 0.65, 0.24, { fontSize: 10.5, bold: true, color: COLORS.primary });
+  const opX = 1.05;
+  const opW = 2.25;
+  const opGap = 0.10;
+  const opVisible = operation.slice(0, 5);
+  for (let i = 0; i < opVisible.length; i += 1) await addCard(opVisible[i], opX + i * (opW + opGap), opY - 0.02, opW, 0.62, true);
 
-    // ---------- 운영 ----------
-    const opX = 3.85;
-    const opY = 0.78;
-    const opW = 5.65;
-    const opHeaderH = 0.64;
-    addSection(slide, '운영', '본부장 / 소장 / 사무', opX, opY, opW, opHeaderH, true);
+  // Operation -> management connector.
+  slide.addShape(pptx.ShapeType.line, { x: 6.55, y: 1.62, w: 0, h: 0.18, line: { color: COLORS.line, width: 1.1, endArrowType: 'triangle' } });
 
-    const opCount = Math.max(1, Math.min(operation.length, 4));
-    const opGap = 0.10;
-    const opCardW = (opW - 0.24 - opGap * (opCount - 1)) / opCount;
-    const opCardY = opY + 0.72;
-    for (let i = 0; i < Math.min(operation.length, 4); i++) {
-      await addPersonRow(slide, operation[i], opX + 0.12 + i * (opCardW + opGap), opCardY, opCardW, 0.72, true);
+  // Management.
+  const mgY = 1.87;
+  addText('관리', 0.35, mgY + 0.02, 0.65, 0.24, { fontSize: 10.5, bold: true, color: COLORS.primary });
+  const mgX = 1.05;
+  const mgW = 2.25;
+  for (let i = 0; i < Math.min(management.length, 5); i += 1) await addCard(management[i], mgX + i * (mgW + opGap), mgY, mgW, 0.62, true);
+
+  // Management -> teams connector.
+  slide.addShape(pptx.ShapeType.line, { x: 6.55, y: 2.58, w: 0, h: 0.22, line: { color: COLORS.line, width: 1.1 } });
+  slide.addShape(pptx.ShapeType.line, { x: 1.10, y: 2.80, w: 11.05, h: 0, line: { color: COLORS.line, width: 1.0 } });
+
+  // Team panels: all four on one page.
+  const teamY = 2.94;
+  const teamX0 = 0.28;
+  const teamGap = 0.12;
+  const teamW = (12.80 - teamGap * 3) / 4;
+  const teamH = 4.05;
+  for (let i = 0; i < 4; i += 1) {
+    const x = teamX0 + i * (teamW + teamGap);
+    const members = [...teams[i]].sort((a,b) => (clean(a.job_title) === '팀장' ? 0 : 1) - (clean(b.job_title) === '팀장' ? 0 : 1) || (a.display_order ?? 9999) - (b.display_order ?? 9999) || clean(a.name).localeCompare(clean(b.name), 'ko'));
+    slide.addShape(pptx.ShapeType.roundRect, { x, y: teamY, w: teamW, h: teamH, rectRadius: 0.05, fill: { color: COLORS.white }, line: { color: COLORS.border, width: 0.7 } });
+    addText(TEAM_NAMES[i], x + 0.10, teamY + 0.10, 0.55, 0.18, { fontSize: 9.0, bold: true, color: COLORS.primary });
+    addText(`${members.length}명`, x + teamW - 0.58, teamY + 0.11, 0.48, 0.16, { fontSize: 6.0, bold: true, color: COLORS.muted, align: 'right' });
+    slide.addShape(pptx.ShapeType.line, { x: x + teamW / 2, y: 2.80, w: 0, h: 0.14, line: { color: COLORS.line, width: 1.0, endArrowType: 'triangle' } });
+
+    const rowH = members.length > 9 ? 0.37 : 0.40;
+    const rowGap = 0.055;
+    const max = Math.min(members.length, 9);
+    for (let j = 0; j < max; j += 1) {
+      await addCard(members[j], x + 0.07, teamY + 0.37 + j * (rowH + rowGap), teamW - 0.14, rowH, true);
     }
-
-    // 운영 → 관리
-    const centerX = 6.6665;
-    slide.addShape(pptx.ShapeType.line, {
-      x: centerX, y: 2.23, w: 0, h: 0.34,
-      line: { color: '94A3B8', width: 1.4, beginArrowType: 'none', endArrowType: 'triangle' },
-    });
-
-    // ---------- 관리 ----------
-    const mgX = 2.85;
-    const mgY = 2.62;
-    const mgW = 7.65;
-    const mgHeaderH = 0.64;
-    addSection(slide, '관리', 'QA / 공정 / 스케줄 / 기타 관리 분야', mgX, mgY, mgW, mgHeaderH);
-
-    const mgCount = Math.min(Math.max(management.length, 1), 5);
-    const mgGap = 0.10;
-    const mgCardW = (mgW - 0.24 - mgGap * (mgCount - 1)) / mgCount;
-    for (let i = 0; i < Math.min(management.length, 5); i++) {
-      await addPersonRow(slide, management[i], mgX + 0.12 + i * (mgCardW + mgGap), mgY + 0.72, mgCardW, 0.70, true);
-    }
-
-    // 관리 → 4개 팀 공통 연결선
-    const teamTop = 5.02;
-    const teamXs = [0.38, 3.58, 6.78, 9.98];
-    const teamW = 2.60;
-    const teamCenters = teamXs.map(x => x + teamW / 2);
-    slide.addShape(pptx.ShapeType.line, {
-      x: centerX, y: 4.03, w: 0, h: 0.48,
-      line: { color: '94A3B8', width: 1.4 },
-    });
-    slide.addShape(pptx.ShapeType.line, {
-      x: teamCenters[0], y: 4.51, w: teamCenters[3] - teamCenters[0], h: 0,
-      line: { color: '94A3B8', width: 1.4 },
-    });
-
-    // ---------- 1~4팀 ----------
-    for (let i = 0; i < teams.length; i++) {
-      const team = teams[i];
-      const x = teamXs[i];
-      const members = [...team.members].sort((a, b) => {
-        const aLeader = (a.job_title || '').trim() === '팀장' ? 0 : 1;
-        const bLeader = (b.job_title || '').trim() === '팀장' ? 0 : 1;
-        if (aLeader !== bLeader) return aLeader - bLeader;
-        return (a.display_order ?? 9999) - (b.display_order ?? 9999) || a.name.localeCompare(b.name, 'ko');
-      });
-
-      slide.addShape(pptx.ShapeType.line, {
-        x: teamCenters[i], y: 4.51, w: 0, h: 0.40,
-        line: { color: '94A3B8', width: 1.4, endArrowType: 'triangle' },
-      });
-
-      const teamH = 2.05;
-      addSection(slide, team.name, `${members.length}명`, x, teamTop, teamW, 0.56, false);
-
-      // 한 장에 들어갈 수 있도록 팀 구성원은 compact row로 배치합니다.
-      const maxVisible = 7;
-      const visible = members.slice(0, maxVisible);
-      const rowH = 0.18;
-      const rowGap = 0.055;
-      for (let j = 0; j < visible.length; j++) {
-        await addPersonRow(
-          slide,
-          visible[j],
-          x + 0.08,
-          teamTop + 0.64 + j * (rowH + rowGap),
-          teamW - 0.16,
-          rowH,
-          true,
-        );
-      }
-      if (members.length > visible.length) {
-        addText(slide, `외 ${members.length - visible.length}명`, x + 0.08, teamTop + 1.88, teamW - 0.16, 0.14, {
-          fontSize: 5.5,
-          color: '64748B',
-          align: 'center',
-        });
-      }
-    }
-
-    addText(slide, '※ 조직 박스·연결선·텍스트·사진은 PowerPoint에서 개별 편집할 수 있습니다.', 0.45, 7.18, 7.5, 0.16, {
-      fontSize: 6.5,
-      color: '94A3B8',
-    });
-  } else {
-    const slide = pptx.addSlide();
-    slide.background = { color: 'F5F6F8' };
-    addText(slide, '표시할 조직원이 없습니다.', 4.2, 3.4, 5.0, 0.4, {
-      fontSize: 16, color: '64748B', align: 'center',
-    });
+    if (members.length > max) addText(`외 ${members.length - max}명`, x + 0.10, teamY + teamH - 0.20, teamW - 0.20, 0.12, { fontSize: 5.4, color: COLORS.muted, align: 'center' });
   }
 
-  // 조직도 목적의 출력이므로 표지/부서별 상세 슬라이드는 만들지 않습니다.
+  addText('※ 사진·텍스트·조직 박스·연결선은 PowerPoint에서 개별 편집할 수 있습니다.', 0.35, 7.18, 6.5, 0.12, { fontSize: 5.5, color: '94A3B8' });
+
   await pptx.writeFile({ fileName: `인사관리_조직도_${fileDate()}.pptx` });
 }
