@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import {
   Anchor,
@@ -33,10 +33,6 @@ import {
   ArrowRight,
 } from 'lucide-react';
 
-// Supabase 클라이언트 설정
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 // 테이블명: 기본적으로 'ships'를 사용하되 Supabase 환경에 맞춰 연동
 const TABLE_NAME = 'ships';
