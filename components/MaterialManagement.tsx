@@ -3292,7 +3292,7 @@ const handleOpenReturnModal = (log: InventoryLog) => {
               onClick={handleOpenReturnHistory}
               className="px-2 py-1 bg-white border border-[#E2E5E9] hover:bg-gray-50 text-[#243B5A] rounded text-[10px] font-semibold transition"
             >
-              반납 이력
+              반납 이력 보기
             </button>
           </div>
 
