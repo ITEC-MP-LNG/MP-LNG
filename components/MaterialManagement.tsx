@@ -3329,7 +3329,7 @@ const handleOpenReturnModal = (log: InventoryLog) => {
                   <span>전체 선택</span>
                 </div>
               )}
-              <span className="text-[10px]">※ 반납 이력을 확인하세.</span>
+              <span className="text-[10px]">※ 반납 이력을 확인하세요.  </span>
             </div>
 
             <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
