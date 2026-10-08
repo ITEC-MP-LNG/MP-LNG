@@ -177,8 +177,8 @@ export async function exportHRToExcel(users: HRExportUser[]) {
       const imageId = workbook.addImage({ base64: photo, extension: 'png' as any });
       // 사진을 카드의 사진 영역(병합 셀) 안쪽 경계에 맞춰 배치합니다.
       orgChart.addImage(imageId, {
-        tl: { col: startCol - 1 + 0.08, row: rowStart - 1 + 0.08 },
-        br: { col: startCol + 1 - 0.08, row: rowEnd - 0.08 },
+        tl: { col: startCol - 1 + 0.08, row: rowStart - 1 + 0.08 } as any,
+        br: { col: startCol + 1 - 0.08, row: rowEnd - 0.08 } as any,
         editAs: 'oneCell',
       });
     }
@@ -333,8 +333,8 @@ export async function exportHRToExcel(users: HRExportUser[]) {
       const imageId = workbook.addImage({ base64: photo, extension });
       sheet.addImage(imageId, {
         // A열 사진 셀의 안쪽 여백을 두고 해당 행 안에 고정합니다.
-        tl: { col: 0.08, row: row.number - 1 + 0.04 },
-        br: { col: 0.92, row: row.number - 0.04 },
+        tl: { col: 0.08, row: row.number - 1 + 0.04 } as any,
+        br: { col: 0.92, row: row.number - 0.04 } as any,
         editAs: 'oneCell',
       });
     } else {
