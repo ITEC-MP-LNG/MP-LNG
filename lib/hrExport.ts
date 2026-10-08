@@ -95,6 +95,28 @@ function formatCareer(user: HRExportUser) {
   return clean(user.experience) || '-';
 }
 
+function careerScore(user: HRExportUser) {
+  const value = clean(user.experience);
+  if (!value) return 0;
+  const year = value.match(/(\d+(?:\.\d+)?)\s*년/);
+  const month = value.match(/(\d+(?:\.\d+)?)\s*개월/);
+  return (year ? Number(year[1]) : 0) + (month ? Number(month[1]) / 12 : 0);
+}
+
+function teamSort(a: HRExportUser, b: HRExportUser) {
+  const leaderA = clean(a.job_title) === '팀장' ? 0 : 1;
+  const leaderB = clean(b.job_title) === '팀장' ? 0 : 1;
+  if (leaderA !== leaderB) return leaderA - leaderB;
+  const positionOrder: Record<string, number> = { 책임: 0, 프로: 1, 매니저: 2 };
+  const rankA = positionOrder[clean(a.position)] ?? 99;
+  const rankB = positionOrder[clean(b.position)] ?? 99;
+  if (rankA !== rankB) return rankA - rankB;
+  const careerA = careerScore(a);
+  const careerB = careerScore(b);
+  if (careerA !== careerB) return careerB - careerA;
+  return clean(a.name).localeCompare(clean(b.name), 'ko');
+}
+
 /**
  * 출력 규칙
  * - 운영/관리: 담당분야(field) 표시
@@ -176,6 +198,34 @@ async function imageUrlToData(url?: string | null): Promise<string | null> {
 
 function photoExtension(data: string) {
   return data.startsWith('data:image/png') ? 'png' : 'jpeg';
+}
+
+async function imageUrlToExcelData(url?: string | null): Promise<string | null> {
+  if (!url) return null;
+  try {
+    const response = await fetch(url, { mode: 'cors' });
+    if (!response.ok) return null;
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    try {
+      return await new Promise<string | null>((resolve) => {
+        const image = new Image();
+        image.onload = () => {
+          try {
+            const size = 180;
+            const canvas = document.createElement('canvas');
+            canvas.width = size; canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { resolve(null); return; }
+            ctx.drawImage(image, 0, 0, size, size);
+            resolve(canvas.toDataURL('image/jpeg', 0.72));
+          } catch { resolve(null); }
+        };
+        image.onerror = () => resolve(null);
+        image.src = objectUrl;
+      });
+    } finally { URL.revokeObjectURL(objectUrl); }
+  } catch { return null; }
 }
 
 /* =========================================================
@@ -286,9 +336,13 @@ export async function exportHRToExcel(users: HRExportUser[]) {
   const getPhoto = async (u: HRExportUser) => {
     const key = clean(u.photo_url);
     if (!key) return null;
-    if (!photoCache.has(key)) photoCache.set(key, await imageUrlToData(key));
+    if (!photoCache.has(key)) photoCache.set(key, await imageUrlToExcelData(key));
     return photoCache.get(key) || null;
   };
+
+  // 사진을 먼저 병렬로 준비해 두어 1명씩 순차적으로 다운로드하면서
+  // Excel 파일 생성이 지나치게 오래 걸리는 것을 방지합니다.
+  await Promise.all(usersActive.map((u) => getPhoto(u)));
 
   const writePerson = async (
     u: HRExportUser,
@@ -353,6 +407,32 @@ export async function exportHRToExcel(users: HRExportUser[]) {
     font: { name: '맑은 고딕', size: 12, bold: true, color: { argb: `FFFFFFFF` } },
     fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${COLORS.primary}` } },
   });
+  const addTeamCard = async (
+    user: HRExportUser, x: number, y: number, w: number, h: number,
+  ) => {
+    const leader = clean(user.job_title) === '팀장';
+    const photo = await getPhoto(user);
+    const p = Math.min(0.29, h - 0.10);
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x, y, w, h, rectRadius: 0.035,
+      fill: { color: COLORS.white },
+      line: { color: leader ? COLORS.primary : COLORS.border, width: leader ? 0.9 : 0.55 },
+    });
+    const px = x + 0.055;
+    const py = y + (h - p) / 2;
+    if (photo) {
+      slide.addImage({ data: photo, x: px, y: py, w: p, h: p });
+    } else {
+      slide.addShape(pptx.ShapeType.ellipse, { x: px, y: py, w: p, h: p, fill: { color: leader ? COLORS.primary : COLORS.memberAvatar }, line: { color: leader ? COLORS.primary : COLORS.border, width: 0.4 } });
+      addText(clean(user.name).charAt(0) || '유', px, py + p * 0.17, p, p * 0.60, { fontSize: 5.8, bold: true, align: 'center', color: leader ? COLORS.white : COLORS.memberAvatarText });
+    }
+    const tx = px + p + 0.075;
+    const tw = w - p - 0.13;
+    const title = [clean(user.name), clean(user.position), leader ? '팀장' : ''].filter(Boolean).join(' · ');
+    addText(title, tx, y + 0.035, tw, 0.095, { fontSize: 5.8, bold: true, color: COLORS.text });
+    addText(`${formatPhone(user.phone)} · 경력 ${formatCareer(user)}`, tx, y + 0.155, tw, 0.095, { fontSize: 4.55, color: COLORS.muted });
+  };
+
   const operation = usersActive.filter(u => clean(u.department) === '운영');
   const opPositions = operation.slice(0, 5);
   const opCols = [2, 5, 8, 11, 14];
@@ -415,9 +495,12 @@ export async function exportHRToExcel(users: HRExportUser[]) {
   anchor.href = url;
   anchor.download = `인사관리_조직도_${fileDate()}.xlsx`;
   document.body.appendChild(anchor);
+  anchor.style.display = 'none';
   anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }, 1500);
 }
 
 /* =========================================================
@@ -579,17 +662,17 @@ export async function exportHRToPptx(users: HRExportUser[]) {
   const teamH = 4.05;
   for (let i = 0; i < 4; i += 1) {
     const x = teamX0 + i * (teamW + teamGap);
-    const members = [...teams[i]].sort((a,b) => (clean(a.job_title) === '팀장' ? 0 : 1) - (clean(b.job_title) === '팀장' ? 0 : 1) || (a.display_order ?? 9999) - (b.display_order ?? 9999) || clean(a.name).localeCompare(clean(b.name), 'ko'));
+    const members = [...teams[i]].sort(teamSort);
     slide.addShape(pptx.ShapeType.roundRect, { x, y: teamY, w: teamW, h: teamH, rectRadius: 0.05, fill: { color: COLORS.white }, line: { color: COLORS.border, width: 0.7 } });
     addText(TEAM_NAMES[i], x + 0.10, teamY + 0.10, 0.55, 0.18, { fontSize: 9.0, bold: true, color: COLORS.primary });
     addText(`${members.length}명`, x + teamW - 0.58, teamY + 0.11, 0.48, 0.16, { fontSize: 6.0, bold: true, color: COLORS.muted, align: 'right' });
     slide.addShape(pptx.ShapeType.line, { x: x + teamW / 2, y: 2.80, w: 0, h: 0.14, line: { color: COLORS.line, width: 1.0, endArrowType: 'triangle' } });
 
-    const rowH = members.length > 9 ? 0.37 : 0.40;
-    const rowGap = 0.055;
+    const rowH = 0.37;
+    const rowGap = 0.035;
     const max = Math.min(members.length, 9);
     for (let j = 0; j < max; j += 1) {
-      await addCard(members[j], x + 0.07, teamY + 0.37 + j * (rowH + rowGap), teamW - 0.14, rowH, true);
+      await addTeamCard(members[j], x + 0.07, teamY + 0.37 + j * (rowH + rowGap), teamW - 0.14, rowH);
     }
     if (members.length > max) addText(`외 ${members.length - max}명`, x + 0.10, teamY + teamH - 0.20, teamW - 0.20, 0.12, { fontSize: 5.4, color: COLORS.muted, align: 'center' });
   }
