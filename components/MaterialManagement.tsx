@@ -3076,7 +3076,7 @@ const handleOpenReturnModal = (log: InventoryLog) => {
           <span className="truncate">
             {inventoryTab === 'CABIN'
               ? `종류 [${selectedCabinSheet || '전체'}]${selectedItemSubCategory !== '전체 보기' ? ` > ${selectedItemSubCategory}` : ''} 목록`
-              : `서브탭 [${currentActiveSubCatName}]${selectedItemSubCategory ? ` > ${selectedItemSubCategory}` : ''} 목록`}
+              : `[${currentActiveSubCatName}]${selectedItemSubCategory ? ` > ${selectedItemSubCategory}` : ''} 목록`}
           </span>
           <span className="text-[10px] bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-0.5 rounded-full text-[#64748B] shrink-0 font-normal">
             총 {filteredInventory.length}건
@@ -3283,7 +3283,7 @@ const handleOpenReturnModal = (log: InventoryLog) => {
         <div className="px-3.5 py-2.5 bg-[#F5F6F8] border-b border-[#E2E5E9] flex justify-between items-center">
           <div className="flex items-center space-x-2">
             <History className="h-4 w-4 text-[#243B5A]" />
-            <h2 className="text-xs font-bold text-[#1F2937]">최근 불출 / 반납 이력 (23시 자동 초기화)</h2>
+            <h2 className="text-xs font-bold text-[#1F2937]">최근 불출 / 반납 이력 </h2>
             <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-semibold">
               {inventoryLogs.length}건
             </span>
@@ -3329,7 +3329,7 @@ const handleOpenReturnModal = (log: InventoryLog) => {
                   <span>전체 선택</span>
                 </div>
               )}
-              <span className="text-[10px]">※ 매일 23시: 반납완료 및 소모성 자재 불출이 자동 초기화됩니다.</span>
+              <span className="text-[10px]">※ 반납 이력을 확인하세.</span>
             </div>
 
             <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
