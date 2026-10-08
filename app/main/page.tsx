@@ -349,7 +349,7 @@ export default function MainPage() {
     }
   }, [mainTab, currentUser, inventoryList.length, educations.length, fetchInventory, fetchInventoryLogs, fetchEducations, fetchEducationRecords]);
 
-  // ✅ 실시간 이벤트 수신 (로그인 상태 및 탭 포커스 가드 적용으로 무한 호출 방지)
+  // ✅ 실시간 이벤트 수신 (네비게이션 'N' 표기 복원)
   useEffect(() => {
     if (!currentUser) return;
 
