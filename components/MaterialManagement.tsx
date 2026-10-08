@@ -133,8 +133,6 @@ export default function MaterialManagement({
       setToastMessage(null);
     }, 2500);
   };
-
-  // --- 매일 23시 이력 자동 정리/삭제 스케줄러 삭제---
  
   const findInventoryItemForLog = useCallback((log: InventoryLog) => {
     if (log.inventory_id !== undefined && log.inventory_id !== null && log.inventory_id !== '') {
@@ -317,6 +315,11 @@ export default function MaterialManagement({
   const [returnHistories, setReturnHistories] = useState<InventoryReturnHistory[]>([]);
   const [loadingReturnHistories, setLoadingReturnHistories] = useState(false);
   const [pendingDeleteReturnHistoryId, setPendingDeleteReturnHistoryId] = useState<string | number | null>(null);
+  
+  // 반납 이력 다중 선택 및 일괄 삭제 상태 추가
+  const [selectedReturnHistoryIds, setSelectedReturnHistoryIds] = useState<string[]>([]);
+  const [showBatchDeleteReturnHistoryConfirm, setShowBatchDeleteReturnHistoryConfirm] = useState<boolean>(false);
+
   const [calibrationAlertItems, setCalibrationAlertItems] = useState<{ item: any; daysLeft: number; calDate: string; nextCalDate: string }[]>([]);
 
   const cleanSheetName = (rawName: string) => {
@@ -1639,6 +1642,7 @@ export default function MaterialManagement({
   };
 
   const handleOpenReturnHistory = async () => {
+    setSelectedReturnHistoryIds([]);
     setIsReturnHistoryOpen(true);
     await fetchReturnHistories();
   };
@@ -1662,9 +1666,48 @@ export default function MaterialManagement({
         .eq('id', id);
       if (error) throw error;
       setReturnHistories(prev => prev.filter(history => String(history.id) !== String(id)));
+      setSelectedReturnHistoryIds(prev => prev.filter(item => String(item) !== String(id)));
       showCenterToast('반납 이력이 삭제되었습니다.');
     } catch (err: any) {
       showCenterToast('반납 이력 삭제 실패: ' + (err?.message || '알 수 없는 오류'));
+    }
+  };
+
+  const toggleSelectAllReturnHistories = () => {
+    if (selectedReturnHistoryIds.length === returnHistories.length) {
+      setSelectedReturnHistoryIds([]);
+    } else {
+      setSelectedReturnHistoryIds(returnHistories.map(h => String(h.id)));
+    }
+  };
+
+  const toggleSelectReturnHistory = (id: string | number) => {
+    const strId = String(id);
+    setSelectedReturnHistoryIds(prev =>
+      prev.includes(strId) ? prev.filter(item => item !== strId) : [...prev, strId]
+    );
+  };
+
+  const handleOpenBatchDeleteReturnHistories = () => {
+    if (!isAdmin) return showCenterToast('관리자만 삭제할 수 있습니다.');
+    if (selectedReturnHistoryIds.length === 0) return showCenterToast('삭제할 반납 이력을 선택해주세요.');
+    setShowBatchDeleteReturnHistoryConfirm(true);
+  };
+
+  const executeBatchDeleteReturnHistories = async () => {
+    setShowBatchDeleteReturnHistoryConfirm(false);
+    try {
+      const { error } = await supabase
+        .from('inventory_return_history')
+        .delete()
+        .in('id', selectedReturnHistoryIds);
+      if (error) throw error;
+
+      showCenterToast('선택된 반납 이력이 삭제되었습니다.');
+      setReturnHistories(prev => prev.filter(h => !selectedReturnHistoryIds.includes(String(h.id))));
+      setSelectedReturnHistoryIds([]);
+    } catch (err: any) {
+      showCenterToast('반납 이력 일괄 삭제 실패: ' + err.message);
     }
   };
 
@@ -1800,13 +1843,15 @@ export default function MaterialManagement({
       returnSubmittingRef.current = false;
     }
   };
-const handleOpenReturnModal = (log: InventoryLog) => {
+
+  const handleOpenReturnModal = (log: InventoryLog) => {
     setTargetReturnLog(log);
     setReturnQty(log.quantity || 1);
     setReturnHasIssue(false);
     setReturnMemo('');
     setShowReturnModal(true);
   };
+
   const handleOpenEditLog = (log: InventoryLog) => {
     if (!isAdmin) {
       showCenterToast('관리자 권한이 있는 인원만 수정할 수 있습니다.');
@@ -3292,7 +3337,7 @@ const handleOpenReturnModal = (log: InventoryLog) => {
               onClick={handleOpenReturnHistory}
               className="px-2 py-1 bg-white border border-[#E2E5E9] hover:bg-gray-50 text-[#243B5A] rounded text-[10px] font-semibold transition"
             >
-              반납 이력 보기
+              반납 이력
             </button>
           </div>
 
@@ -3481,47 +3526,111 @@ const handleOpenReturnModal = (log: InventoryLog) => {
         </div>
       )}
 
+      {showBatchDeleteReturnHistoryConfirm && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
+            <div className="mx-auto w-10 h-10 rounded-full bg-red-50 flex items-center justify-center text-red-600">
+              <Trash2 className="h-5 w-5" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-[#1F2937] mb-1">반납 이력 일괄 삭제 확인</h3>
+              <p className="text-xs text-[#64748B] break-keep">선택한 <strong className="text-[#1F2937]">{selectedReturnHistoryIds.length}개</strong>의 반납 이력을 정말 삭제하시겠습니까?</p>
+            </div>
+            <div className="flex space-x-2 pt-2">
+              <button onClick={() => setShowBatchDeleteReturnHistoryConfirm(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
+              <button onClick={executeBatchDeleteReturnHistories} className="flex-1 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold text-xs rounded-lg transition">일괄 삭제</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {isReturnHistoryOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-5xl w-full p-5 shadow-2xl space-y-4 text-[#1F2937] max-h-[90vh] overflow-hidden">
-            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-5xl w-full p-5 shadow-2xl space-y-4 text-[#1F2937] max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9] shrink-0">
               <div className="flex items-center space-x-2">
                 <History className="h-4 w-4 text-[#243B5A]" />
                 <h3 className="text-sm font-bold">반납 이력</h3>
                 <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold">{returnHistories.length}건</span>
               </div>
-              <button type="button" onClick={() => setIsReturnHistoryOpen(false)} className="text-[#64748B] hover:text-[#1F2937] p-1"><X className="h-4 w-4" /></button>
+              <div className="flex items-center space-x-2">
+                {isAdmin && selectedReturnHistoryIds.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleOpenBatchDeleteReturnHistories}
+                    className="px-2.5 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-xs font-semibold transition flex items-center space-x-1 shadow-2xs"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    <span>선택 삭제 ({selectedReturnHistoryIds.length})</span>
+                  </button>
+                )}
+                <button type="button" onClick={() => setIsReturnHistoryOpen(false)} className="text-[#64748B] hover:text-[#1F2937] p-1"><X className="h-4 w-4" /></button>
+              </div>
             </div>
-            <div className="overflow-y-auto max-h-[70vh] space-y-1.5">
+
+            {isAdmin && returnHistories.length > 0 && (
+              <div className="flex items-center justify-between bg-[#F5F6F8] px-3 py-1.5 rounded-md border border-[#E2E5E9] text-xs shrink-0">
+                <label className="flex items-center space-x-2 font-semibold text-[#64748B] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={returnHistories.length > 0 && selectedReturnHistoryIds.length === returnHistories.length}
+                    onChange={toggleSelectAllReturnHistories}
+                    className="h-3.5 w-3.5 rounded accent-[#243B5A] cursor-pointer"
+                  />
+                  <span>전체 선택 ({selectedReturnHistoryIds.length}/{returnHistories.length})</span>
+                </label>
+              </div>
+            )}
+
+            <div className="overflow-y-auto max-h-[65vh] space-y-1.5 flex-1 pr-1">
               {loadingReturnHistories ? (
                 <div className="text-center py-8 text-[#64748B] text-xs">반납 이력을 불러오는 중입니다.</div>
               ) : returnHistories.length === 0 ? (
                 <div className="text-center py-8 text-[#64748B] text-xs">등록된 반납 이력이 없습니다.</div>
               ) : (
-                returnHistories.map((history) => (
-                  <div key={history.id} className="p-2.5 rounded-lg border bg-[#F5F6F8]/50 border-[#E2E5E9] text-xs flex flex-col lg:flex-row justify-between gap-2">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex items-center flex-wrap gap-1.5">
-                        <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">반납완료</span>
-                        <span className="font-bold text-[#1F2937] truncate">{history.item_name || '-'}</span>
-                        <span className="text-[10px] font-mono bg-white border border-[#E2E5E9] text-[#475569] px-1.5 py-0.2 rounded">자재코드: {history.item_code || '-'}</span>
-                        <span className="text-[10px] text-[#64748B]">({history.quantity} EA)</span>
+                returnHistories.map((history) => {
+                  const isSelected = selectedReturnHistoryIds.includes(String(history.id));
+                  return (
+                    <div 
+                      key={history.id} 
+                      className={`p-2.5 rounded-lg border text-xs flex flex-col lg:flex-row justify-between gap-2 transition ${
+                        isSelected ? 'bg-blue-50/40 border-blue-300' : 'bg-[#F5F6F8]/50 border-[#E2E5E9]'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-2 min-w-0 flex-1">
+                        {isAdmin && (
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleSelectReturnHistory(history.id)}
+                            className="mt-0.5 h-3.5 w-3.5 rounded accent-[#243B5A] cursor-pointer shrink-0"
+                          />
+                        )}
+                        <div className="min-w-0 space-y-1 flex-1">
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">반납완료</span>
+                            <span className="font-bold text-[#1F2937] truncate">{history.item_name || '-'}</span>
+                            <span className="text-[10px] font-mono bg-white border border-[#E2E5E9] text-[#475569] px-1.5 py-0.2 rounded">자재코드: {history.item_code || '-'}</span>
+                            <span className="text-[10px] text-[#64748B]">({history.quantity} EA)</span>
+                          </div>
+                          <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <span>불출자: <strong className="text-[#1F2937]">{history.issued_by || '-'}</strong></span><span>|</span>
+                            <span>반납자: <strong className="text-[#1F2937]">{history.returned_by || '-'}</strong></span><span>|</span>
+                            <span>불출일시: {history.issued_at ? new Date(history.issued_at).toLocaleString('ko-KR') : '-'}</span><span>|</span>
+                            <span>반납일시: {history.returned_at ? new Date(history.returned_at).toLocaleString('ko-KR') : '-'}</span>
+                            {history.memo && <><span>|</span><span className="text-slate-600 truncate max-w-xs">메모: {history.memo}</span></>}
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-x-2 gap-y-1">
-                        <span>불출자: <strong className="text-[#1F2937]">{history.issued_by || '-'}</strong></span><span>|</span>
-                        <span>반납자: <strong className="text-[#1F2937]">{history.returned_by || '-'}</strong></span><span>|</span>
-                        <span>불출일시: {history.issued_at ? new Date(history.issued_at).toLocaleString('ko-KR') : '-'}</span><span>|</span>
-                        <span>반납일시: {history.returned_at ? new Date(history.returned_at).toLocaleString('ko-KR') : '-'}</span>
-                        {history.memo && <><span>|</span><span className="text-slate-600 truncate max-w-xs">메모: {history.memo}</span></>}
-                      </div>
+
+                      {isAdmin && (
+                        <button type="button" onClick={() => handleDeleteReturnHistory(history.id)} className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition self-end lg:self-center shrink-0" title="반납 이력 삭제">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
                     </div>
-                    {isAdmin && (
-                      <button type="button" onClick={() => handleDeleteReturnHistory(history.id)} className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition self-end lg:self-center" title="반납 이력 삭제">
-                        <Trash2 className="h-3 w-3" />
-                      </button>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </div>
