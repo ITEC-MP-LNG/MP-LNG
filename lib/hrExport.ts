@@ -418,7 +418,7 @@ export async function exportHRToPptx(users: HRExportUser[]) {
         color: leader ? '243B5A' : 'D7DEE8',
         width: leader ? 1.5 : 1,
       },
-      shadow: { type: 'outer', color: 'B8C2D1', blur: 1, angle: 45, distance: 1, opacity: 0.15 },
+      shadow: { type: 'outer', color: 'B8C2D1', blur: 1, angle: 45, opacity: 0.15 },
     });
 
     const photo = await getPhoto(user);
