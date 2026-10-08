@@ -443,11 +443,7 @@ export async function exportHRToExcel(users: HRExportUser[]) {
       fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${COLORS.sectionBg}` } },
     });
 
-    const members = [...teamMembers[i]].sort((a, b) => {
-      const la = clean(a.job_title) === '팀장' ? 0 : 1;
-      const lb = clean(b.job_title) === '팀장' ? 0 : 1;
-      return la - lb || (a.display_order ?? 9999) - (b.display_order ?? 9999) || clean(a.name).localeCompare(clean(b.name), 'ko');
-    });
+    const members = [...teamMembers[i]].sort(teamSort);
 
     // Each team has 9 compact cards vertically. If there are more, continue inside the same page.
     for (let j = 0; j < Math.min(members.length, 9); j += 1) {
@@ -463,18 +459,25 @@ export async function exportHRToExcel(users: HRExportUser[]) {
   sheet.views = [{ state: 'frozen', ySplit: 0 }];
 
   const buffer = await workbook.xlsx.writeBuffer();
-  const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
+
+  // 브라우저에서 XLSX.writeFile 대신 Blob 다운로드를 사용합니다.
+  // Edge/Chrome에서 생성 완료 후 파일 저장이 누락되는 문제를 피하기 위한 방식입니다.
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
-  anchor.href = url;
-  anchor.download = `인사관리_조직도_${fileDate()}.xlsx`;
+  anchor.setAttribute('href', url);
+  anchor.setAttribute('download', `인사관리_조직도_${fileDate()}.xlsx`);
+  anchor.style.position = 'fixed';
+  anchor.style.left = '-9999px';
   document.body.appendChild(anchor);
-  anchor.style.display = 'none';
   anchor.click();
+
   window.setTimeout(() => {
     anchor.remove();
     URL.revokeObjectURL(url);
-  }, 1500);
+  }, 10000);
 }
 
 /* =========================================================
