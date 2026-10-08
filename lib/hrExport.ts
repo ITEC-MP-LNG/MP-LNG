@@ -190,7 +190,6 @@ export async function exportHRToExcel(users: HRExportUser[]) {
   workbook.title = '인사 관리 조직도';
 
   const sheet = workbook.addWorksheet('조직도');
-  sheet.sheetView.showGridLines = false;
   sheet.pageSetup = {
     orientation: 'landscape',
     paperSize: 9,
@@ -200,7 +199,6 @@ export async function exportHRToExcel(users: HRExportUser[]) {
     horizontalDpi: 300,
     verticalDpi: 300,
   };
-  sheet.pageMargins = { left: 0.15, right: 0.15, top: 0.25, bottom: 0.25, header: 0.1, footer: 0.1 };
 
   // 29 columns. Four teams occupy the lower section in a tree-like layout.
   for (let c = 1; c <= 29; c += 1) sheet.getColumn(c).width = 4.1;
@@ -219,8 +217,17 @@ export async function exportHRToExcel(users: HRExportUser[]) {
 
   const applyBox = (range: string, fill = COLORS.white, line = COLORS.border, width: 'thin' | 'medium' = 'thin') => {
     const [start, end] = range.split(':');
-    const s = sheet.getCell(start);
-    const e = sheet.getCell(end);
+    const parseAddress = (address: string) => {
+      const match = address.match(/^([A-Z]+)(\d+)$/i);
+      if (!match) throw new Error(`잘못된 셀 주소: ${address}`);
+      let col = 0;
+      for (const ch of match[1].toUpperCase()) {
+        col = col * 26 + ch.charCodeAt(0) - 64;
+      }
+      return { row: Number(match[2]), col };
+    };
+    const s = parseAddress(start);
+    const e = parseAddress(end);
     const minRow = Math.min(s.row, e.row);
     const maxRow = Math.max(s.row, e.row);
     const minCol = Math.min(s.col, e.col);
@@ -399,7 +406,6 @@ export async function exportHRToExcel(users: HRExportUser[]) {
     alignment: { horizontal: 'right', vertical: 'middle' },
   });
 
-  sheet.printArea = 'A1:AB42';
   sheet.views = [{ state: 'frozen', ySplit: 0 }];
 
   const buffer = await workbook.xlsx.writeBuffer();
