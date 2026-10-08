@@ -407,32 +407,6 @@ export async function exportHRToExcel(users: HRExportUser[]) {
     font: { name: '맑은 고딕', size: 12, bold: true, color: { argb: `FFFFFFFF` } },
     fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: `FF${COLORS.primary}` } },
   });
-  const addTeamCard = async (
-    user: HRExportUser, x: number, y: number, w: number, h: number,
-  ) => {
-    const leader = clean(user.job_title) === '팀장';
-    const photo = await getPhoto(user);
-    const p = Math.min(0.29, h - 0.10);
-    slide.addShape(pptx.ShapeType.roundRect, {
-      x, y, w, h, rectRadius: 0.035,
-      fill: { color: COLORS.white },
-      line: { color: leader ? COLORS.primary : COLORS.border, width: leader ? 0.9 : 0.55 },
-    });
-    const px = x + 0.055;
-    const py = y + (h - p) / 2;
-    if (photo) {
-      slide.addImage({ data: photo, x: px, y: py, w: p, h: p });
-    } else {
-      slide.addShape(pptx.ShapeType.ellipse, { x: px, y: py, w: p, h: p, fill: { color: leader ? COLORS.primary : COLORS.memberAvatar }, line: { color: leader ? COLORS.primary : COLORS.border, width: 0.4 } });
-      addText(clean(user.name).charAt(0) || '유', px, py + p * 0.17, p, p * 0.60, { fontSize: 5.8, bold: true, align: 'center', color: leader ? COLORS.white : COLORS.memberAvatarText });
-    }
-    const tx = px + p + 0.075;
-    const tw = w - p - 0.13;
-    const title = [clean(user.name), clean(user.position), leader ? '팀장' : ''].filter(Boolean).join(' · ');
-    addText(title, tx, y + 0.035, tw, 0.095, { fontSize: 5.8, bold: true, color: COLORS.text });
-    addText(`${formatPhone(user.phone)} · 경력 ${formatCareer(user)}`, tx, y + 0.155, tw, 0.095, { fontSize: 4.55, color: COLORS.muted });
-  };
-
   const operation = usersActive.filter(u => clean(u.department) === '운영');
   const opPositions = operation.slice(0, 5);
   const opCols = [2, 5, 8, 11, 14];
@@ -600,6 +574,81 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     });
     addText(`경력 ${formatCareer(user)}`, tx, y + h - (compact ? 0.11 : 0.15), tw, compact ? 0.09 : 0.10, {
       fontSize: compact ? 4.8 : 5.8,
+      color: COLORS.muted,
+    });
+  };
+
+  const addTeamCard = async (
+    user: HRExportUser,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) => {
+    const leader = isLeader(user);
+    const photo = await getPhoto(user);
+
+    slide.addShape(pptx.ShapeType.roundRect, {
+      x,
+      y,
+      w,
+      h,
+      rectRadius: 0.035,
+      fill: { color: COLORS.white },
+      line: { color: leader ? COLORS.primary : COLORS.border, width: leader ? 0.9 : 0.55 },
+    });
+
+    const p = Math.min(0.24, h - 0.08);
+    const px = x + 0.055;
+    const py = y + (h - p) / 2;
+
+    if (photo) {
+      slide.addImage({ data: photo, x: px, y: py, w: p, h: p });
+    } else {
+      slide.addShape(pptx.ShapeType.ellipse, {
+        x: px,
+        y: py,
+        w: p,
+        h: p,
+        fill: { color: leader ? COLORS.primary : COLORS.memberAvatar },
+        line: { color: leader ? COLORS.primary : COLORS.border, width: 0.4 },
+      });
+      addText(
+        clean(user.name).charAt(0) || '유',
+        px,
+        py + p * 0.16,
+        p,
+        p * 0.62,
+        {
+          fontSize: 5.2,
+          bold: true,
+          align: 'center',
+          color: leader ? COLORS.white : COLORS.memberAvatarText,
+        },
+      );
+    }
+
+    const tx = px + p + 0.07;
+    const tw = w - p - 0.13;
+
+    // Team: 담당분야는 출력하지 않고, 팀장만 '팀장'을 표시.
+    const title = [clean(user.name), clean(user.position), leader ? '팀장' : '']
+      .filter(Boolean)
+      .join(' · ');
+
+    addText(title, tx, y + 0.035, tw, 0.095, {
+      fontSize: 5.5,
+      bold: true,
+      color: COLORS.text,
+    });
+
+    addText(formatPhone(user.phone), tx, y + 0.145, tw, 0.075, {
+      fontSize: 4.4,
+      color: COLORS.primary,
+    });
+
+    addText(`경력 ${formatCareer(user)}`, tx, y + 0.235, tw, 0.075, {
+      fontSize: 4.2,
       color: COLORS.muted,
     });
   };
