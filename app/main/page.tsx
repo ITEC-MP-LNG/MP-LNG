@@ -70,6 +70,9 @@ export default function MainPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<ExtendedAppUser | null>(null);
   const [mainTab, setMainTab] = useState<'NOTICE' | 'TASKS' | 'INVENTORY' | 'SHIP' | 'EDUCATION' | 'HR'>('NOTICE');
+  // Realtime 구독을 메뉴 이동 때마다 다시 만들지 않고 최신 메뉴 상태를 참조합니다.
+  const mainTabRef = useRef(mainTab);
+  mainTabRef.current = mainTab;
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
@@ -86,6 +89,10 @@ export default function MainPage() {
   const [eduRecords, setEduRecords] = useState<EducationRecord[]>([]);
   const [loadingEdu, setLoadingEdu] = useState(false);
   const [educationRefreshVersion, setEducationRefreshVersion] = useState(0);
+
+  // 목록이 비어 있어도 최초 조회를 마쳤는지 구분해 불필요한 재조회를 방지합니다.
+  const hasLoadedInventoryRef = useRef(false);
+  const hasLoadedEducationRef = useRef(false);
 
   const [showExitModal, setShowExitModal] = useState(false);
 
@@ -129,7 +136,7 @@ export default function MainPage() {
     try {
       const { data, error } = await supabase
         .from('tasks')
-        .select('*')
+        .select('id, title, description, task_type, status, assigned_names, assigned_name, time_slot, start_date, created_at')
         .order('created_at', { ascending: false });
       if (error) throw error;
       
@@ -166,6 +173,7 @@ export default function MainPage() {
       const { data, error } = await supabase.from('inventory').select('*').order('code', { ascending: true });
       if (error) throw error;
       const list: InventoryItem[] = data || [];
+      hasLoadedInventoryRef.current = true;
       setInventoryList(list);
 
       const lows = list.filter(i => i.type === '소모성' && i.quantity <= i.min_quantity);
@@ -200,6 +208,7 @@ export default function MainPage() {
 
       if (error) throw error;
       
+      hasLoadedEducationRef.current = true;
       const list = (data || []).map((e: any) => ({
         ...e,
         edu_date: e.edu_date || e.created_at?.split('T')[0] || new Date().toISOString().split('T')[0]
@@ -340,25 +349,41 @@ export default function MainPage() {
   useEffect(() => {
     if (!currentUser) return;
 
-    if (mainTab === 'INVENTORY' && inventoryList.length === 0) {
+    if (mainTab === 'INVENTORY' && !hasLoadedInventoryRef.current) {
       fetchInventory();
       fetchInventoryLogs();
-    } else if (mainTab === 'EDUCATION' && educations.length === 0) {
+    } else if (mainTab === 'EDUCATION' && !hasLoadedEducationRef.current) {
       fetchEducations();
       fetchEducationRecords();
     }
-  }, [mainTab, currentUser, inventoryList.length, educations.length, fetchInventory, fetchInventoryLogs, fetchEducations, fetchEducationRecords]);
+  }, [mainTab, currentUser, fetchInventory, fetchInventoryLogs, fetchEducations, fetchEducationRecords]);
 
-  // ✅ 실시간 이벤트 수신 (네비게이션 'N' 표기 복원)
+  // 실시간 이벤트 수신: 메뉴 이동 때 구독을 재생성하지 않고, 연속 이벤트는 묶어서 조회합니다.
   useEffect(() => {
     if (!currentUser) return;
 
     const userKey = currentUser.id || currentUser.email || currentUser.name || 'guest';
+    let noticeCheckTimer: ReturnType<typeof setTimeout> | null = null;
+    let tasksRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let inventoryRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+    let educationRefreshTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const schedule = (
+      timer: ReturnType<typeof setTimeout> | null,
+      callback: () => void
+    ) => {
+      if (timer) clearTimeout(timer);
+      return setTimeout(callback, 300);
+    };
+
+    const scheduleUnreadCheck = () => {
+      noticeCheckTimer = schedule(noticeCheckTimer, () => {
+        if (!document.hidden) checkUnreadNotices(String(userKey));
+      });
+    };
 
     const handleVisibilityChange = () => {
-      if (!document.hidden && currentUser) {
-        checkUnreadNotices(String(userKey));
-      }
+      if (!document.hidden) scheduleUnreadCheck();
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -368,30 +393,40 @@ export default function MainPage() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, () => {
         if (document.hidden) return;
         setNavNewFlags(prev => ({ ...prev, NOTICE: true }));
-        checkUnreadNotices(String(userKey));
+        scheduleUnreadCheck();
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
         if (document.hidden) return;
         setNavNewFlags(prev => ({ ...prev, TASKS: true }));
-        if (mainTab === 'TASKS' && currentUser) fetchTasks(currentUser);
+        if (mainTabRef.current === 'TASKS') {
+          tasksRefreshTimer = schedule(tasksRefreshTimer, () => fetchTasks(currentUser));
+        }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, () => {
         if (document.hidden) return;
         setNavNewFlags(prev => ({ ...prev, INVENTORY: true }));
-        if (mainTab === 'INVENTORY') fetchInventory();
+        if (mainTabRef.current === 'INVENTORY') {
+          inventoryRefreshTimer = schedule(inventoryRefreshTimer, () => fetchInventory());
+        }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'educations' }, () => {
         if (document.hidden) return;
         setNavNewFlags(prev => ({ ...prev, EDUCATION: true }));
-        if (mainTab === 'EDUCATION') fetchEducations();
+        if (mainTabRef.current === 'EDUCATION') {
+          educationRefreshTimer = schedule(educationRefreshTimer, () => fetchEducations());
+        }
       })
       .subscribe();
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (noticeCheckTimer) clearTimeout(noticeCheckTimer);
+      if (tasksRefreshTimer) clearTimeout(tasksRefreshTimer);
+      if (inventoryRefreshTimer) clearTimeout(inventoryRefreshTimer);
+      if (educationRefreshTimer) clearTimeout(educationRefreshTimer);
       supabase.removeChannel(globalChannel);
     };
-  }, [currentUser, mainTab, checkUnreadNotices, fetchTasks, fetchInventory, fetchEducations]);
+  }, [currentUser, checkUnreadNotices, fetchTasks, fetchInventory, fetchEducations]);
 
   const markNavigationAsRead = (tabId: string) => {
     setNavNewFlags((prev) => ({ ...prev, [tabId]: false }));
