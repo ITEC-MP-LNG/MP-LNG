@@ -688,6 +688,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   // 일일업무 완료 이력 엑셀 내보내기: 선택 항목이 있으면 선택 항목만, 없으면 전체 완료 이력
   const handleExportDailyHistoryExcel = useCallback(async () => {
+    if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 엑셀 다운로드를 할 수 있습니다.'); return; }
     const historyTasks = tasks.filter((task) => task.task_type === 'DAILY' && task.status === 'COMPLETED');
     const selectedHistory = historyTasks.filter((task) => selectedTaskIds.includes(task.id));
     const exportTasks = selectedHistory.length > 0 ? selectedHistory : historyTasks;
@@ -736,10 +737,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     anchor.click();
     URL.revokeObjectURL(url);
     showCustomAlert('엑셀 다운로드', `${selectedHistory.length > 0 ? `선택한 ${selectedHistory.length}개` : `전체 ${exportTasks.length}개`} 완료 이력을 엑셀로 내보냈습니다.`);
-  }, [tasks, selectedTaskIds, showCustomAlert]);
+  }, [isAdmin, tasks, selectedTaskIds, showCustomAlert]);
 
   // 달력 형식 월간 주간업무 엑셀 내보내기
   const handleExportWeeklyExcel = useCallback(async () => {
+    if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 엑셀 다운로드를 할 수 있습니다.'); return; }
     const [yearStr, monthStr] = selectedExportMonth.split('-');
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
@@ -804,8 +806,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         for (const cell of [dateCell, taskCell]) {
           cell.border = { top: { style: 'thin', color: { argb: 'FFCBD5E1' } }, bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } }, left: { style: 'thin', color: { argb: 'FFCBD5E1' } }, right: { style: 'thin', color: { argb: 'FFCBD5E1' } } };
         }
-        const maxLines = Math.max(1, ...lines.map((line) => Math.ceil(line.length / 28) + (line.match(/\n/g)?.length || 0)));
-        taskRow.height = Math.max(taskRow.height || 0, Math.min(300, 15 * maxLines + 8));
+        // 셀의 실제 표시 폭을 기준으로 줄바꿈을 추정해, 내용이 길수록 행 높이를 늘립니다.
+        // 한글은 영문보다 셀 폭을 더 많이 차지하므로 약 2칸으로 계산합니다.
+        const cellText = lines.join('\n');
+        const visualLineCount = cellText.split('\n').reduce((total, segment) => {
+          const visualWidth = Array.from(segment).reduce((width, char) =>
+            width + (/[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/.test(char) ? 2 : 1), 0);
+          return total + Math.max(1, Math.ceil(visualWidth / 25));
+        }, 0);
+        // Excel 행 높이의 상한에 가깝게 설정해 기존 고정 높이로 인한 내용 잘림을 최소화합니다.
+        taskRow.height = Math.max(taskRow.height || 0, Math.min(400, 15 * visualLineCount + 8));
       }
       cursor.setDate(cursor.getDate() + 7);
     }
@@ -820,7 +830,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     anchor.click();
     URL.revokeObjectURL(url);
     showCustomAlert('엑셀 다운로드', `${year}년 ${month}월 업무 달력이 엑셀 파일로 추출되었습니다.`);
-  }, [selectedExportMonth, tasks, showCustomAlert]);
+  }, [isAdmin, selectedExportMonth, tasks, showCustomAlert]);
 
   // 주간 날짜 계산
   const weekDays = useMemo(() => {
@@ -1144,21 +1154,25 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <button onClick={() => { setCurrentWeekMonday(getMonday(new Date())); setSelectedTaskIds([]); }} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2">오늘</button>
               </div>
 
-              {/* 엑셀 추출 컨트롤 영역 */}
+              {/* 엑셀 추출 컨트롤은 관리자 계정에만 표시 */}
               <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
-                <input
-                  type="month"
-                  value={selectedExportMonth}
-                  onChange={(e) => setSelectedExportMonth(e.target.value)}
-                  className="px-2 py-1 text-xs border rounded-lg font-mono"
-                />
-                <button
-                  onClick={handleExportWeeklyExcel}
-                  className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-                >
-                  <FileSpreadsheet className="h-3.5 w-3.5" />
-                  <span>엑셀 저장</span>
-                </button>
+                {isAdmin && (
+                  <>
+                    <input
+                      type="month"
+                      value={selectedExportMonth}
+                      onChange={(e) => setSelectedExportMonth(e.target.value)}
+                      className="px-2 py-1 text-xs border rounded-lg font-mono"
+                    />
+                    <button
+                      onClick={handleExportWeeklyExcel}
+                      className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                    >
+                      <FileSpreadsheet className="h-3.5 w-3.5" />
+                      <span>엑셀 저장</span>
+                    </button>
+                  </>
+                )}
 
                 <div className="bg-[#F5F6F8] p-1 rounded-lg border flex space-x-1">
                   <button
