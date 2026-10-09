@@ -107,8 +107,8 @@ export const TANK_STEPS = [
   { key: 'st_2nd', label: 'S/T 2nd' },
   { key: 'pre_sbtt', label: 'Pre SBTT' },
   { key: 'nh3', label: 'NH3' },
-  { key: 'nh3_uf', label: 'NH3 - U/F' },
-  { key: 'nh3_welding', label: 'NH3 - Welding' },
+  { key: 'nh3_uf', label: 'U/F' },
+  { key: 'nh3_welding', label: 'Welding' },
   { key: 'pbgt', label: 'PBGT' },
   { key: 'bf_sbtt', label: 'Before G/T SBTT' },
   { key: 'at_sbtt', label: 'After G/T SBTT' },
@@ -570,7 +570,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       ];
 
       TANK_STEPS.forEach((step) => {
-        const row: (string | number)[] = [step.label];
+        if (step.key === 'nh3') {
+          rows.push(['NH3', '', '', '', '']);
+          return;
+        }
+        const row: (string | number)[] = [(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? `↳ ${step.label}` : step.label];
 
         TANKS.forEach((tk) => {
           const stepInfo = ship.tank_status?.[tk]?.[step.key] || { status: '대기' };
@@ -1112,32 +1116,33 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   };
 
   const calculateTankStats = (tankStatus?: ShipTankStatus) => {
-    if (!tankStatus) return { completed: 0, total: TANK_STEPS.length * TANKS.length, percent: 0 };
+    if (!tankStatus) return { completed: 0, total: TANK_STEPS.filter(st => st.key !== 'nh3').length * TANKS.length, percent: 0 };
     let completed = 0;
     const activeTanks = TANKS.filter(tk => tankStatus[tk]?.enabled !== false);
     activeTanks.forEach(tk => {
-      TANK_STEPS.forEach(st => {
+      TANK_STEPS.filter(st => st.key !== 'nh3').forEach(st => {
         const step = tankStatus[tk]?.[st.key];
         if (step && (step.status === '완료' || step.date || step.startDate)) {
           completed++;
         }
       });
     });
-    const total = activeTanks.length * TANK_STEPS.length;
+    const total = activeTanks.length * TANK_STEPS.filter(st => st.key !== 'nh3').length;
     const percent = total ? Math.round((completed / total) * 100) : 0;
     return { completed, total, percent };
   };
 
   const calculateSingleTankStats = (tankDetail?: TankDetail) => {
-    if (!tankDetail) return { completed: 0, total: TANK_STEPS.length, percent: 0 };
+    if (!tankDetail) return { completed: 0, total: TANK_STEPS.filter(st => st.key !== 'nh3').length, percent: 0 };
     let completed = 0;
-    TANK_STEPS.forEach(st => {
+    TANK_STEPS.filter(st => st.key !== 'nh3').forEach(st => {
       const step = tankDetail[st.key];
       if (step && (step.status === '완료' || step.date || step.startDate)) {
         completed++;
       }
     });
-    return { completed, total: TANK_STEPS.length, percent: Math.round((completed / TANK_STEPS.length) * 100) };
+    const total = TANK_STEPS.filter(st => st.key !== 'nh3').length;
+    return { completed, total, percent: Math.round((completed / total) * 100) };
   };
 
   const isCommissioningComplete = (ship: ShipItem) => {
@@ -1712,11 +1717,13 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       <div className="p-3 divide-y divide-[#E2E5E9]/60 flex-1 space-y-2.5">
                         {TANK_STEPS.map((step) => {
                           const stepInfo = tankDetail[step.key] || { status: '대기' };
+                          if (step.key === 'nh3') return <div key={step.key} className="pt-2 first:pt-0 text-xs font-bold text-amber-900 bg-amber-50 rounded px-2 py-1">NH3</div>;
                           const isDone = stepInfo.status === '완료';
                           const isInProgress = stepInfo.status === '진행중';
 
                           return (
-                            <div key={step.key} className="pt-2 first:pt-0 space-y-1">
+                            <div key={step.key} className={`pt-2 first:pt-0 space-y-1 ${(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? 'ml-4 border-l-2 border-amber-300 pl-2' : ''}`}>
+
                               <div className="flex items-center justify-between text-xs">
                                 <div className="flex items-center space-x-2">
                                   {isDone ? (
@@ -1783,6 +1790,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                   <span className="break-all">{stepInfo.text}</span>
                                 </div>
                               )}
+                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && stepInfo.text && (
+                                <div className="ml-1 text-[10.5px] text-[#334155] bg-amber-50/70 border border-amber-200/80 rounded px-2 py-0.5 flex items-start gap-1">
+                                  <span className="font-bold text-amber-800 shrink-0">비고:</span><span className="break-all">{stepInfo.text}</span>
+                                </div>
+                              )}
                             </div>
                           );
                         })}
@@ -1817,13 +1829,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     </thead>
                     <tbody className="divide-y divide-[#E2E5E9] text-[#1F2937]">
                       {TANK_STEPS.map((step) => (
-                        <tr key={step.key} className="hover:bg-slate-50/70 transition">
-                          <td className="py-3 px-4 font-bold text-[#1F2937] bg-slate-50/40">
-                            {step.label}
+                        <tr key={step.key} className={`hover:bg-slate-50/70 transition ${(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? 'bg-amber-50/30' : ''}`}>
+                          <td className={`py-3 px-4 font-bold text-[#1F2937] bg-slate-50/40 ${step.key === 'nh3_uf' || step.key === 'nh3_welding' ? 'pl-8 text-amber-900' : ''}`}>
+                            {step.key === 'nh3' ? 'NH3' : (step.key === 'nh3_uf' || step.key === 'nh3_welding' ? `↳ ${step.label}` : step.label)}
                           </td>
                           {TANKS.map((tkKey) => {
                             const stepInfo = currentStatusShip.tank_status?.[tkKey]?.[step.key] || { status: '대기' };
                             const tankDisabled = currentStatusShip.tank_status?.[tkKey]?.enabled === false;
+                            if (step.key === 'nh3') return <td key={tkKey} className="py-2 px-4 text-center border-l border-[#CBD5E1] bg-amber-50/30" />;
                             const isDone = stepInfo.status === '완료';
                             const isInProgress = stepInfo.status === '진행중';
 
@@ -1868,6 +1881,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     <span className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded max-w-[120px] truncate" title={stepInfo.text}>
                                       📝 {stepInfo.text}
                                     </span>
+                                  )}
+                                  {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && stepInfo.text && (
+                                    <span className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded max-w-[140px] truncate" title={stepInfo.text}>📝 {stepInfo.text}</span>
                                   )}
                                 </> }
                                 </div>
@@ -2510,7 +2526,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   </label>
                   <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-1.5">
                     <span className="text-xs font-bold text-[#1F2937]">
-                      [{statusCreateTankTab}] 9개 검사 공정 항목
+                      [{statusCreateTankTab}] 검사 공정 항목 (NH3 하위 공정 포함)
                     </span>
                     <span className="text-[10px] text-[#64748B]">날짜를 선택하면 자동으로 완료 처리됩니다.</span>
                   </div>
@@ -2518,11 +2534,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <div className="grid grid-cols-1 gap-2.5">
                     {TANK_STEPS.map((step) => {
                       const currentStepData = statusCreateFormData.tank_status[statusCreateTankTab]?.[step.key] || { status: '대기' };
+                      if (step.key === 'nh3') {
+                        return <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 font-bold text-sm text-amber-900">NH3</div>;
+                      }
 
                       return (
                         <div
                           key={step.key}
-                          className="bg-white p-2.5 rounded-lg border border-[#E2E5E9] shadow-2xs space-y-2"
+                          className={`bg-white p-2.5 rounded-lg border border-[#E2E5E9] shadow-2xs space-y-2 ${(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? 'ml-4 border-l-4 border-l-amber-300' : ''}`}
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="w-24 shrink-0">
@@ -2662,6 +2681,31 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 }}
                                 className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                               />
+
+                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
+                                <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
+                                  <label className="text-[11px] font-bold text-amber-800 shrink-0">비고</label>
+                                  <input
+                                    type="text"
+                                    placeholder={`${step.label} 비고 입력`}
+                                    value={currentStepData.text || ''}
+                                    onChange={(e) => {
+                                      const note = e.target.value;
+                                      setStatusCreateFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusCreateTankTab]: {
+                                            ...prev.tank_status[statusCreateTankTab],
+                                            [step.key]: { ...prev.tank_status[statusCreateTankTab][step.key], text: note },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="flex-1 min-w-0 px-2.5 py-1 bg-amber-50/60 border border-amber-200 rounded text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                                  />
+                                </div>
+                              )}
 
                               {step.key === 'pbgt' && (
                                 <input
@@ -2935,11 +2979,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <div className="grid grid-cols-1 gap-2.5">
                     {TANK_STEPS.map((step) => {
                       const currentStepData = statusEditFormData.tank_status[statusModalTankTab]?.[step.key] || { status: '대기' };
+                      if (step.key === 'nh3') {
+                        return <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 font-bold text-sm text-amber-900">NH3</div>;
+                      }
 
                       return (
                         <div
                           key={step.key}
-                          className="bg-white p-2.5 rounded-lg border border-[#E2E5E9] shadow-2xs space-y-2"
+                          className={`bg-white p-2.5 rounded-lg border border-[#E2E5E9] shadow-2xs space-y-2 ${(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? 'ml-4 border-l-4 border-l-amber-300' : ''}`}
                         >
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="w-24 shrink-0">
@@ -3079,6 +3126,31 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 }}
                                 className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                               />
+
+                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
+                                <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
+                                  <label className="text-[11px] font-bold text-amber-800 shrink-0">비고</label>
+                                  <input
+                                    type="text"
+                                    placeholder={`${step.label} 비고 입력`}
+                                    value={currentStepData.text || ''}
+                                    onChange={(e) => {
+                                      const note = e.target.value;
+                                      setStatusEditFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusModalTankTab]: {
+                                            ...prev.tank_status[statusModalTankTab],
+                                            [step.key]: { ...prev.tank_status[statusModalTankTab][step.key], text: note },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="flex-1 min-w-0 px-2.5 py-1 bg-amber-50/60 border border-amber-200 rounded text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                                  />
+                                </div>
+                              )}
 
                               {step.key === 'pbgt' && (
                                 <input
