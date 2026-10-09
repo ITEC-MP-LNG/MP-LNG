@@ -64,20 +64,19 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
     }
 
     try {
-      const firstProcessCol = 3; // ExcelJS columns are 1-based; A=호선번호, B=호선명
-      const totalColumns = 2 + PROCESS_GROUPS.length * TANK_KEYS.length;
+      const firstProcessCol = 2; // A열은 Ship No. 및 선주사/프로젝트명/진수일 통합 셀
+      const totalColumns = 1 + PROCESS_GROUPS.length * TANK_KEYS.length;
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'ShipInfo';
       workbook.subject = '탱크별 공정 일자 종합 비교표';
       workbook.created = new Date();
       const worksheet = workbook.addWorksheet('전체 공정 비교표', {
-        views: [{ state: 'frozen', xSplit: 2, ySplit: 4 }],
+        views: [{ state: 'frozen', xSplit: 1, ySplit: 4 }],
         pageSetup: { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
       });
 
       worksheet.columns = [
-        { key: 'ship', width: 15 },
-        { key: 'owner', width: 18 },
+        { key: 'shipInfo', width: 30 },
         ...PROCESS_GROUPS.flatMap(() => TANK_KEYS.map(() => ({ width: 8 }))),
       ];
 
@@ -92,10 +91,8 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
       worksheet.getRow(2).height = 8;
 
       // 3~5행: 공정 그룹, 하위 공정, TK 헤더
-      worksheet.getCell(3, 1).value = '호선번호';
-      worksheet.getCell(3, 2).value = '선주사';
+      worksheet.getCell(3, 1).value = 'Ship No.';
       worksheet.mergeCells(3, 1, 5, 1);
-      worksheet.mergeCells(3, 2, 5, 2);
 
       PROCESS_GROUPS.forEach((group, groupIndex) => {
         const startCol = firstProcessCol + groupIndex * TANK_KEYS.length;
@@ -122,22 +119,24 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
       for (let rowNumber = 3; rowNumber <= 5; rowNumber += 1) {
         const row = worksheet.getRow(rowNumber);
         row.height = rowNumber === 3 ? 24 : 19;
-        row.eachCell({ includeEmpty: true }, (cell) => {
+        row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
           cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FFFFFFFF' } };
           cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF24476B' } };
+          const isProcessGroupStart = colNumber >= firstProcessCol && (colNumber - firstProcessCol) % TANK_KEYS.length === 0;
+          const isProcessGroupEnd = colNumber >= firstProcessCol && (colNumber - firstProcessCol + 1) % TANK_KEYS.length === 0;
           cell.border = {
             top: { style: 'thin', color: { argb: 'FF000000' } },
             bottom: { style: 'thin', color: { argb: 'FF000000' } },
-            left: { style: 'thin', color: { argb: 'FF000000' } },
-            right: { style: 'thin', color: { argb: 'FF000000' } },
+            left: { style: colNumber === 1 || isProcessGroupStart ? 'thin' : 'dotted', color: { argb: 'FF000000' } },
+            right: { style: colNumber === totalColumns || isProcessGroupEnd ? 'thin' : 'dotted', color: { argb: 'FF000000' } },
           };
         });
       }
 
-      // A/B 열은 요청한 밝은 파랑 채우기와 12pt를 사용합니다.
+      // Ship No. 통합 헤더는 요청한 밝은 파랑 채우기와 12pt를 사용합니다.
       for (let rowNumber = 3; rowNumber <= 5; rowNumber += 1) {
-        for (let colNumber = 1; colNumber <= 2; colNumber += 1) {
+        for (let colNumber = 1; colNumber <= 1; colNumber += 1) {
           const cell = worksheet.getCell(rowNumber, colNumber);
           cell.font = { name: 'Arial', size: 12, bold: true, color: { argb: 'FF000000' } };
           cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6E4F0' } };
@@ -151,10 +150,14 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
         const resultRow = worksheet.getRow(resultRowNumber);
         const dateRow = worksheet.getRow(dateRowNumber);
 
-        resultRow.getCell(1).value = ship.ship_no || '';
-        resultRow.getCell(2).value = ship.ship_name || '';
-        dateRow.getCell(1).value = ship.shipowner || '';
-        dateRow.getCell(2).value = formatDate(ship.launch_date);
+        worksheet.mergeCells(resultRowNumber, 1, dateRowNumber, 1);
+        const shipInfoCell = resultRow.getCell(1);
+        const ownerName = (ship.shipowner || '').trim();
+        const projectName = (ship.ship_name || '').trim();
+        const ownerProject = ownerName && projectName
+          ? `${ownerName} (${projectName})`
+          : ownerName || projectName || '';
+        shipInfoCell.value = `${ship.ship_no || ''}\n${ownerProject}\n${formatDate(ship.launch_date) === '-' ? '-' : formatDate(ship.launch_date)}`;
 
         PROCESS_GROUPS.forEach((group, groupIndex) => {
           TANK_KEYS.forEach((tank, tankIndex) => {
@@ -184,20 +187,22 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
         });
 
         [resultRow, dateRow].forEach((row, rowIndex) => {
-          row.height = 18;
+          row.height = 23;
           row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
             cell.font = { name: 'Arial', size: 6, color: { argb: 'FF000000' } };
             cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true, shrinkToFit: true };
-            if (colNumber <= 2) {
+            if (colNumber === 1) {
               cell.font = { name: 'Arial', size: 12, color: { argb: 'FF000000' } };
               cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6E4F0' } };
             }
-            // 호선 2행 묶음의 외곽은 실선, 결과/날짜 사이 내부선은 점선으로 구분합니다.
+            // 호선별 외곽과 공정 그룹 사이 경계는 실선, 공정 그룹 내부 및 값/날짜 구분은 점선입니다.
+            const isProcessGroupStart = colNumber >= firstProcessCol && (colNumber - firstProcessCol) % TANK_KEYS.length === 0;
+            const isProcessGroupEnd = colNumber >= firstProcessCol && (colNumber - firstProcessCol + 1) % TANK_KEYS.length === 0;
             cell.border = {
               top: { style: rowIndex === 0 ? 'thin' : 'dotted', color: { argb: 'FF000000' } },
               bottom: { style: rowIndex === 0 ? 'dotted' : 'thin', color: { argb: 'FF000000' } },
-              left: { style: colNumber === 1 ? 'thin' : 'dotted', color: { argb: 'FF000000' } },
-              right: { style: colNumber === totalColumns ? 'thin' : 'dotted', color: { argb: 'FF000000' } },
+              left: { style: colNumber === 1 || isProcessGroupStart ? 'thin' : 'dotted', color: { argb: 'FF000000' } },
+              right: { style: colNumber === totalColumns || isProcessGroupEnd ? 'thin' : 'dotted', color: { argb: 'FF000000' } },
             };
           });
         });
@@ -241,7 +246,7 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
               <h3 className="text-sm font-bold text-[#1F2937]">공정현황 비교표 Excel 저장</h3>
               <button type="button" onClick={() => setIsOpen(false)} className="p-1 rounded hover:bg-slate-100 text-[#64748B]" aria-label="닫기">✕</button>
             </div>
-            <p className="text-xs text-[#64748B] leading-5">한 시트에 호선별 2개 행으로 저장합니다. 위쪽 행에는 공정 값, 아래쪽 행에는 공정 날짜가 표시되며 진수일 오름차순으로 정렬됩니다.</p>
+            <p className="text-xs text-[#64748B] leading-5">한 시트에 호선별 2개 행으로 저장합니다. 왼쪽 Ship No. 셀에는 호선번호, 선주사(프로젝트명), 진수일이 표시되고 공정 값과 날짜는 각각 위·아래 행에 표시됩니다. 진수일 오름차순으로 정렬됩니다.</p>
             <label className="block space-y-1.5">
               <span className="text-xs font-semibold text-[#334155]">호선 선택</span>
               <select value={owner} onChange={(event) => setOwner(event.target.value)} className="w-full border border-[#CBD5E1] rounded-lg px-3 py-2 text-sm text-[#1F2937] bg-white focus:outline-none focus:border-[#243B5A]">
