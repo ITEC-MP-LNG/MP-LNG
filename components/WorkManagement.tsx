@@ -536,7 +536,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     );
   }, [appUsers, showCustomAlert, showCustomConfirm]);
 
-  // 상태 변경 버튼 클릭 시 (요구사항: 누구나 클릭하여 상세보기 및 상태변경 창을 볼 수 있도록 허용)
+  // 상태 변경 버튼 클릭 시
   const handleNextStatus = useCallback((e: React.MouseEvent, task: Task) => {
     e.stopPropagation();
 
@@ -955,9 +955,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSelectedTaskIds([]);
   }, [currentWeekMonday]);
 
-  // 필터링된 업무 목록
+  // 필터링된 업무 목록 (요구사항: 완료 이력 보기는 최신순 정렬 적용)
   const filteredTasks = useMemo(() => {
-    return tasks.filter((t) => {
+    const list = tasks.filter((t) => {
       if (taskTab === 'DAILY') {
         const isDailyType = t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER';
         if (!isDailyType) return false;
@@ -983,6 +983,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }
       return true;
     });
+
+    // 완료 이력 보기 탭일 경우 날짜 기준 최신순 정렬 (최신 날짜가 맨 위로)
+    if (taskTab === 'DAILY' && dailySubTab === 'HISTORY') {
+      return [...list].sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
+    }
+
+    return list;
   }, [tasks, taskTab, dailySubTab, cabinSubTab, cabinStatusSubTab, currentWeekMonday]);
 
   const toggleTaskSelection = useCallback((id: string, checked: boolean) => {
@@ -1654,7 +1661,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 상태 변경 및 비고 입력 모달 (요구사항: 누구나 볼 수 있으나 비고란 및 상태버튼 선택은 권한이 없으면 비활성화) */}
+        {/* 상태 변경 및 비고 입력 모달 (요구사항: 비고란 최대 10줄 출력 및 초과 시 스크롤 적용) */}
         {statusChangeModal.open && statusChangeModal.task && (() => {
           const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
           return (
@@ -1741,12 +1748,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       비고란 (내용 작성) {!isAllowedUser && <span className="text-red-500 font-normal">(읽기 전용)</span>}
                     </label>
                     <textarea
-                      rows={3}
+                      rows={10}
                       disabled={!isAllowedUser}
                       placeholder={isAllowedUser ? "작업 관련 비고 사항을 작성해주세요..." : "해당 업무 인원 또는 관리자만 비고란을 수정할 수 있습니다."}
                       value={statusChangeModal.remarks}
                       onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
-                      className={`w-full px-3 py-2 border rounded-lg text-xs resize-none focus:outline-none ${!isAllowedUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#243B5A]'}`}
+                      className={`w-full px-3 py-2 border rounded-lg text-xs resize-y focus:outline-none ${!isAllowedUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#243B5A]'}`}
                     />
                   </div>
                 </div>
