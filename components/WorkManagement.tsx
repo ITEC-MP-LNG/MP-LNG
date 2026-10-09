@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { 
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
@@ -76,6 +76,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const isAdmin = useMemo(() => {
     return currentUser?.role === 'ADMIN' || currentUser?.role === 'admin' || currentUser?.role === '관리자';
   }, [currentUser]);
+  const currentUserId = currentUser?.id;
+  const currentUserNameForFetch = currentUser?.name;
 
 
   // 야간업무진행는 작성자 본인 또는 관리자만 수정/삭제 가능
@@ -120,6 +122,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   // 팝업 미완료 알림 상태
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [myAssignedTasks, setMyAssignedTasks] = useState<Task[]>([]);
+  // 야간업무진행 알림은 관리자에게만 표시하며, 새 미완료 항목이 생겼을 때 알립니다.
+  const [isNightWorkAlertOpen, setIsNightWorkAlertOpen] = useState(false);
+  const [nightPendingTasks, setNightPendingTasks] = useState<Task[]>([]);
+  const nightAlertSeenIds = useRef<Set<string>>(new Set());
+  // 중복 조회 방지: 마지막 업무 조회 시작/완료 시각을 기록합니다.
+  const lastTasksFetchStartedAtRef = useRef(0);
+  const lastTasksFetchCompletedAtRef = useRef(0);
 
   // 바텀시트 모달
   const [selectedTaskForSheet, setSelectedTaskForSheet] = useState<Task | null>(null);
@@ -193,23 +202,23 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   // CABIN 호선 목록 조회
   const fetchVessels = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('cabin_vessels').select('*').order('created_at', { ascending: true });
+      const { data, error } = await supabase.from('cabin_vessels').select('id, name, created_at').order('created_at', { ascending: true });
       if (error) throw error;
       if (data) {
         setVessels(data);
-        if (data.length > 0 && !formData.category) {
-          setFormData((prev) => ({ ...prev, category: data[0].name }));
+        if (data.length > 0) {
+          setFormData((prev) => prev.category ? prev : ({ ...prev, category: data[0].name }));
         }
       }
     } catch (err) {
       console.error('vessels 로드 실패:', err);
     }
-  }, [formData.category]);
+  }, []);
 
   // Preset Teams 조회
   const fetchTeams = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('preset_teams').select('*').order('created_at', { ascending: true });
+      const { data, error } = await supabase.from('preset_teams').select('id, name, department, members, created_at').order('created_at', { ascending: true });
       if (error) throw error;
       if (data) {
         setPresetTeams(data);
@@ -271,9 +280,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   // 전체 업무 데이터 및 팝업 알림 체크
   const fetchTasks = useCallback(async () => {
+    lastTasksFetchStartedAtRef.current = Date.now();
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from('tasks').select('*').order('start_date', { ascending: true });
+      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, status, task_type, created_by_id, created_by_name, category, remarks, created_at, updated_at').order('start_date', { ascending: true });
       if (error) throw error;
 
       if (data) {
@@ -285,7 +295,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           night_workers: Array.isArray(t.night_workers) ? t.night_workers : (t.night_workers ? t.night_workers.split(',').map((s: string) => s.trim()) : []),
         }));
 
-        const userKey = currentUser?.id || currentUser?.name || 'guest';
+        const userKey = currentUserId || currentUserNameForFetch || 'guest';
         const initializedKey = `work_task_n_initialized_${userKey}`;
         if (!localStorage.getItem(initializedKey)) {
           localStorage.setItem(initializedKey, String(Date.now()));
@@ -293,51 +303,92 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
         setTasks(formatted);
 
+        // 일반 미완료 알림에서는 야간업무진행(DAILY_OTHER)을 제외합니다.
         let targetTasks: Task[] = [];
-        if (currentUser && currentUser.name) {
-          const currentUserName = currentUser.name.trim().toLowerCase();
+        if (currentUserNameForFetch) {
+          const currentUserName = currentUserNameForFetch.trim().toLowerCase();
           targetTasks = formatted.filter((t) => {
-            if (t.status === 'COMPLETED') return false;
+            if (t.status === 'COMPLETED' || t.task_type === 'DAILY_OTHER') return false;
             const isAssigned = (t.assigned_names || []).some(name => name.trim().toLowerCase() === currentUserName);
             const isDayWorker = (t.day_workers || []).some(name => name.trim().toLowerCase() === currentUserName);
             const isNightWorker = (t.night_workers || []).some(name => name.trim().toLowerCase() === currentUserName);
             return isAssigned || isDayWorker || isNightWorker;
           });
         } else {
-          targetTasks = formatted.filter((t) => t.status !== 'COMPLETED');
+          targetTasks = formatted.filter((t) => t.status !== 'COMPLETED' && t.task_type !== 'DAILY_OTHER');
         }
 
         setMyAssignedTasks(targetTasks);
         if (targetTasks.length > 0) setIsAlertOpen(true);
+
+        // 미완료 야간업무진행은 관리자에게만 별도 알림으로 표시합니다.
+        const pendingNightTasks = isAdmin
+          ? formatted.filter((t) => t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED')
+          : [];
+        setNightPendingTasks(pendingNightTasks);
+        if (!isAdmin) {
+          setIsNightWorkAlertOpen(false);
+          nightAlertSeenIds.current.clear();
+        } else if (pendingNightTasks.length === 0) {
+          setIsNightWorkAlertOpen(false);
+        } else {
+          const hasNewPendingNightTask = pendingNightTasks.some((t) => !nightAlertSeenIds.current.has(t.id));
+          pendingNightTasks.forEach((t) => nightAlertSeenIds.current.add(t.id));
+          if (hasNewPendingNightTask) setIsNightWorkAlertOpen(true);
+        }
       }
     } catch (err) {
       console.error('tasks 로드 실패:', err);
     } finally {
+      lastTasksFetchCompletedAtRef.current = Date.now();
       setIsLoading(false);
     }
-  }, [currentUser]);
+  }, [currentUserId, currentUserNameForFetch, isAdmin]);
 
+  // 콜백이 사용자 변경에 따라 바뀌어도 Realtime 구독은 다시 만들지 않고 최신 조회 함수를 사용합니다.
+  const fetchTasksRef = useRef(fetchTasks);
+  useEffect(() => {
+    fetchTasksRef.current = fetchTasks;
+  }, [fetchTasks]);
+
+  // 기준 데이터는 해당 목록 콜백이 바뀔 때만 조회합니다. (호선 목록은 안정화되어 중복 재조회되지 않습니다.)
   useEffect(() => {
     fetchAppUsers();
     fetchVessels();
     fetchTeams();
-    fetchTasks();
+  }, [fetchAppUsers, fetchVessels, fetchTeams]);
 
+  // 업무 목록은 최초 로드 및 로그인 사용자/권한 변경 시에만 직접 재조회합니다.
+  useEffect(() => {
+    fetchTasks();
+  }, [fetchTasks]);
+
+  // Realtime 이벤트가 연속 발생하면 300ms 동안 모아서 한 번만 조회합니다.
+  // 이벤트 후 다른 경로에서 조회가 시작/완료되었다면 해당 조회로 처리된 것으로 보고 중복 호출을 생략합니다.
+  useEffect(() => {
+    let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
       .channel('public:tasks')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'tasks' },
         () => {
-          fetchTasks();
+          const eventAt = Date.now();
+          if (refreshTimer) clearTimeout(refreshTimer);
+          refreshTimer = setTimeout(() => {
+            refreshTimer = null;
+            if (lastTasksFetchStartedAtRef.current >= eventAt || lastTasksFetchCompletedAtRef.current >= eventAt) return;
+            fetchTasksRef.current();
+          }, 300);
         }
       )
       .subscribe();
 
     return () => {
+      if (refreshTimer) clearTimeout(refreshTimer);
       supabase.removeChannel(channel);
     };
-  }, [currentUser, fetchAppUsers, fetchVessels, fetchTeams, fetchTasks]);
+  }, []);
 
   // 해당 업무 변경 권한 확인
   const canModifyTaskStatus = useCallback((task: Task) => {
@@ -704,11 +755,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) { showCustomAlert('오류', `저장 중 오류: ${err.message}`); }
   }, [isAdmin, canManageTask, currentUser, formData, editingTask, dayWorkerList, nightWorkerList, assignedList, fetchTasks, showCustomAlert]);
 
-  // 야간업무진행는 완료 버튼 하나로 처리하고 완료 이력 보기로 이동합니다.
+  // 야간업무진행 완료 처리는 관리자 계정에서만 가능합니다.
   const handleCompleteOtherTask = useCallback((task: Task) => {
     if (task.task_type !== 'DAILY_OTHER' || task.status === 'COMPLETED') return;
-    if (!canManageTask(task)) {
-      showCustomAlert('권한 제한', '야간업무진행 완료 처리는 작성자 본인과 관리자만 가능합니다.');
+    if (!isAdmin) {
+      showCustomAlert('권한 제한', '야간업무진행 완료 처리는 관리자만 가능합니다.');
       return;
     }
     showCustomConfirm('업무 완료', '이 업무를 완료 처리하고 완료 이력 보기로 이동하시겠습니까?', async () => {
@@ -724,7 +775,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         showCustomAlert('오류', `완료 처리 실패: ${err.message}`);
       }
     });
-  }, [canManageTask, showCustomAlert, showCustomConfirm, fetchTasks]);
+  }, [isAdmin, showCustomAlert, showCustomConfirm, fetchTasks]);
 
   // 업무 삭제
   const handleDeleteTask = useCallback(async (id: string) => {
@@ -1003,7 +1054,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1">
             <button
               onClick={() => {
-                const pending = tasks.filter(t => t.status !== 'COMPLETED');
+                const pending = tasks.filter(t => t.status !== 'COMPLETED' && t.task_type !== 'DAILY_OTHER');
                 setMyAssignedTasks(pending);
                 setIsAlertOpen(true);
               }}
@@ -1159,7 +1210,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </span>
                       <span className="text-xs text-[#64748B] font-mono">({t.start_date})</span>
                       {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
-                      {t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && (
+                      {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && (
                         <button
                           type="button"
                           onClick={(e) => { e.stopPropagation(); handleCompleteOtherTask(t); }}
@@ -1569,6 +1620,45 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   오늘 하루 보지 않기
                 </button>
                 <button onClick={() => setIsAlertOpen(false)} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold">닫기</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 관리자 전용 야간업무진행 미완료 알림 */}
+        {isAdmin && isNightWorkAlertOpen && (
+          <div className="fixed inset-0 z-[55] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border animate-in fade-in zoom-in-95 duration-150">
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center space-x-2 text-[#243B5A]">
+                  <Bell className="h-5 w-5 text-amber-500 animate-bounce" />
+                  <h3 className="text-sm font-bold">야간업무진행 알림</h3>
+                </div>
+                <button onClick={() => setIsNightWorkAlertOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+              </div>
+              <p className="text-xs text-[#64748B]">완료 처리가 필요한 야간업무진행이 <span className="font-bold text-red-600">{nightPendingTasks.length}건</span> 있습니다.</p>
+              <div className="max-h-64 overflow-y-auto space-y-2 pr-1">
+                {nightPendingTasks.length === 0 ? (
+                  <div className="text-center py-6 text-xs text-[#64748B]">완료 처리할 야간업무진행이 없습니다.</div>
+                ) : nightPendingTasks.map((task) => (
+                  <div key={task.id} className="p-2.5 bg-[#F5F6F8] rounded-lg text-xs border flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="font-bold text-[#1F2937] break-words">{task.title}</div>
+                      <div className="text-[11px] text-[#64748B] font-mono">{task.start_date} ({task.time_slot || '시간 미정'})</div>
+                      <div className="text-[11px] text-[#64748B]">작성자: {task.created_by_name || task.assigned_names?.[0] || '미확인'}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleCompleteOtherTask(task)}
+                      className="px-2.5 py-1 rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-800 text-[11px] font-bold flex items-center gap-1 hover:bg-emerald-100 shrink-0"
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" /> 완료 처리
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end pt-3 border-t">
+                <button onClick={() => setIsNightWorkAlertOpen(false)} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold text-xs">닫기</button>
               </div>
             </div>
           </div>
