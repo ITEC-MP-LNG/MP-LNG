@@ -570,7 +570,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       ];
 
       TANK_STEPS.forEach((step) => {
-        if (step.key === 'nh3') {
+        if (String(step.key) === 'nh3') {
           rows.push(['NH3', '', '', '', '']);
           return;
         }
@@ -595,7 +595,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             cellText += `\n값: ${stepInfo.value}`;
           }
 
-          if (step.key === 'nh3' && stepInfo.text) {
+          if (String(step.key) === 'nh3' && stepInfo.text) {
             cellText += `\nNH3 비고: ${stepInfo.text}`;
           }
 
@@ -1717,7 +1717,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       <div className="p-3 divide-y divide-[#E2E5E9]/60 flex-1 space-y-2.5">
                         {TANK_STEPS.map((step) => {
                           const stepInfo = tankDetail[step.key] || { status: '대기' };
-                          if (step.key === 'nh3') return <div key={step.key} className="pt-2 first:pt-0 text-xs font-bold text-amber-900 bg-amber-50 rounded px-2 py-1">NH3</div>;
+                          if (String(step.key) === 'nh3') return <div key={step.key} className="pt-2 first:pt-0 text-xs font-bold text-amber-900 bg-amber-50 rounded px-2 py-1">NH3</div>;
                           const isDone = stepInfo.status === '완료';
                           const isInProgress = stepInfo.status === '진행중';
 
@@ -1784,7 +1784,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 </div>
                               )}
 
-                              {step.key === 'nh3' && stepInfo.text && (
+                              {String(step.key) === 'nh3' && stepInfo.text && (
                                 <div className="ml-5 text-[10.5px] text-[#334155] bg-amber-50/70 border border-amber-200/80 rounded px-2 py-0.5 flex items-start gap-1">
                                   <span className="font-bold text-amber-800 shrink-0">NH3 비고:</span>
                                   <span className="break-all">{stepInfo.text}</span>
@@ -1831,12 +1831,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       {TANK_STEPS.map((step) => (
                         <tr key={step.key} className={`hover:bg-slate-50/70 transition ${(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? 'bg-amber-50/30' : ''}`}>
                           <td className={`py-3 px-4 font-bold text-[#1F2937] bg-slate-50/40 ${step.key === 'nh3_uf' || step.key === 'nh3_welding' ? 'pl-8 text-amber-900' : ''}`}>
-                            {step.key === 'nh3' ? 'NH3' : (step.key === 'nh3_uf' || step.key === 'nh3_welding' ? `↳ ${step.label}` : step.label)}
+                            {String(step.key) === 'nh3' ? 'NH3' : (step.key === 'nh3_uf' || step.key === 'nh3_welding' ? `↳ ${step.label}` : step.label)}
                           </td>
                           {TANKS.map((tkKey) => {
                             const stepInfo = currentStatusShip.tank_status?.[tkKey]?.[step.key] || { status: '대기' };
                             const tankDisabled = currentStatusShip.tank_status?.[tkKey]?.enabled === false;
-                            if (step.key === 'nh3') return <td key={tkKey} className="py-2 px-4 text-center border-l border-[#CBD5E1] bg-amber-50/30" />;
+                            if (String(step.key) === 'nh3') return <td key={tkKey} className="py-2 px-4 text-center border-l border-[#CBD5E1] bg-amber-50/30" />;
                             const isDone = stepInfo.status === '완료';
                             const isInProgress = stepInfo.status === '진행중';
 
@@ -1877,7 +1877,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     </div>
                                   )}
 
-                                  {step.key === 'nh3' && stepInfo.text && (
+                                  {String(step.key) === 'nh3' && stepInfo.text && (
                                     <span className="text-[10px] text-amber-900 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded max-w-[120px] truncate" title={stepInfo.text}>
                                       📝 {stepInfo.text}
                                     </span>
@@ -2534,7 +2534,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <div className="grid grid-cols-1 gap-2.5">
                     {TANK_STEPS.map((step) => {
                       const currentStepData = statusCreateFormData.tank_status[statusCreateTankTab]?.[step.key] || { status: '대기' };
-                      if (step.key === 'nh3') {
+                      if (String(step.key) === 'nh3') {
                         return <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 font-bold text-sm text-amber-900">NH3</div>;
                       }
 
@@ -2734,7 +2734,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             </div>
                           </div>
 
-                          {step.key === 'nh3' && (
+                          {String(step.key) === 'nh3' && (
                             <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
                               <span className="text-[11px] font-bold text-amber-800 shrink-0">
                                 📝 NH3 텍스트:
@@ -2979,7 +2979,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <div className="grid grid-cols-1 gap-2.5">
                     {TANK_STEPS.map((step) => {
                       const currentStepData = statusEditFormData.tank_status[statusModalTankTab]?.[step.key] || { status: '대기' };
-                      if (step.key === 'nh3') {
+                      if (String(step.key) === 'nh3') {
                         return <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 font-bold text-sm text-amber-900">NH3</div>;
                       }
 
@@ -3179,7 +3179,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             </div>
                           </div>
 
-                          {step.key === 'nh3' && (
+                          {String(step.key) === 'nh3' && (
                             <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
                               <span className="text-[11px] font-bold text-amber-800 shrink-0">
                                 📝 NH3 텍스트:
