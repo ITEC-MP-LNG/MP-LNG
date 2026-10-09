@@ -297,14 +297,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (currentUser && currentUser.name) {
           const currentUserName = currentUser.name.trim().toLowerCase();
           targetTasks = formatted.filter((t) => {
-            if (t.status === 'COMPLETED') return false;
+            if (t.status === 'COMPLETED' || t.task_type === 'DAILY_OTHER') return false;
             const isAssigned = (t.assigned_names || []).some(name => name.trim().toLowerCase() === currentUserName);
             const isDayWorker = (t.day_workers || []).some(name => name.trim().toLowerCase() === currentUserName);
             const isNightWorker = (t.night_workers || []).some(name => name.trim().toLowerCase() === currentUserName);
             return isAssigned || isDayWorker || isNightWorker;
           });
         } else {
-          targetTasks = formatted.filter((t) => t.status !== 'COMPLETED');
+          targetTasks = formatted.filter((t) => t.status !== 'COMPLETED' && t.task_type !== 'DAILY_OTHER');
         }
 
         setMyAssignedTasks(targetTasks);
@@ -658,7 +658,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       description: formData.description.trim(),
       start_date: formData.start_date,
       task_type: formData.task_type,
-      status: editingTask ? editingTask.status : 'PENDING',
+      status: editingTask ? editingTask.status : (isDailyOther ? 'COMPLETED' : 'PENDING'),
       ...(isDailyOther && !editingTask ? { created_by_id: currentUser?.id || null, created_by_name: currentUser?.name || null } : {}),
     };
 
@@ -699,32 +699,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }
       setIsModalOpen(false);
       setSelectedTaskForSheet(null);
-      fetchTasks();
-      showCustomAlert('성공', '업무가 정상적으로 저장되었습니다.');
+      setSelectedTaskIds([]);
+      if (isDailyOther) setDailySubTab('HISTORY');
+      await fetchTasks();
+      showCustomAlert('성공', isDailyOther ? '일일업무외가 완료 이력에 등록되었습니다.' : '업무가 정상적으로 저장되었습니다.');
     } catch (err: any) { showCustomAlert('오류', `저장 중 오류: ${err.message}`); }
   }, [isAdmin, canManageTask, currentUser, formData, editingTask, dayWorkerList, nightWorkerList, assignedList, fetchTasks, showCustomAlert]);
 
-  // 일일업무외는 완료 버튼 하나로 처리하고 완료 이력 보기로 이동합니다.
-  const handleCompleteOtherTask = useCallback((task: Task) => {
-    if (task.task_type !== 'DAILY_OTHER' || task.status === 'COMPLETED') return;
-    if (!canManageTask(task)) {
-      showCustomAlert('권한 제한', '일일업무외 완료 처리는 작성자 본인과 관리자만 가능합니다.');
-      return;
-    }
-    showCustomConfirm('업무 완료', '이 업무를 완료 처리하고 완료 이력 보기로 이동하시겠습니까?', async () => {
-      try {
-        const { error } = await supabase.from('tasks').update({ status: 'COMPLETED' }).eq('id', task.id);
-        if (error) throw error;
-        setSelectedTaskForSheet(null);
-        setDailySubTab('HISTORY');
-        setSelectedTaskIds([]);
-        await fetchTasks();
-        showCustomAlert('완료', '일일업무외가 완료 이력에 저장되었습니다.');
-      } catch (err: any) {
-        showCustomAlert('오류', `완료 처리 실패: ${err.message}`);
-      }
-    });
-  }, [canManageTask, showCustomAlert, showCustomConfirm, fetchTasks]);
 
   // 업무 삭제
   const handleDeleteTask = useCallback(async (id: string) => {
@@ -1003,7 +984,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1">
             <button
               onClick={() => {
-                const pending = tasks.filter(t => t.status !== 'COMPLETED');
+                const pending = tasks.filter(t => t.status !== 'COMPLETED' && t.task_type !== 'DAILY_OTHER');
                 setMyAssignedTasks(pending);
                 setIsAlertOpen(true);
               }}
@@ -1159,15 +1140,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </span>
                       <span className="text-xs text-[#64748B] font-mono">({t.start_date})</span>
                       {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
-                      {t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleCompleteOtherTask(t); }}
-                          className="px-2.5 py-1 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 text-[11px] font-bold flex items-center gap-1 hover:bg-emerald-100 shrink-0"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> 완료
-                        </button>
-                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <h4 className="font-bold text-sm text-[#1F2937] cursor-pointer hover:underline" onClick={() => handleOpenTaskDetail(t)}>
