@@ -536,19 +536,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     );
   }, [appUsers, showCustomAlert, showCustomConfirm]);
 
-  // 상태 변경 버튼 클릭 시
+  // 상태 변경 버튼 클릭 시 (요구사항: 누구나 클릭하여 상세보기 및 상태변경 창을 볼 수 있도록 허용)
   const handleNextStatus = useCallback((e: React.MouseEvent, task: Task) => {
     e.stopPropagation();
-
-    // 요구사항 반영: 해당 인원과 관리자만 상태 버튼 조작 가능하도록 권한 확인
-    if (!canModifyTaskStatus(task)) {
-      if (task.task_type === 'WEEKLY' || task.task_type === 'CABIN') {
-        showCustomAlert('권한 없음', '주간 업무 및 CABIN 업무의 상태는 관리자만 변경할 수 있습니다.');
-      } else {
-        showCustomAlert('권한 없음', '해당 업무를 진행하는 인원과 관리자만 상태 변경 및 비고 수정이 가능합니다.');
-      }
-      return;
-    }
 
     setStatusChangeModal({
       open: true,
@@ -556,7 +546,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       targetStatus: task.status,
       remarks: task.remarks || ''
     });
-  }, [canModifyTaskStatus, showCustomAlert]);
+  }, []);
 
   // 상태 및 비고 정보 최종 저장 처리
   const handleConfirmStatusChange = useCallback(async () => {
@@ -565,7 +555,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const nextStatus = statusChangeModal.targetStatus;
     const remarks = statusChangeModal.remarks;
 
-    // 요구사항 반영: 해당 인원이 아닌 경우 저장 차단
     if (!canModifyTaskStatus(task)) {
       showCustomAlert('권한 없음', '해당 업무의 당사자 또는 관리자만 변경할 수 있습니다.');
       return;
@@ -744,7 +733,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     try {
       if (editingTask) {
-        // 작성자 정보는 수정 시 변경하지 않습니다.
         if (editingTask.task_type === 'DAILY_OTHER') {
           delete payload.created_by_id;
           delete payload.created_by_name;
@@ -836,7 +824,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber > 1) {
-        row.height = 27; // 약 36픽셀
+        row.height = 27;
         row.eachCell((cell) => {
           cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
           cell.border = { bottom: { style: 'thin', color: { argb: 'FFE2E5E9' } } };
@@ -880,7 +868,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     const weekdayNames = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
     const weekdayRow = worksheet.addRow(weekdayNames);
-    weekdayRow.height = 17.25; // 약 23픽셀
+    weekdayRow.height = 17.25;
     weekdayRow.eachCell((cell, colNumber) => {
       cell.font = { bold: true, color: { argb: colNumber === 6 ? 'FF2563EB' : colNumber === 7 ? 'FFDC2626' : 'FF1F2937' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
@@ -896,7 +884,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     while (cursor <= calendarEnd) {
       const dateRow = worksheet.addRow([]);
       const taskRow = worksheet.addRow([]);
-      dateRow.height = 23.25; // 약 31픽셀
+      dateRow.height = 23.25;
       for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
         const day = new Date(cursor);
         day.setDate(cursor.getDate() + dayIndex);
@@ -1666,7 +1654,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 상태 변경 및 비고 입력 모달 (요구사항 반영: 해당 인원/관리자만 버튼 및 비고란 활성화) */}
+        {/* 상태 변경 및 비고 입력 모달 (요구사항: 누구나 볼 수 있으나 비고란 및 상태버튼 선택은 권한이 없으면 비활성화) */}
         {statusChangeModal.open && statusChangeModal.task && (() => {
           const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
           return (
@@ -1708,7 +1696,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         disabled={!isAllowedUser}
                         onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })}
                         className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
-                          !isAllowedUser ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-500 border-slate-200' :
+                          !isAllowedUser ? 'opacity-60 cursor-not-allowed bg-slate-100 text-slate-500 border-slate-200' :
                           statusChangeModal.targetStatus === 'PENDING'
                             ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
                             : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
@@ -1722,7 +1710,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         disabled={!isAllowedUser}
                         onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })}
                         className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
-                          !isAllowedUser ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-500 border-slate-200' :
+                          !isAllowedUser ? 'opacity-60 cursor-not-allowed bg-slate-100 text-slate-500 border-slate-200' :
                           statusChangeModal.targetStatus === 'IN_PROGRESS'
                             ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
                             : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
@@ -1736,7 +1724,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         disabled={!isAllowedUser}
                         onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })}
                         className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
-                          !isAllowedUser ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-500 border-slate-200' :
+                          !isAllowedUser ? 'opacity-60 cursor-not-allowed bg-slate-100 text-slate-500 border-slate-200' :
                           statusChangeModal.targetStatus === 'COMPLETED'
                             ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
                             : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
@@ -1755,7 +1743,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     <textarea
                       rows={3}
                       disabled={!isAllowedUser}
-                      placeholder={isAllowedUser ? "작업 관련 비고 사항을 작성해주세요..." : "해당 업무의 인원 또는 관리자만 비고란을 수정할 수 있습니다."}
+                      placeholder={isAllowedUser ? "작업 관련 비고 사항을 작성해주세요..." : "해당 업무 인원 또는 관리자만 비고란을 수정할 수 있습니다."}
                       value={statusChangeModal.remarks}
                       onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
                       className={`w-full px-3 py-2 border rounded-lg text-xs resize-none focus:outline-none ${!isAllowedUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#243B5A]'}`}
