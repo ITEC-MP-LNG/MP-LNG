@@ -199,7 +199,8 @@ export default function EducationManagement({
       setLoadingEvents(true);
       const { data, error } = await supabase
         .from('events')
-        .select('*')
+        // 화면에서 실제 사용하는 필드만 조회해 응답 데이터 크기를 줄입니다.
+        .select('id, title, event_date, time_slot, location, description, created_at, updated_at')
         .order('event_date', { ascending: true });
       if (error) throw error;
       setEvents(data || []);

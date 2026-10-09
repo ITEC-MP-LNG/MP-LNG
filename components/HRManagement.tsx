@@ -196,7 +196,7 @@ export default function HRManagement({
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('*')
+        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y')
         .order('name', { ascending: true });
 
       if (error) throw error;
@@ -356,8 +356,8 @@ export default function HRManagement({
 
       if (error) throw error;
 
+      setUsers(prev => prev.filter(item => item.id !== user.id));
       showNotice(`${user.name} 님의 정보가 성공적으로 삭제되었습니다.`, 'success');
-      fetchUsers();
     } catch (err: any) {
       console.error('삭제 실패:', err);
       showNotice('구성원 삭제 실패: ' + (err.message || '알 수 없는 오류'), 'error');
@@ -417,6 +417,7 @@ export default function HRManagement({
     }
 
     try {
+      let savedPhotoUrl: string | null = null;
       const payload: any = {
         id: formData.inputId.trim(), 
         name: formData.name,
@@ -463,6 +464,7 @@ export default function HRManagement({
               .update({ photo_url: photoUrl })
               .eq('id', selectedUser.id);
             if (photoUpdateError) throw photoUpdateError;
+            savedPhotoUrl = photoUrl;
           } catch (photoError: any) {
             console.error('사진 업로드 실패:', photoError);
             showNotice(`인사 정보는 저장되었지만 사진 업로드에 실패했습니다: ${photoError?.message || 'Storage 설정을 확인해주세요.'}`, 'warning');
@@ -493,6 +495,7 @@ export default function HRManagement({
               .update({ photo_url: photoUrl })
               .eq('id', formData.inputId.trim());
             if (photoUpdateError) throw photoUpdateError;
+            savedPhotoUrl = photoUrl;
           } catch (photoError: any) {
             console.error('사진 업로드 실패:', photoError);
             showNotice(`구성원은 등록되었지만 사진 업로드에 실패했습니다: ${photoError?.message || 'Storage 설정을 확인해주세요.'}`, 'warning');
@@ -502,8 +505,21 @@ export default function HRManagement({
         showNotice('새 구성원이 등록되었습니다.', 'success');
       }
 
+      const savedUser: HRUser = {
+        ...(selectedUser || {}),
+        ...payload,
+        id: formData.inputId.trim(),
+        role: payload.role ?? selectedUser?.role ?? (isSuperAdmin ? (formData.role || 'USER') : 'USER'),
+        photo_url: savedPhotoUrl || selectedUser?.photo_url || null,
+        national_certificates: payload.national_certificates || payload.certificates || selectedUser?.national_certificates || ''
+      };
+      setUsers(prev => {
+        const next = selectedUser
+          ? prev.filter(item => item.id !== selectedUser.id).concat(savedUser)
+          : prev.concat(savedUser);
+        return next.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      });
       setIsModalOpen(false);
-      fetchUsers();
     } catch (err: any) {
       console.error('저장 실패:', err);
       showNotice('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'), 'error');
