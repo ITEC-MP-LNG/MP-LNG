@@ -540,11 +540,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const handleNextStatus = useCallback((e: React.MouseEvent, task: Task) => {
     e.stopPropagation();
 
+    // 요구사항 반영: 해당 인원과 관리자만 상태 버튼 조작 가능하도록 권한 확인
     if (!canModifyTaskStatus(task)) {
       if (task.task_type === 'WEEKLY' || task.task_type === 'CABIN') {
         showCustomAlert('권한 없음', '주간 업무 및 CABIN 업무의 상태는 관리자만 변경할 수 있습니다.');
       } else {
-        showCustomAlert('권한 없음', '해당 업무를 진행하는 인원만 상태 변경이 가능합니다.');
+        showCustomAlert('권한 없음', '해당 업무를 진행하는 인원과 관리자만 상태 변경 및 비고 수정이 가능합니다.');
       }
       return;
     }
@@ -564,6 +565,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const nextStatus = statusChangeModal.targetStatus;
     const remarks = statusChangeModal.remarks;
 
+    // 요구사항 반영: 해당 인원이 아닌 경우 저장 차단
+    if (!canModifyTaskStatus(task)) {
+      showCustomAlert('권한 없음', '해당 업무의 당사자 또는 관리자만 변경할 수 있습니다.');
+      return;
+    }
+
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus, remarks } : t)));
     if (selectedTaskForSheet?.id === task.id) {
       setSelectedTaskForSheet({ ...selectedTaskForSheet, status: nextStatus, remarks });
@@ -578,7 +585,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) {
       showCustomAlert('오류', `상태 변경 실패: ${err.message}`);
     }
-  }, [statusChangeModal, selectedTaskForSheet, fetchTasks, showCustomAlert]);
+  }, [statusChangeModal, selectedTaskForSheet, canModifyTaskStatus, fetchTasks, showCustomAlert]);
 
   const renderStatusBadge = useCallback((task: Task) => {
     const statusConfig = {
@@ -914,15 +921,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         for (const cell of [dateCell, taskCell]) {
           cell.border = { top: { style: 'thin', color: { argb: 'FFCBD5E1' } }, bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } }, left: { style: 'thin', color: { argb: 'FFCBD5E1' } }, right: { style: 'thin', color: { argb: 'FFCBD5E1' } } };
         }
-        // 셀의 실제 표시 폭을 기준으로 줄바꿈을 추정해, 내용이 길수록 행 높이를 늘립니다.
-        // 한글은 영문보다 셀 폭을 더 많이 차지하므로 약 2칸으로 계산합니다.
         const cellText = lines.join('\n');
         const visualLineCount = cellText.split('\n').reduce((total, segment) => {
           const visualWidth = Array.from(segment).reduce((width, char) =>
             width + (/[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7A3]/.test(char) ? 2 : 1), 0);
           return total + Math.max(1, Math.ceil(visualWidth / 25));
         }, 0);
-        // Excel 행 높이의 상한에 가깝게 설정해 기존 고정 높이로 인한 내용 잘림을 최소화합니다.
         taskRow.height = Math.max(taskRow.height || 0, Math.min(400, 15 * visualLineCount + 8));
       }
       cursor.setDate(cursor.getDate() + 7);
@@ -1224,7 +1228,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <h4 className="font-bold text-sm text-[#1F2937] cursor-pointer hover:underline" onClick={() => handleOpenTaskDetail(t)}>
                         {t.title}{renderTaskNewBadge(t)}
                       </h4>
-                      {/* 요청하신 수정 사항: 일일 업무 배정 인원수 표시 */}
                       <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full shrink-0">
                         {t.task_type === 'DAILY_OTHER' ? '작성자 업무' : `배정 인원: ${t.assigned_names?.length || 0}명`}
                       </span>
@@ -1297,7 +1300,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <button onClick={() => { setCurrentWeekMonday(getMonday(new Date())); setSelectedTaskIds([]); }} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2">오늘</button>
               </div>
 
-              {/* 엑셀 추출 컨트롤은 관리자 계정에만 표시 */}
               <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
                 {isAdmin && (
                   <>
@@ -1664,107 +1666,123 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 상태 변경 및 비고 입력 모달 */}
-        {statusChangeModal.open && statusChangeModal.task && (
-          <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border animate-in fade-in zoom-in-95 duration-150">
-              <div className="flex items-center justify-between border-b pb-3">
-                <div className="flex items-center space-x-2">
-                  <FileText className="h-5 w-5 text-[#243B5A]" />
-                  <h3 className="text-sm font-bold text-[#1F2937]">상세보기 및 상태 변경</h3>
-                </div>
-                <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg">
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
-
-              <div className="space-y-3 text-xs">
-                <div className="p-3 bg-[#F5F6F8] rounded-lg border space-y-2">
-                  <div className="font-bold text-sm text-[#1F2937]">{statusChangeModal.task.title}</div>
-                  <div className="text-[#64748B] font-mono">
-                    일시: {statusChangeModal.task.start_date} {statusChangeModal.task.time_slot ? `(${statusChangeModal.task.time_slot})` : ''}
+        {/* 상태 변경 및 비고 입력 모달 (요구사항 반영: 해당 인원/관리자만 버튼 및 비고란 활성화) */}
+        {statusChangeModal.open && statusChangeModal.task && (() => {
+          const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
+          return (
+            <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border animate-in fade-in zoom-in-95 duration-150">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div className="flex items-center space-x-2">
+                    <FileText className="h-5 w-5 text-[#243B5A]" />
+                    <h3 className="text-sm font-bold text-[#1F2937]">상세보기 및 상태 변경</h3>
                   </div>
-                  {statusChangeModal.task.description && (
-                    <div className="text-[#64748B]">설명: {statusChangeModal.task.description}</div>
+                  <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg">
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="p-3 bg-[#F5F6F8] rounded-lg border space-y-2">
+                    <div className="font-bold text-sm text-[#1F2937]">{statusChangeModal.task.title}</div>
+                    <div className="text-[#64748B] font-mono">
+                      일시: {statusChangeModal.task.start_date} {statusChangeModal.task.time_slot ? `(${statusChangeModal.task.time_slot})` : ''}
+                    </div>
+                    {statusChangeModal.task.description && (
+                      <div className="text-[#64748B]">설명: {statusChangeModal.task.description}</div>
+                    )}
+                    <div className="text-[#64748B]">
+                      담당자: {statusChangeModal.task.assigned_names?.join(', ') || 
+                              [...(statusChangeModal.task.day_workers || []), ...(statusChangeModal.task.night_workers || [])].join(', ') || 
+                              '지정 안됨'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#1F2937] mb-1.5">
+                      상태 선택 {!isAllowedUser && <span className="text-red-500 font-normal">(조회 전용 - 변경 권한 없음)</span>}
+                    </label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button
+                        type="button"
+                        disabled={!isAllowedUser}
+                        onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })}
+                        className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
+                          !isAllowedUser ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-500 border-slate-200' :
+                          statusChangeModal.targetStatus === 'PENDING'
+                            ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                            : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                        }`}
+                      >
+                        <AlertCircle className="h-3.5 w-3.5" />
+                        <span>대기</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!isAllowedUser}
+                        onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })}
+                        className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
+                          !isAllowedUser ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-500 border-slate-200' :
+                          statusChangeModal.targetStatus === 'IN_PROGRESS'
+                            ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
+                            : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
+                        }`}
+                      >
+                        <PlayCircle className="h-3.5 w-3.5" />
+                        <span>진행중</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!isAllowedUser}
+                        onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })}
+                        className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
+                          !isAllowedUser ? 'opacity-50 cursor-not-allowed bg-slate-100 text-slate-500 border-slate-200' :
+                          statusChangeModal.targetStatus === 'COMPLETED'
+                            ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
+                            : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+                        }`}
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        <span>완료</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#1F2937] mb-1">
+                      비고란 (내용 작성) {!isAllowedUser && <span className="text-red-500 font-normal">(읽기 전용)</span>}
+                    </label>
+                    <textarea
+                      rows={3}
+                      disabled={!isAllowedUser}
+                      placeholder={isAllowedUser ? "작업 관련 비고 사항을 작성해주세요..." : "해당 업무의 인원 또는 관리자만 비고란을 수정할 수 있습니다."}
+                      value={statusChangeModal.remarks}
+                      onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
+                      className={`w-full px-3 py-2 border rounded-lg text-xs resize-none focus:outline-none ${!isAllowedUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#243B5A]'}`}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-3 border-t text-xs">
+                  <button
+                    onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })}
+                    className="px-3.5 py-1.5 border rounded-lg hover:bg-slate-50"
+                  >
+                    닫기
+                  </button>
+                  {isAllowedUser && (
+                    <button
+                      onClick={handleConfirmStatusChange}
+                      className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1b2c44]"
+                    >
+                      상태 변경 및 저장
+                    </button>
                   )}
-                  <div className="text-[#64748B]">
-                    담당자: {statusChangeModal.task.assigned_names?.join(', ') || 
-                            [...(statusChangeModal.task.day_workers || []), ...(statusChangeModal.task.night_workers || [])].join(', ') || 
-                            '지정 안됨'}
-                  </div>
                 </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택</label>
-                  <div className="grid grid-cols-3 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })}
-                      className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
-                        statusChangeModal.targetStatus === 'PENDING'
-                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                          : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
-                      }`}
-                    >
-                      <AlertCircle className="h-3.5 w-3.5" />
-                      <span>대기</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })}
-                      className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
-                        statusChangeModal.targetStatus === 'IN_PROGRESS'
-                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                          : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                      }`}
-                    >
-                      <PlayCircle className="h-3.5 w-3.5" />
-                      <span>진행중</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })}
-                      className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition ${
-                        statusChangeModal.targetStatus === 'COMPLETED'
-                          ? 'bg-slate-700 text-white border-slate-800 shadow-xs'
-                          : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
-                      }`}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      <span>완료</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-[#1F2937] mb-1">비고란 (내용 작성)</label>
-                  <textarea
-                    rows={3}
-                    placeholder="작업 관련 비고 사항을 작성해주세요..."
-                    value={statusChangeModal.remarks}
-                    onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg text-xs resize-none focus:outline-none focus:border-[#243B5A]"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3 border-t text-xs">
-                <button
-                  onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })}
-                  className="px-3.5 py-1.5 border rounded-lg hover:bg-slate-50"
-                >
-                  취소
-                </button>
-                <button
-                  onClick={handleConfirmStatusChange}
-                  className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1b2c44]"
-                >
-                  상태 변경 및 저장
-                </button>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* 상세 바텀시트 */}
         {selectedTaskForSheet && (
@@ -1784,6 +1802,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <h3 className="text-base font-bold text-[#1F2937]">{selectedTaskForSheet.title}{renderTaskNewBadge(selectedTaskForSheet)}</h3>
                 {selectedTaskForSheet.description && (
                   <p className="text-xs text-[#64748B] bg-[#F5F6F8] p-3 rounded-lg border">{selectedTaskForSheet.description}</p>
+                )}
+                {selectedTaskForSheet.remarks && (
+                  <div className="text-xs text-[#1F2937] bg-amber-50/50 p-2.5 rounded-lg border border-amber-200">
+                    <span className="font-bold text-amber-900">비고: </span>{selectedTaskForSheet.remarks}
+                  </div>
                 )}
               </div>
 
