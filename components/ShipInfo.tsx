@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
+import StatusComparisonExport from './StatusComparisonExport';
 import {
   Anchor,
   Search,
@@ -100,15 +101,17 @@ export const normalizeCommissioningStatus = (raw: any, legacyStatus: ShipStatus)
 export const TANKS = ['TK1', 'TK2', 'TK3', 'TK4'] as const;
 export type TankKey = typeof TANKS[number]; // 'TK1' | 'TK2' | 'TK3' | 'TK4'
 
-// Tank 공정 순서: S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT
+// Tank 공정 순서: S/T 1ST, S/T 2nd, Pre SBTT, NH3, NH3 U/F, NH3 Welding, PBGT, Before G/T SBTT, After G/T SBTT
 export const TANK_STEPS = [
   { key: 'st_1st', label: 'S/T 1ST' },
   { key: 'st_2nd', label: 'S/T 2nd' },
   { key: 'pre_sbtt', label: 'Pre SBTT' },
   { key: 'nh3', label: 'NH3' },
+  { key: 'nh3_uf', label: 'NH3 - U/F' },
+  { key: 'nh3_welding', label: 'NH3 - Welding' },
   { key: 'pbgt', label: 'PBGT' },
-  { key: 'bf_sbtt', label: 'B/F SBTT' },
-  { key: 'at_sbtt', label: 'A/T SBTT' },
+  { key: 'bf_sbtt', label: 'Before G/T SBTT' },
+  { key: 'at_sbtt', label: 'After G/T SBTT' },
 ] as const;
 
 export type TankStepKey = typeof TANK_STEPS[number]['key'];
@@ -123,16 +126,19 @@ export interface TankStepDetail {
   text?: string;       // NH3 전용 텍스트/비고
 }
 
-export type TankDetail = Record<TankStepKey, TankStepDetail>;
+export type TankDetail = Record<TankStepKey, TankStepDetail> & { enabled?: boolean };
 
 export type ShipTankStatus = Record<TankKey, TankDetail>;
 
 export function getDefaultTankStatus(): ShipTankStatus {
   const createEmptySteps = (): TankDetail => ({
+    enabled: true,
     st_1st: { date: '', status: '대기', value: '' },
     st_2nd: { date: '', status: '대기', value: '' },
     pre_sbtt: { date: '', status: '대기', value: '' },
     nh3: { date: '', status: '대기', value: '', text: '' },
+    nh3_uf: { date: '', status: '대기', value: '' },
+    nh3_welding: { startDate: '', endDate: '', status: '대기', value: '' },
     pbgt: { startDate: '', endDate: '', status: '대기', value: '', finalValue: '' },
     bf_sbtt: { date: '', status: '대기', value: '' },
     at_sbtt: { date: '', status: '대기', value: '' },
@@ -376,7 +382,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     const result = { ...defaultStatus };
     TANKS.forEach((tk) => {
       if (raw[tk] && typeof raw[tk] === 'object') {
-        const tankObj = { ...defaultStatus[tk] };
+        const tankObj = { ...defaultStatus[tk], enabled: raw[tk].enabled !== false };
         TANK_STEPS.forEach(st => {
           if (raw[tk][st.key] && typeof raw[tk][st.key] === 'object') {
             tankObj[st.key] = {
@@ -569,7 +575,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         TANKS.forEach((tk) => {
           const stepInfo = ship.tank_status?.[tk]?.[step.key] || { status: '대기' };
 
-          const dateText = step.key === 'pbgt'
+          const dateText = (step.key === 'pbgt' || step.key === 'nh3_welding')
             ? (stepInfo.startDate || stepInfo.endDate
               ? `${stepInfo.startDate || '-'} ~ ${stepInfo.endDate || '-'}`
               : '일자 미입력')
@@ -1106,9 +1112,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   };
 
   const calculateTankStats = (tankStatus?: ShipTankStatus) => {
-    if (!tankStatus) return { completed: 0, total: 28, percent: 0 };
+    if (!tankStatus) return { completed: 0, total: TANK_STEPS.length * TANKS.length, percent: 0 };
     let completed = 0;
-    TANKS.forEach(tk => {
+    const activeTanks = TANKS.filter(tk => tankStatus[tk]?.enabled !== false);
+    activeTanks.forEach(tk => {
       TANK_STEPS.forEach(st => {
         const step = tankStatus[tk]?.[st.key];
         if (step && (step.status === '완료' || step.date || step.startDate)) {
@@ -1116,12 +1123,13 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         }
       });
     });
-    const percent = Math.round((completed / 28) * 100);
-    return { completed, total: 28, percent };
+    const total = activeTanks.length * TANK_STEPS.length;
+    const percent = total ? Math.round((completed / total) * 100) : 0;
+    return { completed, total, percent };
   };
 
   const calculateSingleTankStats = (tankDetail?: TankDetail) => {
-    if (!tankDetail) return { completed: 0, total: 7, percent: 0 };
+    if (!tankDetail) return { completed: 0, total: TANK_STEPS.length, percent: 0 };
     let completed = 0;
     TANK_STEPS.forEach(st => {
       const step = tankDetail[st.key];
@@ -1129,7 +1137,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         completed++;
       }
     });
-    return { completed, total: 7, percent: Math.round((completed / 7) * 100) };
+    return { completed, total: TANK_STEPS.length, percent: Math.round((completed / TANK_STEPS.length) * 100) };
   };
 
   const isCommissioningComplete = (ship: ShipItem) => {
@@ -1643,13 +1651,16 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   })()}
 
                   {isAdmin && (
-                    <button
-                      onClick={handleDownloadExcel}
-                      className="flex items-center space-x-1 bg-white hover:bg-slate-50 text-[#243B5A] border border-[#243B5A] px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
-                      title="Status 엑셀 다운로드"
-                    >
-                      <span>엑셀 다운로드</span>
-                    </button>
+                    <>
+                      <button
+                        onClick={handleDownloadExcel}
+                        className="flex items-center space-x-1 bg-white hover:bg-slate-50 text-[#243B5A] border border-[#243B5A] px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
+                        title="선택 호선 Status 엑셀 다운로드"
+                      >
+                        <span>선택 호선 엑셀</span>
+                      </button>
+                      <StatusComparisonExport ships={ships} showAlert={showAlert} />
+                    </>
                   )}
 
                   {isAdmin && (
@@ -1736,7 +1747,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     </span>
                                   )}
 
-                                  {step.key !== 'pbgt' && (
+                                  {step.key !== 'pbgt' && step.key !== 'nh3_welding' && (
                                     <span className="font-mono text-[11px] text-[#475569] flex items-center gap-0.5 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-200 min-w-[76px] justify-center">
                                       <Calendar className="h-2.5 w-2.5 text-slate-400" />
                                       {stepInfo.date ? stepInfo.date : '-'}
@@ -1745,7 +1756,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 </div>
                               </div>
 
-                              {step.key === 'pbgt' && (
+                              {(step.key === 'pbgt' || step.key === 'nh3_welding') && (
                                 <div className="ml-5 text-[10.5px] bg-slate-50 border border-slate-200 rounded p-1.5 space-y-1">
                                   <div className="flex items-center justify-between font-mono text-[#475569]">
                                     <span className="font-semibold text-[#243B5A]">일자:</span>
@@ -1753,14 +1764,16 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                       {stepInfo.startDate || '-'} ~ {stepInfo.endDate || '-'}
                                     </span>
                                   </div>
-                                  <div className="flex items-center justify-between font-mono">
-                                    <span className="bg-blue-50 text-[#243B5A] px-1 py-0.2 rounded border border-blue-200">
-                                      Ref: {stepInfo.value || '-'}
-                                    </span>
-                                    <span className="bg-emerald-50 text-emerald-800 px-1 py-0.2 rounded border border-emerald-200">
-                                      Final: {stepInfo.finalValue || '-'}
-                                    </span>
-                                  </div>
+                                  {step.key === 'pbgt' && (
+                                    <div className="flex items-center justify-between font-mono">
+                                      <span className="bg-blue-50 text-[#243B5A] px-1 py-0.2 rounded border border-blue-200">
+                                        Ref: {stepInfo.value || '-'}
+                                      </span>
+                                      <span className="bg-emerald-50 text-emerald-800 px-1 py-0.2 rounded border border-emerald-200">
+                                        Final: {stepInfo.finalValue || '-'}
+                                      </span>
+                                    </div>
+                                  )}
                                 </div>
                               )}
 
@@ -1786,7 +1799,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     Ship #{currentStatusShip.ship_no} 탱크별 공정 일자 종합 비교표
                   </h4>
                   <div className="flex items-center gap-2">
-                    <span className="hidden md:inline text-[11px] text-[#64748B]">S/T 1ST, S/T 2nd, Pre SBTT, NH3, PBGT, B/F SBTT, A/T SBTT</span>
+                    <span className="hidden md:inline text-[11px] text-[#64748B]">S/T 1ST, S/T 2nd, Pre SBTT, NH3, U/F, Welding, PBGT, Before G/T SBTT, After G/T SBTT</span>
                   </div>
                 </div>
 
@@ -1810,12 +1823,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                           </td>
                           {TANKS.map((tkKey) => {
                             const stepInfo = currentStatusShip.tank_status?.[tkKey]?.[step.key] || { status: '대기' };
+                            const tankDisabled = currentStatusShip.tank_status?.[tkKey]?.enabled === false;
                             const isDone = stepInfo.status === '완료';
                             const isInProgress = stepInfo.status === '진행중';
 
                             return (
                               <td key={tkKey} className="py-3 px-4 text-center border-l border-[#CBD5E1]">
                                 <div className="inline-flex flex-col items-center gap-1">
+                                  {tankDisabled ? <span className="px-2 py-1 rounded bg-slate-100 text-slate-500 border border-slate-200 text-[10px] font-bold">미사용</span> : <>
                                   <div className="flex items-center gap-1 flex-wrap justify-center">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isDone
                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -1832,7 +1847,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     )}
                                   </div>
 
-                                  {step.key === 'pbgt' ? (
+                                  {(step.key === 'pbgt' || step.key === 'nh3_welding') ? (
                                     <span className="font-mono text-[10.5px] text-[#64748B]">
                                       {stepInfo.startDate || stepInfo.endDate ? `${stepInfo.startDate || '-'} ~ ${stepInfo.endDate || '-'}` : '일자 미입력'}
                                     </span>
@@ -1854,6 +1869,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                       📝 {stepInfo.text}
                                     </span>
                                   )}
+                                </> }
                                 </div>
                               </td>
                             );
@@ -2425,10 +2441,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                         setStatusCreateFormData(prev => {
                           const updated = { ...prev.tank_status };
                           TANK_STEPS.forEach(st => {
-                            if (st.key === 'pbgt') {
-                              updated[statusCreateTankTab][st.key] = { startDate: today, endDate: today, status: '완료' };
+                            if (st.key === 'pbgt' || st.key === 'nh3_welding') {
+                              updated[statusCreateTankTab][st.key] = { ...updated[statusCreateTankTab][st.key], startDate: today, endDate: today, status: '완료' };
                             } else {
-                              updated[statusCreateTankTab][st.key] = { date: today, status: '완료' };
+                              updated[statusCreateTankTab][st.key] = { ...updated[statusCreateTankTab][st.key], date: today, status: '완료' };
                             }
                           });
                           return { ...prev, tank_status: updated };
@@ -2446,7 +2462,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                         setStatusCreateFormData(prev => {
                           const updated = { ...prev.tank_status };
                           TANK_STEPS.forEach(st => {
-                            updated[statusCreateTankTab][st.key] = { date: '', startDate: '', endDate: '', status: '대기', value: '', finalValue: '', text: '' };
+                            updated[statusCreateTankTab][st.key] = { ...updated[statusCreateTankTab][st.key], date: '', startDate: '', endDate: '', status: '대기', value: '', finalValue: '', text: '' };
                           });
                           return { ...prev, tank_status: updated };
                         });
@@ -2474,7 +2490,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             : 'bg-[#F5F6F8] hover:bg-slate-200 text-[#475569] border border-[#E2E5E9]'
                           }`}
                       >
-                        <span>{tk}</span>
+                        <span>{tk}{statusCreateFormData.tank_status[tk]?.enabled === false ? ' (미사용)' : ''}</span>
                         <span className={`text-[10px] font-sans font-semibold ${isTabActive ? 'text-white/80' : 'text-emerald-700'
                           }`}>
                           {stats.completed}/{stats.total} 완료
@@ -2485,9 +2501,16 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
 
                 <div className="bg-slate-50/80 p-3 rounded-xl border border-[#E2E5E9] space-y-2">
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs">
+                    <span className="font-semibold text-[#1F2937]">{statusCreateTankTab} 사용 여부</span>
+                    <span className="flex items-center gap-2">
+                      <span className={statusCreateFormData.tank_status[statusCreateTankTab]?.enabled === false ? 'text-rose-600 font-bold' : 'text-emerald-700 font-bold'}>{statusCreateFormData.tank_status[statusCreateTankTab]?.enabled === false ? '미사용' : '사용'}</span>
+                      <input type="checkbox" checked={statusCreateFormData.tank_status[statusCreateTankTab]?.enabled !== false} onChange={(e) => setStatusCreateFormData(prev => ({ ...prev, tank_status: { ...prev.tank_status, [statusCreateTankTab]: { ...prev.tank_status[statusCreateTankTab], enabled: e.target.checked } } }))} className="h-4 w-4 accent-[#243B5A]" />
+                    </span>
+                  </label>
                   <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-1.5">
                     <span className="text-xs font-bold text-[#1F2937]">
-                      [{statusCreateTankTab}] 7대 검사 공정 항목
+                      [{statusCreateTankTab}] 9개 검사 공정 항목
                     </span>
                     <span className="text-[10px] text-[#64748B]">날짜를 선택하면 자동으로 완료 처리됩니다.</span>
                   </div>
@@ -2522,7 +2545,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                         [step.key]: {
                                           ...prev.tank_status[statusCreateTankTab][step.key],
                                           status: newStatus,
-                                          date: (newStatus === '완료' && step.key !== 'pbgt' && !currentStepData.date)
+                                          date: (newStatus === '완료' && step.key !== 'pbgt' && step.key !== 'nh3_welding' && !currentStepData.date)
                                             ? new Date().toISOString().split('T')[0]
                                             : currentStepData.date
                                         }
@@ -2542,7 +2565,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 <option value="완료">완료</option>
                               </select>
 
-                              {step.key !== 'pbgt' && (
+                              {step.key !== 'pbgt' && step.key !== 'nh3_welding' && (
                                 <input
                                   type="date"
                                   value={currentStepData.date || ''}
@@ -2567,7 +2590,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 />
                               )}
 
-                              {step.key === 'pbgt' && (
+                              {(step.key === 'pbgt' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center space-x-1 shrink-0">
                                   <input
                                     type="date"
@@ -2581,8 +2604,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           ...prev.tank_status,
                                           [statusCreateTankTab]: {
                                             ...prev.tank_status[statusCreateTankTab],
-                                            pbgt: {
-                                              ...prev.tank_status[statusCreateTankTab].pbgt,
+                                            [step.key]: {
+                                              ...prev.tank_status[statusCreateTankTab][step.key],
                                               startDate: sDate,
                                             }
                                           }
@@ -2604,8 +2627,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           ...prev.tank_status,
                                           [statusCreateTankTab]: {
                                             ...prev.tank_status[statusCreateTankTab],
-                                            pbgt: {
-                                              ...prev.tank_status[statusCreateTankTab].pbgt,
+                                            [step.key]: {
+                                              ...prev.tank_status[statusCreateTankTab][step.key],
                                               endDate: eDate,
                                             }
                                           }
@@ -2885,7 +2908,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             : 'bg-[#F5F6F8] hover:bg-slate-200 text-[#475569] border border-[#E2E5E9]'
                           }`}
                       >
-                        <span>{tk}</span>
+                        <span>{tk}{statusEditFormData.tank_status[tk]?.enabled === false ? ' (미사용)' : ''}</span>
                         <span className={`text-[10px] font-sans font-semibold ${isTabActive ? 'text-white/80' : 'text-emerald-700'
                           }`}>
                           {stats.completed}/{stats.total} 완료
@@ -2896,6 +2919,13 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </div>
 
                 <div className="bg-slate-50/80 p-3 rounded-xl border border-[#E2E5E9] space-y-2">
+                  <label className="flex items-center justify-between gap-3 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs">
+                    <span className="font-semibold text-[#1F2937]">{statusModalTankTab} 사용 여부</span>
+                    <span className="flex items-center gap-2">
+                      <span className={statusEditFormData.tank_status[statusModalTankTab]?.enabled === false ? 'text-rose-600 font-bold' : 'text-emerald-700 font-bold'}>{statusEditFormData.tank_status[statusModalTankTab]?.enabled === false ? '미사용' : '사용'}</span>
+                      <input type="checkbox" checked={statusEditFormData.tank_status[statusModalTankTab]?.enabled !== false} onChange={(e) => setStatusEditFormData(prev => ({ ...prev, tank_status: { ...prev.tank_status, [statusModalTankTab]: { ...prev.tank_status[statusModalTankTab], enabled: e.target.checked } } }))} className="h-4 w-4 accent-[#243B5A]" />
+                    </span>
+                  </label>
                   <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-1.5">
                     <span className="text-xs font-bold text-[#1F2937]">
                       [{statusModalTankTab}] 검사 공정 항목
@@ -2932,7 +2962,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                         [step.key]: {
                                           ...prev.tank_status[statusModalTankTab][step.key],
                                           status: newStatus,
-                                          date: (newStatus === '완료' && step.key !== 'pbgt' && !currentStepData.date)
+                                          date: (newStatus === '완료' && step.key !== 'pbgt' && step.key !== 'nh3_welding' && !currentStepData.date)
                                             ? new Date().toISOString().split('T')[0]
                                             : currentStepData.date
                                         }
@@ -2952,7 +2982,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 <option value="완료">완료</option>
                               </select>
 
-                              {step.key !== 'pbgt' && (
+                              {step.key !== 'pbgt' && step.key !== 'nh3_welding' && (
                                 <input
                                   type="date"
                                   value={currentStepData.date || ''}
@@ -2977,7 +3007,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 />
                               )}
 
-                              {step.key === 'pbgt' && (
+                              {(step.key === 'pbgt' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center space-x-1 shrink-0">
                                   <input
                                     type="date"
@@ -2991,8 +3021,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           ...prev.tank_status,
                                           [statusModalTankTab]: {
                                             ...prev.tank_status[statusModalTankTab],
-                                            pbgt: {
-                                              ...prev.tank_status[statusModalTankTab].pbgt,
+                                            [step.key]: {
+                                              ...prev.tank_status[statusModalTankTab][step.key],
                                               startDate: sDate,
                                             }
                                           }
@@ -3014,8 +3044,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           ...prev.tank_status,
                                           [statusModalTankTab]: {
                                             ...prev.tank_status[statusModalTankTab],
-                                            pbgt: {
-                                              ...prev.tank_status[statusModalTankTab].pbgt,
+                                            [step.key]: {
+                                              ...prev.tank_status[statusModalTankTab][step.key],
                                               endDate: eDate,
                                             }
                                           }
