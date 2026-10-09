@@ -105,18 +105,20 @@ export async function exportHRToExcel(users: HRExportUser[]) {
 
   // 사용자가 제공한 조직도 Excel의 구성(직급 요약 + 부서별 카드 배치)을 참고한 첫 번째 시트
   const orgChart = workbook.addWorksheet('조직도 (목포)');
-  orgChart.columns = Array.from({ length: 20 }, () => ({ width: 4.2 }));
-  orgChart.mergeCells('A1:T1');
+  // 카드 사진 영역은 2개 열(각 약 51px)로 구성해 가로 102px가 되도록 설정합니다.
+  // 팀 사이의 1개 열은 약 51px 간격으로 사용합니다.
+  orgChart.columns = Array.from({ length: 23 }, () => ({ width: 6.65 }));
+  orgChart.mergeCells('A1:W1');
   orgChart.getCell('A1').value = 'ITEC SERVICE CO., LTD. Organization Chart';
   orgChart.getCell('A1').font = { name: '맑은 고딕', size: 18, bold: true, color: { argb: 'FF243B5A' } };
   orgChart.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' };
   orgChart.getRow(1).height = 34;
-  orgChart.mergeCells('A2:T2');
+  orgChart.mergeCells('A2:W2');
   orgChart.getCell('A2').value = `조직도 (목포) · ${new Date().toLocaleDateString('ko-KR')} · 총 ${ordered.length}명`;
   orgChart.getCell('A2').font = { name: '맑은 고딕', size: 11, bold: true, color: { argb: 'FF64748B' } };
   orgChart.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' };
   orgChart.getRow(2).height = 22;
-  orgChart.mergeCells('A4:T4');
+  orgChart.mergeCells('A4:W4');
   orgChart.getCell('A4').value = '직급 현황';
   orgChart.getCell('A4').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243B5A' } };
   orgChart.getCell('A4').font = { name: '맑은 고딕', bold: true, color: { argb: 'FFFFFFFF' } };
@@ -171,21 +173,22 @@ export async function exportHRToExcel(users: HRExportUser[]) {
         if (k === 0) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF2F5F9' } };
       }
     }
-    for (let rr = rowStart; rr <= rowEnd; rr++) orgChart.getRow(rr).height = rr === rowStart ? 23 : 19;
+    // 사진 병합 영역의 높이: 4행 합계 69.75pt = 약 93px.
+    for (let rr = rowStart; rr <= rowEnd; rr++) orgChart.getRow(rr).height = 17.4375;
     const photo = await getPhoto(user);
     if (photo) {
       const imageId = workbook.addImage({ base64: photo, extension: 'png' as any });
       // 사진을 카드의 사진 영역(병합 셀) 안쪽 경계에 맞춰 배치합니다.
       orgChart.addImage(imageId, {
-        tl: { col: startCol - 1 + 0.08, row: rowStart - 1 + 0.08 } as any,
-        br: { col: startCol + 1 - 0.08, row: rowEnd - 0.08 } as any,
+        tl: { col: startCol - 1, row: rowStart - 1 } as any,
+        br: { col: startCol + 1, row: rowEnd } as any,
         editAs: 'oneCell',
       });
     }
   };
 
   const writeSectionHeader = (row: number, label: string) => {
-    orgChart.mergeCells(row, 1, row, 20);
+    orgChart.mergeCells(row, 1, row, 23);
     const cell = orgChart.getCell(row, 1);
     cell.value = label;
     cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243B5A' } };
@@ -197,7 +200,7 @@ export async function exportHRToExcel(users: HRExportUser[]) {
   let sectionRow = 7;
   writeSectionHeader(sectionRow, `운영 · ${operationMembers.length}명`);
   sectionRow++;
-  const cardCols = [1, 6, 11, 16];
+  const cardCols = [1, 7, 13, 19];
   for (let i = 0; i < operationMembers.length; i++) {
     const rowStart = sectionRow + Math.floor(i / 4) * 5;
     await writeOrgCard(operationMembers[i], rowStart, cardCols[i % 4], false);
@@ -213,7 +216,7 @@ export async function exportHRToExcel(users: HRExportUser[]) {
   sectionRow += Math.max(1, Math.ceil(managementMembers.length / 4)) * 5;
 
   const teamHeaderRow = sectionRow;
-  const teamStarts = [1, 6, 11, 16];
+  const teamStarts = [1, 7, 13, 19];
   for (let i = 0; i < 4; i++) {
     const teamName = `${i + 1}팀`;
     orgChart.mergeCells(teamHeaderRow, teamStarts[i], teamHeaderRow, teamStarts[i] + 4);
@@ -226,7 +229,10 @@ export async function exportHRToExcel(users: HRExportUser[]) {
     orgChart.getRow(teamHeaderRow).height = 23;
     for (let j = 0; j < members.length; j++) {
       // 카드 높이는 4행, 다음 카드 전에는 1행 간격을 둡니다.
-      await writeOrgCard(members[j], teamHeaderRow + 1 + j * 5, teamStarts[i], true);
+      const memberRow = teamHeaderRow + 1 + j * 5;
+      await writeOrgCard(members[j], memberRow, teamStarts[i], true);
+      // 구성원 카드 사이 간격을 31px(23.25pt)로 지정합니다.
+      orgChart.getRow(memberRow + 4).height = 23.25;
     }
   }
 
