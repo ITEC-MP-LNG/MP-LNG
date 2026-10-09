@@ -78,7 +78,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [currentUser]);
 
 
-  // 일일업무외는 작성자 본인 또는 관리자만 수정/삭제 가능
+  // 야간업무진행는 작성자 본인 또는 관리자만 수정/삭제 가능
   const canManageTask = useCallback((task: Task) => {
     if (isAdmin) return true;
     if (task.task_type !== 'DAILY_OTHER' || !currentUser) return false;
@@ -583,7 +583,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   // 모달 열기 (수정)
   const handleOpenTaskEdit = useCallback((task: Task) => {
-    if (!canManageTask(task)) { showCustomAlert('권한 제한', '일일업무외는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
+    if (!canManageTask(task)) { showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
     setEditingTask(task);
     setFormData({
       title: task.title,
@@ -646,7 +646,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     e.preventDefault();
     const isDailyOther = formData.task_type === 'DAILY_OTHER';
     if (editingTask) {
-      if (!canManageTask(editingTask)) { showCustomAlert('권한 제한', '일일업무외는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
+      if (!canManageTask(editingTask)) { showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
     } else if (!isAdmin && !isDailyOther) {
       showCustomAlert('권한 제한', '관리자 권한이 없습니다.'); return;
     }
@@ -704,11 +704,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) { showCustomAlert('오류', `저장 중 오류: ${err.message}`); }
   }, [isAdmin, canManageTask, currentUser, formData, editingTask, dayWorkerList, nightWorkerList, assignedList, fetchTasks, showCustomAlert]);
 
-  // 일일업무외는 완료 버튼 하나로 처리하고 완료 이력 보기로 이동합니다.
+  // 야간업무진행는 완료 버튼 하나로 처리하고 완료 이력 보기로 이동합니다.
   const handleCompleteOtherTask = useCallback((task: Task) => {
     if (task.task_type !== 'DAILY_OTHER' || task.status === 'COMPLETED') return;
     if (!canManageTask(task)) {
-      showCustomAlert('권한 제한', '일일업무외 완료 처리는 작성자 본인과 관리자만 가능합니다.');
+      showCustomAlert('권한 제한', '야간업무진행 완료 처리는 작성자 본인과 관리자만 가능합니다.');
       return;
     }
     showCustomConfirm('업무 완료', '이 업무를 완료 처리하고 완료 이력 보기로 이동하시겠습니까?', async () => {
@@ -719,7 +719,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         setDailySubTab('HISTORY');
         setSelectedTaskIds([]);
         await fetchTasks();
-        showCustomAlert('완료', '일일업무외가 완료 이력에 저장되었습니다.');
+        showCustomAlert('완료', '야간업무진행가 완료 이력에 저장되었습니다.');
       } catch (err: any) {
         showCustomAlert('오류', `완료 처리 실패: ${err.message}`);
       }
@@ -729,7 +729,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   // 업무 삭제
   const handleDeleteTask = useCallback(async (id: string) => {
     const targetTask = tasks.find((task) => task.id === id);
-    if (!targetTask || !canManageTask(targetTask)) { showCustomAlert('권한 제한', '일일업무외는 작성자 본인과 관리자만 삭제할 수 있습니다.'); return; }
+    if (!targetTask || !canManageTask(targetTask)) { showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 삭제할 수 있습니다.'); return; }
     showCustomConfirm('업무 삭제', '해당 항목을 정말로 삭제하시겠습니까?', async () => {
       const { error } = await supabase.from('tasks').delete().eq('id', id);
       if (!error) {
@@ -994,7 +994,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 className="hidden sm:flex items-center space-x-1 bg-[#243B5A] text-white px-3.5 py-2 rounded-lg text-xs font-semibold shadow-xs shrink-0"
               >
                 <Plus className="h-4 w-4" />
-                <span>{taskTab === 'DAILY' && dailySubTab === 'OTHER' ? '일일업무외 등록' : '등록'}</span>
+                <span>{taskTab === 'DAILY' && dailySubTab === 'OTHER' ? '야간업무진행 등록' : '등록'}</span>
               </button>
             )}
           </div>
@@ -1041,7 +1041,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 className="col-span-2 sm:hidden flex items-center justify-center space-x-1 bg-[#243B5A] text-white px-3 py-2 rounded-lg text-xs font-semibold shadow-xs h-9"
               >
                 <Plus className="h-4 w-4" />
-                <span>{taskTab === 'DAILY' && dailySubTab === 'OTHER' ? '일일업무외 등록' : '업무 등록'}</span>
+                <span>{taskTab === 'DAILY' && dailySubTab === 'OTHER' ? '야간업무진행 등록' : '업무 등록'}</span>
               </button>
             )}
           </div>
@@ -1063,7 +1063,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 transition ${dailySubTab === 'OTHER' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}
               >
                 <FileText className="h-3.5 w-3.5" />
-                <span>일일업무외</span>
+                <span>야간업무진행</span>
               </button>
               <button
                 onClick={() => { setDailySubTab('HISTORY'); setSelectedTaskIds([]); }}
@@ -1145,7 +1145,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <div className="space-y-2.5">
             {filteredTasks.length === 0 ? (
               <div className="text-center py-12 text-xs text-[#64748B] border border-dashed rounded-xl">
-                {dailySubTab === 'ACTIVE' ? '등록된 진행중/대기 일일 업무가 없습니다.' : dailySubTab === 'OTHER' ? '등록된 일일업무외가 없습니다.' : '완료 이력이 없습니다.'}
+                {dailySubTab === 'ACTIVE' ? '등록된 진행중/대기 일일 업무가 없습니다.' : dailySubTab === 'OTHER' ? '등록된 야간업무진행가 없습니다.' : '완료 이력이 없습니다.'}
               </div>
             ) : (
               filteredTasks.map((t) => (
@@ -2141,14 +2141,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     </div>
 
-                    {/* 일일업무외는 작성자 본인만 인원으로 지정 */}
+                    {/* 야간업무진행는 작성자 본인만 인원으로 지정 */}
                     {formData.task_type === 'DAILY_OTHER' ? (
                       <div className="space-y-1.5">
                         <label className="block text-[11px] font-semibold">인원 (작성자 본인)</label>
                         <div className="inline-flex items-center gap-2 bg-slate-100 text-[#243B5A] border border-slate-200 text-xs font-semibold px-3 py-2 rounded-lg">
                           <User className="h-3.5 w-3.5" /> {editingTask?.created_by_name || currentUser?.name || '로그인 사용자'}
                         </div>
-                        <p className="text-[10px] text-[#64748B]">일일업무외는 등록한 본인만 인원으로 지정됩니다.</p>
+                        <p className="text-[10px] text-[#64748B]">야간업무진행는 등록한 본인만 인원으로 지정됩니다.</p>
                       </div>
                     ) : (
                     /* 인원 추가 & Team 불러오기 */
