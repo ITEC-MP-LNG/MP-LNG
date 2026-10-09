@@ -8,7 +8,7 @@ import {
   Download, Users, History, FileSpreadsheet, Layers, FileText
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
-import * as XLSX from 'xlsx';
+import * as ExcelJS from 'exceljs';
 
 export interface Task {
   id: string;
@@ -79,6 +79,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN'>('DAILY');
   const [dailySubTab, setDailySubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE'); 
   const [cabinSubTab, setCabinSubTab] = useState<string>('ALL');
+  const [cabinStatusSubTab, setCabinStatusSubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
+  const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   // 주간 업무 뷰 & 월 선택 (엑셀 추출용)
   const [weeklyViewMode, setWeeklyViewMode] = useState<'GRID' | 'LIST'>('GRID');
@@ -675,6 +677,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       const { error } = await supabase.from('tasks').delete().eq('id', id);
       if (!error) {
         setSelectedTaskForSheet(null);
+        setSelectedTaskIds((prev) => prev.filter((selectedId) => selectedId !== id));
         fetchTasks();
         showCustomAlert('삭제 완료', '성공적으로 삭제되었습니다.');
       } else {
@@ -683,75 +686,140 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   }, [isAdmin, showCustomConfirm, fetchTasks, showCustomAlert]);
 
-  // 달력 형식 주간 업무 엑셀(Excel) 다운로드 생성 함수
-  const handleExportWeeklyExcel = useCallback(() => {
+  // 일일업무 완료 이력 엑셀 내보내기: 선택 항목이 있으면 선택 항목만, 없으면 전체 완료 이력
+  const handleExportDailyHistoryExcel = useCallback(async () => {
+    const historyTasks = tasks.filter((task) => task.task_type === 'DAILY' && task.status === 'COMPLETED');
+    const selectedHistory = historyTasks.filter((task) => selectedTaskIds.includes(task.id));
+    const exportTasks = selectedHistory.length > 0 ? selectedHistory : historyTasks;
+    if (exportTasks.length === 0) { showCustomAlert('내보내기', '출력할 완료 이력이 없습니다.'); return; }
+
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('일일업무 완료이력');
+    worksheet.columns = [
+      { header: '일자', key: 'date', width: 15 },
+      { header: '업무명', key: 'title', width: 28 },
+      { header: '상세설정', key: 'description', width: 42 },
+      { header: '인원', key: 'count', width: 10 },
+      { header: '명단', key: 'names', width: 32 },
+      { header: '완료 시 비고란 내용', key: 'remarks', width: 42 },
+    ];
+    worksheet.addRows(exportTasks.map((task) => ({
+      date: task.start_date || '',
+      title: task.title || '',
+      description: task.description || '',
+      count: task.assigned_names?.length || 0,
+      names: (task.assigned_names || []).join(', '),
+      remarks: task.remarks || '',
+    })));
+    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
+    worksheet.getRow(1).height = 28;
+    worksheet.getRow(1).eachCell((cell) => {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243B5A' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    });
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber > 1) {
+        row.height = 27; // 약 36픽셀
+        row.eachCell((cell) => {
+          cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
+          cell.border = { bottom: { style: 'thin', color: { argb: 'FFE2E5E9' } } };
+        });
+      }
+    });
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `일일업무_완료이력_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    showCustomAlert('엑셀 다운로드', `${selectedHistory.length > 0 ? `선택한 ${selectedHistory.length}개` : `전체 ${exportTasks.length}개`} 완료 이력을 엑셀로 내보냈습니다.`);
+  }, [tasks, selectedTaskIds, showCustomAlert]);
+
+  // 달력 형식 월간 주간업무 엑셀 내보내기
+  const handleExportWeeklyExcel = useCallback(async () => {
     const [yearStr, monthStr] = selectedExportMonth.split('-');
     const year = parseInt(yearStr, 10);
     const month = parseInt(monthStr, 10);
-
     const firstDayOfMonth = new Date(year, month - 1, 1);
     const lastDayOfMonth = new Date(year, month, 0);
-
-    const monthlyWeeklyTasks = tasks.filter(t => {
-      if (t.task_type !== 'WEEKLY') return false;
-      const d = new Date(t.start_date);
-      return d.getFullYear() === year && (d.getMonth() + 1) === month;
+    const monthlyWeeklyTasks = tasks.filter((task) => {
+      if (task.task_type !== 'WEEKLY') return false;
+      const date = new Date(`${task.start_date}T00:00:00`);
+      return date.getFullYear() === year && date.getMonth() + 1 === month;
     });
 
-    const excelData: any[] = [];
-    excelData.push([`${year}년 ${month}월 주간 업무 달력`]);
-    excelData.push([]);
-    excelData.push(['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일']);
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(`${month}월 업무 달력`);
+    worksheet.columns = Array.from({ length: 7 }, () => ({ width: 25 }));
+    worksheet.mergeCells('A1:G1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = `${year}년 ${month}월 업무 달력`;
+    titleCell.font = { name: 'HY헤드라인M', size: 20, bold: false };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    worksheet.getRow(1).height = 36;
 
-    let currentDayIter = getMonday(firstDayOfMonth);
-    const endIter = new Date(lastDayOfMonth);
-    
-    while (currentDayIter <= endIter || currentDayIter.getDay() !== 1) {
-      const weekRowDates: string[] = [];
-      const weekRowTasksText: string[] = [];
+    const weekdayNames = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
+    const weekdayRow = worksheet.addRow(weekdayNames);
+    weekdayRow.height = 17.25; // 약 23픽셀
+    weekdayRow.eachCell((cell, colNumber) => {
+      cell.font = { bold: true, color: { argb: colNumber === 6 ? 'FF2563EB' : colNumber === 7 ? 'FFDC2626' : 'FF1F2937' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1F5F9' } };
+      cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+      cell.border = { top: { style: 'thin', color: { argb: 'FFCBD5E1' } }, bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } }, left: { style: 'thin', color: { argb: 'FFCBD5E1' } }, right: { style: 'thin', color: { argb: 'FFCBD5E1' } } };
+    });
 
-      for (let i = 0; i < 7; i++) {
-        const dateStr = formatDateToYYYYMMDD(currentDayIter);
-        const dayNum = currentDayIter.getDate();
-        const isCurrentMonth = currentDayIter.getMonth() + 1 === month;
-
-        weekRowDates.push(isCurrentMonth ? `${dayNum}일` : `(${dayNum}일)`);
-
-        if (isCurrentMonth) {
-          const matchedTasks = monthlyWeeklyTasks.filter(t => t.start_date === dateStr);
-          if (matchedTasks.length > 0) {
-            const taskText = matchedTasks.map((t, idx) => {
-              const statusStr = t.status === 'COMPLETED' ? '완료' : t.status === 'IN_PROGRESS' ? '진행중' : '대기';
-              const assignees = t.assigned_names?.length ? `[${t.assigned_names.join(', ')}]` : '';
-              const timeSlotStr = t.time_slot ? `(${t.time_slot}) ` : '';
-              return `${idx + 1}. ${timeSlotStr}${t.title} ${assignees} - ${statusStr}`;
-            }).join('\n');
-            weekRowTasksText.push(taskText);
-          } else {
-            weekRowTasksText.push('-');
-          }
-        } else {
-          weekRowTasksText.push('');
+    const firstMonday = getMonday(firstDayOfMonth);
+    const lastCalendarDay = new Date(lastDayOfMonth);
+    const calendarEnd = getMonday(lastCalendarDay);
+    calendarEnd.setDate(calendarEnd.getDate() + 6);
+    let cursor = new Date(firstMonday);
+    while (cursor <= calendarEnd) {
+      const dateRow = worksheet.addRow([]);
+      const taskRow = worksheet.addRow([]);
+      dateRow.height = 23.25; // 약 31픽셀
+      for (let dayIndex = 0; dayIndex < 7; dayIndex++) {
+        const day = new Date(cursor);
+        day.setDate(cursor.getDate() + dayIndex);
+        const col = dayIndex + 1;
+        const inMonth = day.getMonth() + 1 === month;
+        const dateCell = dateRow.getCell(col);
+        dateCell.value = inMonth ? `${day.getDate()}일` : `(${day.getDate()}일)`;
+        dateCell.font = { bold: true, color: { argb: dayIndex === 5 ? 'FF2563EB' : dayIndex === 6 ? 'FFDC2626' : inMonth ? 'FF1F2937' : 'FF9CA3AF' } };
+        dateCell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+        dateCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: inMonth ? 'FFF8FAFC' : 'FFF1F5F9' } };
+        const dateStr = formatDateToYYYYMMDD(day);
+        const dayTasks = inMonth ? monthlyWeeklyTasks.filter((task) => task.start_date === dateStr) : [];
+        const lines = dayTasks.map((task, index) => {
+          const names = task.assigned_names?.length ? ` [${task.assigned_names.join(', ')}]` : '';
+          const status = task.status === 'COMPLETED' ? '완료' : task.status === 'IN_PROGRESS' ? '진행중' : '대기';
+          return `${index + 1}. ${task.title}${names} (${status})${task.remarks ? `\n비고: ${task.remarks}` : ''}`;
+        });
+        const taskCell = taskRow.getCell(col);
+        taskCell.value = lines.join('\n');
+        taskCell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+        taskCell.font = { size: 10, color: { argb: dayIndex === 5 ? 'FF2563EB' : dayIndex === 6 ? 'FFDC2626' : 'FF1F2937' } };
+        for (const cell of [dateCell, taskCell]) {
+          cell.border = { top: { style: 'thin', color: { argb: 'FFCBD5E1' } }, bottom: { style: 'thin', color: { argb: 'FFCBD5E1' } }, left: { style: 'thin', color: { argb: 'FFCBD5E1' } }, right: { style: 'thin', color: { argb: 'FFCBD5E1' } } };
         }
-
-        currentDayIter.setDate(currentDayIter.getDate() + 1);
+        const maxLines = Math.max(1, ...lines.map((line) => Math.ceil(line.length / 28) + (line.match(/\n/g)?.length || 0)));
+        taskRow.height = Math.max(taskRow.height || 0, Math.min(300, 15 * maxLines + 8));
       }
-
-      excelData.push(weekRowDates);
-      excelData.push(weekRowTasksText);
-      excelData.push([]);
+      cursor.setDate(cursor.getDate() + 7);
     }
-
-    const worksheet = XLSX.utils.aoa_to_sheet(excelData);
-    
-    worksheet['!cols'] = [
-      { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }, { wch: 30 }
-    ];
-
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, `${month}월 달력 업무`);
-    XLSX.writeFile(workbook, `주간업무_달력_${year}_${month}월.xlsx`);
-    showCustomAlert('엑셀 다운로드', `${year}년 ${month}월 주간 업무 달력이 엑셀 파일로 추출되었습니다.`);
+    worksheet.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
+    worksheet.views = [{ state: 'frozen', ySplit: 2 }];
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `주간업무_달력_${year}_${month}월.xlsx`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    showCustomAlert('엑셀 다운로드', `${year}년 ${month}월 업무 달력이 엑셀 파일로 추출되었습니다.`);
   }, [selectedExportMonth, tasks, showCustomAlert]);
 
   // 주간 날짜 계산
@@ -774,22 +842,64 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const newMonday = new Date(currentWeekMonday);
     newMonday.setDate(currentWeekMonday.getDate() + (direction === 'next' ? 7 : -7));
     setCurrentWeekMonday(newMonday);
+    setSelectedTaskIds([]);
   }, [currentWeekMonday]);
 
   // 필터링된 업무 목록
   const filteredTasks = useMemo(() => {
     return tasks.filter((t) => {
       if ((t.task_type || 'CABIN') !== taskTab) return false;
+
+      if (taskTab === 'WEEKLY') {
+        const weekStart = formatDateToYYYYMMDD(currentWeekMonday);
+        const weekEndDate = new Date(currentWeekMonday);
+        weekEndDate.setDate(weekEndDate.getDate() + 6);
+        const weekEnd = formatDateToYYYYMMDD(weekEndDate);
+        if (t.start_date < weekStart || t.start_date > weekEnd) return false;
+      }
       
       if (taskTab === 'DAILY') {
         if (dailySubTab === 'ACTIVE') return t.status !== 'COMPLETED';
         if (dailySubTab === 'HISTORY') return t.status === 'COMPLETED';
       }
 
-      if (taskTab === 'CABIN' && cabinSubTab !== 'ALL') return t.category === cabinSubTab;
+      if (taskTab === 'CABIN') {
+        if (cabinSubTab !== 'ALL' && t.category !== cabinSubTab) return false;
+        if (cabinStatusSubTab === 'ACTIVE') return t.status !== 'COMPLETED';
+        return t.status === 'COMPLETED';
+      }
       return true;
     });
-  }, [tasks, taskTab, dailySubTab, cabinSubTab]);
+  }, [tasks, taskTab, dailySubTab, cabinSubTab, cabinStatusSubTab, currentWeekMonday]);
+
+  const toggleTaskSelection = useCallback((id: string, checked: boolean) => {
+    setSelectedTaskIds((prev) => checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((item) => item !== id));
+  }, []);
+
+  const handleSelectAllVisible = useCallback((checked: boolean) => {
+    setSelectedTaskIds((prev) => {
+      const visibleIds = filteredTasks.map((task) => task.id);
+      if (!checked) return prev.filter((id) => !visibleIds.includes(id));
+      return Array.from(new Set([...prev, ...visibleIds]));
+    });
+  }, [filteredTasks]);
+
+  const handleBulkDeleteTasks = useCallback(() => {
+    if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 업무를 삭제할 수 있습니다.'); return; }
+    const ids = selectedTaskIds.filter((id) => filteredTasks.some((task) => task.id === id));
+    if (ids.length === 0) { showCustomAlert('선택 항목 없음', '삭제할 업무를 먼저 선택해 주세요.'); return; }
+    showCustomConfirm('일괄 삭제', `선택한 ${ids.length}개 업무를 삭제하시겠습니까? 삭제한 업무는 복구할 수 없습니다.`, async () => {
+      const { error } = await supabase.from('tasks').delete().in('id', ids);
+      if (error) {
+        showCustomAlert('오류', `일괄 삭제 실패: ${error.message}`);
+        return;
+      }
+      setSelectedTaskIds((prev) => prev.filter((id) => !ids.includes(id)));
+      setSelectedTaskForSheet((prev) => prev && ids.includes(prev.id) ? null : prev);
+      await fetchTasks();
+      showCustomAlert('삭제 완료', `선택한 ${ids.length}개 업무가 삭제되었습니다.`);
+    });
+  }, [isAdmin, selectedTaskIds, filteredTasks, showCustomAlert, showCustomConfirm, fetchTasks]);
 
   return (
     <div className="bg-[#F5F6F8] min-h-screen w-full text-[#1F2937] p-0 m-0">
@@ -835,19 +945,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
             <div className="col-span-2 sm:col-span-auto bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] grid grid-cols-3 gap-1 h-9 items-center shrink-0">
               <button
-                onClick={() => setTaskTab('DAILY')}
+                onClick={() => { setTaskTab('DAILY'); setSelectedTaskIds([]); }}
                 className={`px-3 py-1 text-xs font-semibold rounded-md text-center transition ${taskTab === 'DAILY' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
               >
                 일일업무
               </button>
               <button
-                onClick={() => setTaskTab('WEEKLY')}
+                onClick={() => { setTaskTab('WEEKLY'); setSelectedTaskIds([]); }}
                 className={`px-3 py-1 text-xs font-semibold rounded-md text-center transition ${taskTab === 'WEEKLY' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
               >
                 주간업무
               </button>
               <button
-                onClick={() => setTaskTab('CABIN')}
+                onClick={() => { setTaskTab('CABIN'); setSelectedTaskIds([]); }}
                 className={`px-3 py-1 text-xs font-semibold rounded-md flex items-center justify-center gap-1 transition ${taskTab === 'CABIN' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
               >
                 <Home className="h-3 w-3 shrink-0" />
@@ -872,14 +982,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
             <div className="flex space-x-1">
               <button
-                onClick={() => setDailySubTab('ACTIVE')}
+                onClick={() => { setDailySubTab('ACTIVE'); setSelectedTaskIds([]); }}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 transition ${dailySubTab === 'ACTIVE' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}
               >
                 <Clock className="h-3.5 w-3.5" />
                 <span>진행중 / 대기 업무</span>
               </button>
               <button
-                onClick={() => setDailySubTab('HISTORY')}
+                onClick={() => { setDailySubTab('HISTORY'); setSelectedTaskIds([]); }}
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 transition ${dailySubTab === 'HISTORY' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}
               >
                 <History className="h-3.5 w-3.5" />
@@ -930,6 +1040,27 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
+        {taskTab === 'CABIN' && (
+          <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
+            <div className="flex space-x-1">
+              <button onClick={() => { setCabinStatusSubTab('ACTIVE'); setSelectedTaskIds([]); }} className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 ${cabinStatusSubTab === 'ACTIVE' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}><Clock className="h-3.5 w-3.5" /><span>대기 / 진행중 업무</span></button>
+              <button onClick={() => { setCabinStatusSubTab('HISTORY'); setSelectedTaskIds([]); }} className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 ${cabinStatusSubTab === 'HISTORY' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}><History className="h-3.5 w-3.5" /><span>완료 이력 보기</span></button>
+            </div>
+          </div>
+        )}
+
+        {(taskTab === 'WEEKLY' || (taskTab === 'DAILY' && dailySubTab === 'HISTORY') || taskTab === 'CABIN') && isAdmin && (
+          <div className="flex flex-wrap items-center gap-2 bg-white border border-[#E2E5E9] rounded-xl p-2">
+            <label className="flex items-center gap-2 text-xs font-semibold text-[#243B5A]">
+              <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-[#243B5A]" />
+              현재 목록 전체 선택
+            </label>
+            <span className="text-xs text-[#64748B]">선택 {selectedTaskIds.filter((id) => filteredTasks.some((task) => task.id === id)).length}개</span>
+            <button onClick={handleBulkDeleteTasks} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 flex items-center gap-1 hover:bg-red-100"><Trash2 className="h-3.5 w-3.5" />선택 삭제 / 일괄 삭제</button>
+            {taskTab === 'DAILY' && dailySubTab === 'HISTORY' && <button onClick={handleExportDailyHistoryExcel} className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white flex items-center gap-1 hover:bg-emerald-700"><FileSpreadsheet className="h-3.5 w-3.5" />완료 이력 엑셀 출력</button>}
+          </div>
+        )}
+
         {/* 컨텐츠 구역 */}
         {isLoading ? (
           <div className="text-center py-16 text-xs text-[#64748B]">로딩 중...</div>
@@ -944,6 +1075,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <div key={t.id} className="border border-[#E2E5E9] rounded-xl p-3 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-[#243B5A]/40 transition">
                   <div className="space-y-1">
                     <div className="flex items-center space-x-2">
+                      {isAdmin && dailySubTab === 'HISTORY' && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" aria-label={`${t.title} 선택`} />}
                       <span className="text-[11px] font-semibold text-[#2563EB] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded font-mono flex items-center gap-1">
                         <Clock className="h-3 w-3 text-[#2563EB]" />
                         {t.time_slot || '시간 미정'}
@@ -1009,7 +1141,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <button onClick={() => changeWeek('prev')} className="p-1.5 border rounded-lg"><ChevronLeft className="h-4 w-4" /></button>
                 <span className="text-xs sm:text-sm font-bold font-mono">{weekDays[0].displayDate} ~ {weekDays[6].displayDate} 일정</span>
                 <button onClick={() => changeWeek('next')} className="p-1.5 border rounded-lg"><ChevronRight className="h-4 w-4" /></button>
-                <button onClick={() => setCurrentWeekMonday(getMonday(new Date()))} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2">오늘</button>
+                <button onClick={() => { setCurrentWeekMonday(getMonday(new Date())); setSelectedTaskIds([]); }} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2">오늘</button>
               </div>
 
               {/* 엑셀 추출 컨트롤 영역 */}
@@ -1025,7 +1157,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
                 >
                   <FileSpreadsheet className="h-3.5 w-3.5" />
-                  <span> 저장(수정중) </span>
+                  <span>엑셀 저장</span>
                 </button>
 
                 <div className="bg-[#F5F6F8] p-1 rounded-lg border flex space-x-1">
@@ -1071,6 +1203,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                               className="bg-white border rounded-lg p-2 text-xs space-y-1 shadow-2xs cursor-pointer hover:border-[#243B5A]"
                             >
                               <div className="flex justify-between items-center">
+                                {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" aria-label={`${t.title} 선택`} />}
                                 <span className="text-[10px] text-[#2563EB] font-mono">{t.time_slot || '시간미정'}</span>
                                 {renderStatusBadge(t)}
                               </div>
@@ -1126,6 +1259,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                             <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="flex items-center justify-between bg-white border rounded-lg p-2.5 text-xs cursor-pointer hover:border-[#243B5A]">
                               <div className="space-y-1">
                                 <div className="flex items-center space-x-2">
+                                  {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" aria-label={`${t.title} 선택`} />}
                                   <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
                                   {renderStatusBadge(t)}
                                 </div>
@@ -1180,6 +1314,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <div key={t.id} className="border border-[#E2E5E9] rounded-xl p-3 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-[#243B5A]/40 transition">
                   <div className="space-y-1">
                     <div className="flex items-center space-x-2">
+                      {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" aria-label={`${t.title} 선택`} />}
                       {t.category && <span className="text-[11px] font-bold text-[#243B5A] bg-[#243B5A]/10 px-2 py-0.5 rounded">{t.category}</span>}
                       <span className="text-xs font-mono font-semibold text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
                         {t.start_date} ~ {t.end_date || t.start_date}
