@@ -240,7 +240,9 @@ interface ShipInfoProps {
 
 export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const [ships, setShips] = useState<ShipItem[]>([]);
+  // 호선 제원정보 필터: 선종/프로젝트명, 선주사, 전 공정 완료 여부만 사용합니다.
   const [searchQuery, setSearchQuery] = useState('');
+  const [completedOnly, setCompletedOnly] = useState(false);
 
   // 1. 메인 탭 상태: 'INFO'(호선 제원 정보) vs 'STATUS'(공정 현황)
   const [activeMainTab, setActiveMainTab] = useState<'INFO' | 'STATUS'>('INFO');
@@ -595,15 +597,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   };
 
   const filteredShips = useMemo(() => {
-    return ships.filter(s =>
-      s.ship_no.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.ship_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.shipowner && s.shipowner.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      s.dock.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (s.dwt && s.dwt.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      s.day_shift.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.night_shift.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const query = searchQuery.trim().toLocaleLowerCase();
+    // 검색 필터는 선종 및 프로젝트명만 대상으로 합니다.
+    return ships.filter((ship) => !query || (ship.ship_name || '').toLocaleLowerCase().includes(query));
   }, [ships, searchQuery]);
 
   const currentStatusShip = useMemo(() => {
@@ -611,10 +607,54 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   }, [ships, selectedHullNo]);
 
   const infoFilteredShips = useMemo(() => {
-    return selectedOwnerFilter
-      ? filteredShips.filter((ship) => (ship.shipowner || '').trim() === selectedOwnerFilter)
-      : filteredShips;
-  }, [filteredShips, selectedOwnerFilter]);
+    const isComplete = (ship: ShipItem) => {
+      const processStatuses = getTankLinkedCommissioningStatus(ship.tank_status);
+      return STATUS_LIST.every((step) => processStatuses[step] === '완료');
+    };
+
+    // 진행단계 점수: 가장 뒤쪽 공정까지 도달한 호선일수록 높은 점수를 부여합니다.
+    const progressStage = (ship: ShipItem) => {
+      const processStatuses = getTankLinkedCommissioningStatus(ship.tank_status);
+      let stage = -1;
+      STATUS_LIST.forEach((step, index) => {
+        if (processStatuses[step] !== '대기') stage = Math.max(stage, index);
+      });
+      return stage;
+    };
+
+    const parseDeliveryDate = (value: string | null | undefined) => {
+      if (!value) return null;
+      const timestamp = Date.parse(value);
+      return Number.isNaN(timestamp) ? null : timestamp;
+    };
+
+    return filteredShips
+      .filter((ship) => !selectedOwnerFilter || (ship.shipowner || '').trim() === selectedOwnerFilter)
+      .filter((ship) => !completedOnly || isComplete(ship))
+      .sort((a, b) => {
+        const aComplete = isComplete(a);
+        const bComplete = isComplete(b);
+
+        // 1순위: 전 공정 완료 호선은 목록 하단으로 이동합니다.
+        if (aComplete !== bComplete) return aComplete ? 1 : -1;
+
+        if (aComplete && bComplete) {
+          // 완료 호선은 아래에서 위로 인도일 오름차순이 되도록 화면상 인도일 내림차순 정렬.
+          // 인도일이 없는 호선은 완료 그룹의 위쪽에 배치합니다.
+          const aDate = parseDeliveryDate(a.delivery_date);
+          const bDate = parseDeliveryDate(b.delivery_date);
+          if (aDate === null && bDate !== null) return -1;
+          if (aDate !== null && bDate === null) return 1;
+          if (aDate !== null && bDate !== null && aDate !== bDate) return bDate - aDate;
+        } else {
+          // 미완료 호선은 진행단계가 높은 순서대로 위에 배치합니다.
+          const stageDifference = progressStage(b) - progressStage(a);
+          if (stageDifference !== 0) return stageDifference;
+        }
+
+        return (a.ship_no || '').localeCompare(b.ship_no || '', undefined, { numeric: true, sensitivity: 'base' });
+      });
+  }, [filteredShips, selectedOwnerFilter, completedOnly]);
 
   const shipOwners = useMemo(() => {
     return Array.from(
@@ -1358,15 +1398,26 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </div>
             </div>
 
-            <div className="relative flex-1 sm:w-64 max-w-sm">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[#64748B]" />
-              <input
-                type="text"
-                placeholder="호선, 선주사, 위치..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] placeholder-[#64748B]/70 focus:bg-white focus:border-[#243B5A] focus:outline-hidden transition font-medium"
-              />
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:ml-auto">
+              <div className="relative flex-1 sm:w-64 sm:max-w-xs">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[#64748B]" />
+                <input
+                  type="text"
+                  placeholder="선종 및 프로젝트명 필터..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-8 pr-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] placeholder-[#64748B]/70 focus:bg-white focus:border-[#243B5A] focus:outline-hidden transition font-medium"
+                />
+              </div>
+              <label className="inline-flex items-center gap-2 px-3 py-1.5 border border-[#E2E5E9] rounded-lg bg-white text-xs font-semibold text-[#475569] cursor-pointer whitespace-nowrap">
+                <input
+                  type="checkbox"
+                  checked={completedOnly}
+                  onChange={(e) => setCompletedOnly(e.target.checked)}
+                  className="h-3.5 w-3.5 accent-[#243B5A]"
+                />
+                전공정완료만
+              </label>
             </div>
           </div>
 
