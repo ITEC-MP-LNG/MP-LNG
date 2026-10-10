@@ -472,6 +472,31 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     return result;
   }, []);
 
+  // 저장 시 미사용 탱크는 NH3의 빈 값을 No leak로 자동 변환하지 않습니다.
+  // 사용 중인 탱크에 대해서만 빈 값 -> No leak, 숫자 -> 숫자 Leak 규칙을 적용합니다.
+  const prepareTankStatusForSave = useCallback((raw: any): ShipTankStatus => {
+    const prepared = JSON.parse(JSON.stringify(raw || getDefaultTankStatus())) as ShipTankStatus;
+    TANKS.forEach((tank) => {
+      const tankData = prepared[tank];
+      if (!tankData) return;
+      (['nh3_uf', 'nh3_welding'] as const).forEach((stepKey) => {
+        const currentValue = String(tankData[stepKey]?.value ?? '').trim();
+        if (tankData.enabled === false) {
+          // 미사용 탱크에 과거 자동 입력된 No leak가 남아 있으면 제거합니다.
+          if (currentValue.toLowerCase() === 'no leak') {
+            tankData[stepKey] = { ...tankData[stepKey], value: '', status: '대기' };
+          }
+          return;
+        }
+        let normalizedValue = currentValue;
+        if (!currentValue) normalizedValue = 'No leak';
+        else if (/^\d+(?:\.\d+)?$/.test(currentValue)) normalizedValue = `${currentValue} Leak`;
+        tankData[stepKey] = { ...tankData[stepKey], value: normalizedValue };
+      });
+    });
+    return normalizeTankStatus(prepared);
+  }, [normalizeTankStatus]);
+
   // 5. DB에서 기존 호선 데이터 가져오기
   const fetchShips = useCallback(async () => {
     try {
@@ -796,7 +821,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     try {
       const sanitizedCreateData = {
         ...statusCreateFormData,
-        tank_status: normalizeTankStatus(statusCreateFormData.tank_status),
+        tank_status: prepareTankStatusForSave(statusCreateFormData.tank_status),
         commissioning_status: getDefaultCommissioningStatus(),
         sort_order: ships.length,
         launch_date: statusCreateFormData.launch_date || null,
@@ -953,25 +978,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     if (!isAdmin || !statusEditFormData.id) return;
 
     try {
-      // 저장 시 NH3 U/F·Welding 값이 비어 있으면 No leak로 저장하고,
-      // 숫자만 입력된 경우에는 화면/DB에 '숫자 Leak' 형식으로 통일합니다.
-      const tankStatusBeforeNormalize = JSON.parse(JSON.stringify(statusEditFormData.tank_status)) as ShipTankStatus;
-      TANKS.forEach((tank) => {
-        (['nh3_uf', 'nh3_welding'] as const).forEach((stepKey) => {
-          const rawValue = String(tankStatusBeforeNormalize[tank]?.[stepKey]?.value ?? '').trim();
-          let normalizedValue = rawValue;
-          if (!rawValue) {
-            normalizedValue = 'No leak';
-          } else if (/^\d+(?:\.\d+)?$/.test(rawValue)) {
-            normalizedValue = `${rawValue} Leak`;
-          }
-          tankStatusBeforeNormalize[tank][stepKey] = {
-            ...tankStatusBeforeNormalize[tank][stepKey],
-            value: normalizedValue,
-          };
-        });
-      });
-
+      // 사용 중인 탱크에만 NH3 자동 No leak/숫자 Leak 규칙을 적용합니다.
       const updatePayload = {
         ship_name: statusEditFormData.ship_name,
         shipowner: statusEditFormData.shipowner,
@@ -980,7 +987,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         pt_mount_date: statusEditFormData.pt_mount_date || null,
         dwt: statusEditFormData.dwt || null,
         delivery_date: statusEditFormData.delivery_date || null,
-        tank_status: normalizeTankStatus(tankStatusBeforeNormalize),
+        tank_status: prepareTankStatusForSave(statusEditFormData.tank_status),
       };
 
       const { error } = await supabase
@@ -2628,6 +2635,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <div className="grid grid-cols-1 gap-2.5">
                     {TANK_STEPS.map((step) => {
                       const currentStepData = statusCreateFormData.tank_status[statusCreateTankTab]?.[step.key] || { status: '대기' };
+                      const isCurrentTankEnabled = statusCreateFormData.tank_status[statusCreateTankTab]?.enabled !== false;
                       if (String(step.key) === 'nh3') {
                         // NH3 상태는 기존 U/F와 Welding 완료 여부에 연동됩니다.
                         const currentTank = statusCreateFormData.tank_status[statusCreateTankTab];
@@ -2746,6 +2754,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
                               <input
                                 type="text"
+                                disabled={!isCurrentTankEnabled && (step.key === 'nh3_uf' || step.key === 'nh3_welding')}
                                 placeholder={step.key === 'pbgt' ? "Ref. 값 입력" : (step.key === 'nh3_uf' || step.key === 'nh3_welding') ? "No leak" : "값 (예: 250 mbar)"}
                                 value={currentStepData.value || ''}
                                 onChange={(e) => {
@@ -2765,7 +2774,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                   }));
                                 }}
                                 onBlur={(e) => {
-                                  if ((step.key === 'nh3_uf' || step.key === 'nh3_welding') && !e.currentTarget.value.trim()) {
+                                  if (isCurrentTankEnabled && (step.key === 'nh3_uf' || step.key === 'nh3_welding') && !e.currentTarget.value.trim()) {
                                     setStatusCreateFormData(prev => ({
                                       ...prev,
                                       tank_status: {
@@ -2786,6 +2795,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                   <label className="text-[11px] font-bold text-amber-800 shrink-0">Leak Location</label>
                                   <input
                                     type="text"
+                                    disabled={!isCurrentTankEnabled}
                                     placeholder="Leak Location 입력"
                                     value={currentStepData.text || ''}
                                     onChange={(e) => {
@@ -3049,6 +3059,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <div className="grid grid-cols-1 gap-2.5">
                     {TANK_STEPS.map((step) => {
                       const currentStepData = statusEditFormData.tank_status[statusModalTankTab]?.[step.key] || { status: '대기' };
+                      const isCurrentTankEnabled = statusEditFormData.tank_status[statusModalTankTab]?.enabled !== false;
                       if (String(step.key) === 'nh3') {
                         // NH3 상태는 기존 U/F와 Welding 완료 여부에 연동됩니다.
                         const currentTank = statusEditFormData.tank_status[statusModalTankTab];
@@ -3167,6 +3178,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
                               <input
                                 type="text"
+                                disabled={!isCurrentTankEnabled && (step.key === 'nh3_uf' || step.key === 'nh3_welding')}
                                 placeholder={step.key === 'pbgt' ? "Ref. 값" : (step.key === 'nh3_uf' || step.key === 'nh3_welding') ? "No leak" : "값"}
                                 value={currentStepData.value || ''}
                                 onChange={(e) => {
@@ -3186,7 +3198,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                   }));
                                 }}
                                 onBlur={(e) => {
-                                  if ((step.key === 'nh3_uf' || step.key === 'nh3_welding') && !e.currentTarget.value.trim()) {
+                                  if (isCurrentTankEnabled && (step.key === 'nh3_uf' || step.key === 'nh3_welding') && !e.currentTarget.value.trim()) {
                                     setStatusEditFormData(prev => ({
                                       ...prev,
                                       tank_status: {
@@ -3207,6 +3219,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                   <label className="text-[11px] font-bold text-amber-800 shrink-0">Leak Location</label>
                                   <input
                                     type="text"
+                                    disabled={!isCurrentTankEnabled}
                                     placeholder="Leak Location 입력"
                                     value={currentStepData.text || ''}
                                     onChange={(e) => {
