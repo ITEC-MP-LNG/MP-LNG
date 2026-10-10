@@ -441,9 +441,9 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     });
 
     const photo = await getPhoto(user);
-    const ovalW = Math.min(0.25, w * 0.19);
-    const ovalH = Math.min(0.32, h * 0.78);
-    const photoX = x + 0.06;
+    const ovalW = Math.min(0.18, w * 0.15);
+    const ovalH = Math.min(0.25, h * 0.62);
+    const photoX = x + 0.05;
     const photoY = y + (h - ovalH) / 2;
 
     if (photo) {
@@ -462,10 +462,10 @@ export async function exportHRToPptx(users: HRExportUser[]) {
       });
     }
 
-    const tx = x + ovalW + 0.09;
-    const tw = Math.max(0.45, w - ovalW - 0.17);
-    addText(slide, user.name || '', tx, y + 0.025, tw, 0.12, {
-      fontSize: w < 1.5 ? 6.5 : 8,
+    const tx = x + ovalW + 0.08;
+    const tw = Math.max(0.40, w - ovalW - 0.15);
+    addText(slide, user.name || '', tx, y + 0.025, tw, 0.13, {
+      fontSize: w < 1.5 ? 6.2 : 7.8,
       bold: true,
       color: '1F2937',
     });
@@ -473,14 +473,14 @@ export async function exportHRToPptx(users: HRExportUser[]) {
       slide,
       [user.position, user.job_title].filter(v => v && v !== '없음' && v !== '팀원').join(' · '),
       tx,
-      y + 0.155,
+      y + 0.165,
       tw,
-      0.11,
-      { fontSize: w < 1.5 ? 5.3 : 6.5, bold: true, color: '243B5A' },
+      0.12,
+      { fontSize: w < 1.5 ? 5.0 : 6.2, bold: true, color: '243B5A' },
     );
     if (displayField(user)) {
-      addText(slide, displayField(user), tx, y + 0.275, tw, 0.09, {
-        fontSize: w < 1.5 ? 4.8 : 6,
+      addText(slide, displayField(user), tx, y + 0.29, tw, Math.max(0.07, h - 0.31), {
+        fontSize: w < 1.5 ? 4.5 : 5.6,
         color: '64748B',
       });
     }
@@ -561,7 +561,7 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     const groupW = 1.19; // 너비 3.02cm
     const groupH = 0.50; // 높이 1.27cm
     const personW = 1.75; // 너비 4.45cm
-    const personH = 0.40; // 높이 1.02cm
+    const personH = 0.48; // 세부 업무까지 표시할 수 있도록 카드 높이 확보
 
     // 2. 상단 중앙: 운영 및 관리 그룹 배치 (2열 배치 구조)
     // 운영 그룹 헤더 및 팀원 카드 2열 배치
@@ -570,7 +570,7 @@ export async function exportHRToPptx(users: HRExportUser[]) {
       const col = i % 2;
       const row = Math.floor(i / 2);
       const x = 3.00 + col * 1.85;
-      const y = 1.15 + row * 0.45;
+      const y = 1.15 + row * 0.53;
       await addPersonCard(slide, operation[i], x, y, personW, personH);
     }
 
@@ -580,50 +580,41 @@ export async function exportHRToPptx(users: HRExportUser[]) {
       const col = i % 2;
       const row = Math.floor(i / 2);
       const x = 7.80 + col * 1.85;
-      const y = 1.15 + row * 0.45;
+      const y = 1.15 + row * 0.53;
       await addPersonCard(slide, management[i], x, y, personW, personH);
     }
 
-    // 3. 하단부: 각 팀별 외곽 테두리 컨테이너 및 팀원 카드 2열 배치
-    // 4개 팀이 가로로 나란히 배치되도록 X 좌표 설정
-    // 슬라이드 너비 13.333인치 안에 4개 팀을 균등 배치합니다.
-    // 9명 팀도 마지막 카드까지 슬라이드 하단/좌우 테두리를 벗어나지 않습니다.
+    // 3. 하단부: 팀별 큰 외곽 테두리는 제거하고 팀 제목과 인원 카드만 배치합니다.
+    // 4개 팀을 슬라이드 너비 안에 균등 배치하여 4팀이 바깥으로 나가지 않도록 합니다.
     const slideW = 13.333;
-    const sideMargin = 0.30;
+    const sideMargin = 0.28;
     const teamGap = 0.12;
-    const teamBoxW = (slideW - sideMargin * 2 - teamGap * 3) / 4;
-    const teamBaseXs = [0, 1, 2, 3].map(i => sideMargin + i * (teamBoxW + teamGap));
-    const teamTop = 3.82;
-    const teamBoxH = 3.36;
-    const teamCardW = 1.34;
-    const teamCardH = 0.40;
-    const teamCardGapX = 0.10;
-    const teamCardStartY = 4.48;
-    const teamCardGapY = 0.52;
+    const teamColW = (slideW - sideMargin * 2 - teamGap * 3) / 4;
+    const teamBaseXs = [0, 1, 2, 3].map(i => sideMargin + i * (teamColW + teamGap));
+    const teamHeaderY = 2.52;
+    const teamCardW = Math.min(1.36, (teamColW - 0.12) / 2);
+    const teamCardH = 0.43;
+    const teamCardGapX = 0.06;
+    const teamCardStartY = 3.18;
+    const teamCardGapY = 0.49;
 
     for (let i = 0; i < teams.length; i++) {
       const team = teams[i];
       const startX = teamBaseXs[i];
 
-      slide.addShape(pptx.ShapeType.roundRect, {
-        x: startX, y: teamTop, w: teamBoxW, h: teamBoxH,
-        fill: { color: 'FFFFFF' },
-        line: { color: 'CBD5E1', width: 1 },
-      });
-
-      // 팀 헤더는 팀 외곽 박스 상단 중앙에 배치합니다.
+      // 팀 헤더만 표시하고 팀 전체를 둘러싸는 큰 테두리는 만들지 않습니다.
       addGroupHeader(
         slide, team.name, `${team.members.length}명`,
-        startX + (teamBoxW - groupW) / 2, teamTop + 0.12, groupW, groupH, false
+        startX + (teamColW - groupW) / 2, teamHeaderY, groupW, groupH, false
       );
 
-      // 팀원 카드는 2열로 배치하고, 인원이 늘어도 카드 크기를 고정해 정렬합니다.
+      // 팀원은 2열로 배치합니다. 카드와 사진은 각 팀 열의 안쪽에 유지합니다.
       for (let j = 0; j < team.members.length; j++) {
         const member = team.members[j];
         const col = j % 2;
         const row = Math.floor(j / 2);
-        const cardX = startX + (teamBoxW - (teamCardW * 2 + teamCardGapX)) / 2
-          + col * (teamCardW + teamCardGapX);
+        const cardsW = teamCardW * 2 + teamCardGapX;
+        const cardX = startX + (teamColW - cardsW) / 2 + col * (teamCardW + teamCardGapX);
         const cardY = teamCardStartY + row * teamCardGapY;
         await addPersonCard(slide, member, cardX, cardY, teamCardW, teamCardH);
       }
