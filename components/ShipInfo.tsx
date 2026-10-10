@@ -598,8 +598,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
   const filteredShips = useMemo(() => {
     const query = searchQuery.trim().toLocaleLowerCase();
-    // 검색 필터는 선종 및 프로젝트명만 대상으로 합니다.
-    return ships.filter((ship) => !query || (ship.ship_name || '').toLocaleLowerCase().includes(query));
+    // 호선, 선종 및 프로젝트명, 위치(dock)까지 포함하여 통합 검색
+    return ships.filter((ship) => {
+      if (!query) return true;
+      const shipNoMatch = (ship.ship_no || '').toLocaleLowerCase().includes(query);
+      const shipNameMatch = (ship.ship_name || '').toLocaleLowerCase().includes(query);
+      const dockMatch = (ship.dock || '').toLocaleLowerCase().includes(query);
+      return shipNoMatch || shipNameMatch || dockMatch;
+    });
   }, [ships, searchQuery]);
 
   const currentStatusShip = useMemo(() => {
@@ -1403,7 +1409,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-[#64748B]" />
                 <input
                   type="text"
-                  placeholder="선종 및 프로젝트명 필터..."
+                  placeholder="호선, 선종/프로젝트, 위치 검색..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-8 pr-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] placeholder-[#64748B]/70 focus:bg-white focus:border-[#243B5A] focus:outline-hidden transition font-medium"
