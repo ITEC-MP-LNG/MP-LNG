@@ -563,23 +563,23 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     const personW = 1.75; // 너비 4.45cm
     const personH = 0.40; // 높이 1.02cm
 
-    // 2. 상단 중앙: 운영 및 관리 그룹 배치 (이미지 샘플 구조 반영)
-    // 운영 그룹 및 인원 배치 (상단 왼쪽 영역)
+    // 2. 상단 중앙: 운영 및 관리 그룹 배치 (첨부해주신 원본 레이아웃의 정확한 위치와 정렬 반영)
+    // 운영 그룹 헤더 및원 카드 세로 정렬
     addGroupHeader(slide, '운영', `${operation.length}명`, 3.00, 0.55, groupW, groupH, true);
     for (let i = 0; i < operation.length; i++) {
       const y = 1.15 + i * 0.45;
       await addPersonCard(slide, operation[i], 3.00, y, personW, personH);
     }
 
-    // 관리 그룹 및 인원 배치 (상단 오른쪽 영역)
+    // 관리 그룹 헤더 및 팀원 카드 세로 정렬
     addGroupHeader(slide, '관리', `${management.length}명`, 7.80, 0.55, groupW, groupH, false);
     for (let i = 0; i < management.length; i++) {
       const y = 1.15 + i * 0.45;
       await addPersonCard(slide, management[i], 7.80, y, personW, personH);
     }
 
-    // 3. 하단부: 1팀, 2팀, 3팀, 4팀 컬럼 배치 (이미지 샘플 구조 반영)
-    const teamColsX = [0.45, 3.85, 7.25, 10.65]; // 4개 팀이 가로로 나란히 배치되는 X 좌표
+    // 3. 하단부: 1팀, 2팀, 3팀, 4팀 컬럼 배치 (첨부해주신 원본 레이아웃의 정확한 열 구조 반영)
+    const teamColsX = [0.45, 3.85, 7.25, 10.65]; 
     for (let i = 0; i < teams.length; i++) {
       const team = teams[i];
       const startX = teamColsX[i];
