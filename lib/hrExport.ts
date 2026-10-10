@@ -563,35 +563,54 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     const personW = 1.75; // 너비 4.45cm
     const personH = 0.40; // 높이 1.02cm
 
-    // 2. 상단 중앙: 운영 및 관리 그룹 배치 (첨부해주신 원본 레이아웃의 정확한 위치와 정렬 반영)
-    // 운영 그룹 헤더 및원 카드 세로 정렬
+    // 2. 상단 중앙: 운영 및 관리 그룹 배치 (2열 배치 구조)
+    // 운영 그룹 헤더 및 팀원 카드 2열 배치
     addGroupHeader(slide, '운영', `${operation.length}명`, 3.00, 0.55, groupW, groupH, true);
     for (let i = 0; i < operation.length; i++) {
-      const y = 1.15 + i * 0.45;
-      await addPersonCard(slide, operation[i], 3.00, y, personW, personH);
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = 3.00 + col * 1.85;
+      const y = 1.15 + row * 0.45;
+      await addPersonCard(slide, operation[i], x, y, personW, personH);
     }
 
-    // 관리 그룹 헤더 및 팀원 카드 세로 정렬
+    // 관리 그룹 헤더 및 팀원 카드 2열 배치
     addGroupHeader(slide, '관리', `${management.length}명`, 7.80, 0.55, groupW, groupH, false);
     for (let i = 0; i < management.length; i++) {
-      const y = 1.15 + i * 0.45;
-      await addPersonCard(slide, management[i], 7.80, y, personW, personH);
+      const col = i % 2;
+      const row = Math.floor(i / 2);
+      const x = 7.80 + col * 1.85;
+      const y = 1.15 + row * 0.45;
+      await addPersonCard(slide, management[i], x, y, personW, personH);
     }
 
-    // 3. 하단부: 1팀, 2팀, 3팀, 4팀 컬럼 배치 (첨부해주신 원본 레이아웃의 정확한 열 구조 반영)
-    const teamColsX = [0.45, 3.85, 7.25, 10.65]; 
+    // 3. 하단부: 각 팀별 외곽 테두리 컨테이너 및 팀원 카드 2열 배치
+    // 4개 팀이 가로로 나란히 배치되도록 X 좌표 설정
+    const teamBaseXs = [0.45, 3.85, 7.25, 10.65]; 
     for (let i = 0; i < teams.length; i++) {
       const team = teams[i];
-      const startX = teamColsX[i];
-      
-      // 팀 헤더 박스
-      addGroupHeader(slide, team.name, `${team.members.length}명`, startX, 2.75, groupW, groupH, false);
-      
-      // 팀원 카드들 세로 정렬
+      const startX = teamBaseXs[i];
+      const teamBoxW = 3.60; // 팀 외곽 테두리 박스 너비
+      const teamBoxH = 2.80 + Math.ceil(team.members.length / 2) * 0.45; // 팀원 수에 따른 동적 높이
+
+      // 각 팀별 외곽 테두리 박스 생성
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x: startX, y: 2.50, w: teamBoxW, h: teamBoxH,
+        fill: { color: 'FFFFFF' },
+        line: { color: 'CBD5E1', width: 1 },
+      });
+
+      // 팀 헤더 박스 (팀 박스 상단 중앙에 배치)
+      addGroupHeader(slide, team.name, `${team.members.length}명`, startX + 0.20, 2.65, groupW, groupH, false);
+
+      // 팀원 카드들 2열(두 줄) 배치
       for (let j = 0; j < team.members.length; j++) {
         const member = team.members[j];
-        const y = 3.35 + j * 0.45;
-        await addPersonCard(slide, member, startX, y, personW, personH);
+        const col = j % 2;
+        const row = Math.floor(j / 2);
+        const cardX = startX + 0.15 + col * 1.75;
+        const cardY = 3.25 + row * 0.45;
+        await addPersonCard(slide, member, cardX, cardY, personW, personH);
       }
     }
   }
