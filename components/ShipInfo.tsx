@@ -413,7 +413,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     try {
       const { data, error } = await supabase
         .from(TABLE_NAME)
-        .select('*')
+        .select('id, sort_order, ship_no, ship_name, shipowner, dock, launch_date, pt_mount_date, dwt, status, progress, commissioning_status, delivery_date, day_shift, day_shift_user_ids, night_shift, night_shift_user_ids, tank_status')
         .order('sort_order', { ascending: true, nullsFirst: false })
         .order('ship_no', { ascending: true });
 
@@ -427,14 +427,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         }));
         setShips(parsedShips);
 
-        if (parsedShips.length > 0 && !selectedHullNo) {
-          setSelectedHullNo(parsedShips[0].ship_no);
+        if (parsedShips.length > 0) {
+          setSelectedHullNo((current) => current || parsedShips[0].ship_no);
         }
       }
     } catch (e) {
       console.error('호선 데이터 로딩 실패:', e);
     }
-  }, [normalizeTankStatus, selectedHullNo]);
+  }, [normalizeTankStatus]);
 
   useEffect(() => {
     fetchShips();
@@ -2053,9 +2053,25 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </div>
             </div>
 
-            {/* 규칙 3: 호선 제원 정보 입력창 하단에 'STATUS 입력하기' 버튼 생성하여 SHIP STATUS 정보 수정 창으로 바로 이동 */}
-            <div className="flex items-center justify-between pt-2 border-t border-[#E2E5E9]">
-              {isAdmin && (
+            {/* 호선 제원 정보 하단: STATUS 입력과 열람을 분리해 바로 확인할 수 있도록 함 */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#E2E5E9]">
+              <div className="flex flex-wrap items-center gap-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const target = selectedShip;
+                      setSelectedShip(null);
+                      setActiveMainTab('STATUS');
+                      setSelectedHullNo(target.ship_no);
+                      handleOpenStatusEditModal(target);
+                    }}
+                    className="flex items-center space-x-1.5 px-3.5 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-bold shadow-2xs transition cursor-pointer"
+                  >
+                    <Edit3 className="h-3.5 w-3.5" />
+                    <span>STATUS 입력하기</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => {
@@ -2063,14 +2079,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     setSelectedShip(null);
                     setActiveMainTab('STATUS');
                     setSelectedHullNo(target.ship_no);
-                    handleOpenStatusEditModal(target);
+                    setIsStatusEditModalOpen(false);
                   }}
-                  className="flex items-center space-x-1.5 px-3.5 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-bold shadow-2xs transition cursor-pointer"
+                  className="flex items-center space-x-1.5 px-3.5 py-2 bg-white hover:bg-slate-50 text-[#243B5A] border border-[#243B5A] rounded-lg text-xs font-bold shadow-2xs transition cursor-pointer"
                 >
-                  <Edit3 className="h-3.5 w-3.5" />
-                  <span>STATUS 입력하기</span>
+                  <Layers className="h-3.5 w-3.5" />
+                  <span>STATUS 열람</span>
                 </button>
-              )}
+              </div>
 
               <div className="flex items-center space-x-2 ml-auto">
                 {isAdmin && (

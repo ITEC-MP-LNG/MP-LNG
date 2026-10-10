@@ -189,7 +189,7 @@ export default function NoticeBoard({
       setLoading(true);
       const { data, error } = await supabase
         .from('notices')
-        .select('*')
+        .select('id, title, content, author_name, is_pinned, created_at, updated_at')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -242,7 +242,7 @@ export default function NoticeBoard({
     try {
       const { data: sugData, error: sugError } = await supabase
         .from('suggestions')
-        .select('*')
+        .select('id, title, content, author_id, author_name, created_at, updated_at')
         .order('created_at', { ascending: false });
 
       if (sugError) throw sugError;
@@ -270,7 +270,7 @@ export default function NoticeBoard({
     try {
       const { data, error } = await supabase
         .from('suggestion_comments')
-        .select('*')
+        .select('id, suggestion_id, author_id, author_name, content, created_at')
         .eq('suggestion_id', suggestionId)
         .order('created_at', { ascending: true });
 
@@ -291,7 +291,7 @@ export default function NoticeBoard({
       setLoading(false);
     };
     fetchAllData();
-  }, [isAdmin, fetchNotices, fetchSuggestions]);
+  }, [fetchNotices, fetchSuggestions]);
 
   // --- 공지사항 팝업 처리 ---
   const handleClosePopup = () => {

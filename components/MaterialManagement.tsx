@@ -330,7 +330,9 @@ export default function MaterialManagement({
   const fetchCabinInventory = useCallback(async () => {
     setLoadingCabin(true);
     try {
-      const { data, error } = await supabase.from('cabin_inventory').select('*');
+      const { data, error } = await supabase
+        .from('cabin_inventory')
+        .select('id, no, item, sheet_name, location_or_section, maker_model, serial_number, cert_no, calibration_date');
       if (error) throw error;
       
       const formattedData = (data || []).map((row: any) => ({
@@ -389,15 +391,17 @@ export default function MaterialManagement({
       }
 
       setCustomCabinSheets(orderedSheets);
-      if (orderedSheets.length > 0 && (!selectedCabinSheet || !orderedSheets.includes(selectedCabinSheet))) {
-        setSelectedCabinSheet(orderedSheets[0]);
+      if (orderedSheets.length > 0) {
+        setSelectedCabinSheet(current =>
+          !current || !orderedSheets.includes(current) ? orderedSheets[0] : current
+        );
       }
     } catch (err: any) {
       console.error('cabin_inventory 로드 실패:', err.message);
     } finally {
       setLoadingCabin(false);
     }
-  }, [selectedCabinSheet]);
+  }, []);
 
   useEffect(() => {
     if (inventoryTab === 'CABIN') {
@@ -1467,7 +1471,7 @@ export default function MaterialManagement({
     try {
       const { data, error } = await supabase
         .from('inventory_return_history')
-        .select('*')
+        .select('id, inventory_id, item_code, item_name, quantity, issued_by, returned_by, issued_at, returned_at, memo, created_at')
         .order('returned_at', { ascending: false });
       if (error) throw error;
       setReturnHistories((data || []) as InventoryReturnHistory[]);
@@ -1945,10 +1949,11 @@ export default function MaterialManagement({
   };
 
   const toggleSelectAllLogs = () => {
-    if (selectedLogIds.length === inventoryLogs.length) {
+    const visibleLogs = inventoryLogs.filter(log => !log.type.includes('반납완료'));
+    if (visibleLogs.length > 0 && visibleLogs.every(log => selectedLogIds.includes(String(log.id)))) {
       setSelectedLogIds([]);
     } else {
-      setSelectedLogIds(inventoryLogs.map(l => String(l.id)));
+      setSelectedLogIds(visibleLogs.map(l => String(l.id)));
     }
   };
 
@@ -2075,6 +2080,11 @@ export default function MaterialManagement({
   };
 
   const currentActiveSubCatName = getCurrentSelectedCategory();
+  // 반납완료 건은 별도 '반납 이력' 화면에서 확인하므로 최근 불출/반납 목록에서는 제외합니다.
+  const recentInventoryLogs = useMemo(
+    () => inventoryLogs.filter(log => !log.type.includes('반납완료')),
+    [inventoryLogs]
+  );
   return (
     <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
       
@@ -3330,7 +3340,7 @@ export default function MaterialManagement({
             <History className="h-4 w-4 text-[#243B5A]" />
             <h2 className="text-xs font-bold text-[#1F2937]">최근 불출 / 반납 이력 </h2>
             <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-semibold">
-              {inventoryLogs.length}건
+              {recentInventoryLogs.length}건
             </span>
             <button
               type="button"
@@ -3367,7 +3377,7 @@ export default function MaterialManagement({
                 <div className="flex items-center space-x-2">
                   <input
                     type="checkbox"
-                    checked={inventoryLogs.length > 0 && selectedLogIds.length === inventoryLogs.length}
+                    checked={recentInventoryLogs.length > 0 && recentInventoryLogs.every(log => selectedLogIds.includes(String(log.id)))}
                     onChange={toggleSelectAllLogs}
                     className="h-3.5 w-3.5 rounded accent-[#243B5A] cursor-pointer"
                   />
@@ -3378,7 +3388,7 @@ export default function MaterialManagement({
             </div>
 
             <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-              {inventoryLogs.map((log) => {
+              {recentInventoryLogs.map((log) => {
                 const isSelected = selectedLogIds.includes(String(log.id));
                 const isReturnCompleted = log.type.includes('반납완료');
                 const isIssueAlert = log.type.includes('이상알림');
@@ -3498,9 +3508,9 @@ export default function MaterialManagement({
                 );
               })}
 
-              {inventoryLogs.length === 0 && (
+              {recentInventoryLogs.length === 0 && (
                 <div className="text-center py-6 text-[#64748B] text-xs">
-                  최근 기록된 불출 및 반납 이력이 존재하지 않습니다.
+                  최근 불출 이력이 없습니다. 반납완료 항목은 별도의 반납 이력에서 확인할 수 있습니다.
                 </div>
               )}
             </div>
