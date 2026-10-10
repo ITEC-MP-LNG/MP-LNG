@@ -111,9 +111,10 @@ export const getTankLinkedCommissioningStatus = (tankStatus: ShipTankStatus | un
   const activeTanks = TANKS.filter((tank) => tankStatus[tank]?.enabled !== false);
   if (activeTanks.length === 0) return result;
 
+  const hasContent = (value: unknown) => String(value ?? '').trim().length > 0;
   const hasAnyInput = (keys: TankStepKey[]) => activeTanks.some((tankKey) => keys.some((key) => {
     const step = tankStatus[tankKey]?.[key];
-    return !!step && !!(step.date || step.startDate || step.endDate || step.value || step.finalValue);
+    return !!step && [step.date, step.startDate, step.endDate, step.value, step.finalValue].some(hasContent);
   }));
   const allComplete = (keys: TankStepKey[]) => activeTanks.every((tankKey) =>
     keys.every((key) => getTankStepStatus(key, tankStatus[tankKey]?.[key]) === '완료')
@@ -160,14 +161,15 @@ export type TankStepKey = typeof TANK_STEPS[number]['key'];
 /** 날짜와 값 입력 상태를 기준으로 공정 상태를 자동 판정합니다. */
 export function getTankStepStatus(stepKey: TankStepKey, step: { date?: string; startDate?: string; endDate?: string; value?: string; finalValue?: string } | undefined): CommissioningProcessStatus {
   if (!step) return '대기';
-  const hasAnyValue = !!(step.value || step.finalValue || step.date || step.startDate || step.endDate);
+  const hasContent = (value: unknown) => String(value ?? '').trim().length > 0;
+  const hasAnyValue = [step.value, step.finalValue, step.date, step.startDate, step.endDate].some(hasContent);
   if (!hasAnyValue) return '대기';
   const dateComplete = stepKey === 'pbgt' || stepKey === 'nh3_welding'
-    ? !!step.startDate && !!step.endDate
-    : !!step.date;
+    ? hasContent(step.startDate) && hasContent(step.endDate)
+    : hasContent(step.date);
   const valueComplete = stepKey === 'pbgt'
-    ? !!step.value && !!step.finalValue
-    : !!step.value;
+    ? hasContent(step.value) && hasContent(step.finalValue)
+    : hasContent(step.value);
   return dateComplete && valueComplete ? '완료' : '진행중';
 }
 
@@ -2605,15 +2607,27 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     {TANK_STEPS.map((step) => {
                       const currentStepData = statusCreateFormData.tank_status[statusCreateTankTab]?.[step.key] || { status: '대기' };
                       if (String(step.key) === 'nh3') {
-                        // 규칙 6 반영: U/F와 Welding이 완료되었을 때 NH3가 완료 상태임을 표시
+                        // NH3 상태는 U/F와 Welding 공정에 연동하고, Leak 수량/위치는 별도로 기록합니다.
                         const currentTank = statusCreateFormData.tank_status[statusCreateTankTab];
-                        const isNh3Done = getTankStepStatus('nh3_uf', currentTank.nh3_uf) === '완료' && getTankStepStatus('nh3_welding', currentTank.nh3_welding) === '완료';
+                        const nh3Status = getTankStepStatus('nh3_uf', currentTank.nh3_uf) === '완료' && getTankStepStatus('nh3_welding', currentTank.nh3_welding) === '완료'
+                          ? '완료'
+                          : (getTankStepStatus('nh3_uf', currentTank.nh3_uf) !== '대기' || getTankStepStatus('nh3_welding', currentTank.nh3_welding) !== '대기') ? '진행중' : '대기';
                         return (
-                          <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between">
-                            <span className="font-bold text-sm text-amber-900">NH3 (U/F & Welding 연동)</span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isNh3Done ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                              {isNh3Done ? '완료' : '대기'}
-                            </span>
+                          <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-bold text-sm text-amber-900">NH3 (Primary Barrier Tightness Test)</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${nh3Status === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : nh3Status === '진행중' ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>{nh3Status}</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <label className="flex items-center gap-2 text-[11px] font-bold text-amber-900">
+                                <span className="shrink-0">LEAK 수량</span>
+                                <input type="text" title="Leak 없을시 'No leak' 라고 적으시오" placeholder="LEAK 수량" value={currentStepData.value || ''} onChange={(e) => { const value = e.target.value; setStatusCreateFormData(prev => ({ ...prev, tank_status: { ...prev.tank_status, [statusCreateTankTab]: { ...prev.tank_status[statusCreateTankTab], nh3: { ...prev.tank_status[statusCreateTankTab].nh3, value } } } })); }} className="min-w-0 flex-1 px-2 py-1 bg-white border border-amber-200 rounded text-xs text-[#1F2937] font-normal" />
+                              </label>
+                              <label className="flex items-center gap-2 text-[11px] font-bold text-amber-900">
+                                <span className="shrink-0">Leak Location</span>
+                                <input type="text" placeholder="Leak Location 입력" value={currentStepData.text || ''} onChange={(e) => { const text = e.target.value; setStatusCreateFormData(prev => ({ ...prev, tank_status: { ...prev.tank_status, [statusCreateTankTab]: { ...prev.tank_status[statusCreateTankTab], nh3: { ...prev.tank_status[statusCreateTankTab].nh3, text } } } })); }} className="min-w-0 flex-1 px-2 py-1 bg-white border border-amber-200 rounded text-xs text-[#1F2937] font-normal" />
+                              </label>
+                            </div>
                           </div>
                         );
                       }
@@ -3013,13 +3027,25 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       const currentStepData = statusEditFormData.tank_status[statusModalTankTab]?.[step.key] || { status: '대기' };
                       if (String(step.key) === 'nh3') {
                         const currentTank = statusEditFormData.tank_status[statusModalTankTab];
-                        const isNh3Done = getTankStepStatus('nh3_uf', currentTank.nh3_uf) === '완료' && getTankStepStatus('nh3_welding', currentTank.nh3_welding) === '완료';
+                        const nh3Status = getTankStepStatus('nh3_uf', currentTank.nh3_uf) === '완료' && getTankStepStatus('nh3_welding', currentTank.nh3_welding) === '완료'
+                          ? '완료'
+                          : (getTankStepStatus('nh3_uf', currentTank.nh3_uf) !== '대기' || getTankStepStatus('nh3_welding', currentTank.nh3_welding) !== '대기') ? '진행중' : '대기';
                         return (
-                          <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between">
-                            <span className="font-bold text-sm text-amber-900">NH3 (U/F & Welding 연동)</span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isNh3Done ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                              {isNh3Done ? '완료' : '대기'}
-                            </span>
+                          <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-2">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <span className="font-bold text-sm text-amber-900">NH3 (Primary Barrier Tightness Test)</span>
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${nh3Status === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : nh3Status === '진행중' ? 'bg-amber-100 text-amber-900 border-amber-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>{nh3Status}</span>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <label className="flex items-center gap-2 text-[11px] font-bold text-amber-900">
+                                <span className="shrink-0">LEAK 수량</span>
+                                <input type="text" title="Leak 없을시 'No leak' 라고 적으시오" placeholder="LEAK 수량" value={currentStepData.value || ''} onChange={(e) => { const value = e.target.value; setStatusEditFormData(prev => ({ ...prev, tank_status: { ...prev.tank_status, [statusModalTankTab]: { ...prev.tank_status[statusModalTankTab], nh3: { ...prev.tank_status[statusModalTankTab].nh3, value } } } })); }} className="min-w-0 flex-1 px-2 py-1 bg-white border border-amber-200 rounded text-xs text-[#1F2937] font-normal" />
+                              </label>
+                              <label className="flex items-center gap-2 text-[11px] font-bold text-amber-900">
+                                <span className="shrink-0">Leak Location</span>
+                                <input type="text" placeholder="Leak Location 입력" value={currentStepData.text || ''} onChange={(e) => { const text = e.target.value; setStatusEditFormData(prev => ({ ...prev, tank_status: { ...prev.tank_status, [statusModalTankTab]: { ...prev.tank_status[statusModalTankTab], nh3: { ...prev.tank_status[statusModalTankTab].nh3, text } } } })); }} className="min-w-0 flex-1 px-2 py-1 bg-white border border-amber-200 rounded text-xs text-[#1F2937] font-normal" />
+                              </label>
+                            </div>
                           </div>
                         );
                       }
