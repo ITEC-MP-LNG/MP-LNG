@@ -47,14 +47,28 @@ const formatDateRange = (start?: string | null, end?: string | null) => {
 export default function StatusComparisonExport({ ships, showAlert }: Props) {
   const [isOpen, setIsOpen] = useState(false);
   const [owner, setOwner] = useState('__ALL__');
+  const [project, setProject] = useState('__ALL__'); // 👈 프로젝트명 필터 상태 추가
+
+  // 선주사 목록 추출
   const owners = useMemo(
     () => Array.from(new Set(ships.map((ship) => (ship.shipowner || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko')),
     [ships],
   );
 
+  // 프로젝트명 목록 추출 (174K, DF 8K, DF 15K 등)
+  const projects = useMemo(
+    () => Array.from(new Set(ships.map((ship) => (ship.ship_name || '').trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko')),
+    [ships],
+  );
+
   const exportExcel = async () => {
+    // 👈 선주사와 프로젝트명 조건을 동시에 필터링
     const targetShips = ships
-      .filter((ship) => owner === '__ALL__' || (ship.shipowner || '').trim() === owner)
+      .filter((ship) => {
+        const matchOwner = owner === '__ALL__' || (ship.shipowner || '').trim() === owner;
+        const matchProject = project === '__ALL__' || (ship.ship_name || '').trim() === project;
+        return matchOwner && matchProject;
+      })
       .slice()
       .sort((a, b) => parseDate(a.launch_date) - parseDate(b.launch_date) || String(a.ship_no || '').localeCompare(String(b.ship_no || ''), 'ko', { numeric: true }));
 
@@ -64,7 +78,7 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
     }
 
     try {
-      const firstProcessCol = 2; // A열은 Ship No. 및 선주사/프로젝트명/진수일 통합 셀
+      const firstProcessCol = 2; 
       const totalColumns = 1 + PROCESS_GROUPS.length * TANK_KEYS.length;
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'ShipInfo';
@@ -87,10 +101,8 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
       title.alignment = { horizontal: 'center', vertical: 'middle' };
       worksheet.getRow(1).height = 38;
 
-      // 2행은 제목과 표 사이의 간격으로만 사용합니다. 출력 범위/구분 행은 만들지 않습니다.
       worksheet.getRow(2).height = 8;
 
-      // 3~5행: 공정 그룹, 하위 공정, TK 헤더
       worksheet.getCell(3, 1).value = 'Ship No.';
       worksheet.mergeCells(3, 1, 5, 1);
 
@@ -98,7 +110,6 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
         const startCol = firstProcessCol + groupIndex * TANK_KEYS.length;
         const endCol = startCol + TANK_KEYS.length - 1;
         if (group.label === 'NH3') {
-          // NH3는 상위 제목 하나 아래에 U/F와 Welding을 배치합니다.
           const previous = PROCESS_GROUPS[groupIndex - 1];
           if (!previous || previous.label !== 'NH3') {
             const lastNh3Index = PROCESS_GROUPS.reduce((last, item, index) => item.label === 'NH3' ? index : last, groupIndex);
@@ -134,7 +145,6 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
         });
       }
 
-      // Ship No. 통합 헤더는 요청한 밝은 파랑 채우기와 12pt를 사용합니다.
       for (let rowNumber = 3; rowNumber <= 5; rowNumber += 1) {
         for (let colNumber = 1; colNumber <= 1; colNumber += 1) {
           const cell = worksheet.getCell(rowNumber, colNumber);
@@ -195,7 +205,6 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
               cell.font = { name: 'Arial', size: 12, color: { argb: 'FF000000' } };
               cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD6E4F0' } };
             }
-            // 호선별 외곽과 공정 그룹 사이 경계는 실선, 공정 그룹 내부 및 값/날짜 구분은 점선입니다.
             const isProcessGroupStart = colNumber >= firstProcessCol && (colNumber - firstProcessCol) % TANK_KEYS.length === 0;
             const isProcessGroupEnd = colNumber >= firstProcessCol && (colNumber - firstProcessCol + 1) % TANK_KEYS.length === 0;
             cell.border = {
@@ -209,13 +218,16 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
       });
 
       worksheet.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5 + targetShips.length * 2, column: totalColumns } };
-      const safeOwner = owner === '__ALL__' ? '전체호선' : owner.replace(/[\\/:*?"<>|]/g, '_');
+      
+      // 파일명에 선주사와 프로젝트 조건 반영
+      const safeOwner = owner === '__ALL__' ? '전체선주사' : owner.replace(/[\\/:*?"<>|]/g, '_');
+      const safeProject = project === '__ALL__' ? '전체프로젝트' : project.replace(/[\\/:*?"<>|]/g, '_');
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `탱크별_공정일자_종합비교표_${safeOwner}.xlsx`;
+      link.download = `탱크별_공정일자_종합비교표_${safeOwner}_${safeProject}.xlsx`;
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -235,7 +247,7 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
         type="button"
         onClick={() => setIsOpen(true)}
         className="flex items-center space-x-1 bg-[#243B5A] hover:bg-[#1B2F49] text-white border border-[#243B5A] px-2.5 py-1.5 rounded-lg text-xs font-semibold shadow-2xs transition cursor-pointer"
-        title="전체 또는 선주사별 공정 비교표 다운로드"
+        title="전체 또는 조건별 공정 비교표 다운로드"
       >
         <span>전체 비교표 Excel</span>
       </button>
@@ -246,14 +258,26 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
               <h3 className="text-sm font-bold text-[#1F2937]">공정현황 비교표 Excel 저장</h3>
               <button type="button" onClick={() => setIsOpen(false)} className="p-1 rounded hover:bg-slate-100 text-[#64748B]" aria-label="닫기">✕</button>
             </div>
-            <p className="text-xs text-[#64748B] leading-5">한 시트에 호선별 2개 행으로 저장합니다. 왼쪽 Ship No. 셀에는 호선번호, 선주사(프로젝트명), 진수일이 표시되고 공정 값과 날짜는 각각 위·아래 행에 표시됩니다. 진수일 오름차순으로 정렬됩니다.</p>
+            <p className="text-xs text-[#64748B] leading-5">한 시트에 호선별 2개 행으로 저장합니다. 선주사와 프로젝트명(174K, DF 8K, DF 15K 등)을 각각 선택하여 필터링할 수 있습니다. 진수일 오름차순으로 정렬됩니다.</p>
+            
+            {/* 선주사 선택 드롭다운 */}
             <label className="block space-y-1.5">
-              <span className="text-xs font-semibold text-[#334155]">호선 선택</span>
+              <span className="text-xs font-semibold text-[#334155]">선주사 선택</span>
               <select value={owner} onChange={(event) => setOwner(event.target.value)} className="w-full border border-[#CBD5E1] rounded-lg px-3 py-2 text-sm text-[#1F2937] bg-white focus:outline-none focus:border-[#243B5A]">
-                <option value="__ALL__">전체 호선</option>
-                {owners.map((item) => <option key={item} value={item}>{item} 선주사 호선</option>)}
+                <option value="__ALL__">전체 선주사</option>
+                {owners.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
             </label>
+
+            {/* 프로젝트명(선종) 선택 드롭다운 추가 */}
+            <label className="block space-y-1.5">
+              <span className="text-xs font-semibold text-[#334155]">프로젝트명 / 선종 선택</span>
+              <select value={project} onChange={(event) => setProject(event.target.value)} className="w-full border border-[#CBD5E1] rounded-lg px-3 py-2 text-sm text-[#1F2937] bg-white focus:outline-none focus:border-[#243B5A]">
+                <option value="__ALL__">전체 프로젝트 (174K, DF 8K, DF 15K 전체)</option>
+                {projects.map((item) => <option key={item} value={item}>{item}</option>)}
+              </select>
+            </label>
+
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={() => setIsOpen(false)} className="px-3 py-2 rounded-lg border border-[#CBD5E1] text-xs font-semibold text-[#475569] hover:bg-slate-50">취소</button>
               <button type="button" onClick={exportExcel} className="px-3 py-2 rounded-lg bg-[#243B5A] hover:bg-[#1B2F49] text-white text-xs font-semibold">Excel 저장</button>
