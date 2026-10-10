@@ -793,7 +793,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     showCustomConfirm(
       '업무 최종 완료',
-      '업무 내용을 확인하셨습니까? 최종 완료 처리하면 완료 이력 보기로 이동합니다.',
+      '업무 내용을 확인하셨습니까? 최종 완료 처리하면 업무 완료 이력으로 이동합니다.',
       async () => {
         try {
           const { error } = await supabase.from('tasks').update({
@@ -823,7 +823,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       showCustomAlert('권한 제한', '야간업무진행 완료 처리는 관리자만 가능합니다.');
       return;
     }
-    showCustomConfirm('업무 완료', '이 업무를 완료 처리하고 완료 이력 보기로 이동하시겠습니까?', async () => {
+    showCustomConfirm('업무 완료', '이 업무를 완료 처리하고 업무 완료 이력으로 이동하시겠습니까?', async () => {
       try {
         const { error } = await supabase.from('tasks').update({
           status: 'COMPLETED',
@@ -1069,7 +1069,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSelectedTaskIds([]);
   }, [currentWeekMonday]);
 
-  // 필터링된 업무 목록 (요구사항: 완료 이력 보기는 최신순 정렬 적용)
+  // 필터링된 업무 목록 (요구사항: 업무 완료 이력은 최신순 정렬 적용)
   const filteredTasks = useMemo(() => {
     const list = tasks.filter((t) => {
       if (taskTab === 'DAILY') {
@@ -1098,7 +1098,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return true;
     });
 
-    // 완료 이력 보기 탭일 경우 날짜 기준 최신순 정렬 (최신 날짜가 맨 위로)
+    // 업무 완료 이력 탭일 경우 날짜 기준 최신순 정렬 (최신 날짜가 맨 위로)
     if (taskTab === 'DAILY' && dailySubTab === 'HISTORY') {
       return [...list].sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
     }
@@ -1234,7 +1234,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 transition ${dailySubTab === 'HISTORY' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}
               >
                 <History className="h-3.5 w-3.5" />
-                <span>완료 이력 보기</span>
+                <span>업무 완료 이력</span>
               </button>
             </div>
           </div>
@@ -1285,7 +1285,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
             <div className="flex space-x-1">
               <button onClick={() => { setCabinStatusSubTab('ACTIVE'); setSelectedTaskIds([]); }} className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 ${cabinStatusSubTab === 'ACTIVE' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}><Clock className="h-3.5 w-3.5" /><span>대기 / 진행중 업무</span></button>
-              <button onClick={() => { setCabinStatusSubTab('HISTORY'); setSelectedTaskIds([]); }} className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 ${cabinStatusSubTab === 'HISTORY' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}><History className="h-3.5 w-3.5" /><span>완료 이력 보기</span></button>
+              <button onClick={() => { setCabinStatusSubTab('HISTORY'); setSelectedTaskIds([]); }} className={`px-3 py-1.5 text-xs font-semibold rounded-lg flex items-center gap-1 ${cabinStatusSubTab === 'HISTORY' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}><History className="h-3.5 w-3.5" /><span>업무 완료 이력</span></button>
             </div>
           </div>
         )}
