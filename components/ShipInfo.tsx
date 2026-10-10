@@ -30,8 +30,6 @@ import {
   Info,
   CheckCheck,
   RotateCcw,
-  ArrowLeft,
-  ArrowRight,
 } from 'lucide-react';
 
 
@@ -106,33 +104,36 @@ export const normalizeCommissioningStatus = (raw: any, legacyStatus: ShipStatus)
   return result;
 };
 
-/** STATUS의 TK1~TK4 상태를 호선 제원정보의 시운전 공정 상태로 변환합니다. */
+/** STATUS의 TK1~TK4 입력값을 공정별로 독립 판정해 호선 제원정보에 반영합니다. */
 export const getTankLinkedCommissioningStatus = (tankStatus: ShipTankStatus | undefined): CommissioningStatusMap => {
   const result = getDefaultCommissioningStatus();
-  const tanks = TANKS.map((tank) => tankStatus?.[tank]).filter(Boolean) as TankDetail[];
-  if (tanks.length === 0) return result;
+  if (!tankStatus) return result;
+  const activeTanks = TANKS.filter((tank) => tankStatus[tank]?.enabled !== false);
+  if (activeTanks.length === 0) return result;
 
-  const allTanksComplete = (keys: TankStepKey[]) => tanks.every((tank) =>
-    keys.every((key) => tank[key]?.status === '완료')
+  const hasAnyInput = (keys: TankStepKey[]) => activeTanks.some((tankKey) => keys.some((key) => {
+    const step = tankStatus[tankKey]?.[key];
+    return !!step && !!(step.date || step.startDate || step.endDate || step.value || step.finalValue);
+  }));
+  const allComplete = (keys: TankStepKey[]) => activeTanks.every((tankKey) =>
+    keys.every((key) => getTankStepStatus(key, tankStatus[tankKey]?.[key]) === '완료')
   );
-  const anyTankStarted = (key: TankStepKey) => tanks.some((tank) => {
-    const step = tank[key];
-    return !!step && (step.status === '진행중' || step.status === '완료' || !!step.date || !!step.startDate || !!step.endDate);
-  });
   const setFromTankSteps = (statusKey: ShipStatus, keys: TankStepKey[]) => {
-    result[statusKey] = allTanksComplete(keys) ? '완료' : '진행중';
+    if (!hasAnyInput(keys)) result[statusKey] = '대기';
+    else result[statusKey] = allComplete(keys) ? '완료' : '진행중';
   };
 
   setFromTankSteps('Sound Test 1St', ['st_1st']);
   setFromTankSteps('Sound Test 2nd', ['st_2nd']);
-  setFromTankSteps('Nh3 Test', ['nh3', 'nh3_uf', 'nh3_welding']);
+  setFromTankSteps('Nh3 Test', ['nh3_uf', 'nh3_welding']);
   setFromTankSteps('PBGT', ['pbgt']);
   setFromTankSteps('Before G/T SBTT', ['bf_sbtt']);
   setFromTankSteps('After G/T SBTT', ['at_sbtt']);
 
-  // GAS TRIAL: Before 완료 시 진행중, After G/T SBTT가 한 탱크라도 시작되면 완료
-  const beforeComplete = allTanksComplete(['bf_sbtt']);
-  const afterStarted = anyTankStarted('at_sbtt');
+  // GAS TRIAL: Before G/T SBTT가 TK1~TK4 모두 완료되면 진행중,
+  // After G/T SBTT가 한 탱크라도 입력을 시작하면 완료.
+  const beforeComplete = allComplete(['bf_sbtt']);
+  const afterStarted = hasAnyInput(['at_sbtt']);
   result['GAS TRIAL'] = afterStarted ? '완료' : beforeComplete ? '진행중' : '대기';
   return result;
 };
@@ -155,6 +156,20 @@ export const TANK_STEPS = [
 ] as const;
 
 export type TankStepKey = typeof TANK_STEPS[number]['key'];
+
+/** 날짜와 값 입력 상태를 기준으로 공정 상태를 자동 판정합니다. */
+export function getTankStepStatus(stepKey: TankStepKey, step: { date?: string; startDate?: string; endDate?: string; value?: string; finalValue?: string } | undefined): CommissioningProcessStatus {
+  if (!step) return '대기';
+  const hasAnyValue = !!(step.value || step.finalValue || step.date || step.startDate || step.endDate);
+  if (!hasAnyValue) return '대기';
+  const dateComplete = stepKey === 'pbgt' || stepKey === 'nh3_welding'
+    ? !!step.startDate && !!step.endDate
+    : !!step.date;
+  const valueComplete = stepKey === 'pbgt'
+    ? !!step.value && !!step.finalValue
+    : !!step.value;
+  return dateComplete && valueComplete ? '완료' : '진행중';
+}
 
 export interface TankStepDetail {
   date?: string;       // YYYY-MM-DD (일반 공정용)
@@ -251,6 +266,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
   // Status 수정 모달 상태
   const [isStatusEditModalOpen, setIsStatusEditModalOpen] = useState(false);
+  const [isShipPickerOpen, setIsShipPickerOpen] = useState(false);
   const [statusModalTankTab, setStatusModalTankTab] = useState<TankKey>('TK1');
 
   // Ship No. 서브탭 제목(Ship No.) 전용 수정 모달
@@ -437,10 +453,13 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           }
         });
         
-        // 규칙 6: NH3의 U/F와 Welding이 모두 완료되었을 때 NH3도 완료 처리
-        if (tankObj.nh3_uf.status === '완료' && tankObj.nh3_welding.status === '완료') {
-          tankObj.nh3.status = '완료';
-        }
+        // 날짜와 값으로 상태를 자동 계산합니다. 저장되어 있던 수동 상태값은 판정 기준으로 쓰지 않습니다.
+        TANK_STEPS.forEach((st) => {
+          if (st.key !== 'nh3') tankObj[st.key].status = getTankStepStatus(st.key, tankObj[st.key]);
+        });
+        tankObj.nh3.status =
+          tankObj.nh3_uf.status === '완료' && tankObj.nh3_welding.status === '완료' ? '완료' :
+          (tankObj.nh3_uf.status !== '대기' || tankObj.nh3_welding.status !== '대기') ? '진행중' : '대기';
 
         result[tk] = tankObj;
       }
@@ -646,7 +665,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               : '일자 미입력')
             : (stepInfo.date || '일자 미입력');
 
-          let cellText = `상태: ${stepInfo.status || '대기'}\n일자: ${dateText}`;
+          let cellText = `상태: ${getTankStepStatus(step.key, stepInfo)}\n일자: ${dateText}`;
 
           if (step.key === 'pbgt') {
             if (stepInfo.value || stepInfo.finalValue) {
@@ -772,6 +791,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     try {
       const sanitizedCreateData = {
         ...statusCreateFormData,
+        tank_status: normalizeTankStatus(statusCreateFormData.tank_status),
         commissioning_status: getDefaultCommissioningStatus(),
         sort_order: ships.length,
         launch_date: statusCreateFormData.launch_date || null,
@@ -837,49 +857,22 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     setIsStatusEditModalOpen(true);
   };
 
-  const handleMoveShipFromEditModal = async (direction: 'left' | 'right') => {
-    if (!isAdmin || !statusEditFormData.id) return;
-
-    const currentIndex = ships.findIndex((ship) => ship.id === statusEditFormData.id);
-    if (currentIndex < 0) return;
-
-    const targetIndex = direction === 'left' ? currentIndex - 1 : currentIndex + 1;
-    if (targetIndex < 0 || targetIndex >= ships.length) return;
-
-    const previousShips = [...ships];
-    const newShips = [...ships];
-    const currentShip = newShips[currentIndex];
-    newShips[currentIndex] = newShips[targetIndex];
-    newShips[targetIndex] = currentShip;
-
-    setShips(newShips);
-
-    try {
-      const results = await Promise.all(
-        newShips.map((ship, index) =>
-          supabase
-            .from(TABLE_NAME)
-            .update({ sort_order: index })
-            .eq('id', ship.id)
-        )
-      );
-
-      const failed = results.find((result) => result.error);
-      if (failed?.error) {
-        setShips(previousShips);
-        showAlert('순서 저장 실패', '호선 위치 저장 중 오류가 발생했습니다: ' + failed.error.message, 'error');
-        return;
-      }
-
-      showAlert(
-        '호선 위치 변경',
-        `[Ship #${currentShip.ship_no}] 호선의 화면상 위치를 ${direction === 'left' ? '왼쪽' : '오른쪽'}으로 이동했습니다.`,
-        'success'
-      );
-    } catch (e: any) {
-      setShips(previousShips);
-      showAlert('순서 저장 실패', '호선 위치 저장 중 오류가 발생했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
-    }
+  const handleChooseShipInEditModal = (ship: ShipItem) => {
+    if (!isAdmin) return;
+    setStatusEditFormData({
+      id: ship.id,
+      ship_no: ship.ship_no,
+      ship_name: ship.ship_name,
+      shipowner: ship.shipowner || '',
+      dock: ship.dock || '',
+      launch_date: ship.launch_date || '',
+      pt_mount_date: ship.pt_mount_date || '',
+      dwt: ship.dwt || '',
+      delivery_date: ship.delivery_date || '',
+      tank_status: normalizeTankStatus(ship.tank_status || getDefaultTankStatus()),
+    });
+    setStatusModalTankTab('TK1');
+    setIsShipPickerOpen(false);
   };
 
   const handleOpenShipNoTitleEdit = (ship: ShipItem) => {
@@ -963,7 +956,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         pt_mount_date: statusEditFormData.pt_mount_date || null,
         dwt: statusEditFormData.dwt || null,
         delivery_date: statusEditFormData.delivery_date || null,
-        tank_status: statusEditFormData.tank_status,
+        tank_status: normalizeTankStatus(statusEditFormData.tank_status),
       };
 
       const { error } = await supabase
@@ -984,12 +977,17 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         return;
       }
 
+      const baseShip = ships.find((ship) => ship.id === statusEditFormData.id);
       const updated = {
-        ...currentStatusShip!,
+        ...(baseShip || currentStatusShip || {}),
         ...updatePayload,
-      };
+        id: statusEditFormData.id,
+        ship_no: statusEditFormData.ship_no,
+        tank_status: updatePayload.tank_status,
+      } as ShipItem;
 
       setShips(prev => prev.map(s => s.id === statusEditFormData.id ? updated : s));
+      setIsShipPickerOpen(false);
       setIsStatusEditModalOpen(false);
       showAlert('수정 완료', `[Ship #${statusEditFormData.ship_no}]의 Status 및 Tank 공정 일자가 수정되었습니다.`, 'success');
     } catch (e: any) {
@@ -1183,7 +1181,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     activeTanks.forEach(tk => {
       TANK_STEPS.filter(st => st.key !== 'nh3').forEach(st => {
         const step = tankStatus[tk]?.[st.key];
-        if (step && (step.status === '완료' || step.date || step.startDate)) {
+        if (step && getTankStepStatus(st.key, step) === '완료') {
           completed++;
         }
       });
@@ -1198,7 +1196,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     let completed = 0;
     TANK_STEPS.filter(st => st.key !== 'nh3').forEach(st => {
       const step = tankDetail[st.key];
-      if (step && (step.status === '완료' || step.date || step.startDate)) {
+      if (step && getTankStepStatus(st.key, step) === '완료') {
         completed++;
       }
     });
@@ -1779,8 +1777,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                         {TANK_STEPS.map((step) => {
                           const stepInfo = tankDetail[step.key] || { status: '대기' };
                           if (String(step.key) === 'nh3') return <div key={step.key} className="pt-2 first:pt-0 text-xs font-bold text-amber-900 bg-amber-50 rounded px-2 py-1">NH3</div>;
-                          const isDone = stepInfo.status === '완료';
-                          const isInProgress = stepInfo.status === '진행중';
+                          const derivedStepStatus = getTankStepStatus(step.key, stepInfo);
+                          const isDone = derivedStepStatus === '완료';
+                          const isInProgress = derivedStepStatus === '진행중';
 
                           return (
                             <div key={step.key} className={`pt-2 first:pt-0 space-y-1 ${(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? 'ml-4 border-l-2 border-amber-300 pl-2' : ''}`}>
@@ -1806,7 +1805,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                         ? 'bg-amber-50 text-amber-700 border-amber-200'
                                         : 'bg-slate-50 text-slate-400 border-slate-200'
                                     }`}>
-                                    {stepInfo.status || '대기'}
+                                    {derivedStepStatus}
                                   </span>
 
                                   {step.key !== 'pbgt' && stepInfo.value && (
@@ -1898,8 +1897,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             const stepInfo = currentStatusShip.tank_status?.[tkKey]?.[step.key] || { status: '대기' };
                             const tankDisabled = currentStatusShip.tank_status?.[tkKey]?.enabled === false;
                             if (String(step.key) === 'nh3') return <td key={tkKey} className="py-2 px-4 text-center border-l border-[#CBD5E1] bg-amber-50/30" />;
-                            const isDone = stepInfo.status === '완료';
-                            const isInProgress = stepInfo.status === '진행중';
+                            const derivedStepStatus = getTankStepStatus(step.key, stepInfo);
+                            const isDone = derivedStepStatus === '완료';
+                            const isInProgress = derivedStepStatus === '진행중';
 
                             return (
                               <td key={tkKey} className="py-3 px-4 text-center border-l border-[#CBD5E1]">
@@ -1912,7 +1912,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           ? 'bg-amber-50 text-amber-700 border-amber-200'
                                           : 'bg-white text-slate-400 border-slate-200'
                                       }`}>
-                                      {stepInfo.status}
+                                      {derivedStepStatus}
                                     </span>
                                     {step.key !== 'pbgt' && stepInfo.value && (
                                       <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-blue-50 text-[#243B5A] border border-blue-200">
@@ -2538,7 +2538,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       className="text-[11px] text-[#243B5A] hover:underline flex items-center gap-0.5 cursor-pointer font-semibold"
                     >
                       <CheckCheck className="h-3 w-3" />
-                      현재 Tank 전 항목 오늘 완료로 설정
+                      현재 Tank 전 항목 오늘 날짜 입력
                     </button>
                     <span className="text-[#E2E5E9]">|</span>
                     <button
@@ -2606,7 +2606,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       const currentStepData = statusCreateFormData.tank_status[statusCreateTankTab]?.[step.key] || { status: '대기' };
                       if (String(step.key) === 'nh3') {
                         // 규칙 6 반영: U/F와 Welding이 완료되었을 때 NH3가 완료 상태임을 표시
-                        const isNh3Done = currentStepData.status === '완료';
+                        const currentTank = statusCreateFormData.tank_status[statusCreateTankTab];
+                        const isNh3Done = getTankStepStatus('nh3_uf', currentTank.nh3_uf) === '완료' && getTankStepStatus('nh3_welding', currentTank.nh3_welding) === '완료';
                         return (
                           <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between">
                             <span className="font-bold text-sm text-amber-900">NH3 (U/F & Welding 연동)</span>
@@ -2630,47 +2631,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             </div>
 
                             <div className="flex items-center gap-1.5 flex-1 justify-end flex-wrap">
-                              <select
-                                value={currentStepData.status}
-                                onChange={(e) => {
-                                  const newStatus = e.target.value as '대기' | '진행중' | '완료';
-                                  setStatusCreateFormData(prev => {
-                                    const updatedTank = {
-                                      ...prev.tank_status[statusCreateTankTab],
-                                      [step.key]: {
-                                        ...prev.tank_status[statusCreateTankTab][step.key],
-                                        status: newStatus,
-                                        date: (newStatus === '완료' && step.key !== 'pbgt' && step.key !== 'nh3_welding' && !currentStepData.date)
-                                          ? new Date().toISOString().split('T')[0]
-                                          : currentStepData.date
-                                      }
-                                    };
-                                    // 규칙 6 연동: U/F와 Welding이 완료되면 NH3 완료 처리
-                                    if (updatedTank.nh3_uf.status === '완료' && updatedTank.nh3_welding.status === '완료') {
-                                      updatedTank.nh3.status = '완료';
-                                    } else {
-                                      updatedTank.nh3.status = '대기';
-                                    }
-                                    return {
-                                      ...prev,
-                                      tank_status: {
-                                        ...prev.tank_status,
-                                        [statusCreateTankTab]: updatedTank
-                                      }
-                                    };
-                                  });
-                                }}
-                                className={`px-2 py-1 border rounded text-[11px] font-semibold focus:outline-hidden shrink-0 ${currentStepData.status === '완료'
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                    : currentStepData.status === '진행중'
-                                      ? 'bg-amber-50 text-amber-800 border-amber-300'
-                                      : 'bg-slate-50 text-slate-600 border-slate-200'
-                                  }`}
-                              >
-                                <option value="대기">대기</option>
-                                <option value="진행중">진행중</option>
-                                <option value="완료">완료</option>
-                              </select>
+                              <span className={`px-2 py-1 border rounded text-[11px] font-semibold shrink-0 ${getTankStepStatus(step.key, currentStepData) === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : getTankStepStatus(step.key, currentStepData) === '진행중' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{getTankStepStatus(step.key, currentStepData)}</span>
 
                               {step.key !== 'pbgt' && step.key !== 'nh3_welding' && (
                                 <input
@@ -2687,7 +2648,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           [step.key]: {
                                             ...prev.tank_status[statusCreateTankTab][step.key],
                                             date: newDate,
-                                            status: (newDate && currentStepData.status === '대기') ? '완료' : currentStepData.status
+                                            status: getTankStepStatus(step.key, { ...currentStepData, date: newDate })
                                           }
                                         }
                                       }
@@ -2874,35 +2835,36 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 </h3>
                 <p className="text-[11px] text-[#64748B]">선종, DWT 등 기본 제원과 TK1~TK4 탱크별 공정을 수정합니다.</p>
               </div>
-              <div className="flex items-center gap-1 mr-2">
-                {(() => {
-                  const currentIndex = ships.findIndex((ship) => ship.id === statusEditFormData.id);
-                  return (
-                    <>
+              <div className="relative flex items-center gap-1 mr-2">
+                <button
+                  type="button"
+                  onClick={() => setIsShipPickerOpen((open) => !open)}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-[#CBD5E1] bg-white text-[#243B5A] hover:bg-slate-50 text-xs font-bold cursor-pointer"
+                  title="다른 호선 선택"
+                >
+                  <span>▶</span>
+                  <span>호선 펼치기</span>
+                </button>
+                {isShipPickerOpen && (
+                  <div className="absolute right-0 top-full mt-2 w-64 max-h-72 overflow-y-auto rounded-xl border border-[#CBD5E1] bg-white shadow-xl z-[100000]">
+                    <div className="sticky top-0 bg-[#F5F6F8] border-b border-[#E2E5E9] px-3 py-2 text-[11px] font-bold text-[#243B5A]">이동할 호선을 선택하세요</div>
+                    {ships.map((ship) => (
                       <button
+                        key={ship.id}
                         type="button"
-                        disabled={currentIndex <= 0}
-                        onClick={() => handleMoveShipFromEditModal('left')}
-                        className="px-2 py-1.5 rounded-lg border border-[#CBD5E1] bg-white text-[#243B5A] hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold cursor-pointer"
-                        title="왼쪽 호선으로 위치 이동"
+                        onClick={() => handleChooseShipInEditModal(ship)}
+                        className={`w-full text-left px-3 py-2 border-b border-slate-100 last:border-b-0 hover:bg-blue-50 cursor-pointer ${ship.id === statusEditFormData.id ? 'bg-blue-50 text-[#243B5A]' : 'text-[#1F2937]'}`}
                       >
-                        ◀
+                        <span className="block text-xs font-bold">{ship.ship_no} · {ship.ship_name}</span>
+                        <span className="block mt-0.5 text-[10px] text-[#64748B]">{ship.shipowner || '선주사 미입력'} · {ship.dock || '위치 미입력'}</span>
                       </button>
-                      <button
-                        type="button"
-                        disabled={currentIndex < 0 || currentIndex >= ships.length - 1}
-                        onClick={() => handleMoveShipFromEditModal('right')}
-                        className="px-2 py-1.5 rounded-lg border border-[#CBD5E1] bg-white text-[#243B5A] hover:bg-slate-50 disabled:opacity-30 disabled:cursor-not-allowed text-xs font-bold cursor-pointer"
-                        title="오른쪽 호선으로 위치 이동"
-                      >
-                        ▶
-                      </button>
-                    </>
-                  );
-                })()}
+                    ))}
+                    {ships.length === 0 && <div className="px-3 py-4 text-xs text-[#64748B]">등록된 호선이 없습니다.</div>}
+                  </div>
+                )}
               </div>
               <button
-                onClick={() => setIsStatusEditModalOpen(false)}
+                onClick={() => { setIsShipPickerOpen(false); setIsStatusEditModalOpen(false); }}
                 className="p-1 text-[#64748B] hover:text-[#1F2937] rounded-lg hover:bg-slate-100"
               >
                 <X className="h-4 w-4" />
@@ -3050,7 +3012,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     {TANK_STEPS.map((step) => {
                       const currentStepData = statusEditFormData.tank_status[statusModalTankTab]?.[step.key] || { status: '대기' };
                       if (String(step.key) === 'nh3') {
-                        const isNh3Done = currentStepData.status === '완료';
+                        const currentTank = statusEditFormData.tank_status[statusModalTankTab];
+                        const isNh3Done = getTankStepStatus('nh3_uf', currentTank.nh3_uf) === '완료' && getTankStepStatus('nh3_welding', currentTank.nh3_welding) === '완료';
                         return (
                           <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between">
                             <span className="font-bold text-sm text-amber-900">NH3 (U/F & Welding 연동)</span>
@@ -3074,47 +3037,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                             </div>
 
                             <div className="flex items-center gap-1.5 flex-1 justify-end flex-wrap">
-                              <select
-                                value={currentStepData.status}
-                                onChange={(e) => {
-                                  const newStatus = e.target.value as '대기' | '진행중' | '완료';
-                                  setStatusEditFormData(prev => {
-                                    const updatedTank = {
-                                      ...prev.tank_status[statusModalTankTab],
-                                      [step.key]: {
-                                        ...prev.tank_status[statusModalTankTab][step.key],
-                                        status: newStatus,
-                                        date: (newStatus === '완료' && step.key !== 'pbgt' && step.key !== 'nh3_welding' && !currentStepData.date)
-                                          ? new Date().toISOString().split('T')[0]
-                                          : currentStepData.date
-                                      }
-                                    };
-                                    // 규칙 6 연동: U/F와 Welding 완료 시 NH3 완료 처리
-                                    if (updatedTank.nh3_uf.status === '완료' && updatedTank.nh3_welding.status === '완료') {
-                                      updatedTank.nh3.status = '완료';
-                                    } else {
-                                      updatedTank.nh3.status = '대기';
-                                    }
-                                    return {
-                                      ...prev,
-                                      tank_status: {
-                                        ...prev.tank_status,
-                                        [statusModalTankTab]: updatedTank
-                                      }
-                                    };
-                                  });
-                                }}
-                                className={`px-2 py-1 border rounded text-[11px] font-semibold focus:outline-hidden shrink-0 ${currentStepData.status === '완료'
-                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                                    : currentStepData.status === '진행중'
-                                      ? 'bg-amber-50 text-amber-800 border-amber-300'
-                                      : 'bg-slate-50 text-slate-600 border-slate-200'
-                                  }`}
-                              >
-                                <option value="대기">대기</option>
-                                <option value="진행중">진행중</option>
-                                <option value="완료">완료</option>
-                              </select>
+                              <span className={`px-2 py-1 border rounded text-[11px] font-semibold shrink-0 ${getTankStepStatus(step.key, currentStepData) === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : getTankStepStatus(step.key, currentStepData) === '진행중' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{getTankStepStatus(step.key, currentStepData)}</span>
 
                               {step.key !== 'pbgt' && step.key !== 'nh3_welding' && (
                                 <input
@@ -3131,7 +3054,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           [step.key]: {
                                             ...prev.tank_status[statusModalTankTab][step.key],
                                             date: newDate,
-                                            status: (newDate && currentStepData.status === '대기') ? '완료' : currentStepData.status
+                                            status: getTankStepStatus(step.key, { ...currentStepData, date: newDate })
                                           }
                                         }
                                       }
