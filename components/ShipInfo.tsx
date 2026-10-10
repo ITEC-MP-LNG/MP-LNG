@@ -44,18 +44,18 @@ export type ShipStatus =
   | 'Sound Test 2nd'
   | 'Nh3 Test'
   | 'PBGT'
-  | 'B/F SBTT'
-  | 'A/T SBTT'
-  | 'Gas Trial';
+  | 'Before G/T SBTT'
+  | 'After G/T SBTT'
+  | 'GAS TRIAL';
 
 export const STATUS_PROGRESS_MAP: Record<ShipStatus, number | null> = {
   'Sound Test 1St': 14,
   'Sound Test 2nd': 28,
   'Nh3 Test': 42,
   'PBGT': 57,
-  'B/F SBTT': 71,
-  'A/T SBTT': 100,
-  'Gas Trial': null,
+  'Before G/T SBTT': 71,
+  'After G/T SBTT': 100,
+  'GAS TRIAL': null,
 };
 
 export const STATUS_LIST: ShipStatus[] = [
@@ -63,9 +63,9 @@ export const STATUS_LIST: ShipStatus[] = [
   'Sound Test 2nd',
   'Nh3 Test',
   'PBGT',
-  'B/F SBTT',
-  'Gas Trial',
-  'A/T SBTT'
+  'Before G/T SBTT',
+  'GAS TRIAL',
+  'After G/T SBTT'
 ];
 
 export type CommissioningProcessStatus = '대기' | '진행중' | '완료';
@@ -76,24 +76,64 @@ export const getDefaultCommissioningStatus = (): CommissioningStatusMap => ({
   'Sound Test 2nd': '대기',
   'Nh3 Test': '대기',
   'PBGT': '대기',
-  'B/F SBTT': '대기',
-  'Gas Trial': '대기',
-  'A/T SBTT': '대기',
+  'Before G/T SBTT': '대기',
+  'GAS TRIAL': '대기',
+  'After G/T SBTT': '대기',
 });
 
 export const normalizeCommissioningStatus = (raw: any, legacyStatus: ShipStatus): CommissioningStatusMap => {
   const result = getDefaultCommissioningStatus();
-  const legacyIdx = STATUS_LIST.indexOf(legacyStatus);
+  const legacyAliases: Record<string, ShipStatus> = {
+    'B/F SBTT': 'Before G/T SBTT',
+    'A/T SBTT': 'After G/T SBTT',
+    'Gas Trial': 'GAS TRIAL',
+  };
+  const normalizedLegacy = legacyAliases[String(legacyStatus)] || legacyStatus;
+  const legacyIdx = STATUS_LIST.indexOf(normalizedLegacy);
   STATUS_LIST.forEach((step, idx) => {
-    if (idx < legacyIdx) result[step] = '완료';
-    else if (idx === legacyIdx) result[step] = '진행중';
+    if (legacyIdx >= 0 && idx < legacyIdx) result[step] = '완료';
+    else if (legacyIdx >= 0 && idx === legacyIdx) result[step] = '진행중';
   });
   if (raw && typeof raw === 'object') {
     STATUS_LIST.forEach((step) => {
-      const value = raw[step];
+      const legacyKey = step === 'Before G/T SBTT' ? 'B/F SBTT'
+        : step === 'After G/T SBTT' ? 'A/T SBTT'
+        : step === 'GAS TRIAL' ? 'Gas Trial' : step;
+      const value = raw[step] ?? raw[legacyKey];
       if (value === '대기' || value === '진행중' || value === '완료') result[step] = value;
     });
   }
+  return result;
+};
+
+/** STATUS의 TK1~TK4 상태를 호선 제원정보의 시운전 공정 상태로 변환합니다. */
+export const getTankLinkedCommissioningStatus = (tankStatus: ShipTankStatus | undefined): CommissioningStatusMap => {
+  const result = getDefaultCommissioningStatus();
+  const tanks = TANKS.map((tank) => tankStatus?.[tank]).filter(Boolean) as TankDetail[];
+  if (tanks.length === 0) return result;
+
+  const allTanksComplete = (keys: TankStepKey[]) => tanks.every((tank) =>
+    keys.every((key) => tank[key]?.status === '완료')
+  );
+  const anyTankStarted = (key: TankStepKey) => tanks.some((tank) => {
+    const step = tank[key];
+    return !!step && (step.status === '진행중' || step.status === '완료' || !!step.date || !!step.startDate || !!step.endDate);
+  });
+  const setFromTankSteps = (statusKey: ShipStatus, keys: TankStepKey[]) => {
+    result[statusKey] = allTanksComplete(keys) ? '완료' : '진행중';
+  };
+
+  setFromTankSteps('Sound Test 1St', ['st_1st']);
+  setFromTankSteps('Sound Test 2nd', ['st_2nd']);
+  setFromTankSteps('Nh3 Test', ['nh3', 'nh3_uf', 'nh3_welding']);
+  setFromTankSteps('PBGT', ['pbgt']);
+  setFromTankSteps('Before G/T SBTT', ['bf_sbtt']);
+  setFromTankSteps('After G/T SBTT', ['at_sbtt']);
+
+  // GAS TRIAL: Before 완료 시 진행중, After G/T SBTT가 한 탱크라도 시작되면 완료
+  const beforeComplete = allTanksComplete(['bf_sbtt']);
+  const afterStarted = anyTankStarted('at_sbtt');
+  result['GAS TRIAL'] = afterStarted ? '완료' : beforeComplete ? '진행중' : '대기';
   return result;
 };
 
@@ -1167,7 +1207,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   };
 
   const isCommissioningComplete = (ship: ShipItem) => {
-    const processStatuses = normalizeCommissioningStatus(ship.commissioning_status, ship.status);
+    const processStatuses = getTankLinkedCommissioningStatus(ship.tank_status);
     return STATUS_LIST.every((step) => processStatuses[step] === '완료');
   };
 
@@ -1328,7 +1368,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     </tr>
                   ) : (
                     infoFilteredShips.map((ship) => {
-                      const processStatuses = normalizeCommissioningStatus(ship.commissioning_status, ship.status);
+                      const processStatuses = getTankLinkedCommissioningStatus(ship.tank_status);
                       const allCommissioningComplete = isCommissioningComplete(ship);
 
                       return (
@@ -1437,7 +1477,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
           <div className="block lg:hidden space-y-2.5">
             {infoFilteredShips.map((ship) => {
-              const processStatuses = normalizeCommissioningStatus(ship.commissioning_status, ship.status);
+              const processStatuses = getTankLinkedCommissioningStatus(ship.tank_status);
               const allCommissioningComplete = isCommissioningComplete(ship);
 
               return (
@@ -1998,7 +2038,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold text-[#243B5A]">
                     {(() => {
-                      const processStatuses = normalizeCommissioningStatus(selectedShip.commissioning_status, selectedShip.status);
+                      const processStatuses = getTankLinkedCommissioningStatus(selectedShip.tank_status);
                       const completedCount = STATUS_LIST.filter((step) => processStatuses[step] === '완료').length;
                       return `완료 ${completedCount}/${STATUS_LIST.length}`;
                     })()}
@@ -2008,10 +2048,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
               <div className="space-y-1.5 pt-1">
                 {STATUS_LIST.map((step) => {
-                  const processStatus = normalizeCommissioningStatus(
-                    selectedShip.commissioning_status,
-                    selectedShip.status
-                  )[step];
+                  const processStatus = getTankLinkedCommissioningStatus(selectedShip.tank_status)[step];
                   const isCompleted = processStatus === '완료';
                   const isCurrent = processStatus === '진행중';
 
@@ -2254,7 +2291,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     type="number"
                     min="0"
                     max="100"
-                    disabled={formData.status === 'Gas Trial'}
+                    disabled={formData.status === 'GAS TRIAL'}
                     value={formData.progress ?? ''}
                     onChange={(e) => setFormData({ ...formData, progress: e.target.value ? Number(e.target.value) : null })}
                     className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#243B5A] font-bold focus:border-[#243B5A] focus:outline-hidden font-mono disabled:opacity-50"
