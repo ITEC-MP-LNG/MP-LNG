@@ -591,11 +591,11 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     const teamGap = 0.12;
     const teamColW = (slideW - sideMargin * 2 - teamGap * 3) / 4;
     const teamBaseXs = [0, 1, 2, 3].map(i => sideMargin + i * (teamColW + teamGap));
-    const teamHeaderY = 2.52;
+    const teamHeaderY = 3.45; // 관리 구역과 겹치지 않도록 약 2.4cm 아래로 이동
     const teamCardW = Math.min(1.36, (teamColW - 0.12) / 2);
     const teamCardH = 0.43;
     const teamCardGapX = 0.06;
-    const teamCardStartY = 3.18;
+    const teamCardStartY = 4.11; // 팀 제목과 팀원 카드도 함께 아래로 이동
     const teamCardGapY = 0.49;
 
     for (let i = 0; i < teams.length; i++) {
