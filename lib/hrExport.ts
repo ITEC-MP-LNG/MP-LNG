@@ -245,7 +245,6 @@ export async function exportHRToExcel(users: HRExportUser[]) {
   orgChart.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
   orgChart.properties.defaultRowHeight = 18;
 
-  // 구성원정보 시트 (사진 가로 2.54cm, 높이 2.25cm 규격 및 정확한 셀 너비 반영)
   const memberInfoOrder: Record<string, number> = { 본부장: 0, 소장: 1, 사원: 2, 책임: 3, 프로: 4, 매니저: 5 };
   const memberInfoUsers = [...ordered].sort((a, b) => {
     const keyA = (a.job_title || '').trim() === '본부장' || (a.job_title || '').trim() === '소장'
@@ -419,9 +418,9 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     return photoCache.get(user.photo_url) || null;
   };
 
-  // 요청하신 인원 박스 및 사진(원) 규격 반영 (인치 환산 적용)
-  // 박스: 너비 4.45cm(1.75인치), 높이 1.02cm(0.40인치)
-  // 원(사진): 너비 0.73cm(0.29인치), 높이 1.07cm(0.42인치)
+  // 인원 박스 및 사진(원) 규격:
+  // 박스: 너비 4.45cm (1.75인치), 높이 1.02cm (0.40인치)
+  // 원(사진): 너비 0.73cm (0.29인치), 높이 1.07cm (0.42인치)
   const addPersonCard = async (
     slide: pptxgen.Slide,
     user: HRExportUser,
@@ -489,8 +488,8 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     }
   };
 
-  // 요청하신 그룹 헤더 박스 규격 반영 (인치 환산)
-  // 박스: 너비 3.02cm(1.19인치), 높이 1.27cm(0.50인치)
+  // 그룹 헤더 박스 규격:
+  // 박스: 너비 3.02cm (1.19인치), 높이 1.27cm (0.50인치)
   const addGroupHeader = (
     slide: pptxgen.Slide,
     title: string,
@@ -519,9 +518,6 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     });
   };
 
-  // =====================================================
-  // PPT 조직도 한 장 구조 (원래의 상세 배치 및 다중 열 구조 복원)
-  // =====================================================
   const operation = byDepartment('운영');
   const management = byDepartment('관리');
   const teams = ['1팀', '2팀', '3팀', '4팀'].map(name => ({ name, members: sortTeamMembers(byDepartment(name)) }));
@@ -533,7 +529,7 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     addText(slide, '조직도', 0.45, 0.15, 3.0, 0.35, { fontSize: 19, bold: true, color: '243B5A' });
     addText(slide, `총 ${ordered.length}명 · ${new Date().toLocaleDateString('ko-KR')}`, 9.1, 0.18, 3.75, 0.20, { fontSize: 8, color: '64748B', align: 'right' });
 
-    // 좌측 상단 직급별 인원 표 깔끔하게 구성
+    // 좌측 상단 직급별 인원 표 배치
     const rankNames = ['본부장', '소장', '사원', '책임', '프로', '매니저'];
     const rankCount = (rank: string) => ordered.filter(u =>
       ['본부장', '소장'].includes(rank)
@@ -570,6 +566,7 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     const personW = 1.75; // 너비 4.45cm
     const personH = 0.40; // 높이 1.02cm
 
+    // 중앙 상단 운영 및 관리 파트 배치 (원래 구조 유지)
     const centerX = 7.95;
     const mainX = 5.05;
 
@@ -578,12 +575,11 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     
     const opMembers = operation;
     const opCols = Math.max(1, Math.min(2, opMembers.length));
-    const opGap = 0.10;
-    const opStartX = centerX - (opCols * personW + (opCols - 1) * opGap) / 2;
+    const opStartX = centerX - (opCols * personW + (opCols - 1) * 0.10) / 2;
     for (let i = 0; i < opMembers.length; i++) {
       const row = Math.floor(i / 2);
       const col = i % 2;
-      await addPersonCard(slide, opMembers[i], opStartX + col * (personW + opGap), 1.15 + row * 0.46, personW, personH, true);
+      await addPersonCard(slide, opMembers[i], opStartX + col * (personW + 0.10), 1.15 + row * 0.46, personW, personH, false);
     }
 
     const opRows = Math.max(1, Math.ceil(opMembers.length / 2));
@@ -599,24 +595,23 @@ export async function exportHRToPptx(users: HRExportUser[]) {
       const rowCount = Math.min(mgCols, management.length - row * mgCols);
       const rowW = rowCount * personW + (rowCount - 1) * 0.10;
       const rowStartX = centerX - rowW / 2;
-      await addPersonCard(slide, management[i], rowStartX + col * (personW + 0.10), managementHeaderY + 0.58 + row * 0.46, personW, personH, true);
+      await addPersonCard(slide, management[i], rowStartX + col * (personW + 0.10), managementHeaderY + 0.58 + row * 0.46, personW, personH, false);
     }
 
-    // 팀 영역 (1~4팀) 구조 복원
+    // 하단 1~4팀 영역 (4개 컬럼 구조 완벽 복원)
     const teamHeaderY = 0.55;
-    const teamXs = [0.42, 3.15, 9.85, 12.55];
+    const teamXs = [3.15, 6.70, 9.20, 11.70]; // 와이드 슬라이드 폭에 맞춰 1~4팀 컬럼 배치 좌표 최적화
 
     for (let i = 0; i < teams.length; i++) {
       const team = teams[i];
-      const x = teamXs[i];
-      addGroupHeader(slide, team.name, `${team.members.length}명`, x, teamHeaderY, groupW, groupH, false);
+      // 1~4팀 개별 헤더 박스 배치
+      const headerX = 3.10 + i * 2.45;
+      addGroupHeader(slide, team.name, `${team.members.length}명`, headerX, teamHeaderY, groupW, groupH, false);
       
       for (let j = 0; j < team.members.length; j++) {
         const member = team.members[j];
         const y = 1.15 + j * 0.46;
-        // 팀 카드 배치는 좌우 여백에 맞춰 정돈되도록 설정
-        const cardX = i < 2 ? x - 0.55 : x - 0.55;
-        await addPersonCard(slide, member, cardX, y, personW, personH, true);
+        await addPersonCard(slide, member, headerX - 0.55, y, personW, personH, true);
       }
     }
   }
