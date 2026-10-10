@@ -1390,9 +1390,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       className="px-2 py-1 text-xs border rounded-lg font-mono"
                     />
                     <button
-                      onClick={handleExportWeeklyExcel}
-                      className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
-                    >
+  onClick={() => { void handleExportWeeklyExcel(); }}
+  className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+>
                       <FileSpreadsheet className="h-3.5 w-3.5" />
                       <span>엑셀 저장</span>
                     </button>
