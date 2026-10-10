@@ -28,6 +28,9 @@ export interface Task {
   remarks?: string;
   created_at?: string;
   updated_at?: string;
+  completed_by_id?: string;
+  completed_by_name?: string;
+  completed_at?: string;
 }
 
 export interface CabinVessel {
@@ -104,7 +107,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   });
 
   // 커스텀 통일 알림 모달 상태
-  const [customAlert, setCustomAlert] = useState<{ open: boolean; title: string; message: string; type?: 'info' | 'confirm'; onConfirm?: () => void }>({
+  const [customAlert, setCustomAlert] = useState<{ open: boolean; title: string; message: string; type?: 'info' | 'confirm' | 'monthlyDelete'; onConfirm?: () => void; onDownload?: () => void }>({
     open: false,
     title: '',
     message: '',
@@ -283,7 +286,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     lastTasksFetchStartedAtRef.current = Date.now();
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, status, task_type, created_by_id, created_by_name, category, remarks, created_at, updated_at').order('start_date', { ascending: true });
+      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, status, task_type, created_by_id, created_by_name, category, remarks, created_at, updated_at, completed_by_id, completed_by_name, completed_at').order('start_date', { ascending: true });
       if (error) throw error;
 
       if (data) {
@@ -560,6 +563,36 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return;
     }
 
+    // 일반 일일업무는 관리자가 완료 확인을 해야 완료 이력으로 이동합니다.
+    if (task.task_type === 'DAILY' && nextStatus === 'COMPLETED') {
+      if (!isAdmin) {
+        showCustomAlert('권한 제한', '일일업무 완료 처리 및 완료 이력 이동은 관리자만 가능합니다.');
+        return;
+      }
+      showCustomConfirm('업무 완료', '이 업무를 완료 처리하고 완료 이력 보기로 이동하시겠습니까?', async () => {
+        try {
+          const completion = {
+            status: 'COMPLETED',
+            remarks,
+            completed_by_id: currentUser?.id || null,
+            completed_by_name: currentUser?.name || null,
+            completed_at: new Date().toISOString(),
+          };
+          const { error } = await supabase.from('tasks').update(completion).eq('id', task.id);
+          if (error) throw error;
+          setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
+          setSelectedTaskForSheet(null);
+          setDailySubTab('HISTORY');
+          setSelectedTaskIds([]);
+          await fetchTasks();
+          showCustomAlert('완료', '일일업무가 완료 이력에 저장되었습니다.');
+        } catch (err: any) {
+          showCustomAlert('오류', `완료 처리 실패: ${err.message}`);
+        }
+      });
+      return;
+    }
+
     setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus, remarks } : t)));
     if (selectedTaskForSheet?.id === task.id) {
       setSelectedTaskForSheet({ ...selectedTaskForSheet, status: nextStatus, remarks });
@@ -574,7 +607,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) {
       showCustomAlert('오류', `상태 변경 실패: ${err.message}`);
     }
-  }, [statusChangeModal, selectedTaskForSheet, canModifyTaskStatus, fetchTasks, showCustomAlert]);
+  }, [statusChangeModal, selectedTaskForSheet, canModifyTaskStatus, fetchTasks, showCustomAlert, showCustomConfirm, isAdmin, currentUser]);
 
   const renderStatusBadge = useCallback((task: Task) => {
     const statusConfig = {
@@ -759,7 +792,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
     showCustomConfirm('업무 완료', '이 업무를 완료 처리하고 완료 이력 보기로 이동하시겠습니까?', async () => {
       try {
-        const { error } = await supabase.from('tasks').update({ status: 'COMPLETED' }).eq('id', task.id);
+        const { error } = await supabase.from('tasks').update({
+          status: 'COMPLETED',
+          completed_by_id: currentUser?.id || null,
+          completed_by_name: currentUser?.name || null,
+          completed_at: new Date().toISOString()
+        }).eq('id', task.id);
         if (error) throw error;
         setSelectedTaskForSheet(null);
         setDailySubTab('HISTORY');
@@ -770,7 +808,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         showCustomAlert('오류', `완료 처리 실패: ${err.message}`);
       }
     });
-  }, [isAdmin, showCustomAlert, showCustomConfirm, fetchTasks]);
+  }, [isAdmin, currentUser, showCustomAlert, showCustomConfirm, fetchTasks]);
 
   // 업무 삭제
   const handleDeleteTask = useCallback(async (id: string) => {
@@ -843,7 +881,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [isAdmin, tasks, selectedTaskIds, showCustomAlert]);
 
   // 달력 형식 월간 주간업무 엑셀 내보내기
-  const handleExportWeeklyExcel = useCallback(async () => {
+  const handleExportWeeklyExcel = useCallback(async (showMessage = true) => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 엑셀 다운로드를 할 수 있습니다.'); return; }
     const [yearStr, monthStr] = selectedExportMonth.split('-');
     const year = parseInt(yearStr, 10);
@@ -929,8 +967,50 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     anchor.download = `주간업무_달력_${year}_${month}월.xlsx`;
     anchor.click();
     URL.revokeObjectURL(url);
-    showCustomAlert('엑셀 다운로드', `${year}년 ${month}월 업무 달력이 엑셀 파일로 추출되었습니다.`);
+    if (showMessage) showCustomAlert('엑셀 다운로드', `${year}년 ${month}월 업무 달력이 엑셀 파일로 추출되었습니다.`);
   }, [isAdmin, selectedExportMonth, tasks, showCustomAlert]);
+
+  // 선택한 월의 주간업무 전체 삭제: 엑셀 다운로드 후 최종 확인을 거칩니다.
+  const handleRequestMonthlyWeeklyDelete = useCallback(() => {
+    if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 업무를 삭제할 수 있습니다.'); return; }
+    if (!/^\d{4}-\d{2}$/.test(selectedExportMonth)) {
+      showCustomAlert('월 선택', '삭제할 월을 먼저 선택해 주세요.');
+      return;
+    }
+    const [year, month] = selectedExportMonth.split('-').map(Number);
+    const monthlyCount = tasks.filter((task) =>
+      task.task_type === 'WEEKLY' &&
+      task.start_date >= `${year}-${String(month).padStart(2, '0')}-01` &&
+      task.start_date < `${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01`
+    ).length;
+    if (monthlyCount === 0) {
+      showCustomAlert('삭제할 업무 없음', `${year}년 ${month}월에 삭제할 주간업무가 없습니다.`);
+      return;
+    }
+    setCustomAlert({
+      open: true,
+      title: '월간 주간업무 삭제',
+      message: `${month}월의 업무를 삭제 하시겠습니까? 월간 업무를 내려받기 하신후 삭제 권장합니다. 삭제 하시겠습니까?`,
+      type: 'monthlyDelete',
+      onDownload: () => { void handleExportWeeklyExcel(false); },
+      onConfirm: async () => {
+        try {
+          const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+          const nextMonthStart = `${month === 12 ? year + 1 : year}-${String(month === 12 ? 1 : month + 1).padStart(2, '0')}-01`;
+          const { error } = await supabase.from('tasks').delete()
+            .eq('task_type', 'WEEKLY')
+            .gte('start_date', monthStart)
+            .lt('start_date', nextMonthStart);
+          if (error) throw error;
+          setSelectedTaskIds([]);
+          await fetchTasks();
+          showCustomAlert('삭제 완료', `${year}년 ${month}월 주간업무가 삭제되었습니다.`);
+        } catch (err: any) {
+          showCustomAlert('오류', `월간 업무 삭제 실패: ${err.message}`);
+        }
+      }
+    });
+  }, [isAdmin, selectedExportMonth, tasks, showCustomAlert, handleExportWeeklyExcel, fetchTasks]);
 
   // 주간 날짜 계산
   const weekDays = useMemo(() => {
@@ -1223,6 +1303,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <h4 className="font-bold text-sm text-[#1F2937] cursor-pointer hover:underline" onClick={() => handleOpenTaskDetail(t)}>
                         {t.title}{renderTaskNewBadge(t)}
                       </h4>
+                      {dailySubTab === 'HISTORY' && t.completed_by_name && (
+                        <span className="text-[10px] text-[#64748B] bg-slate-100 border px-2 py-0.5 rounded-full">
+                          완료 처리: {t.completed_by_name}{t.completed_at ? ` · ${new Date(t.completed_at).toLocaleString('ko-KR')}` : ''}
+                        </span>
+                      )}
                       <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full shrink-0">
                         {t.task_type === 'DAILY_OTHER' ? '작성자 업무' : `배정 인원: ${t.assigned_names?.length || 0}명`}
                       </span>
@@ -1310,6 +1395,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     >
                       <FileSpreadsheet className="h-3.5 w-3.5" />
                       <span>엑셀 저장</span>
+                    </button>
+                    <button
+                      onClick={handleRequestMonthlyWeeklyDelete}
+                      className="flex items-center space-x-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>월 삭제</span>
                     </button>
                   </>
                 )}
@@ -1551,13 +1643,34 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
               <p className="text-xs text-[#1F2937] leading-relaxed">{customAlert.message}</p>
               <div className="flex justify-end space-x-2 pt-2 border-t text-xs">
-                {customAlert.type === 'confirm' ? (
+                {customAlert.type === 'monthlyDelete' ? (
+                  <>
+                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">취소</button>
+                    <button
+                      onClick={() => { if (customAlert.onDownload) customAlert.onDownload(); }}
+                      className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-semibold"
+                    >
+                      내려받기
+                    </button>
+                    <button
+                      onClick={() => {
+                        const confirmAction = customAlert.onConfirm;
+                        setCustomAlert({ ...customAlert, open: false });
+                        if (confirmAction) confirmAction();
+                      }}
+                      className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold"
+                    >
+                      확인
+                    </button>
+                  </>
+                ) : customAlert.type === 'confirm' ? (
                   <>
                     <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">취소</button>
                     <button
                       onClick={() => {
+                        const confirmAction = customAlert.onConfirm;
                         setCustomAlert({ ...customAlert, open: false });
-                        if (customAlert.onConfirm) customAlert.onConfirm();
+                        if (confirmAction) confirmAction();
                       }}
                       className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold"
                     >
