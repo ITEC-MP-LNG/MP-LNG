@@ -245,6 +245,7 @@ export async function exportHRToExcel(users: HRExportUser[]) {
   orgChart.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
   orgChart.properties.defaultRowHeight = 18;
 
+  // 구성원정보 시트 (사진 가로 96px, 세로 85px 고정 적용)
   const memberInfoOrder: Record<string, number> = { 본부장: 0, 소장: 1, 사원: 2, 책임: 3, 프로: 4, 매니저: 5 };
   const memberInfoUsers = [...ordered].sort((a, b) => {
     const keyA = (a.job_title || '').trim() === '본부장' || (a.job_title || '').trim() === '소장'
@@ -312,7 +313,7 @@ export async function exportHRToExcel(users: HRExportUser[]) {
       national_certificates: u.national_certificates || u.certificates || '',
     });
 
-    row.height = 63.75;
+    row.height = 63.75; // 세로 85픽셀에 해당하는 높이
     row.eachCell((cell) => {
       cell.font = { name: '맑은 고딕', size: 10, color: { argb: 'FF1F2937' } };
       cell.alignment = { vertical: 'middle', wrapText: true };
@@ -330,9 +331,10 @@ export async function exportHRToExcel(users: HRExportUser[]) {
     if (photo) {
       const extension = 'png';
       const imageId = workbook.addImage({ base64: photo, extension });
+      // 96px x 85px 고정 규격으로 이미지 크기 및 셀 내 위치 명시적 지정
       sheet.addImage(imageId, {
-        tl: { col: 0.05, row: row.number - 1 + 0.05 } as any,
-        br: { col: 0.95, row: row.number - 0.05 } as any,
+        tl: { col: 0.15, row: row.number - 1 + 0.05 } as any,
+        ext: { width: 96, height: 85 },
         editAs: 'oneCell',
       });
     } else {
@@ -440,8 +442,9 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     });
 
     const photo = await getPhoto(user);
-    const photoSize = compact ? 0.48 : 0.6;
-    const photoX = x + 0.1;
+    // 사진이 테두리를 넘지 않도록 크기와 여백 고정 조절
+    const photoSize = compact ? 0.44 : 0.54;
+    const photoX = x + 0.10;
     const photoY = y + (h - photoSize) / 2;
 
     if (photo) {
@@ -452,18 +455,18 @@ export async function exportHRToPptx(users: HRExportUser[]) {
         fill: { color: leader ? '243B5A' : 'E8EDF3' },
         line: { color: leader ? '243B5A' : 'D7DEE8', width: 1 },
       });
-      addText(slide, user.name?.[0] || '유', photoX, photoY + photoSize * 0.27, photoSize, 0.18, {
-        fontSize: compact ? 7.5 : 8.5,
+      addText(slide, user.name?.[0] || '유', photoX, photoY + photoSize * 0.25, photoSize, 0.18, {
+        fontSize: compact ? 7 : 8,
         bold: true,
         color: leader ? 'FFFFFF' : '243B5A',
         align: 'center',
       });
     }
 
-    const tx = x + photoSize + 0.18;
-    const tw = w - photoSize - 0.26;
-    addText(slide, user.name || '', tx, y + 0.10, tw, 0.20, {
-      fontSize: compact ? 9 : 10.5,
+    const tx = x + photoSize + 0.16;
+    const tw = w - photoSize - 0.24;
+    addText(slide, user.name || '', tx, y + 0.08, tw, 0.18, {
+      fontSize: compact ? 8.5 : 10,
       bold: true,
       color: '1F2937',
     });
@@ -471,14 +474,14 @@ export async function exportHRToPptx(users: HRExportUser[]) {
       slide,
       [user.position, (user.department && /^[1-4]팀$/.test(user.department) && (user.job_title || '').trim() !== '팀장' ? '' : user.job_title)].filter(v => v && v !== '없음' && v !== '팀원').join(' · '),
       tx,
-      y + 0.32,
+      y + 0.28,
       tw,
-      0.16,
-      { fontSize: compact ? 7 : 8, bold: true, color: '243B5A' },
+      0.15,
+      { fontSize: compact ? 6.5 : 7.5, bold: true, color: '243B5A' },
     );
     if (!compact && displayField(user)) {
-      addText(slide, displayField(user), tx, y + 0.52, tw, 0.14, {
-        fontSize: 7,
+      addText(slide, displayField(user), tx, y + 0.46, tw, 0.13, {
+        fontSize: 6.5,
         color: '64748B',
       });
     }
@@ -494,18 +497,18 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     dark = false,
   ) => {
     slide.addShape(pptx.ShapeType.roundRect, {
-      x, y, w, h: 0.52,
+      x, y, w, h: 0.50,
       fill: { color: dark ? '243B5A' : 'FFFFFF' },
       line: { color: dark ? '243B5A' : 'AEBAC9', width: 1.2 },
     });
-    addText(slide, title, x + 0.10, y + 0.08, w - 0.20, 0.20, {
-      fontSize: 11,
+    addText(slide, title, x + 0.10, y + 0.07, w - 0.20, 0.19, {
+      fontSize: 10.5,
       bold: true,
       color: dark ? 'FFFFFF' : '243B5A',
       align: 'center',
     });
-    addText(slide, subtitle, x + 0.10, y + 0.29, w - 0.20, 0.13, {
-      fontSize: 7,
+    addText(slide, subtitle, x + 0.10, y + 0.27, w - 0.20, 0.12, {
+      fontSize: 6.5,
       color: dark ? 'D9E4F2' : '64748B',
       align: 'center',
     });
@@ -522,34 +525,45 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     addText(slide, '조직도', 0.45, 0.15, 3.0, 0.35, { fontSize: 19, bold: true, color: '243B5A' });
     addText(slide, `총 ${ordered.length}명 · ${new Date().toLocaleDateString('ko-KR')}`, 9.1, 0.18, 3.75, 0.20, { fontSize: 8, color: '64748B', align: 'right' });
 
+    // 좌측 상단 직급별 인원 깔끔한 표 구성
     const rankNames = ['본부장', '소장', '사원', '책임', '프로', '매니저'];
     const rankCount = (rank: string) => ordered.filter(u =>
       ['본부장', '소장'].includes(rank)
         ? (u.job_title || '').trim() === rank
         : (u.position || '').trim() === rank
     ).length;
-    const statX = 0.42, statY = 0.58, statW = 2.45;
+    
+    const statX = 0.42, statY = 0.55, statW = 2.45;
     slide.addShape(pptx.ShapeType.roundRect, {
-      x: statX, y: statY, w: statW, h: 1.85,
+      x: statX, y: statY, w: statW, h: 1.80,
       fill: { color: 'FFFFFF' },
       line: { color: 'D7DEE8', width: 1 },
     });
-    addText(slide, '직급별 인원', statX + 0.10, statY + 0.08, statW - 0.20, 0.22, {
+    addText(slide, '직급별 인원', statX + 0.10, statY + 0.08, statW - 0.20, 0.20, {
       fontSize: 10, bold: true, color: '243B5A',
     });
     for (let i = 0; i < rankNames.length; i++) {
       const col = i % 2;
       const row = Math.floor(i / 2);
       const x = statX + 0.10 + col * 1.12;
-      const y = statY + 0.38 + row * 0.44;
-      addText(slide, rankNames[i], x, y, 0.68, 0.20, { fontSize: 7.5, color: '475569' });
-      addText(slide, `${rankCount(rankNames[i])}명`, x + 0.62, y, 0.35, 0.20, { fontSize: 8, bold: true, color: '243B5A', align: 'right' });
+      const y = statY + 0.36 + row * 0.42;
+      
+      // 표 형태 셀 디자인 백그라운드
+      slide.addShape(pptx.ShapeType.roundRect, {
+        x, y, w: 1.08, h: 0.36,
+        fill: { color: 'F8FAFC' },
+        line: { color: 'E2E8F0', width: 0.5 },
+      });
+      addText(slide, rankNames[i], x + 0.06, y + 0.08, 0.55, 0.20, { fontSize: 7.5, color: '475569' });
+      addText(slide, `${rankCount(rankNames[i])}명`, x + 0.60, y + 0.08, 0.42, 0.20, { fontSize: 8, bold: true, color: '243B5A', align: 'right' });
     }
 
     const centerX = 7.95;
     const mainX = 5.05;
     const mainW = 5.8;
-    addGroupHeader(slide, '운영', `${operation.length}명 · 본부장 / 소장 / 사무`, mainX, 0.56, mainW, true);
+    
+    // 운영 영역 (화살표 제거 완료)
+    addGroupHeader(slide, '운영', `${operation.length}명 · 본부장 / 소장 / 사무`, mainX, 0.55, mainW, true);
     
     const opMembers = operation;
     const opCols = Math.max(1, Math.min(3, opMembers.length));
@@ -559,12 +573,13 @@ export async function exportHRToPptx(users: HRExportUser[]) {
     for (let i = 0; i < opMembers.length; i++) {
       const row = Math.floor(i / 3);
       const col = i % 3;
-      await addPersonCard(slide, opMembers[i], opStartX + col * (opCardW + opGap), 1.15 + row * 0.54, opCardW, 0.48, true);
+      await addPersonCard(slide, opMembers[i], opStartX + col * (opCardW + opGap), 1.12 + row * 0.52, opCardW, 0.46, true);
     }
 
     const opRows = Math.max(1, Math.ceil(opMembers.length / 3));
-    const managementHeaderY = 1.15 + opRows * 0.54 + 0.03;
-    slide.addShape(pptx.ShapeType.line, { x: centerX, y: 1.05, w: 0, h: Math.max(0.10, managementHeaderY - 1.05), line: { color: '94A3B8', width: 1.1, endArrowType: 'triangle' } });
+    const managementHeaderY = 1.12 + opRows * 0.52 + 0.06;
+    
+    // 관리 영역
     addGroupHeader(slide, '관리', `${management.length}명 · QA / 공정 / 스케줄 등`, mainX, managementHeaderY, mainW, false);
 
     const mgCardW = 1.76, mgGap = 0.10, mgCols = 3;
@@ -574,16 +589,18 @@ export async function exportHRToPptx(users: HRExportUser[]) {
       const rowCount = Math.min(mgCols, management.length - row * mgCols);
       const rowW = rowCount * mgCardW + (rowCount - 1) * mgGap;
       const rowStartX = centerX - rowW / 2;
-      await addPersonCard(slide, management[i], rowStartX + col * (mgCardW + mgGap), managementHeaderY + 0.58 + row * 0.50, mgCardW, 0.44, true);
+      await addPersonCard(slide, management[i], rowStartX + col * (mgCardW + mgGap), managementHeaderY + 0.56 + row * 0.48, mgCardW, 0.42, true);
     }
 
+    // 팀 영역
     const mgRows = Math.max(1, Math.ceil(management.length / mgCols));
-    const teamHeaderY = managementHeaderY + 0.58 + mgRows * 0.50 + 0.12;
+    const teamHeaderY = managementHeaderY + 0.56 + mgRows * 0.48 + 0.10;
     const teamXs = [0.42, 3.67, 6.92, 10.17];
     const teamW = 2.75;
-    const teamListTop = teamHeaderY + 0.56;
+    const teamListTop = teamHeaderY + 0.54;
     const teamListBottom = 7.35;
     const memberH = Math.min(0.20, (teamListBottom - teamListTop) / Math.max(1, ...teams.map(t => t.members.length)));
+    
     for (let i = 0; i < teams.length; i++) {
       const team = teams[i];
       const x = teamXs[i];
@@ -597,7 +614,7 @@ export async function exportHRToPptx(users: HRExportUser[]) {
           line: { color: (member.job_title || '').trim() === '팀장' ? '243B5A' : 'E2E8F0', width: (member.job_title || '').trim() === '팀장' ? 1 : 0.5 },
         });
         const photo = await getPhoto(member);
-        const photoSize = Math.min(0.15, Math.max(0.11, memberH - 0.04));
+        const photoSize = Math.min(0.14, Math.max(0.10, memberH - 0.04));
         const photoX = x + 0.04;
         const photoY = y + (Math.max(0.15, memberH - 0.02) - photoSize) / 2;
         if (photo) {
