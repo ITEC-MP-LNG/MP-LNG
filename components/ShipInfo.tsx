@@ -160,7 +160,12 @@ export type TankStepKey = typeof TANK_STEPS[number]['key'];
 /** 날짜와 값 입력 상태를 기준으로 공정 상태를 자동 판정합니다. */
 export function getTankStepStatus(stepKey: TankStepKey, step: { date?: string; startDate?: string; endDate?: string; value?: string; finalValue?: string } | undefined): CommissioningProcessStatus {
   if (!step) return '대기';
-  const hasAnyValue = !!(step.value || step.finalValue || step.date || step.startDate || step.endDate);
+  const valueText = String(step.value ?? '').trim();
+  // NH3 U/F·Welding에서 No leak는 누출 없음이 확인된 완료 상태로 처리합니다.
+  if ((stepKey === 'nh3_uf' || stepKey === 'nh3_welding') && valueText.toLowerCase() === 'no leak') {
+    return '완료';
+  }
+  const hasAnyValue = !!(valueText || step.finalValue || step.date || step.startDate || step.endDate);
   if (!hasAnyValue) return '대기';
   const dateComplete = stepKey === 'pbgt' || stepKey === 'nh3_welding'
     ? !!step.startDate && !!step.endDate
@@ -948,6 +953,25 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     if (!isAdmin || !statusEditFormData.id) return;
 
     try {
+      // 저장 시 NH3 U/F·Welding 값이 비어 있으면 No leak로 저장하고,
+      // 숫자만 입력된 경우에는 화면/DB에 '숫자 Leak' 형식으로 통일합니다.
+      const tankStatusBeforeNormalize = JSON.parse(JSON.stringify(statusEditFormData.tank_status)) as ShipTankStatus;
+      TANKS.forEach((tank) => {
+        (['nh3_uf', 'nh3_welding'] as const).forEach((stepKey) => {
+          const rawValue = String(tankStatusBeforeNormalize[tank]?.[stepKey]?.value ?? '').trim();
+          let normalizedValue = rawValue;
+          if (!rawValue) {
+            normalizedValue = 'No leak';
+          } else if (/^\d+(?:\.\d+)?$/.test(rawValue)) {
+            normalizedValue = `${rawValue} Leak`;
+          }
+          tankStatusBeforeNormalize[tank][stepKey] = {
+            ...tankStatusBeforeNormalize[tank][stepKey],
+            value: normalizedValue,
+          };
+        });
+      });
+
       const updatePayload = {
         ship_name: statusEditFormData.ship_name,
         shipowner: statusEditFormData.shipowner,
@@ -956,7 +980,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         pt_mount_date: statusEditFormData.pt_mount_date || null,
         dwt: statusEditFormData.dwt || null,
         delivery_date: statusEditFormData.delivery_date || null,
-        tank_status: normalizeTankStatus(statusEditFormData.tank_status),
+        tank_status: normalizeTankStatus(tankStatusBeforeNormalize),
       };
 
       const { error } = await supabase
@@ -987,9 +1011,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       } as ShipItem;
 
       setShips(prev => prev.map(s => s.id === statusEditFormData.id ? updated : s));
-      setIsShipPickerOpen(false);
-      setIsStatusEditModalOpen(false);
-      showAlert('수정 완료', `[Ship #${statusEditFormData.ship_no}]의 Status 및 Tank 공정 일자가 수정되었습니다.`, 'success');
+      // 저장 후 모달과 호선 선택 목록을 유지해, 다른 호선으로 바로 이동할 수 있게 합니다.
+      setStatusEditFormData(prev => ({ ...prev, tank_status: updatePayload.tank_status }));
+      showAlert('저장 완료', `[Ship #${statusEditFormData.ship_no}]의 Status 및 Tank 공정 정보가 저장되었습니다. 창은 열린 상태로 유지됩니다.`, 'success');
     } catch (e: any) {
       showAlert('오류', '수정에 실패했습니다: ' + e?.message, 'error');
     }
@@ -3239,7 +3263,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9]">
                 <button
                   type="button"
-                  onClick={() => setIsStatusEditModalOpen(false)}
+                  onClick={() => { setIsShipPickerOpen(false); setIsStatusEditModalOpen(false); }}
                   className="px-3 py-1.5 bg-white border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-50 cursor-pointer"
                 >
                   취소
@@ -3248,7 +3272,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   type="submit"
                   className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold shadow-2xs cursor-pointer"
                 >
-                  수정 저장
+                  저장
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsShipPickerOpen(false); setIsStatusEditModalOpen(false); }}
+                  className="px-3 py-1.5 bg-slate-100 border border-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold hover:bg-slate-200 cursor-pointer"
+                >
+                  닫기
                 </button>
               </div>
             </form>
