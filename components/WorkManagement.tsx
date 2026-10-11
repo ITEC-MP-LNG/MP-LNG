@@ -130,9 +130,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [isNightWorkAlertOpen, setIsNightWorkAlertOpen] = useState(false);
   const [nightPendingTasks, setNightPendingTasks] = useState<Task[]>([]);
   const nightAlertSeenIds = useRef<Set<string>>(new Set());
-  // 중복 조회 방지: 마지막 업무 조회 시작/완료 시각을 기록합니다.
+  // 중복 조회 방지: 마지막 업무 조회 시각과 진행 중/대기 조회를 기록합니다.
   const lastTasksFetchStartedAtRef = useRef(0);
   const lastTasksFetchCompletedAtRef = useRef(0);
+  const tasksFetchInFlightRef = useRef(false);
+  const tasksFetchQueuedRef = useRef(false);
 
   // 바텀시트 모달
   const [selectedTaskForSheet, setSelectedTaskForSheet] = useState<Task | null>(null);
@@ -284,6 +286,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   // 전체 업무 데이터 및 팝업 알림 체크
   const fetchTasks = useCallback(async () => {
+    // 조회가 이미 진행 중이면 같은 시점의 추가 요청을 쌓지 않고,
+    // 최신 데이터가 필요하다는 표시만 남겨 완료 후 최대 한 번 재조회합니다.
+    if (tasksFetchInFlightRef.current) {
+      tasksFetchQueuedRef.current = true;
+      return;
+    }
+
+    tasksFetchInFlightRef.current = true;
     lastTasksFetchStartedAtRef.current = Date.now();
     setIsLoading(true);
     try {
@@ -346,7 +356,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       console.error('tasks 로드 실패:', err);
     } finally {
       lastTasksFetchCompletedAtRef.current = Date.now();
+      tasksFetchInFlightRef.current = false;
       setIsLoading(false);
+
+      // 조회 중 변경/Realtime 이벤트가 들어온 경우, 여러 건이어도 후속 조회는 한 번만 수행합니다.
+      if (tasksFetchQueuedRef.current) {
+        tasksFetchQueuedRef.current = false;
+        setTimeout(() => {
+          fetchTasksRef.current();
+        }, 0);
+      }
     }
   }, [currentUserId, currentUserNameForFetch, isAdmin]);
 
@@ -382,7 +401,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           if (refreshTimer) clearTimeout(refreshTimer);
           refreshTimer = setTimeout(() => {
             refreshTimer = null;
-            if (lastTasksFetchStartedAtRef.current >= eventAt || lastTasksFetchCompletedAtRef.current >= eventAt) return;
+            // 이벤트 발생 후 시작된 조회가 있다면 그 결과에 반영된 것으로 보고 생략합니다.
+            // 이벤트 전에 시작한 조회가 이벤트 후 끝난 경우에는 최신 데이터 보장을 위해 재조회합니다.
+            if (lastTasksFetchStartedAtRef.current >= eventAt) return;
             fetchTasksRef.current();
           }, 300);
         }
