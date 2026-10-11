@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   LogOut, 
@@ -69,6 +69,11 @@ interface ExtendedAppUser extends AppUser {
 export default function MainPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<ExtendedAppUser | null>(null);
+  // NoticeBoard에 매 렌더마다 새 사용자 객체를 전달해 조회 useEffect가 반복 실행되는 것을 방지합니다.
+  const noticeBoardUser = useMemo(() => {
+    if (!currentUser) return undefined;
+    return { id: currentUser.id, name: currentUser.name, email: currentUser.email };
+  }, [currentUser?.id, currentUser?.name, currentUser?.email]);
   const [mainTab, setMainTab] = useState<'NOTICE' | 'TASKS' | 'INVENTORY' | 'SHIP' | 'EDUCATION' | 'HR'>('NOTICE');
   // Realtime 구독을 메뉴 이동 때마다 다시 만들지 않고 최신 메뉴 상태를 참조합니다.
   const mainTabRef = useRef(mainTab);
@@ -565,7 +570,7 @@ export default function MainPage() {
           {mainTab === 'NOTICE' && (
             <NoticeBoard
               isAdmin={isAdmin}
-              currentUser={{ id: currentUser.id, name: currentUser.name, email: currentUser.email }}
+              currentUser={noticeBoardUser}
             />
           )}
 
