@@ -113,8 +113,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
 
-  // 주간업무 선택적 불러오기 상태 (일일업무 작성 시)
+  // 주간업무 선택적 불러오기 상태 (일일업무 작성 시 해당일 기준)
   const [isWeeklyImportModalOpen, setIsWeeklyImportModalOpen] = useState(false);
+  const [importTargetDate, setImportTargetDate] = useState<string>(() => formatDateToYYYYMMDD(new Date()));
   const [selectedWeeklyIdsToImport, setSelectedWeeklyIdsToImport] = useState<string[]>([]);
 
   // 커스텀 통일 알림 모달 상태
@@ -194,7 +195,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [nightWorkerList, setNightWorkerList] = useState<string[]>([]);
   const [singleWorkerInput, setSingleWorkerInput] = useState('');
 
-  // app_users 인원 및 부서 불러오기 (최소화)
+  // app_users 인원 및 부서 불러오기
   const fetchAppUsers = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('app_users').select('name, department, phone');
@@ -290,7 +291,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return <span className="text-[10px] font-extrabold text-red-600 ml-1">N</span>;
   }, [isTaskNew]);
 
-  // 전체 업무 데이터 조회 (쿼리 최적화 적용)
+  // 전체 업무 데이터 조회
   const fetchTasks = useCallback(async () => {
     if (tasksFetchInFlightRef.current) {
       tasksFetchQueuedRef.current = true;
@@ -385,7 +386,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     fetchTasks();
   }, [fetchTasks]);
 
-  // Realtime 구독 최소화 및 이벤트 디바운스 적용
   useEffect(() => {
     let refreshTimer: ReturnType<typeof setTimeout> | null = null;
     const channel = supabase
@@ -424,7 +424,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return assigned.includes(name) || day.includes(name) || night.includes(name);
   }, [isAdmin, currentUser]);
 
-  // 호선 관리
   const handleAddVessel = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     if (!newVesselName.trim()) return;
@@ -461,7 +460,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   }, [isAdmin, showCustomConfirm, fetchVessels, showCustomAlert]);
 
-  // Team 관리
   const handleAddTeam = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     if (!newTeamName.trim()) { showCustomAlert('입력 오류', 'Team 이름을 입력해주세요.'); return; }
@@ -826,7 +824,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   }, [tasks, canManageTask, showCustomConfirm, fetchTasks, showCustomAlert]);
 
-  // 주간업무를 일일업무로 선택적 불러와서 등록
+  // 주간업무를 선택한 해당일(importTargetDate) 기준으로 일일업무에 불러오기
   const handleImportWeeklyToDaily = useCallback(async () => {
     if (selectedWeeklyIdsToImport.length === 0) {
       showCustomAlert('선택 확인', '불러올 주간업무를 선택해 주세요.');
@@ -837,8 +835,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       const newDailyInserts = targetWeeklyTasks.map(wt => ({
         title: wt.title,
         description: wt.description || '',
-        start_date: wt.start_date,
-        end_date: wt.start_date,
+        start_date: importTargetDate, // 선택한 해당일로 일자 설정
+        end_date: importTargetDate,
         time_slot: wt.time_slot || '오전(08:00~12:00)',
         task_type: 'DAILY',
         status: 'PENDING',
@@ -850,15 +848,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       const { error } = await supabase.from('tasks').insert(newDailyInserts);
       if (error) throw error;
       setIsWeeklyImportModalOpen(false);
-      setSelectedWeeklyIdsToImport([]);
+      setSelectedWeeklyIdsToImport(old => old);
       setTaskTab('DAILY');
       setDailySubTab('ACTIVE');
       fetchTasks();
-      showCustomAlert('성공', '선택한 주간업무가 일일업무로 등록되었습니다.');
+      showCustomAlert('성공', `${importTargetDate} 일자로 선택한 주간업무가 일일업무로 등록되었습니다.`);
     } catch (err: any) {
       showCustomAlert('오류', `불러오기 실패: ${err.message}`);
     }
-  }, [selectedWeeklyIdsToImport, tasks, fetchTasks, showCustomAlert]);
+  }, [selectedWeeklyIdsToImport, tasks, importTargetDate, fetchTasks, showCustomAlert]);
 
   const handleExportDailyHistoryExcel = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 엑셀 다운로드를 할 수 있습니다.'); return; }
@@ -1033,7 +1031,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSelectedTaskIds([]);
   }, [currentWeekMonday]);
 
-  // 목록 필터 및 검색 적용 + 시간대 순서 정렬 (오전 -> 오후 -> 종일)
   const filteredTasks = useMemo(() => {
     const list = tasks.filter((t) => {
       if (taskTab === 'DAILY') {
@@ -1060,12 +1057,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (cabinStatusSubTab === 'HISTORY' && t.status !== 'COMPLETED') return false;
       }
 
-      // 독립 필터 적용 (호선, 화물창, 시간대)
       if (filterVessel !== 'ALL' && t.category !== filterVessel) return false;
       if (filterCargoHold !== 'ALL' && t.cargo_hold !== filterCargoHold) return false;
       if (filterTimeSlot !== 'ALL' && t.time_slot !== filterTimeSlot) return false;
 
-      // 독립 검색 적용 (호선, 화물창, 일자, 시간대 및 제목/담당자 포함)
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
         const matchVessel = (t.category || '').toLowerCase().includes(q);
@@ -1080,7 +1075,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return true;
     });
 
-    // 시간대 정렬 순서 정의: 오전(08:00~12:00) -> 오후(13:00~17:00) -> 종일(08:00~)
     const getTimeSlotOrder = (slot?: string) => {
       if (!slot) return 3;
       if (slot.includes('오전')) return 1;
@@ -1150,7 +1144,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             <div className="flex items-center gap-2">
               {taskTab === 'DAILY' && dailySubTab === 'ACTIVE' && (
                 <button
-                  onClick={() => setIsWeeklyImportModalOpen(true)}
+                  onClick={() => {
+                    setImportTargetDate(formatDateToYYYYMMDD(new Date()));
+                    setIsWeeklyImportModalOpen(true);
+                  }}
                   className="flex items-center space-x-1 bg-blue-50 text-[#2563EB] border border-blue-200 px-3.5 py-2 rounded-lg text-xs font-semibold shadow-2xs shrink-0 hover:bg-blue-100 transition"
                 >
                   <FileText className="h-4 w-4" />
@@ -1170,7 +1167,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
           </div>
 
-          {/* 컨트롤바 */}
           <div className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 pt-1">
             <button
               onClick={() => {
@@ -1208,7 +1204,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         </div>
 
-        {/* 필터 및 검색 바 (독립 적용) */}
+        {/* 필터 및 검색 바 */}
         <div className="flex flex-wrap items-center gap-2 bg-[#F5F6F8] p-2.5 rounded-xl border border-[#E2E5E9] text-xs">
           <div className="flex items-center gap-1">
             <span className="font-bold text-[#64748B]">필터:</span>
@@ -1301,7 +1297,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               {vessels.map((v) => (
                 <button
                   key={v.id}
-                  onClick={() => setCabinSubTab(v.name)} // 요구사항 반영: 바로 등록창으로 이동하지 않고 목록을 볼 수 있음
+                  onClick={() => setCabinSubTab(v.name)}
                   className={`px-3 py-1 text-xs font-semibold rounded-lg shrink-0 flex items-center gap-1 transition ${
                     cabinSubTab === v.name ? 'bg-[#243B5A] text-white font-bold shadow-2xs' : 'bg-white border text-[#243B5A] hover:bg-slate-100'
                   }`}
@@ -1598,7 +1594,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 주간업무 선택적 불러오기 모달 */}
+        {/* 주간업무 선택적 불러오기 모달 (해당일 선택 기능 추가) */}
         {isWeeklyImportModalOpen && (
           <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
@@ -1606,13 +1602,23 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <h3 className="text-sm font-bold text-[#243B5A]">주간업무에서 일일업무로 불러오기</h3>
                 <button onClick={() => setIsWeeklyImportModalOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
               </div>
-              <p className="text-xs text-[#64748B]">일일업무로 등록할 주간업무 항목을 선택해주세요.</p>
-              
+
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-[#1F2937]">불러올 일자 선택 (해당일)</label>
+                <input
+                  type="date"
+                  value={importTargetDate}
+                  onChange={(e) => setImportTargetDate(e.target.value)}
+                  className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono bg-white"
+                />
+                <p className="text-[10px] text-[#64748B]">선택한 날짜에 해당하는 주간업무 항목들을 일일업무로 등록합니다.</p>
+              </div>
+
               <div className="max-h-60 overflow-y-auto space-y-2 border p-2 rounded-lg bg-[#F5F6F8]">
-                {tasks.filter(t => t.task_type === 'WEEKLY').length === 0 ? (
-                  <div className="text-center py-6 text-xs text-[#64748B]">등록된 주간업무가 없습니다.</div>
+                {tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).length === 0 ? (
+                  <div className="text-center py-6 text-xs text-[#64748B]">선택한 일자({importTargetDate})에 등록된 주간업무가 없습니다.</div>
                 ) : (
-                  tasks.filter(t => t.task_type === 'WEEKLY').map(wt => (
+                  tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).map(wt => (
                     <label key={wt.id} className="flex items-center justify-between p-2 bg-white rounded border text-xs hover:border-[#243B5A] cursor-pointer">
                       <div className="flex items-center gap-2">
                         <input
@@ -1705,7 +1711,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 상태 변경 및 비고 입력 모달 (비고란 최대 10줄 스크롤) */}
+        {/* 상태 변경 및 비고 입력 모달 */}
         {statusChangeModal.open && statusChangeModal.task && (() => {
           const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
           return (
@@ -1879,7 +1885,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 업무 등록/수정 모달 (호선, 화물창, 시간대 선택 반영) */}
+        {/* 업무 등록/수정 모달 */}
         {isModalOpen && (isAdmin || formData.task_type === 'DAILY_OTHER') && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[90vh] overflow-y-auto">
@@ -1902,7 +1908,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 </div>
                 )}
 
-                {/* 호선 및 화물창 항목 */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-semibold mb-1">호선</label>
@@ -2015,12 +2020,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           <button type="button" onClick={() => handleAddWorkerSingle('ASSIGNED')} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg">추가</button>
                         </div>
                         <div className="flex flex-wrap gap-1 pt-1">
-                          {assignedList.map(name => (
-                            <span key={name} className="bg-slate-100 text-[#1F2937] border text-[11px] px-2 py-0.5 rounded-full flex items-center gap-1">
-                              {name}
-                              <button type="button" onClick={() => handleRemoveWorker(name, 'ASSIGNED')}><X className="h-3 w-3" /></button>
-                            </span>
-                          ))}
+                          {assignedList.length === 0 ? (
+                            <span className="text-[11px] text-[#64748B]">지정된 인원이 없습니다.</span>
+                          ) : (
+                            assignedList.map(name => (
+                              <span key={name} className="bg-slate-100 text-[#1F2937] border text-[11px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                                {name}
+                                <button type="button" onClick={() => handleRemoveWorker(name, 'ASSIGNED')}><X className="h-3 w-3" /></button>
+                              </span>
+                            ))
+                          )}
                         </div>
                       </div>
                     )}
