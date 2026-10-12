@@ -496,13 +496,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     showCustomConfirm('호선 삭제', '이 호선을 삭제하시겠습니까?', async () => {
       try {
+        const vesselToDelete = vessels.find((v) => v.id === id);
         const { error } = await supabase.from('cabin_vessels').delete().eq('id', id);
         if (error) throw error;
-        fetchVessels();
-        showCustomAlert('완료', '호선이 삭제되었습니다.');
+        if (vesselToDelete && cabinSubTab === vesselToDelete.name) setCabinSubTab('ALL');
+        if (vesselToDelete && tableFilterVessel === vesselToDelete.name) setTableFilterVessel('ALL');
+        await fetchVessels();
+        showCustomAlert('완료', '호선이 삭제되었습니다. 기존 업무 기록의 호선명은 유지됩니다.');
       } catch (err: any) { showCustomAlert('오류', `호선 삭제 실패: ${err.message}`); }
     });
-  }, [isAdmin, showCustomConfirm, fetchVessels, showCustomAlert]);
+  }, [isAdmin, showCustomConfirm, fetchVessels, showCustomAlert, vessels, cabinSubTab, tableFilterVessel]);
 
   const handleAddTeam = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
@@ -907,6 +910,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       { header: '인원', key: 'names', width: 25 },
       { header: '완료 비고란', key: 'remarks', width: 35 },
     ];
+    worksheet.mergeCells('A1:G1');
+    const titleCell = worksheet.getCell('A1');
+    titleCell.value = '일일업무 완료이력';
+    titleCell.font = { name: 'HY헤드라인 M', size: 24, bold: true };
+    titleCell.alignment = { vertical: 'middle', horizontal: 'center' };
+    worksheet.getRow(1).height = 42;
+    worksheet.addRow([]);
+    worksheet.addRow(worksheet.columns.map((column) => String(column.header || '')));
     worksheet.addRows(exportTasks.map((task) => ({
       date: task.start_date || '',
       vessel: task.category || '',
@@ -916,9 +927,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       names: (task.assigned_names || []).join(', '),
       remarks: task.remarks || '',
     })));
-    worksheet.views = [{ state: 'frozen', ySplit: 1 }];
-    worksheet.getRow(1).height = 28;
-    worksheet.getRow(1).eachCell((cell) => {
+    worksheet.views = [{ state: 'frozen', ySplit: 3 }];
+    worksheet.getRow(3).height = 28;
+    worksheet.getRow(3).eachCell((cell) => {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243B5A' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
@@ -1070,18 +1081,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (!isDailyType) return false;
         if (dailySubTab === 'ACTIVE') {
           if (!(t.task_type === 'DAILY' && (t.status !== 'COMPLETED' || t.completion_pending_review === true))) return false;
-          const today = formatDateToYYYYMMDD(new Date());
-          const tomorrowDate = new Date();
-          tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-          const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
-          if (!t.start_date || t.start_date < today || t.start_date > tomorrow) return false;
+          if (tableFilterDate === 'ALL') {
+            const today = formatDateToYYYYMMDD(new Date());
+            const tomorrowDate = new Date();
+            tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+            const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
+            if (!t.start_date || t.start_date < today || t.start_date > tomorrow) return false;
+          }
         } else if (dailySubTab === 'OTHER') {
           if (!(t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED')) return false;
-          const today = formatDateToYYYYMMDD(new Date());
-          const tomorrowDate = new Date();
-          tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-          const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
-          if (!t.start_date || t.start_date < today || t.start_date > tomorrow) return false;
+          if (tableFilterDate === 'ALL') {
+            const today = formatDateToYYYYMMDD(new Date());
+            const tomorrowDate = new Date();
+            tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+            const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
+            if (!t.start_date || t.start_date < today || t.start_date > tomorrow) return false;
+          }
         } else if (dailySubTab === 'HISTORY') {
           if (!(t.status === 'COMPLETED' && t.completion_pending_review !== true)) return false;
         }
@@ -1377,7 +1392,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               {activeFilterDropdown === 'mobile-date' && (
                 <div className="absolute right-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
                   <button type="button" onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 날짜</button>
-                  {Array.from(new Set(tasks.map(t => t.start_date).filter((d): d is string => Boolean(d) && d >= formatDateToYYYYMMDD(new Date()) && d <= (() => { const x = new Date(); x.setDate(x.getDate() + 1); return formatDateToYYYYMMDD(x); })()))).sort((a, b) => a.localeCompare(b)).map(dStr => (
+                  {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => a.localeCompare(b)).map(dStr => (
                     <button key={dStr} type="button" onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-slate-100">{formatToShortDate(dStr)}</button>
                   ))}
                 </div>
@@ -1479,7 +1494,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] max-h-60 overflow-y-auto space-y-1">
                         <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
                         <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                        {Array.from(new Set(tasks.map(t => t.start_date).filter((d): d is string => Boolean(d) && d >= formatDateToYYYYMMDD(new Date()) && d <= (() => { const x = new Date(); x.setDate(x.getDate() + 1); return formatDateToYYYYMMDD(x); })()))).sort((a, b) => a.localeCompare(b)).map(dStr => (
+                        {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => a.localeCompare(b)).map(dStr => (
                           <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
                         ))}
                       </div>
@@ -2022,7 +2037,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
               <div className="flex items-center justify-between border-b pb-3">
-                <h3 className="text-sm font-bold text-[#243B5A]">CABIN 호선 관리</h3>
+                <h3 className="text-sm font-bold text-[#243B5A]">호선 추가 / 수정 / 삭제</h3>
                 <button onClick={() => setIsVesselManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
               </div>
               <div className="flex space-x-2">
@@ -2117,13 +2132,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     <div className="flex justify-between items-center mb-1">
                       <label className="block text-[11px] font-semibold">호선</label>
                       {isAdmin && (
-                        <button
-                          type="button"
-                          onClick={() => setIsQuickVesselInputOpen(!isQuickVesselInputOpen)}
-                          className="text-[10px] text-[#2563EB] hover:underline font-semibold"
-                        >
-                          {isQuickVesselInputOpen ? '닫기' : '+ 호선 추가'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => setIsVesselManagerOpen(true)} className="text-[10px] text-red-600 hover:underline font-semibold">호선 삭제/관리</button>
+                          <button
+                            type="button"
+                            onClick={() => setIsQuickVesselInputOpen(!isQuickVesselInputOpen)}
+                            className="text-[10px] text-[#2563EB] hover:underline font-semibold"
+                          >
+                            {isQuickVesselInputOpen ? '닫기' : '+ 호선 추가'}
+                          </button>
+                        </div>
                       )}
                     </div>
 
@@ -2182,6 +2200,24 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <div>
                         <label className="block text-[11px] font-semibold mb-1">종료일</label>
                         <input type="date" required value={formData.end_date} onChange={(e) => setFormData({ ...formData, end_date: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono" />
+                      </div>
+                    </div>
+                    <div className="space-y-3 rounded-lg border bg-slate-50 p-3">
+                      <div className="space-y-1.5">
+                        <label className="block text-[11px] font-semibold">주간 근무자 ({dayWorkerList.length}명)</label>
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="주간 근무자 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('DAY'); } }} className="flex-1 px-3 py-1.5 border rounded-lg text-xs bg-white" />
+                          <button type="button" onClick={() => handleAddWorkerSingle('DAY')} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg">추가</button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 pt-1">{dayWorkerList.length ? dayWorkerList.map(name => <span key={`day-${name}`} className="bg-blue-50 text-[#1F2937] border border-blue-100 text-[11px] px-2 py-1 rounded-full flex items-center gap-1">{name}<button type="button" onClick={() => handleRemoveWorker(name, 'DAY')} aria-label={`${name} 주간 근무자 삭제`}><X className="h-3 w-3" /></button></span>) : <span className="text-[11px] text-[#64748B]">주간 근무자가 지정되지 않았습니다.</span>}</div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-[11px] font-semibold">야간 근무자 ({nightWorkerList.length}명)</label>
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="야간 근무자 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('NIGHT'); } }} className="flex-1 px-3 py-1.5 border rounded-lg text-xs bg-white" />
+                          <button type="button" onClick={() => handleAddWorkerSingle('NIGHT')} className="px-3 py-1.5 bg-violet-700 text-white text-xs font-semibold rounded-lg">추가</button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 pt-1">{nightWorkerList.length ? nightWorkerList.map(name => <span key={`night-${name}`} className="bg-violet-50 text-[#1F2937] border border-violet-100 text-[11px] px-2 py-1 rounded-full flex items-center gap-1">{name}<button type="button" onClick={() => handleRemoveWorker(name, 'NIGHT')} aria-label={`${name} 야간 근무자 삭제`}><X className="h-3 w-3" /></button></span>) : <span className="text-[11px] text-[#64748B]">야간 근무자가 지정되지 않았습니다.</span>}</div>
                       </div>
                     </div>
                   </>
