@@ -1081,15 +1081,26 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (!isDailyType) return false;
         if (dailySubTab === 'ACTIVE') {
           if (!(t.task_type === 'DAILY' && (t.status !== 'COMPLETED' || t.completion_pending_review === true))) return false;
-          // 진행중/대기 목록은 오늘부터 미래의 업무만 표시합니다.
-          // 특정 날짜를 선택한 경우에도 과거 날짜의 업무는 목록에서 제외합니다.
-          const today = formatDateToYYYYMMDD(new Date());
+          // 기본 목록은 오늘과 내일, 최대 이틀치만 표시합니다.
+          // 일자를 직접 선택하면 선택한 날짜 기준으로 조회하되, 과거 날짜는 진행중/대기 목록에서 제외합니다.
+          const todayDate = new Date();
+          const today = formatDateToYYYYMMDD(todayDate);
+          const tomorrowDate = new Date(todayDate);
+          tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+          const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
           if (!t.start_date || t.start_date < today) return false;
+          if (tableFilterDate === 'ALL' && t.start_date > tomorrow) return false;
         } else if (dailySubTab === 'OTHER') {
           if (!(t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED')) return false;
-          // 야간업무진행 목록도 오늘부터 미래의 업무만 표시합니다.
-          const today = formatDateToYYYYMMDD(new Date());
+          // 기본 야간업무 목록도 오늘과 내일, 최대 이틀치만 표시합니다.
+          // 일자를 직접 선택하면 선택한 날짜 기준으로 조회하되, 과거 날짜는 제외합니다.
+          const todayDate = new Date();
+          const today = formatDateToYYYYMMDD(todayDate);
+          const tomorrowDate = new Date(todayDate);
+          tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+          const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
           if (!t.start_date || t.start_date < today) return false;
+          if (tableFilterDate === 'ALL' && t.start_date > tomorrow) return false;
         } else if (dailySubTab === 'HISTORY') {
           if (!(t.status === 'COMPLETED' && t.completion_pending_review !== true)) return false;
         }
@@ -1390,7 +1401,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               {activeFilterDropdown === 'mobile-date' && (
                 <div className="absolute right-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
                   <button type="button" onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 날짜</button>
-                  {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d) && (dailySubTab === 'HISTORY' || d >= formatDateToYYYYMMDD(new Date()))))).sort((a, b) => b.localeCompare(a)).map(dStr => (
+                  {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
                     <button key={dStr} type="button" onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-slate-100">{formatToShortDate(dStr)}</button>
                   ))}
                 </div>
@@ -1492,7 +1503,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] max-h-60 overflow-y-auto space-y-1">
                         <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
                         <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                        {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d) && (dailySubTab === 'HISTORY' || d >= formatDateToYYYYMMDD(new Date()))))).sort((a, b) => b.localeCompare(a)).map(dStr => (
+                        {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
                           <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
                         ))}
                       </div>
