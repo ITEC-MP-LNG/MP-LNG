@@ -61,7 +61,7 @@ const formatDateToYYYYMMDD = (d: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-// 요청 1: yyyy/mm/dd -> yy/mm/dd 변환 헬퍼 함수
+// yy/mm/dd 변환 헬퍼 함수
 const formatToShortDate = (dateStr?: string) => {
   if (!dateStr) return '';
   const parts = dateStr.split(/[-/]/);
@@ -72,7 +72,7 @@ const formatToShortDate = (dateStr?: string) => {
   return dateStr;
 };
 
-// 요청 2: 시간대에서 상세 시간 제거 (오전, 오후, 종일만 표시)
+// 시간대에서 상세 시간 제거 (오전, 오후, 종일만 표시)
 const formatShortTimeSlot = (slot?: string) => {
   if (!slot) return '';
   if (slot.includes('오전')) return '오전';
@@ -558,6 +558,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setNewTeamMembersText(deptMembers.join(', '));
   }, [appUsers]);
 
+  // 전화 연결 함수 복구
   const handleCallWorker = useCallback((workerName: string) => {
     const worker = appUsers.find((u) => u.name?.trim().toLowerCase() === workerName.trim().toLowerCase());
     const phone = worker?.phone?.trim();
@@ -1402,9 +1403,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       )}
                       <td className="p-1.5 font-bold text-[#243B5A] truncate" title={t.category || '-'}>{t.category || '-'}</td>
                       <td className="p-1.5 font-semibold text-indigo-700 truncate" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
-                      {/* 요청 1 적용: yy/mm/dd 형식 */}
                       <td className="p-1.5 font-mono text-[#64748B] truncate" title={formatToShortDate(t.start_date)}>{formatToShortDate(t.start_date)}</td>
-                      {/* 요청 2 적용: 시간대 단축 (오전, 오후, 종일) */}
                       <td className="p-1.5 font-mono text-[#2563EB] truncate" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>
                       <td className="p-1.5 text-center truncate" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
@@ -1423,8 +1422,24 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           )}
                         </div>
                       </td>
-                      <td className="p-1.5 text-[#64748B] truncate" title={t.assigned_names?.join(', ') || '미지정'}>
-                        {t.assigned_names?.length ? t.assigned_names.join(', ') : '미지정'}
+                      <td className="p-1.5 text-[#64748B] truncate">
+                        {t.assigned_names?.length ? (
+                          t.assigned_names.map((name, idx) => (
+                            <span key={`${t.id}-${name}`}>
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleCallWorker(name); }}
+                                className="font-medium text-[#1F2937] hover:text-[#2563EB] hover:underline"
+                                title="클릭 시 전화 연결"
+                              >
+                                {name}
+                              </button>
+                              {idx < (t.assigned_names?.length || 0) - 1 ? ', ' : ''}
+                            </span>
+                          ))
+                        ) : (
+                          '미지정'
+                        )}
                       </td>
                       <td className="p-1.5 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-0.5">
@@ -1797,7 +1812,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <div className="space-y-1 text-xs">
                 <div className="font-bold text-[#1F2937]">인원 목록:</div>
                 <div className="text-[#64748B]">
-                  {selectedTaskForSheet.assigned_names?.join(', ') || 
+                  {selectedTaskForSheet.assigned_names?.map((name) => (
+                    <button
+                      key={`sheet-${name}`}
+                      type="button"
+                      onClick={() => handleCallWorker(name)}
+                      className="text-[#2563EB] hover:underline font-medium mr-2 inline-block bg-blue-50 px-1.5 py-0.5 rounded my-0.5"
+                    >
+                      📞 {name}
+                    </button>
+                  )) || 
                    [...(selectedTaskForSheet.day_workers || []), ...(selectedTaskForSheet.night_workers || [])].join(', ') || 
                    '지정 안됨'}
                 </div>
