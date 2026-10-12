@@ -1081,22 +1081,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (!isDailyType) return false;
         if (dailySubTab === 'ACTIVE') {
           if (!(t.task_type === 'DAILY' && (t.status !== 'COMPLETED' || t.completion_pending_review === true))) return false;
-          if (tableFilterDate === 'ALL') {
-            const today = formatDateToYYYYMMDD(new Date());
-            const tomorrowDate = new Date();
-            tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-            const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
-            if (!t.start_date || t.start_date < today || t.start_date > tomorrow) return false;
-          }
+          // 진행중/대기 목록은 오늘부터 미래의 업무만 표시합니다.
+          // 특정 날짜를 선택한 경우에도 과거 날짜의 업무는 목록에서 제외합니다.
+          const today = formatDateToYYYYMMDD(new Date());
+          if (!t.start_date || t.start_date < today) return false;
         } else if (dailySubTab === 'OTHER') {
           if (!(t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED')) return false;
-          if (tableFilterDate === 'ALL') {
-            const today = formatDateToYYYYMMDD(new Date());
-            const tomorrowDate = new Date();
-            tomorrowDate.setDate(tomorrowDate.getDate() + 1);
-            const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
-            if (!t.start_date || t.start_date < today || t.start_date > tomorrow) return false;
-          }
+          // 야간업무진행 목록도 오늘부터 미래의 업무만 표시합니다.
+          const today = formatDateToYYYYMMDD(new Date());
+          if (!t.start_date || t.start_date < today) return false;
         } else if (dailySubTab === 'HISTORY') {
           if (!(t.status === 'COMPLETED' && t.completion_pending_review !== true)) return false;
         }
@@ -1397,7 +1390,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               {activeFilterDropdown === 'mobile-date' && (
                 <div className="absolute right-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
                   <button type="button" onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 날짜</button>
-                  {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
+                  {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d) && (dailySubTab === 'HISTORY' || d >= formatDateToYYYYMMDD(new Date()))))).sort((a, b) => b.localeCompare(a)).map(dStr => (
                     <button key={dStr} type="button" onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-slate-100">{formatToShortDate(dStr)}</button>
                   ))}
                 </div>
@@ -1499,7 +1492,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] max-h-60 overflow-y-auto space-y-1">
                         <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
                         <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                        {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
+                        {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d) && (dailySubTab === 'HISTORY' || d >= formatDateToYYYYMMDD(new Date()))))).sort((a, b) => b.localeCompare(a)).map(dStr => (
                           <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
                         ))}
                       </div>
@@ -1833,10 +1826,30 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <input
                   type="date"
                   value={importTargetDate}
-                  onChange={(e) => setImportTargetDate(e.target.value)}
+                  onChange={(e) => { setImportTargetDate(e.target.value); setSelectedWeeklyIdsToImport([]); }}
                   className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono bg-white"
                 />
                 <p className="text-[10px] text-[#64748B]">선택한 날짜에 해당하는 주간업무 항목들을 일일업무로 등록합니다.</p>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[#64748B]">
+                  선택 {selectedWeeklyIdsToImport.filter(id => tasks.some(t => t.id === id && t.task_type === 'WEEKLY' && t.start_date === importTargetDate)).length}개
+                  / 전체 {tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).length}개
+                </span>
+                {tasks.some(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const availableIds = tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).map(t => t.id);
+                      const allSelected = availableIds.length > 0 && availableIds.every(id => selectedWeeklyIdsToImport.includes(id));
+                      setSelectedWeeklyIdsToImport(prev => allSelected ? prev.filter(id => !availableIds.includes(id)) : Array.from(new Set([...prev, ...availableIds])));
+                    }}
+                    className="px-3 py-1.5 border border-[#243B5A] rounded-lg text-xs font-semibold text-[#243B5A] hover:bg-blue-50"
+                  >
+                    {tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).every(t => selectedWeeklyIdsToImport.includes(t.id)) ? '전체 해제' : '전체 선택'}
+                  </button>
+                )}
               </div>
 
               <div className="max-h-60 overflow-y-auto space-y-2 border p-2 rounded-lg bg-[#F5F6F8]">
@@ -2047,9 +2060,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 호선 관리 모달 */}
+        {/* 호선 관리 모달: 등록/수정 모달보다 위에 표시 */}
         {isVesselManagerOpen && isAdmin && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
               <div className="flex items-center justify-between border-b pb-3">
                 <h3 className="text-sm font-bold text-[#243B5A]">호선 추가 / 수정 / 삭제</h3>
