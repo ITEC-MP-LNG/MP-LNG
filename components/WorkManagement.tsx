@@ -1121,7 +1121,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       // 표 헤더 내부 필터 적용
       if (tableFilterVessel !== 'ALL' && t.category !== tableFilterVessel) return false;
       if (tableFilterCargoHold !== 'ALL' && t.cargo_hold !== tableFilterCargoHold) return false;
-      if (tableFilterDate !== 'ALL' && t.start_date !== tableFilterDate) return false;
+      // 완료이력은 날짜별 필터링 대상이 아니며, 전체 완료 기록을 날짜순으로 표시합니다.
+      if (!(taskTab === 'DAILY' && dailySubTab === 'HISTORY') && tableFilterDate !== 'ALL' && t.start_date !== tableFilterDate) return false;
       if (tableFilterTimeSlot !== 'ALL') {
         const shortSlot = formatShortTimeSlot(t.time_slot);
         if (shortSlot !== tableFilterTimeSlot) return false;
@@ -1295,7 +1296,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <span>야간진행</span>
               </button>
               <button
-                onClick={() => { setDailySubTab('HISTORY'); setSelectedTaskIds([]); }}
+                onClick={() => { setDailySubTab('HISTORY'); setSelectedTaskIds([]); setTableFilterDate('ALL'); setActiveFilterDropdown(null); }}
                 className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1 transition ${dailySubTab === 'HISTORY' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}
               >
                 <History className="h-3 w-3" />
@@ -1379,34 +1380,34 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <button
                 type="button"
                 onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'mobile-vessel' ? null : 'mobile-vessel')}
-                className="flex min-w-0 items-center justify-between gap-1 rounded-lg bg-[#243B5A] px-2.5 py-2 text-left text-xs font-bold text-white"
+                className={`flex min-w-0 items-center justify-between gap-1 rounded-lg bg-[#243B5A] px-2.5 py-2 text-left text-xs font-bold text-white ${dailySubTab === 'HISTORY' ? 'col-span-2' : ''}`}
               >
                 <span className="truncate">▶ 호선 선택: {tableFilterVessel === 'ALL' ? '전체' : tableFilterVessel}</span>
                 <ChevronDown className="h-4 w-4 shrink-0" />
               </button>
-              <button
+              {dailySubTab !== 'HISTORY' && <button
                 type="button"
                 onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'mobile-date' ? null : 'mobile-date')}
                 className="flex min-w-0 items-center justify-between gap-1 rounded-lg bg-[#243B5A] px-2.5 py-2 text-left text-xs font-bold text-white"
               >
                 <span className="truncate">▶ 일자 선택: {tableFilterDate === 'ALL' ? '전체' : formatToShortDate(tableFilterDate)}</span>
                 <ChevronDown className="h-4 w-4 shrink-0" />
-              </button>
+              </button>}
               {activeFilterDropdown === 'mobile-vessel' && (
                 <div className="absolute left-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
                   <button type="button" onClick={() => { setTableFilterVessel('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 호선</button>
                   {vessels.map(v => <button key={v.id} type="button" onClick={() => { setTableFilterVessel(v.name); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-slate-100">{v.name}</button>)}
                 </div>
               )}
-              {activeFilterDropdown === 'mobile-date' && (
+              {dailySubTab !== 'HISTORY' && activeFilterDropdown === 'mobile-date' && (
                 <div className="absolute right-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
                   <button type="button" onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 날짜</button>
-                  {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
+                  {Array.from(new Set(tasks.filter(t => (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && Boolean(t.start_date) && t.start_date >= formatDateToYYYYMMDD(new Date())).map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
                     <button key={dStr} type="button" onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-slate-100">{formatToShortDate(dStr)}</button>
                   ))}
                 </div>
               )}
-              {(tableFilterDate !== 'ALL' || tableFilterVessel !== 'ALL') && <button type="button" onClick={() => { setTableFilterDate('ALL'); setTableFilterVessel('ALL'); }} className="col-span-2 rounded-lg border px-2 py-1.5 text-xs text-[#64748B]">필터 전체 해제</button>}
+              {((dailySubTab !== 'HISTORY' && tableFilterDate !== 'ALL') || tableFilterVessel !== 'ALL') && <button type="button" onClick={() => { setTableFilterDate('ALL'); setTableFilterVessel('ALL'); }} className="col-span-2 rounded-lg border px-2 py-1.5 text-xs text-[#64748B]">필터 전체 해제</button>}
             </div>
             {filteredTasks.length === 0 ? (
               <div className="rounded-xl border bg-white py-10 text-center text-xs text-[#64748B]">
@@ -1493,20 +1494,26 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     )}
                   </th>
 
-                  {/* 일자 헤더 (▶ 펼치기 버튼 포함) */}
-                  <th className="p-1.5 font-bold w-[15%] relative">
-                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'date' ? null : 'date')}>
-                      <span className="truncate">일자{tableFilterDate !== 'ALL' ? `(${formatToShortDate(tableFilterDate)})` : ''}</span>
-                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
-                    </div>
-                    {activeFilterDropdown === 'date' && (
-                      <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] max-h-60 overflow-y-auto space-y-1">
-                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
-                        <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                        {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
-                          <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
-                        ))}
-                      </div>
+                  {/* 완료이력은 날짜별 필터 없이 전체를 날짜순으로 표시 */}
+                  <th className={`p-1.5 font-bold w-[15%] ${dailySubTab === 'HISTORY' ? '' : 'relative'}`}>
+                    {dailySubTab === 'HISTORY' ? (
+                      <span>일자</span>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'date' ? null : 'date')}>
+                          <span className="truncate">일자{tableFilterDate !== 'ALL' ? `(${formatToShortDate(tableFilterDate)})` : ''}</span>
+                          <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                        </div>
+                        {activeFilterDropdown === 'date' && (
+                          <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] max-h-60 overflow-y-auto space-y-1">
+                            <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
+                            <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                            {Array.from(new Set(tasks.filter(t => (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && Boolean(t.start_date) && t.start_date >= formatDateToYYYYMMDD(new Date())).map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
+                              <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
+                            ))}
+                          </div>
+                        )}
+                      </>
                     )}
                   </th>
 
