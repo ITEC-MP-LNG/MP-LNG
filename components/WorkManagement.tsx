@@ -118,6 +118,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [importTargetDate, setImportTargetDate] = useState<string>(() => formatDateToYYYYMMDD(new Date()));
   const [selectedWeeklyIdsToImport, setSelectedWeeklyIdsToImport] = useState<string[]>([]);
 
+  // 업무 등록 모달 내 빠른 호선 추가용 상태
+  const [isQuickVesselInputOpen, setIsQuickVesselInputOpen] = useState(false);
+  const [quickVesselName, setQuickVesselName] = useState('');
+
   // 커스텀 통일 알림 모달 상태
   const [customAlert, setCustomAlert] = useState<{ open: boolean; title: string; message: string; type?: 'info' | 'confirm' | 'monthlyDelete'; onConfirm?: () => void; onDownload?: () => void }>({
     open: false,
@@ -436,6 +440,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) { showCustomAlert('오류', `호선 추가 실패: ${err.message}`); }
   }, [isAdmin, newVesselName, fetchVessels, showCustomAlert]);
 
+  // 업무 등록 모달 내 빠른 호선 추가 핸들러
+  const handleQuickAddVessel = useCallback(async () => {
+    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
+    if (!quickVesselName.trim()) return;
+    try {
+      const { error } = await supabase.from('cabin_vessels').insert([{ name: quickVesselName.trim() }]);
+      if (error) throw error;
+      const addedName = quickVesselName.trim();
+      setQuickVesselName('');
+      setIsQuickVesselInputOpen(false);
+      await fetchVessels();
+      setFormData(prev => ({ ...prev, category: addedName }));
+      showCustomAlert('성공', '새 호선이 추가되고 선택되었습니다.');
+    } catch (err: any) { showCustomAlert('오류', `호선 추가 실패: ${err.message}`); }
+  }, [isAdmin, quickVesselName, fetchVessels, showCustomAlert]);
+
   const handleUpdateVessel = useCallback(async (id: string, name: string) => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     if (!name.trim()) return;
@@ -643,6 +663,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setDayWorkerList([]);
     setNightWorkerList([]);
     setSingleWorkerInput('');
+    setIsQuickVesselInputOpen(false);
+    setQuickVesselName('');
     setIsModalOpen(true);
   }, [isAdmin, taskTab, vessels, currentUser, showCustomAlert]);
 
@@ -663,6 +685,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setDayWorkerList(task.day_workers || []);
     setNightWorkerList(task.night_workers || []);
     setSingleWorkerInput('');
+    setIsQuickVesselInputOpen(false);
+    setQuickVesselName('');
     setIsModalOpen(true);
   }, [canManageTask, vessels, showCustomAlert]);
 
@@ -824,7 +848,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   }, [tasks, canManageTask, showCustomConfirm, fetchTasks, showCustomAlert]);
 
-  // 주간업무를 선택한 해당일(importTargetDate) 기준으로 일일업무에 불러오기
   const handleImportWeeklyToDaily = useCallback(async () => {
     if (selectedWeeklyIdsToImport.length === 0) {
       showCustomAlert('선택 확인', '불러올 주간업무를 선택해 주세요.');
@@ -835,7 +858,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       const newDailyInserts = targetWeeklyTasks.map(wt => ({
         title: wt.title,
         description: wt.description || '',
-        start_date: importTargetDate, // 선택한 해당일로 일자 설정
+        start_date: importTargetDate,
         end_date: importTargetDate,
         time_slot: wt.time_slot || '오전(08:00~12:00)',
         task_type: 'DAILY',
@@ -848,7 +871,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       const { error } = await supabase.from('tasks').insert(newDailyInserts);
       if (error) throw error;
       setIsWeeklyImportModalOpen(false);
-      setSelectedWeeklyIdsToImport(old => old);
+      setSelectedWeeklyIdsToImport([]);
       setTaskTab('DAILY');
       setDailySubTab('ACTIVE');
       fetchTasks();
@@ -1594,7 +1617,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 주간업무 선택적 불러오기 모달 (해당일 선택 기능 추가) */}
+        {/* 주간업무 선택적 불러오기 모달 */}
         {isWeeklyImportModalOpen && (
           <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
@@ -1885,7 +1908,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 업무 등록/수정 모달 */}
+        {/* 업무 등록/수정 모달 (호선 등록 기능 추가) */}
         {isModalOpen && (isAdmin || formData.task_type === 'DAILY_OTHER') && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[90vh] overflow-y-auto">
@@ -1910,16 +1933,48 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-[11px] font-semibold mb-1">호선</label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-[11px] font-semibold">호선</label>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setIsQuickVesselInputOpen(!isQuickVesselInputOpen)}
+                          className="text-[10px] text-[#2563EB] hover:underline font-semibold"
+                        >
+                          {isQuickVesselInputOpen ? '닫기' : '+ 호선 추가'}
+                        </button>
+                      )}
+                    </div>
+
+                    {isQuickVesselInputOpen ? (
+                      <div className="flex gap-1.5 mb-1">
+                        <input
+                          type="text"
+                          placeholder="신규 호선명 입력"
+                          value={quickVesselName}
+                          onChange={(e) => setQuickVesselName(e.target.value)}
+                          className="flex-1 px-2.5 py-1.5 border rounded-lg text-xs bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleQuickAddVessel}
+                          className="px-2.5 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg shrink-0"
+                        >
+                          등록
+                        </button>
+                      </div>
+                    ) : null}
+
                     <select
                       value={formData.category}
                       onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="w-full px-3 py-1.5 border rounded-lg text-xs font-bold text-[#243B5A]"
+                      className="w-full px-3 py-1.5 border rounded-lg text-xs font-bold text-[#243B5A] bg-white"
                     >
                       <option value="">호선 선택</option>
                       {vessels.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
                     </select>
                   </div>
+
                   <div>
                     <label className="block text-[11px] font-semibold mb-1">화물창</label>
                     <input
