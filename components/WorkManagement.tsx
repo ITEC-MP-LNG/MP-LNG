@@ -1147,14 +1147,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     };
 
     if (taskTab === 'DAILY' && dailySubTab === 'HISTORY') {
-      return [...list].sort((a, b) => new Date(b.start_date).getTime() - new Date(a.start_date).getTime());
+      return [...list].sort((a, b) => (b.start_date || '').localeCompare(a.start_date || '') || (b.completed_at || '').localeCompare(a.completed_at || ''));
     }
 
     return [...list].sort((a, b) => {
+      // 일일업무는 날짜를 우선 정렬해 오늘 업무가 내일 업무보다 항상 위에 표시되게 함.
+      if (taskTab === 'DAILY') {
+        const dateCompare = (a.start_date || '').localeCompare(b.start_date || '');
+        if (dateCompare !== 0) return dateCompare;
+      }
       const orderA = getTimeSlotOrder(a.time_slot);
       const orderB = getTimeSlotOrder(b.time_slot);
       if (orderA !== orderB) return orderA - orderB;
-      return a.start_date.localeCompare(b.start_date);
+      return (a.start_date || '').localeCompare(b.start_date || '');
     });
   }, [tasks, taskTab, dailySubTab, cabinSubTab, cabinStatusSubTab, currentWeekMonday, tableFilterVessel, tableFilterCargoHold, tableFilterDate, tableFilterTimeSlot, tableFilterStatus, searchQuery]);
 
@@ -1392,7 +1397,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               {activeFilterDropdown === 'mobile-date' && (
                 <div className="absolute right-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
                   <button type="button" onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 날짜</button>
-                  {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => a.localeCompare(b)).map(dStr => (
+                  {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
                     <button key={dStr} type="button" onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-slate-100">{formatToShortDate(dStr)}</button>
                   ))}
                 </div>
@@ -1494,7 +1499,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] max-h-60 overflow-y-auto space-y-1">
                         <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
                         <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                        {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => a.localeCompare(b)).map(dStr => (
+                        {Array.from(new Set(tasks.filter(t => t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER').map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
                           <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
                         ))}
                       </div>
@@ -1761,17 +1766,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
                     </th>
                   )}
-                  <th className="p-1.5 font-bold w-[20%]">호선</th>
-                  <th className="p-1.5 font-bold w-[18%]">화물창</th>
-                  <th className="p-1.5 font-bold w-[25%]">근무명</th>
-                  <th className="p-1.5 font-bold w-[20%]">상태</th>
-                  <th className="p-1.5 font-bold text-right w-[17%]">관리</th>
+                  <th className="p-1.5 font-bold w-[12%]">호선</th>
+                  <th className="p-1.5 font-bold w-[9%]">화물창</th>
+                  <th className="p-1.5 font-bold w-[17%]">근무명</th>
+                  <th className="p-1.5 font-bold w-[22%]">주간 근무자</th>
+                  <th className="p-1.5 font-bold w-[22%]">야간 근무자</th>
+                  <th className="p-1.5 font-bold w-[10%]">상태</th>
+                  <th className="p-1.5 font-bold text-right w-[8%]">관리</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E5E9]">
                 {filteredTasks.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="text-center py-12 text-[#64748B]">
+                    <td colSpan={isAdmin ? 8 : 7} className="text-center py-12 text-[#64748B]">
                       등록된 CABIN 편성이 없습니다.
                     </td>
                   </tr>
@@ -1785,8 +1792,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       )}
                       <td className="p-1.5 font-bold text-[#243B5A] truncate" title={t.category || '-'}>{t.category || '-'}</td>
                       <td className="p-1.5 font-semibold text-indigo-700 truncate" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
-                      <td className="p-1.5 font-bold text-[#1F2937] truncate" title={t.title}>{t.title}{renderTaskNewBadge(t)}</td>
-                      <td className="p-1.5 text-center truncate" onClick={(e) => e.stopPropagation()}>{renderStatusBadge(t)}</td>
+                      <td className="p-1.5 font-bold text-[#1F2937] break-words" title={t.title}>{t.title}{renderTaskNewBadge(t)}</td>
+                      <td className="p-1.5 align-top" onClick={(e) => e.stopPropagation()}>
+                        <div className="mb-1 text-[10px] font-bold text-[#64748B]">주간 ({t.day_workers?.length || 0}명)</div>
+                        {t.day_workers?.length ? <div className="flex flex-wrap gap-1">{t.day_workers.map((name) => <button key={`${t.id}-desktop-day-${name}`} type="button" onClick={() => handleCallWorker(name)} className="rounded-full border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#243B5A] hover:bg-blue-100" title={`${name} 전화 연결`}>📞 {name}</button>)}</div> : <span className="text-[10px] text-[#94A3B8]">미지정</span>}
+                      </td>
+                      <td className="p-1.5 align-top" onClick={(e) => e.stopPropagation()}>
+                        <div className="mb-1 text-[10px] font-bold text-[#64748B]">야간 ({t.night_workers?.length || 0}명)</div>
+                        {t.night_workers?.length ? <div className="flex flex-wrap gap-1">{t.night_workers.map((name) => <button key={`${t.id}-desktop-night-${name}`} type="button" onClick={() => handleCallWorker(name)} className="rounded-full border border-violet-100 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#243B5A] hover:bg-violet-100" title={`${name} 전화 연결`}>📞 {name}</button>)}</div> : <span className="text-[10px] text-[#94A3B8]">미지정</span>}
+                      </td>
+                      <td className="p-1.5 text-center" onClick={(e) => e.stopPropagation()}>{renderStatusBadge(t)}</td>
                       <td className="p-1.5 text-right" onClick={(e) => e.stopPropagation()}>
                         {isAdmin && (
                           <div className="flex items-center justify-end gap-0.5">
