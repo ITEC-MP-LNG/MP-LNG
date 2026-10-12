@@ -99,10 +99,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [cabinStatusSubTab, setCabinStatusSubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
-  // 필터 및 검색 상태 (독립 적용)
-  const [filterVessel, setFilterVessel] = useState<string>('ALL');
-  const [filterCargoHold, setFilterCargoHold] = useState<string>('ALL');
-  const [filterTimeSlot, setFilterTimeSlot] = useState<string>('ALL');
+  // 표 헤더 내부 열별 필터 상태
+  const [tableFilterVessel, setTableFilterVessel] = useState<string>('ALL');
+  const [tableFilterCargoHold, setTableFilterCargoHold] = useState<string>('ALL');
+  const [tableFilterTimeSlot, setTableFilterTimeSlot] = useState<string>('ALL');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // 주간 업무 뷰 & 월 선택 (엑셀 추출용)
@@ -440,7 +440,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) { showCustomAlert('오류', `호선 추가 실패: ${err.message}`); }
   }, [isAdmin, newVesselName, fetchVessels, showCustomAlert]);
 
-  // 업무 등록 모달 내 빠른 호선 추가 핸들러
   const handleQuickAddVessel = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
     if (!quickVesselName.trim()) return;
@@ -698,23 +697,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (target === 'NIGHT' && !nightWorkerList.includes(name)) setNightWorkerList([...nightWorkerList, name]);
     setSingleWorkerInput('');
   }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList]);
-
-  const handleApplyTeamOrDept = useCallback((value: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
-    if (!value) return;
-    let selectedMembers: string[] = [];
-    if (value.startsWith('TEAM_')) {
-      const teamId = value.replace('TEAM_', '');
-      const targetTeam = presetTeams.find(t => t.id === teamId);
-      if (targetTeam) selectedMembers = targetTeam.members || [];
-    } else if (value.startsWith('DEPT_')) {
-      const deptName = value.replace('DEPT_', '');
-      selectedMembers = appUsers.filter(u => u.department === deptName).map(u => u.name.trim()).filter(Boolean);
-    }
-    if (selectedMembers.length === 0) return;
-    if (target === 'ASSIGNED') setAssignedList(Array.from(new Set([...assignedList, ...selectedMembers])));
-    if (target === 'DAY') setDayWorkerList(Array.from(new Set([...dayWorkerList, ...selectedMembers])));
-    if (target === 'NIGHT') setNightWorkerList(Array.from(new Set([...nightWorkerList, ...selectedMembers])));
-  }, [presetTeams, appUsers, assignedList, dayWorkerList, nightWorkerList]);
 
   const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
@@ -1054,6 +1036,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSelectedTaskIds([]);
   }, [currentWeekMonday]);
 
+  // 테이블 필터링 적용된 업무 목록
   const filteredTasks = useMemo(() => {
     const list = tasks.filter((t) => {
       if (taskTab === 'DAILY') {
@@ -1080,9 +1063,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (cabinStatusSubTab === 'HISTORY' && t.status !== 'COMPLETED') return false;
       }
 
-      if (filterVessel !== 'ALL' && t.category !== filterVessel) return false;
-      if (filterCargoHold !== 'ALL' && t.cargo_hold !== filterCargoHold) return false;
-      if (filterTimeSlot !== 'ALL' && t.time_slot !== filterTimeSlot) return false;
+      // 표 헤더 내부 필터 적용
+      if (tableFilterVessel !== 'ALL' && t.category !== tableFilterVessel) return false;
+      if (tableFilterCargoHold !== 'ALL' && t.cargo_hold !== tableFilterCargoHold) return false;
+      if (tableFilterTimeSlot !== 'ALL' && t.time_slot !== tableFilterTimeSlot) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
@@ -1116,7 +1100,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       if (orderA !== orderB) return orderA - orderB;
       return a.start_date.localeCompare(b.start_date);
     });
-  }, [tasks, taskTab, dailySubTab, cabinSubTab, cabinStatusSubTab, currentWeekMonday, filterVessel, filterCargoHold, filterTimeSlot, searchQuery]);
+  }, [tasks, taskTab, dailySubTab, cabinSubTab, cabinStatusSubTab, currentWeekMonday, tableFilterVessel, tableFilterCargoHold, tableFilterTimeSlot, searchQuery]);
 
   const toggleTaskSelection = useCallback((id: string, checked: boolean) => {
     setSelectedTaskIds((prev) => checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((item) => item !== id));
@@ -1227,55 +1211,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         </div>
 
-        {/* 필터 및 검색 바 */}
-        <div className="flex flex-wrap items-center gap-2 bg-[#F5F6F8] p-2.5 rounded-xl border border-[#E2E5E9] text-xs">
-          <div className="flex items-center gap-1">
-            <span className="font-bold text-[#64748B]">필터:</span>
-            <select
-              value={filterVessel}
-              onChange={(e) => setFilterVessel(e.target.value)}
-              className="px-2 py-1 bg-white border rounded-lg text-xs"
-            >
-              <option value="ALL">호선 전체</option>
-              {vessels.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-            </select>
-            <select
-              value={filterCargoHold}
-              onChange={(e) => setFilterCargoHold(e.target.value)}
-              className="px-2 py-1 bg-white border rounded-lg text-xs"
-            >
-              <option value="ALL">화물창 전체</option>
-              {Array.from(new Set(tasks.map(t => t.cargo_hold).filter(Boolean))).map(hold => (
-                <option key={hold} value={hold}>{hold}</option>
-              ))}
-            </select>
-            <select
-              value={filterTimeSlot}
-              onChange={(e) => setFilterTimeSlot(e.target.value)}
-              className="px-2 py-1 bg-white border rounded-lg text-xs"
-            >
-              <option value="ALL">시간대 전체</option>
-              <option value="오전(08:00~12:00)">오전(08:00~12:00)</option>
-              <option value="오후(13:00~17:00)">오후(13:00~17:00)</option>
-              <option value="종일(08:00~)">종일(08:00~)</option>
-            </select>
-          </div>
-
-          <div className="flex items-center gap-1 ml-auto flex-1 sm:flex-none justify-end">
-            <span className="font-bold text-[#64748B]">검색:</span>
-            <input
-              type="text"
-              placeholder="호선, 화물창, 일자, 시간대 검색..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="px-2.5 py-1 bg-white border rounded-lg text-xs w-full sm:w-56"
-            />
-            {searchQuery && (
-              <button onClick={() => setSearchQuery('')} className="text-xs text-red-500 font-semibold px-1">초기화</button>
-            )}
-          </div>
-        </div>
-
         {/* 일일 업무 서브탭 */}
         {taskTab === 'DAILY' && (
           <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
@@ -1368,102 +1303,150 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 컨텐츠 구역 */}
+        {/* 컨텐츠 구역 (표 형식 Table View) */}
         {isLoading ? (
           <div className="text-center py-16 text-xs text-[#64748B]">로딩 중...</div>
         ) : taskTab === 'DAILY' ? (
-          <div className="space-y-2.5">
-            {filteredTasks.length === 0 ? (
-              <div className="text-center py-12 text-xs text-[#64748B] border border-dashed rounded-xl">
-                {dailySubTab === 'ACTIVE' ? '등록된 진행중/대기 일일 업무가 없습니다.' : dailySubTab === 'OTHER' ? '등록된 야간업무진행가 없습니다.' : '완료 이력이 없습니다.'}
-              </div>
-            ) : (
-              filteredTasks.map((t) => (
-                <div key={t.id} className="border border-[#E2E5E9] rounded-xl p-3 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-[#243B5A]/40 transition">
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      {isAdmin && dailySubTab === 'HISTORY' && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" aria-label={`${t.title} 선택`} />}
-                      {t.category && <span className="text-[11px] font-bold text-[#243B5A] bg-[#243B5A]/10 px-2 py-0.5 rounded">{t.category}</span>}
-                      {t.cargo_hold && <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">{t.cargo_hold}</span>}
-                      <span className="text-[11px] font-semibold text-[#2563EB] bg-blue-50 border border-blue-100 px-2 py-0.5 rounded font-mono flex items-center gap-1">
-                        <Clock className="h-3 w-3 text-[#2563EB]" />
-                        {t.time_slot || '시간 미정'}
-                      </span>
-                      <span className="text-xs text-[#64748B] font-mono">({t.start_date})</span>
-                      {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
-                      {t.task_type === 'DAILY' && t.completion_pending_review === true && (
-                        <span className="px-2 py-1 rounded-full border border-amber-300 bg-amber-50 text-amber-800 text-[10px] font-bold shrink-0">관리자 확인 대기</span>
-                      )}
-                      {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && (
-                        <button
-                          type="button"
-                          onClick={(e) => { e.stopPropagation(); handleCompleteOtherTask(t); }}
-                          className="px-2.5 py-1 rounded-full border border-emerald-300 bg-emerald-50 text-emerald-800 text-[11px] font-bold flex items-center gap-1 hover:bg-emerald-100 shrink-0"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> 완료
-                        </button>
-                      )}
+          <div className="overflow-x-auto border rounded-xl bg-white shadow-2xs">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-[#243B5A] text-white">
+                  {isAdmin && dailySubTab === 'HISTORY' && (
+                    <th className="p-2.5 w-10 text-center">
+                      <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
+                    </th>
+                  )}
+                  <th className="p-2.5 font-bold">
+                    <div className="flex items-center justify-between gap-1">
+                      <span>호선</span>
+                      <select
+                        value={tableFilterVessel}
+                        onChange={(e) => setTableFilterVessel(e.target.value)}
+                        className="px-1 py-0.5 bg-white text-[#1F2937] rounded border text-[10px]"
+                      >
+                        <option value="ALL">전체</option>
+                        {vessels.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+                      </select>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-bold text-sm text-[#1F2937] cursor-pointer hover:underline" onClick={() => handleOpenTaskDetail(t)}>
+                  </th>
+                  <th className="p-2.5 font-bold">
+                    <div className="flex items-center justify-between gap-1">
+                      <span>화물창</span>
+                      <select
+                        value={tableFilterCargoHold}
+                        onChange={(e) => setTableFilterCargoHold(e.target.value)}
+                        className="px-1 py-0.5 bg-white text-[#1F2937] rounded border text-[10px]"
+                      >
+                        <option value="ALL">전체</option>
+                        {Array.from(new Set(tasks.map(t => t.cargo_hold).filter(Boolean))).map(hold => (
+                          <option key={hold} value={hold}>{hold}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </th>
+                  <th className="p-2.5 font-bold">일자</th>
+                  <th className="p-2.5 font-bold">
+                    <div className="flex items-center justify-between gap-1">
+                      <span>시간대</span>
+                      <select
+                        value={tableFilterTimeSlot}
+                        onChange={(e) => setTableFilterTimeSlot(e.target.value)}
+                        className="px-1 py-0.5 bg-white text-[#1F2937] rounded border text-[10px]"
+                      >
+                        <option value="ALL">전체</option>
+                        <option value="오전(08:00~12:00)">오전</option>
+                        <option value="오후(13:00~17:00)">오후</option>
+                        <option value="종일(08:00~)">종일</option>
+                      </select>
+                    </div>
+                  </th>
+                  <th className="p-2.5 font-bold">업무명</th>
+                  <th className="p-2.5 font-bold text-center">상태버튼</th>
+                  <th className="p-2.5 font-bold">인원</th>
+                  <th className="p-2.5 font-bold text-right">관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E5E9]">
+                {filteredTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="text-center py-12 text-[#64748B]">
+                      {dailySubTab === 'ACTIVE' ? '등록된 진행중/대기 일일 업무가 없습니다.' : dailySubTab === 'OTHER' ? '등록된 야간업무진행가 없습니다.' : '완료 이력이 없습니다.'}
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTasks.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => handleOpenTaskDetail(t)}>
+                      {isAdmin && dailySubTab === 'HISTORY' && (
+                        <td className="p-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
+                        </td>
+                      )}
+                      <td className="p-2.5 font-bold text-[#243B5A]">{t.category || '-'}</td>
+                      <td className="p-2.5 font-semibold text-indigo-700">{t.cargo_hold || '-'}</td>
+                      <td className="p-2.5 font-mono text-[#64748B]">{t.start_date}</td>
+                      <td className="p-2.5 font-mono text-[#2563EB]">{t.time_slot || '-'}</td>
+                      <td className="p-2.5 font-bold text-[#1F2937]">
                         {t.title}{renderTaskNewBadge(t)}
-                      </h4>
-                      {dailySubTab === 'HISTORY' && t.completed_by_name && (
-                        <span className="text-[10px] text-[#64748B] bg-slate-100 border px-2 py-0.5 rounded-full">
-                          완료 처리: {t.completed_by_name}{t.completed_at ? ` · ${new Date(t.completed_at).toLocaleString('ko-KR')}` : ''}
-                        </span>
-                      )}
-                      <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.2 rounded-full shrink-0">
-                        {t.task_type === 'DAILY_OTHER' ? '작성자 업무' : `인원: ${t.assigned_names?.length || 0}명`}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between md:justify-end space-x-3">
-                    <div className="flex items-center space-x-1.5 text-xs text-[#64748B] bg-[#F5F6F8] px-2.5 py-1 rounded-md border">
-                      <User className="h-3.5 w-3.5" />
-                      <div className="flex flex-wrap items-center gap-1">
-                        {t.assigned_names?.length ? (
-                          t.assigned_names.map((name) => (
-                            <button
-                              key={`${t.id}-${name}`}
-                              type="button"
-                              onClick={(e) => { e.stopPropagation(); handleCallWorker(name); }}
-                              className="font-medium text-[#1F2937] rounded px-1 transition hover:bg-white hover:text-[#2563EB] hover:underline cursor-pointer"
-                            >
-                              {name}
-                            </button>
-                          ))
-                        ) : (
-                          <span className="font-medium text-[#1F2937]">미지정</span>
+                        {dailySubTab === 'HISTORY' && t.completed_by_name && (
+                          <div className="text-[10px] text-[#64748B] font-normal">완료처리: {t.completed_by_name}</div>
                         )}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-1">
-                      {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
-                        <button
-                          type="button"
-                          onClick={() => handleFinalizeDailyTask(t)}
-                          className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white border border-emerald-700 flex items-center gap-1 hover:bg-emerald-700 transition"
-                        >
-                          <CheckCircle2 className="h-3.5 w-3.5" /> 최종 완료 처리
-                        </button>
-                      )}
-                      {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
-                        <>
-                          <button onClick={() => handleOpenTaskEdit(t)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-slate-50 text-[#243B5A] border border-slate-200 flex items-center gap-1 hover:bg-slate-100 transition"><Pencil className="h-3.5 w-3.5" /> 수정</button>
-                          <button onClick={() => handleDeleteTask(t.id)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 flex items-center gap-1 hover:bg-red-100 transition"><Trash2 className="h-3.5 w-3.5" /> 삭제</button>
-                        </>
-                      )}
-                      {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && (
-                        <button onClick={() => handleDeleteTask(t.id)} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 flex items-center gap-1 hover:bg-red-100 transition"><Trash2 className="h-3.5 w-3.5" /> 삭제</button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))
-            )}
+                      </td>
+                      <td className="p-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1.5">
+                          {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
+                          {t.task_type === 'DAILY' && t.completion_pending_review === true && (
+                            <span className="px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-300 rounded text-[10px] font-bold">확인대기</span>
+                          )}
+                          {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && (
+                            <button
+                              type="button"
+                              onClick={() => handleCompleteOtherTask(t)}
+                              className="px-2 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded text-[10px] font-bold hover:bg-emerald-100"
+                            >
+                              완료
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-2.5 text-[#64748B]">
+                        <div className="flex flex-wrap items-center gap-1">
+                          {t.assigned_names?.length ? (
+                            t.assigned_names.map((name) => (
+                              <button
+                                key={`${t.id}-${name}`}
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); handleCallWorker(name); }}
+                                className="font-medium text-[#1F2937] hover:text-[#2563EB] hover:underline px-1 bg-slate-100 rounded"
+                              >
+                                {name}
+                              </button>
+                            ))
+                          ) : (
+                            <span>미지정</span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-1">
+                          {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
+                            <button onClick={() => handleFinalizeDailyTask(t)} className="px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px]">최종완료</button>
+                          )}
+                          {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
+                            <>
+                              <button onClick={() => handleOpenTaskEdit(t)} className="p-1 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3.5 w-3.5" /></button>
+                              <button onClick={() => handleDeleteTask(t.id)} className="p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
+                            </>
+                          )}
+                          {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && (
+                            <button onClick={() => handleDeleteTask(t.id)} className="p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         ) : taskTab === 'WEEKLY' ? (
           <div className="space-y-3">
@@ -1560,60 +1543,60 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             )}
           </div>
         ) : (
-          <div className="space-y-2.5">
-            {filteredTasks.length === 0 ? (
-              <div className="text-center py-12 text-xs text-[#64748B] border border-dashed rounded-xl space-y-2">
-                <div>등록된 CABIN 편성이 없습니다.</div>
-                {cabinSubTab !== 'ALL' && isAdmin && (
-                  <button onClick={() => handleOpenCreateModal(undefined, 'CABIN', cabinSubTab)} className="px-3 py-1 bg-[#243B5A] text-white rounded-lg text-xs font-semibold">
-                    [{cabinSubTab}] 업무 바로 등록하기
-                  </button>
+          <div className="overflow-x-auto border rounded-xl bg-white shadow-2xs">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-[#243B5A] text-white">
+                  {isAdmin && (
+                    <th className="p-2.5 w-10 text-center">
+                      <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
+                    </th>
+                  )}
+                  <th className="p-2.5 font-bold">호선</th>
+                  <th className="p-2.5 font-bold">화물창</th>
+                  <th className="p-2.5 font-bold">점검/근무명</th>
+                  <th className="p-2.5 font-bold">기간</th>
+                  <th className="p-2.5 font-bold text-center">상태</th>
+                  <th className="p-2.5 font-bold text-amber-200">주간인원</th>
+                  <th className="p-2.5 font-bold text-indigo-200">야간인원</th>
+                  <th className="p-2.5 font-bold text-right">관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E5E9]">
+                {filteredTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="text-center py-12 text-[#64748B]">
+                      등록된 CABIN 편성이 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTasks.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => handleOpenTaskDetail(t)}>
+                      {isAdmin && (
+                        <td className="p-2.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
+                        </td>
+                      )}
+                      <td className="p-2.5 font-bold text-[#243B5A]">{t.category || '-'}</td>
+                      <td className="p-2.5 font-semibold text-indigo-700">{t.cargo_hold || '-'}</td>
+                      <td className="p-2.5 font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</td>
+                      <td className="p-2.5 font-mono text-[#2563EB]">{t.start_date} ~ {t.end_date || t.start_date}</td>
+                      <td className="p-2.5 text-center" onClick={(e) => e.stopPropagation()}>{renderStatusBadge(t)}</td>
+                      <td className="p-2.5 text-amber-900 bg-amber-50/50">{t.day_workers?.length ? t.day_workers.join(', ') : '없음'}</td>
+                      <td className="p-2.5 text-indigo-900 bg-indigo-50/50">{t.night_workers?.length ? t.night_workers.join(', ') : '없음'}</td>
+                      <td className="p-2.5 text-right" onClick={(e) => e.stopPropagation()}>
+                        {isAdmin && (
+                          <div className="flex items-center justify-end gap-1">
+                            <button onClick={() => handleOpenTaskEdit(t)} className="p-1 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3.5 w-3.5" /></button>
+                            <button onClick={() => handleDeleteTask(t.id)} className="p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))
                 )}
-              </div>
-            ) : (
-              filteredTasks.map((t) => (
-                <div key={t.id} className="border border-[#E2E5E9] rounded-xl p-3 bg-white flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-[#243B5A]/40 transition">
-                  <div className="space-y-1">
-                    <div className="flex items-center space-x-2">
-                      {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
-                      {t.category && <span className="text-[11px] font-bold text-[#243B5A] bg-[#243B5A]/10 px-2 py-0.5 rounded">{t.category}</span>}
-                      {t.cargo_hold && <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded">{t.cargo_hold}</span>}
-                      <span className="text-xs font-mono font-semibold text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded border border-blue-100">
-                        {t.start_date} ~ {t.end_date || t.start_date}
-                      </span>
-                      {renderStatusBadge(t)}
-                    </div>
-                    <h4 className="font-bold text-sm text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</h4>
-                    {t.description && <p className="text-xs text-[#64748B]">{t.description}</p>}
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg text-xs">
-                      <Sun className="h-3.5 w-3.5 text-amber-600" />
-                      <span className="font-bold text-amber-900">주간:</span>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {t.day_workers?.length ? t.day_workers.map(name => <span key={name} className="text-amber-800 font-medium">{name}</span>) : <span className="text-amber-800 font-medium">없음</span>}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center space-x-1.5 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg text-xs">
-                      <Moon className="h-3.5 w-3.5 text-indigo-600" />
-                      <span className="font-bold text-indigo-900">야간:</span>
-                      <div className="flex flex-wrap items-center gap-1">
-                        {t.night_workers?.length ? t.night_workers.map(name => <span key={name} className="text-indigo-800 font-medium">{name}</span>) : <span className="text-indigo-800 font-medium">없음</span>}
-                      </div>
-                    </div>
-
-                    {isAdmin && (
-                      <div className="flex items-center space-x-1 border-l pl-2 border-[#E2E5E9]">
-                        <button onClick={() => handleOpenTaskEdit(t)} className="p-1 text-[#64748B] hover:text-[#243B5A]"><Pencil className="h-3.5 w-3.5" /></button>
-                        <button onClick={() => handleDeleteTask(t.id)} className="p-1 text-[#64748B] hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
+              </tbody>
+            </table>
           </div>
         )}
 
@@ -1908,7 +1891,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 업무 등록/수정 모달 (호선 등록 기능 추가) */}
+        {/* 업무 등록/수정 모달 */}
         {isModalOpen && (isAdmin || formData.task_type === 'DAILY_OTHER') && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[90vh] overflow-y-auto">
