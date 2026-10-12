@@ -99,7 +99,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   // 관리자 권한 여부 확인
   const isAdmin = useMemo(() => {
-    return currentUser?.role === 'ADMIN' || currentUser?.role === 'admin' || currentUser?.role === '관리자';
+    const role = String(currentUser?.role || '').trim().toUpperCase();
+    return ['SUPER_ADMIN', 'WORK_ADMIN', 'ADMIN'].includes(role) || currentUser?.role === '관리자';
   }, [currentUser]);
   const currentUserId = currentUser?.id;
   const currentUserNameForFetch = currentUser?.name;
@@ -860,6 +861,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [tasks, canManageTask, showCustomConfirm, fetchTasks, showCustomAlert]);
 
   const handleImportWeeklyToDaily = useCallback(async () => {
+    if (!isAdmin) {
+      showCustomAlert('권한 제한', '관리자만 주간업무를 일일업무로 불러올 수 있습니다.');
+      return;
+    }
     if (selectedWeeklyIdsToImport.length === 0) {
       showCustomAlert('선택 확인', '불러올 주간업무를 선택해 주세요.');
       return;
@@ -890,7 +895,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) {
       showCustomAlert('오류', `불러오기 실패: ${err.message}`);
     }
-  }, [selectedWeeklyIdsToImport, tasks, importTargetDate, fetchTasks, showCustomAlert]);
+  }, [isAdmin, selectedWeeklyIdsToImport, tasks, importTargetDate, fetchTasks, showCustomAlert]);
 
   const handleExportDailyHistoryExcel = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 엑셀 다운로드를 할 수 있습니다.'); return; }
@@ -1215,7 +1220,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
 
             <div className="flex items-center gap-1.5">
-              {taskTab === 'DAILY' && dailySubTab === 'ACTIVE' && (
+              {isAdmin && taskTab === 'DAILY' && dailySubTab === 'ACTIVE' && (
                 <button
                   onClick={() => {
                     setImportTargetDate(formatDateToYYYYMMDD(new Date()));
@@ -1831,7 +1836,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         )}
 
         {/* 주간업무 선택적 불러오기 모달 */}
-        {isWeeklyImportModalOpen && (
+        {isWeeklyImportModalOpen && isAdmin && (
           <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
               <div className="flex items-center justify-between border-b pb-3">
