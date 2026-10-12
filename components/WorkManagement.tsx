@@ -1070,8 +1070,18 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (!isDailyType) return false;
         if (dailySubTab === 'ACTIVE') {
           if (!(t.task_type === 'DAILY' && (t.status !== 'COMPLETED' || t.completion_pending_review === true))) return false;
+          const today = formatDateToYYYYMMDD(new Date());
+          const tomorrowDate = new Date();
+          tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+          const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
+          if (!t.start_date || t.start_date < today || t.start_date > tomorrow) return false;
         } else if (dailySubTab === 'OTHER') {
           if (!(t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED')) return false;
+          const today = formatDateToYYYYMMDD(new Date());
+          const tomorrowDate = new Date();
+          tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+          const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
+          if (!t.start_date || t.start_date < today || t.start_date > tomorrow) return false;
         } else if (dailySubTab === 'HISTORY') {
           if (!(t.status === 'COMPLETED' && t.completion_pending_review !== true)) return false;
         }
@@ -1341,26 +1351,38 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <>
           {/* 모바일: 표의 열이 좁아져 인원/전화 버튼이 사라지는 문제를 방지하기 위한 카드형 목록 */}
           <div className="md:hidden space-y-2">
-            <div className="relative flex items-center gap-2 rounded-xl border border-[#E2E5E9] bg-white p-2">
+            <div className="relative grid grid-cols-2 gap-2 rounded-xl border border-[#E2E5E9] bg-white p-2">
+              <button
+                type="button"
+                onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'mobile-vessel' ? null : 'mobile-vessel')}
+                className="flex min-w-0 items-center justify-between gap-1 rounded-lg bg-[#243B5A] px-2.5 py-2 text-left text-xs font-bold text-white"
+              >
+                <span className="truncate">▶ 호선 선택: {tableFilterVessel === 'ALL' ? '전체' : tableFilterVessel}</span>
+                <ChevronDown className="h-4 w-4 shrink-0" />
+              </button>
               <button
                 type="button"
                 onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'mobile-date' ? null : 'mobile-date')}
-                className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-lg bg-[#243B5A] px-3 py-2 text-left text-xs font-bold text-white"
+                className="flex min-w-0 items-center justify-between gap-1 rounded-lg bg-[#243B5A] px-2.5 py-2 text-left text-xs font-bold text-white"
               >
                 <span className="truncate">▶ 일자 선택: {tableFilterDate === 'ALL' ? '전체' : formatToShortDate(tableFilterDate)}</span>
                 <ChevronDown className="h-4 w-4 shrink-0" />
               </button>
-              {tableFilterDate !== 'ALL' && (
-                <button type="button" onClick={() => setTableFilterDate('ALL')} className="shrink-0 rounded-lg border px-2 py-2 text-xs text-[#64748B]">전체</button>
+              {activeFilterDropdown === 'mobile-vessel' && (
+                <div className="absolute left-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
+                  <button type="button" onClick={() => { setTableFilterVessel('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 호선</button>
+                  {vessels.map(v => <button key={v.id} type="button" onClick={() => { setTableFilterVessel(v.name); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-slate-100">{v.name}</button>)}
+                </div>
               )}
               {activeFilterDropdown === 'mobile-date' && (
-                <div className="absolute left-2 right-2 top-full z-50 mt-1 max-h-60 overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
+                <div className="absolute right-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
                   <button type="button" onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 날짜</button>
-                  {Array.from(new Set(tasks.map(t => t.start_date).filter((d): d is string => Boolean(d) && d >= formatDateToYYYYMMDD(new Date())))).sort((a, b) => a.localeCompare(b)).map(dStr => (
+                  {Array.from(new Set(tasks.map(t => t.start_date).filter((d): d is string => Boolean(d) && d >= formatDateToYYYYMMDD(new Date()) && d <= (() => { const x = new Date(); x.setDate(x.getDate() + 1); return formatDateToYYYYMMDD(x); })()))).sort((a, b) => a.localeCompare(b)).map(dStr => (
                     <button key={dStr} type="button" onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-slate-100">{formatToShortDate(dStr)}</button>
                   ))}
                 </div>
               )}
+              {(tableFilterDate !== 'ALL' || tableFilterVessel !== 'ALL') && <button type="button" onClick={() => { setTableFilterDate('ALL'); setTableFilterVessel('ALL'); }} className="col-span-2 rounded-lg border px-2 py-1.5 text-xs text-[#64748B]">필터 전체 해제</button>}
             </div>
             {filteredTasks.length === 0 ? (
               <div className="rounded-xl border bg-white py-10 text-center text-xs text-[#64748B]">
@@ -1457,7 +1479,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] max-h-60 overflow-y-auto space-y-1">
                         <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
                         <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                        {Array.from(new Set(tasks.map(t => t.start_date).filter((d): d is string => Boolean(d) && d >= formatDateToYYYYMMDD(new Date())))).sort((a, b) => a.localeCompare(b)).map(dStr => (
+                        {Array.from(new Set(tasks.map(t => t.start_date).filter((d): d is string => Boolean(d) && d >= formatDateToYYYYMMDD(new Date()) && d <= (() => { const x = new Date(); x.setDate(x.getDate() + 1); return formatDateToYYYYMMDD(x); })()))).sort((a, b) => a.localeCompare(b)).map(dStr => (
                           <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
                         ))}
                       </div>
@@ -1539,11 +1561,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         </div>
                       </td>
                       {/* 인원 표시 및 정확한 전화 연동 */}
-                      <td className="p-1.5 text-[#64748B] truncate" title={t.assigned_names?.join(', ') || '미지정'}>
+                      <td className="p-1.5 text-[#64748B] align-top whitespace-normal" title={t.assigned_names?.join(', ') || '미지정'}>
+                        <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 {t.assigned_names?.length || 0}명</div>
                         {t.assigned_names?.length ? (
-                          <span className="text-[11px]">
+                          <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-4">
                             {t.assigned_names.map((name, idx) => (
-                              <span key={`${t.id}-${name}`}>
+                              <span key={`${t.id}-${name}`} className="whitespace-nowrap">
                                 <button
                                   type="button"
                                   onClick={(e) => { e.stopPropagation(); handleCallWorker(name); }}
@@ -1551,13 +1574,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                   title="클릭 시 전화 연결"
                                 >
                                   {name}
-                                </button>
-                                {idx < (t.assigned_names?.length || 0) - 1 ? ', ' : ''}
+                                </button>{idx < (t.assigned_names?.length || 0) - 1 ? ',' : ''}
                               </span>
                             ))}
-                          </span>
+                          </div>
                         ) : (
-                          '미지정'
+                          <span className="text-[11px]">미지정</span>
                         )}
                       </td>
                       <td className="p-1.5 text-right" onClick={(e) => e.stopPropagation()}>
