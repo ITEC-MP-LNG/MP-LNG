@@ -5,7 +5,7 @@ import {
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, AlertCircle, PlayCircle, PlusCircle,
-  Users, History, FileSpreadsheet, Layers, FileText
+  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
@@ -119,10 +119,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [cabinStatusSubTab, setCabinStatusSubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
-  // 표 헤더 내부 열별 필터 상태
+  // 표 헤더 내부 열별 필터 상태 및 드롭다운 펼치기 상태
   const [tableFilterVessel, setTableFilterVessel] = useState<string>('ALL');
   const [tableFilterCargoHold, setTableFilterCargoHold] = useState<string>('ALL');
+  const [tableFilterDate, setTableFilterDate] = useState<string>('ALL');
   const [tableFilterTimeSlot, setTableFilterTimeSlot] = useState<string>('ALL');
+  const [tableFilterStatus, setTableFilterStatus] = useState<string>('ALL');
+
+  const [activeFilterDropdown, setActiveFilterDropdown] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // 주간 업무 뷰 & 월 선택 (엑셀 추출용)
@@ -558,7 +563,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setNewTeamMembersText(deptMembers.join(', '));
   }, [appUsers]);
 
-  // 전화 연결 함수 복구
+  // 전화 연결 함수
   const handleCallWorker = useCallback((workerName: string) => {
     const worker = appUsers.find((u) => u.name?.trim().toLowerCase() === workerName.trim().toLowerCase());
     const phone = worker?.phone?.trim();
@@ -1087,7 +1092,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       // 표 헤더 내부 필터 적용
       if (tableFilterVessel !== 'ALL' && t.category !== tableFilterVessel) return false;
       if (tableFilterCargoHold !== 'ALL' && t.cargo_hold !== tableFilterCargoHold) return false;
-      if (tableFilterTimeSlot !== 'ALL' && t.time_slot !== tableFilterTimeSlot) return false;
+      if (tableFilterDate !== 'ALL' && t.start_date !== tableFilterDate) return false;
+      if (tableFilterTimeSlot !== 'ALL') {
+        const shortSlot = formatShortTimeSlot(t.time_slot);
+        if (shortSlot !== tableFilterTimeSlot) return false;
+      }
+      if (tableFilterStatus !== 'ALL' && t.status !== tableFilterStatus) return false;
 
       if (searchQuery.trim()) {
         const q = searchQuery.trim().toLowerCase();
@@ -1121,7 +1131,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       if (orderA !== orderB) return orderA - orderB;
       return a.start_date.localeCompare(b.start_date);
     });
-  }, [tasks, taskTab, dailySubTab, cabinSubTab, cabinStatusSubTab, currentWeekMonday, tableFilterVessel, tableFilterCargoHold, tableFilterTimeSlot, searchQuery]);
+  }, [tasks, taskTab, dailySubTab, cabinSubTab, cabinStatusSubTab, currentWeekMonday, tableFilterVessel, tableFilterCargoHold, tableFilterDate, tableFilterTimeSlot, tableFilterStatus, searchQuery]);
 
   const toggleTaskSelection = useCallback((id: string, checked: boolean) => {
     setSelectedTaskIds((prev) => checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((item) => item !== id));
@@ -1324,7 +1334,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 컨텐츠 구역 (모바일 최적화: 가로 스크롤 없이 한 화면에 맞춤) */}
+        {/* 컨텐츠 구역 (모바일 최적화: 가로 스크롤 없이 한 화면에 맞춤 + ▶ 펼치기 필터 적용) */}
         {isLoading ? (
           <div className="text-center py-16 text-xs text-[#64748B]">로딩 중...</div>
         ) : taskTab === 'DAILY' ? (
@@ -1337,51 +1347,92 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
                     </th>
                   )}
-                  <th className="p-1.5 font-bold w-[16%]">
-                    <div className="flex items-center justify-between gap-0.5">
-                      <span className="truncate">호선</span>
-                      <select
-                        value={tableFilterVessel}
-                        onChange={(e) => setTableFilterVessel(e.target.value)}
-                        className="px-0.5 py-0.2 bg-white text-[#1F2937] rounded border text-[9px] max-w-[42px]"
-                      >
-                        <option value="ALL">전체</option>
-                        {vessels.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-                      </select>
+                  
+                  {/* 호선 헤더 (▶ 펼치기 버튼 포함) */}
+                  <th className="p-1.5 font-bold w-[16%] relative">
+                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'vessel' ? null : 'vessel')}>
+                      <span className="truncate">호선{tableFilterVessel !== 'ALL' ? `(${tableFilterVessel})` : ''}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
-                  </th>
-                  <th className="p-1.5 font-bold w-[13%]">
-                    <div className="flex items-center justify-between gap-0.5">
-                      <span className="truncate">화물창</span>
-                      <select
-                        value={tableFilterCargoHold}
-                        onChange={(e) => setTableFilterCargoHold(e.target.value)}
-                        className="px-0.5 py-0.2 bg-white text-[#1F2937] rounded border text-[9px] max-w-[42px]"
-                      >
-                        <option value="ALL">전체</option>
-                        {Array.from(new Set(tasks.map(t => t.cargo_hold).filter(Boolean))).map(hold => (
-                          <option key={hold} value={hold}>{hold}</option>
+                    {activeFilterDropdown === 'vessel' && (
+                      <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[100px] space-y-1">
+                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">호선 선택</div>
+                        <button onClick={() => { setTableFilterVessel('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                        {vessels.map(v => (
+                          <button key={v.id} onClick={() => { setTableFilterVessel(v.name); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] truncate">{v.name}</button>
                         ))}
-                      </select>
-                    </div>
+                      </div>
+                    )}
                   </th>
-                  <th className="p-1.5 font-bold w-[15%]">일자</th>
-                  <th className="p-1.5 font-bold w-[14%]">
-                    <div className="flex items-center justify-between gap-0.5">
-                      <span className="truncate">시간대</span>
-                      <select
-                        value={tableFilterTimeSlot}
-                        onChange={(e) => setTableFilterTimeSlot(e.target.value)}
-                        className="px-0.5 py-0.2 bg-white text-[#1F2937] rounded border text-[9px] max-w-[42px]"
-                      >
-                        <option value="ALL">전체</option>
-                        <option value="오전">오전</option>
-                        <option value="오후">오후</option>
-                        <option value="종일">종일</option>
-                      </select>
+
+                  {/* 화물창 헤더 (▶ 펼치기 버튼 포함) */}
+                  <th className="p-1.5 font-bold w-[13%] relative">
+                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'cargo' ? null : 'cargo')}>
+                      <span className="truncate">화물창{tableFilterCargoHold !== 'ALL' ? `(${tableFilterCargoHold})` : ''}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
+                    {activeFilterDropdown === 'cargo' && (
+                      <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[100px] space-y-1">
+                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">화물창 선택</div>
+                        <button onClick={() => { setTableFilterCargoHold('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                        {Array.from(new Set(tasks.map(t => t.cargo_hold).filter(Boolean))).map(hold => (
+                          <button key={hold} onClick={() => { setTableFilterCargoHold(hold!); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] truncate">{hold}</button>
+                        ))}
+                      </div>
+                    )}
                   </th>
-                  <th className="p-1.5 font-bold w-[20%]">상태버튼</th>
+
+                  {/* 일자 헤더 (▶ 펼치기 버튼 포함) */}
+                  <th className="p-1.5 font-bold w-[15%] relative">
+                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'date' ? null : 'date')}>
+                      <span className="truncate">일자{tableFilterDate !== 'ALL' ? `(${formatToShortDate(tableFilterDate)})` : ''}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                    </div>
+                    {activeFilterDropdown === 'date' && (
+                      <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] space-y-1">
+                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
+                        <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                        {Array.from(new Set(tasks.map(t => t.start_date).filter(Boolean))).map(dStr => (
+                          <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
+                        ))}
+                      </div>
+                    )}
+                  </th>
+
+                  {/* 시간대 헤더 (▶ 펼치기 버튼 포함) */}
+                  <th className="p-1.5 font-bold w-[14%] relative">
+                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'timeslot' ? null : 'timeslot')}>
+                      <span className="truncate">시간대{tableFilterTimeSlot !== 'ALL' ? `(${tableFilterTimeSlot})` : ''}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                    </div>
+                    {activeFilterDropdown === 'timeslot' && (
+                      <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[90px] space-y-1">
+                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">시간대 선택</div>
+                        <button onClick={() => { setTableFilterTimeSlot('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                        <button onClick={() => { setTableFilterTimeSlot('오전'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">오전</button>
+                        <button onClick={() => { setTableFilterTimeSlot('오후'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">오후</button>
+                        <button onClick={() => { setTableFilterTimeSlot('종일'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">종일</button>
+                      </div>
+                    )}
+                  </th>
+
+                  {/* 상태버튼 헤더 (▶ 펼치기 버튼 포함) */}
+                  <th className="p-1.5 font-bold w-[20%] relative">
+                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
+                      <span className="truncate">상태버튼{tableFilterStatus !== 'ALL' ? `(${tableFilterStatus === 'PENDING' ? '대기' : tableFilterStatus === 'IN_PROGRESS' ? '진행중' : '완료'})` : ''}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                    </div>
+                    {activeFilterDropdown === 'status' && (
+                      <div className="absolute top-full right-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[90px] space-y-1">
+                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">상태 선택</div>
+                        <button onClick={() => { setTableFilterStatus('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                        <button onClick={() => { setTableFilterStatus('PENDING'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">대기</button>
+                        <button onClick={() => { setTableFilterStatus('IN_PROGRESS'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">진행중</button>
+                        <button onClick={() => { setTableFilterStatus('COMPLETED'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">완료</button>
+                      </div>
+                    )}
+                  </th>
+
                   <th className="p-1.5 font-bold w-[12%]">인원</th>
                   <th className="p-1.5 font-bold text-right w-[10%]">관리</th>
                 </tr>
@@ -1422,21 +1473,24 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           )}
                         </div>
                       </td>
-                      <td className="p-1.5 text-[#64748B] truncate">
+                      {/* 인원 표시 및 정확한 전화 연동 */}
+                      <td className="p-1.5 text-[#64748B] truncate" title={t.assigned_names?.join(', ') || '미지정'}>
                         {t.assigned_names?.length ? (
-                          t.assigned_names.map((name, idx) => (
-                            <span key={`${t.id}-${name}`}>
-                              <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); handleCallWorker(name); }}
-                                className="font-medium text-[#1F2937] hover:text-[#2563EB] hover:underline"
-                                title="클릭 시 전화 연결"
-                              >
-                                {name}
-                              </button>
-                              {idx < (t.assigned_names?.length || 0) - 1 ? ', ' : ''}
-                            </span>
-                          ))
+                          <span className="text-[11px]">
+                            {t.assigned_names.map((name, idx) => (
+                              <span key={`${t.id}-${name}`}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); handleCallWorker(name); }}
+                                  className="font-medium text-[#1F2937] hover:text-[#2563EB] hover:underline"
+                                  title="클릭 시 전화 연결"
+                                >
+                                  {name}
+                                </button>
+                                {idx < (t.assigned_names?.length || 0) - 1 ? ', ' : ''}
+                              </span>
+                            ))}
+                          </span>
                         ) : (
                           '미지정'
                         )}
