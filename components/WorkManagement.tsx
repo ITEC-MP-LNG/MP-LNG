@@ -1458,13 +1458,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <thead>
                 <tr className="bg-[#243B5A] text-white">
                   {isAdmin && dailySubTab === 'HISTORY' && (
-                    <th className="p-1.5 w-6 text-center">
+                    <th className="p-1.5 w-6 text-center border-r border-white/20 last:border-r-0">
                       <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
                     </th>
                   )}
                   
                   {/* 호선 헤더 (▶ 펼치기 버튼 포함) */}
-                  <th className="p-1 font-bold w-[14%] relative">
+                  <th className="p-1 font-bold w-[14%] relative border-r border-white/20 last:border-r-0">
                     <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'vessel' ? null : 'vessel')}>
                       <span className="truncate">호선{tableFilterVessel !== 'ALL' ? `(${tableFilterVessel})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
@@ -1481,7 +1481,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </th>
 
                   {/* 화물창 헤더 (▶ 펼치기 버튼 포함) */}
-                  <th className="p-1 font-bold w-[10%] relative">
+                  <th className="p-1 font-bold w-[10%] relative border-r border-white/20 last:border-r-0">
                     <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'cargo' ? null : 'cargo')}>
                       <span className="truncate">화물창{tableFilterCargoHold !== 'ALL' ? `(${tableFilterCargoHold})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
@@ -1521,7 +1521,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </th>
 
                   {/* 시간대 헤더 (▶ 펼치기 버튼 포함) */}
-                  <th className="p-1 font-bold w-[9%] relative">
+                  <th className="p-1 font-bold w-[9%] relative border-r border-white/20 last:border-r-0">
                     <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'timeslot' ? null : 'timeslot')}>
                       <span className="truncate">시간대{tableFilterTimeSlot !== 'ALL' ? `(${tableFilterTimeSlot})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
@@ -1538,7 +1538,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </th>
 
                   {/* 상태버튼 헤더 (▶ 펼치기 버튼 포함) */}
-                  <th className="p-1 font-bold w-[12%] relative">
+                  <th className="p-1 font-bold w-[12%] relative border-r border-white/20 last:border-r-0">
                     <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
                       <span className="truncate">상태버튼{tableFilterStatus !== 'ALL' ? `(${tableFilterStatus === 'PENDING' ? '대기' : tableFilterStatus === 'IN_PROGRESS' ? '진행중' : '완료'})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
@@ -1554,8 +1554,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     )}
                   </th>
 
-                  <th className="p-1 font-bold text-center w-[9%]">관리</th>
-                  <th className="p-1 font-bold w-[36%]">인원</th>
+                  <th className="p-1 font-bold text-center w-[9%] border-r border-white/20 last:border-r-0">관리</th>
+                  <th className="p-1 font-bold w-[36%] border-r border-white/20 last:border-r-0">인원</th>
                 </tr>
               </thead>
               <tbody>
@@ -1575,15 +1575,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     return (
                     <tr key={t.id} className={`${dateGroupBackground} hover:bg-blue-50 transition cursor-pointer ${dateChanged && rowIndex > 0 ? 'border-t-[3px] border-double border-slate-400' : 'border-t border-[#E2E5E9]'}`} onClick={() => handleOpenTaskDetail(t)}>
                       {isAdmin && dailySubTab === 'HISTORY' && (
-                        <td className="p-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                        <td className="p-1.5 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
                         </td>
                       )}
-                      <td className="p-1 font-bold text-[#243B5A] truncate" title={t.category || '-'}>{t.category || '-'}</td>
-                      <td className="p-1 font-semibold text-indigo-700 truncate" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
-                      <td className="p-1 font-mono text-[#64748B] truncate" title={formatToShortDate(t.start_date)}>{formatToShortDate(t.start_date)}</td>
-                      <td className="p-1 font-mono text-[#2563EB] truncate" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>
-                      <td className="p-1 text-center truncate" onClick={(e) => e.stopPropagation()}>
+                      <td className="p-1 font-bold text-[#243B5A] truncate border-r border-slate-200 last:border-r-0" title={t.category || '-'}>{t.category || '-'}</td>
+                      <td className="p-1 font-semibold text-indigo-700 truncate border-r border-slate-200 last:border-r-0" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
+                      <td className="p-1 font-mono text-[#64748B] truncate border-r border-slate-200 last:border-r-0" title={formatToShortDate(t.start_date)}>{formatToShortDate(t.start_date)}</td>
+                      <td className="p-1 font-mono text-[#2563EB] truncate border-r border-slate-200 last:border-r-0" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>
+                      <td className="p-1 text-center truncate border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
                           {t.task_type === 'DAILY' && t.completion_pending_review === true && (
@@ -1600,7 +1600,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           )}
                         </div>
                       </td>
-                      <td className="p-1 text-center" onClick={(e) => e.stopPropagation()}>
+                      <td className="p-1 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-end gap-0.5">
                           {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
                             <button onClick={() => handleFinalizeDailyTask(t)} className="px-1 py-0.5 bg-emerald-600 text-white rounded font-semibold text-[9px]">완료</button>
@@ -1617,7 +1617,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         </div>
                       </td>
                       {/* 인원 표시 및 정확한 전화 연동 */}
-                      <td className="p-1 text-[#64748B] align-top whitespace-normal" title={t.assigned_names?.join(', ') || '미지정'}>
+                      <td className="p-1 text-[#64748B] align-top whitespace-normal border-r border-slate-200 last:border-r-0" title={t.assigned_names?.join(', ') || '미지정'}>
                         <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 {t.assigned_names?.length || 0}명</div>
                         {t.assigned_names?.length ? (
                           <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-4">
