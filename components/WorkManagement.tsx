@@ -1464,8 +1464,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   )}
                   
                   {/* 호선 헤더 (▶ 펼치기 버튼 포함) */}
-                  <th className="p-1 font-bold w-[14%] relative border-r border-white/20 last:border-r-0">
-                    <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'vessel' ? null : 'vessel')}>
+                  <th className="p-1 font-bold text-center w-[14%] relative border-r border-white/20 last:border-r-0">
+                    <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'vessel' ? null : 'vessel')}>
                       <span className="truncate">호선{tableFilterVessel !== 'ALL' ? `(${tableFilterVessel})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
@@ -1481,8 +1481,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </th>
 
                   {/* 화물창 헤더 (▶ 펼치기 버튼 포함) */}
-                  <th className="p-1 font-bold w-[10%] relative border-r border-white/20 last:border-r-0">
-                    <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'cargo' ? null : 'cargo')}>
+                  <th className="p-1 font-bold text-center w-[10%] relative border-r border-white/20 last:border-r-0">
+                    <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'cargo' ? null : 'cargo')}>
                       <span className="truncate">화물창{tableFilterCargoHold !== 'ALL' ? `(${tableFilterCargoHold})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
@@ -1498,12 +1498,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </th>
 
                   {/* 완료이력은 날짜별 필터 없이 전체를 날짜순으로 표시 */}
-                  <th className={`p-1 font-bold w-[10%] ${dailySubTab === 'HISTORY' ? '' : 'relative'}`}>
+                  <th className={`p-1 font-bold text-center w-[10%] ${dailySubTab === 'HISTORY' ? '' : 'relative'}`}>
                     {dailySubTab === 'HISTORY' ? (
                       <span>일자</span>
                     ) : (
                       <>
-                        <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'date' ? null : 'date')}>
+                        <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'date' ? null : 'date')}>
                           <span className="truncate">일자{tableFilterDate !== 'ALL' ? `(${formatToShortDate(tableFilterDate)})` : ''}</span>
                           <span className="text-[10px] text-blue-200 font-bold">▶</span>
                         </div>
@@ -1521,8 +1521,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </th>
 
                   {/* 시간대 헤더 (▶ 펼치기 버튼 포함) */}
-                  <th className="p-1 font-bold w-[9%] relative border-r border-white/20 last:border-r-0">
-                    <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'timeslot' ? null : 'timeslot')}>
+                  <th className="p-1 font-bold text-center w-[9%] relative border-r border-white/20 last:border-r-0">
+                    <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'timeslot' ? null : 'timeslot')}>
                       <span className="truncate">시간대{tableFilterTimeSlot !== 'ALL' ? `(${tableFilterTimeSlot})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
@@ -1538,8 +1538,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </th>
 
                   {/* 상태버튼 헤더 (▶ 펼치기 버튼 포함) */}
-                  <th className="p-1 font-bold w-[12%] relative border-r border-white/20 last:border-r-0">
-                    <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
+                  <th className="p-1 font-bold text-center w-[12%] relative border-r border-white/20 last:border-r-0">
+                    <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
                       <span className="truncate">상태버튼{tableFilterStatus !== 'ALL' ? `(${tableFilterStatus === 'PENDING' ? '대기' : tableFilterStatus === 'IN_PROGRESS' ? '진행중' : '완료'})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
@@ -1579,10 +1579,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
                         </td>
                       )}
-                      <td className="p-1 font-bold text-[#243B5A] truncate border-r border-slate-200 last:border-r-0" title={t.category || '-'}>{t.category || '-'}</td>
-                      <td className="p-1 font-semibold text-indigo-700 truncate border-r border-slate-200 last:border-r-0" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
-                      <td className="p-1 font-mono text-[#64748B] truncate border-r border-slate-200 last:border-r-0" title={formatToShortDate(t.start_date)}>{formatToShortDate(t.start_date)}</td>
-                      <td className="p-1 font-mono text-[#2563EB] truncate border-r border-slate-200 last:border-r-0" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>
+                      <td className="p-1 font-bold text-[#243B5A] text-center truncate border-r border-slate-200 last:border-r-0" title={t.category || '-'}>{t.category || '-'}</td>
+                      <td className="p-1 font-semibold text-indigo-700 text-center truncate border-r border-slate-200 last:border-r-0" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
+                      <td className="p-1 font-mono text-[#64748B] text-center truncate border-r border-slate-200 last:border-r-0" title={formatToShortDate(t.start_date)}>{formatToShortDate(t.start_date)}</td>
+                      <td className="p-1 font-mono text-[#2563EB] text-center truncate border-r border-slate-200 last:border-r-0" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>
                       <td className="p-1 text-center truncate border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
@@ -1601,18 +1601,18 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         </div>
                       </td>
                       <td className="p-1 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-0.5">
+                        <div className="flex items-center justify-center gap-1">
                           {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
-                            <button onClick={() => handleFinalizeDailyTask(t)} className="px-1 py-0.5 bg-emerald-600 text-white rounded font-semibold text-[9px]">완료</button>
+                            <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[42px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">완료</button>
                           )}
                           {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
                             <>
-                              <button onClick={() => handleOpenTaskEdit(t)} className="p-0.5 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3 w-3" /></button>
-                              <button onClick={() => handleDeleteTask(t.id)} className="p-0.5 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3 w-3" /></button>
+                              <button onClick={() => handleOpenTaskEdit(t)} className="inline-flex items-center justify-center p-1 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3.5 w-3.5" /></button>
+                              <button onClick={() => handleDeleteTask(t.id)} className="inline-flex items-center justify-center p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
                             </>
                           )}
                           {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && (
-                            <button onClick={() => handleDeleteTask(t.id)} className="p-0.5 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3 w-3" /></button>
+                            <button onClick={() => handleDeleteTask(t.id)} className="inline-flex items-center justify-center p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
                           )}
                         </div>
                       </td>
