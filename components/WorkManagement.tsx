@@ -799,7 +799,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 최종 완료 처리할 수 있습니다.'); return; }
     if (task.task_type !== 'DAILY' || task.status !== 'COMPLETED' || !task.completion_pending_review) return;
 
-    showCustomConfirm('업무 최종 완료', '업무 내용을 확인하셨습니까? 최종 완료 처리하면 업무 완료 이력으로 이동합니다.', async () => {
+    showCustomConfirm('업무 최종 완료', '업무 내용을 확인하셨습니까? 최종 완료 처리하면 완료이력에 기록됩니다. 현재 화면은 유지됩니다.', async () => {
       try {
         const { error } = await supabase.from('tasks').update({
           status: 'COMPLETED',
@@ -811,9 +811,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (error) throw error;
         setSelectedTaskForSheet(null);
         setSelectedTaskIds([]);
-        setDailySubTab('HISTORY');
         await fetchTasks();
-        showCustomAlert('완료', '관리자 최종 확인이 완료되어 완료 이력으로 이동했습니다.');
+        showCustomAlert('완료', '관리자 최종 확인이 완료되었습니다. 완료이력 탭에서 확인할 수 있습니다.');
       } catch (err: any) {
         showCustomAlert('오류', `최종 완료 처리 실패: ${err.message}`);
       }
@@ -823,7 +822,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const handleCompleteOtherTask = useCallback((task: Task) => {
     if (task.task_type !== 'DAILY_OTHER' || task.status === 'COMPLETED') return;
     if (!isAdmin) { showCustomAlert('권한 제한', '야간업무진행 완료 처리는 관리자만 가능합니다.'); return; }
-    showCustomConfirm('업무 완료', '이 업무를 완료 처리하고 업무 완료 이력으로 이동하시겠습니까?', async () => {
+    showCustomConfirm('업무 완료', '이 업무를 완료 처리하시겠습니까? 완료이력에 기록되며 현재 화면은 유지됩니다.', async () => {
       try {
         const { error } = await supabase.from('tasks').update({
           status: 'COMPLETED',
@@ -834,10 +833,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         }).eq('id', task.id);
         if (error) throw error;
         setSelectedTaskForSheet(null);
-        setDailySubTab('HISTORY');
         setSelectedTaskIds([]);
         await fetchTasks();
-        showCustomAlert('완료', '야간업무진행가 완료 이력에 저장되었습니다.');
+        showCustomAlert('완료', '야간업무진행가 완료 처리되었습니다. 완료이력 탭에서 확인할 수 있습니다.');
       } catch (err: any) {
         showCustomAlert('오류', `완료 처리 실패: ${err.message}`);
       }
@@ -1467,7 +1465,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   
                   {/* 호선 헤더 (▶ 펼치기 버튼 포함) */}
                   <th className="p-1 font-bold w-[14%] relative">
-                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'vessel' ? null : 'vessel')}>
+                    <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'vessel' ? null : 'vessel')}>
                       <span className="truncate">호선{tableFilterVessel !== 'ALL' ? `(${tableFilterVessel})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
@@ -1484,7 +1482,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
                   {/* 화물창 헤더 (▶ 펼치기 버튼 포함) */}
                   <th className="p-1 font-bold w-[10%] relative">
-                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'cargo' ? null : 'cargo')}>
+                    <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'cargo' ? null : 'cargo')}>
                       <span className="truncate">화물창{tableFilterCargoHold !== 'ALL' ? `(${tableFilterCargoHold})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
@@ -1505,7 +1503,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <span>일자</span>
                     ) : (
                       <>
-                        <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'date' ? null : 'date')}>
+                        <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'date' ? null : 'date')}>
                           <span className="truncate">일자{tableFilterDate !== 'ALL' ? `(${formatToShortDate(tableFilterDate)})` : ''}</span>
                           <span className="text-[10px] text-blue-200 font-bold">▶</span>
                         </div>
@@ -1524,7 +1522,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
                   {/* 시간대 헤더 (▶ 펼치기 버튼 포함) */}
                   <th className="p-1 font-bold w-[9%] relative">
-                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'timeslot' ? null : 'timeslot')}>
+                    <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'timeslot' ? null : 'timeslot')}>
                       <span className="truncate">시간대{tableFilterTimeSlot !== 'ALL' ? `(${tableFilterTimeSlot})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
@@ -1541,7 +1539,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
                   {/* 상태버튼 헤더 (▶ 펼치기 버튼 포함) */}
                   <th className="p-1 font-bold w-[12%] relative">
-                    <div className="flex items-center justify-between gap-0.5 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
+                    <div className="flex items-center justify-start gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
                       <span className="truncate">상태버튼{tableFilterStatus !== 'ALL' ? `(${tableFilterStatus === 'PENDING' ? '대기' : tableFilterStatus === 'IN_PROGRESS' ? '진행중' : '완료'})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
@@ -1560,7 +1558,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <th className="p-1 font-bold w-[36%]">인원</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E5E9]">
+              <tbody>
                 {filteredTasks.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="text-center py-12 text-[#64748B]">
@@ -1575,7 +1573,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     }, 0) - 1;
                     const dateGroupBackground = dateGroupIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50';
                     return (
-                    <tr key={t.id} className={`${dateGroupBackground} hover:bg-blue-50 transition cursor-pointer ${dateChanged && rowIndex > 0 ? 'border-t-4 border-double border-slate-400' : ''}`} onClick={() => handleOpenTaskDetail(t)}>
+                    <tr key={t.id} className={`${dateGroupBackground} hover:bg-blue-50 transition cursor-pointer ${dateChanged && rowIndex > 0 ? 'border-t-[3px] border-double border-slate-400' : 'border-t border-[#E2E5E9]'}`} onClick={() => handleOpenTaskDetail(t)}>
                       {isAdmin && dailySubTab === 'HISTORY' && (
                         <td className="p-1.5 text-center" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
@@ -1798,7 +1796,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <th className="p-1.5 font-bold text-right w-[8%]">관리</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-[#E2E5E9]">
+              <tbody>
                 {filteredTasks.length === 0 ? (
                   <tr>
                     <td colSpan={isAdmin ? 8 : 7} className="text-center py-12 text-[#64748B]">
