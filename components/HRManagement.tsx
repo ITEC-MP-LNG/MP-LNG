@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
+import CertManagement from './cert';
 
 export interface HRUser {
   id: string;          
@@ -45,6 +46,8 @@ export interface HRUser {
   pos_x?: number;              
   pos_y?: number;              
   photo_url?: string | null;
+  yard_certificates?: string;
+  cert_assignments?: Record<string, { level?: string; cert_no?: string }>;
 }
 
 interface HRManagementProps {
@@ -125,7 +128,7 @@ export default function HRManagement({
 }: HRManagementProps) {
   const [users, setUsers] = useState<HRUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'ORG' | 'LIST'>('ORG');
+  const [activeTab, setActiveTab] = useState<'ORG' | 'LIST' | 'CERT'>('ORG');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [subGroupType, setSubGroupType] = useState<'DEPT' | 'POS'>('DEPT');
@@ -152,6 +155,8 @@ export default function HRManagement({
     experience: '',
     internal_certificates: '',
     national_certificates: '',
+    yard_certificates: '',
+    cert_assignments: { RT: { level: '', cert_no: '' }, UT: { level: '', cert_no: '' }, MT: { level: '', cert_no: '' }, PT: { level: '', cert_no: '' }, LT: { level: '', cert_no: '' } },
     join_date: '',
     career_start_date: '',
     birthDate: ''
@@ -196,14 +201,15 @@ export default function HRManagement({
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y')
+        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, certificates, yard_certificates, cert_assignments, join_date, career_start_date, password, photo_url, pos_x, pos_y')
         .order('name', { ascending: true });
 
       if (error) throw error;
 
       const formatted = (data || []).map((u: any) => ({
         ...u,
-        national_certificates: u.national_certificates || u.certificates || ''
+        national_certificates: u.national_certificates || u.certificates || '',
+        cert_assignments: u.cert_assignments || {}
       }));
 
       setUsers(formatted);
@@ -432,6 +438,8 @@ export default function HRManagement({
         internal_certificates: formData.internal_certificates,
         national_certificates: formData.national_certificates,
         certificates: formData.national_certificates,
+        yard_certificates: formData.yard_certificates,
+        cert_assignments: formData.cert_assignments,
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
       };
@@ -511,7 +519,9 @@ export default function HRManagement({
         id: formData.inputId.trim(),
         role: payload.role ?? selectedUser?.role ?? (isSuperAdmin ? (formData.role || 'USER') : 'USER'),
         photo_url: savedPhotoUrl || selectedUser?.photo_url || null,
-        national_certificates: payload.national_certificates || payload.certificates || selectedUser?.national_certificates || ''
+        national_certificates: payload.national_certificates || payload.certificates || selectedUser?.national_certificates || '',
+        yard_certificates: payload.yard_certificates || '',
+        cert_assignments: payload.cert_assignments || {}
       };
       setUsers(prev => {
         const next = selectedUser
@@ -611,6 +621,14 @@ export default function HRManagement({
             >
               목록 뷰
             </button>
+            <button
+              onClick={() => setActiveTab('CERT')}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
+                activeTab === 'CERT' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
+              }`}
+            >
+              자격현황
+            </button>
           </div>
 
           {isAdmin && (
@@ -669,6 +687,13 @@ export default function HRManagement({
               >
                 <Briefcase className="h-3.5 w-3.5" />
                 <span>직급별 조직도</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('CERT')}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition border bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]"
+              >
+                <Shield className="h-3.5 w-3.5" />
+                <span>자격현황</span>
               </button>
             </div>
 
@@ -731,6 +756,16 @@ export default function HRManagement({
 
       {loading ? (
         <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-16 text-xs text-[#64748B]">인사 정보를 불러오는 중...</div>
+      ) : activeTab === 'CERT' ? (
+        <CertManagement
+          users={users}
+          currentUser={currentUser}
+          isAdmin={isAdmin}
+          onUsersChanged={(updates) => setUsers(prev => prev.map(u => {
+            const patch = updates.find(item => item.id === u.id);
+            return patch ? { ...u, ...patch } : u;
+          }))}
+        />
       ) : activeTab === 'ORG' ? (
         <div className="space-y-3">
           {displayedCategories.map((catName) => {
@@ -905,6 +940,12 @@ export default function HRManagement({
                       <span className="font-semibold text-[#2563EB]">{totalCareer || '-'}</span>
                     </div>
                   </div>
+                  {(u.yard_certificates || Object.entries(u.cert_assignments || {}).some(([, v]: any) => v?.level || v?.cert_no)) && (
+                    <div className="rounded-lg border border-[#E2E5E9] bg-white p-2 text-[10px] text-[#243B5A]">
+                      {Object.entries(u.cert_assignments || {}).filter(([, v]: any) => v?.level || v?.cert_no).map(([m, v]: any) => `${m} ${v.level || ''}${v.cert_no ? ` (${v.cert_no})` : ''}`).join(', ')}
+                      {u.yard_certificates ? ` · YARD: ${u.yard_certificates}` : ''}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -973,8 +1014,8 @@ export default function HRManagement({
                         <div className="text-[#2563EB] font-semibold">{calculateCareerDetails(u.career_start_date) || '-'}</div>
                         <div className="text-[10px] text-[#64748B]">{u.career_start_date || ''}</div>
                       </td>
-                      <td className="p-3 text-[#1F2937] font-medium">{u.internal_certificates || '-'}</td>
-                      <td className="p-3 text-[#1F2937] font-medium">{u.national_certificates || '-'}</td>
+                      <td className="p-3 text-[#1F2937] font-medium">{u.internal_certificates || Object.entries(u.cert_assignments || {}).filter(([, v]: any) => v?.level || v?.cert_no).map(([m, v]: any) => `${m} ${v.level || ''} ${v.cert_no || ''}`.trim()).join(', ') || '-'}</td>
+                      <td className="p-3 text-[#1F2937] font-medium"><div>{u.national_certificates || '-'}</div><div className="mt-1 text-[10px] text-[#64748B]">YARD: {u.yard_certificates || '-'}</div></td>
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center space-x-1">
                           {canEdit && (
@@ -1090,8 +1131,9 @@ export default function HRManagement({
               </div>
 
               <div className="bg-[#F5F6F8] p-2.5 rounded-lg space-y-1 border border-[#E2E5E9]">
-                <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격:</span> {detailUser.internal_certificates || '없음'}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격:</span> {detailUser.internal_certificates || Object.entries(detailUser.cert_assignments || {}).filter(([, v]: any) => v?.level || v?.cert_no).map(([m, v]: any) => `${m} ${v.level || ''} ${v.cert_no || ''}`.trim()).join(', ') || '없음'}</div>
                 <div className="text-[11px]"><span className="font-bold text-[#64748B]">국가자격:</span> {detailUser.national_certificates || '없음'}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">YARD 자격:</span> {detailUser.yard_certificates || '없음'}</div>
               </div>
             </div>
 
@@ -1322,27 +1364,38 @@ export default function HRManagement({
                 </div>
               </div>
 
+              <div className="rounded-xl border border-[#E2E5E9] bg-[#F8FAFC] p-3 space-y-3">
+                <div className="font-bold text-[#243B5A]">사내자격(Cert') · 방법별 Level / Cert' No</div>
+                <div className="space-y-2">
+                  {(['RT','UT','MT','PT','LT'] as const).map((method) => (
+                    <div key={method} className="grid grid-cols-[52px_1fr_1.4fr] items-center gap-2">
+                      <div className="text-xs font-bold">{method}</div>
+                      <select value={formData.cert_assignments?.[method]?.level || ''} onChange={(e) => setFormData({ ...formData, cert_assignments: { ...(formData.cert_assignments || {}), [method]: { ...(formData.cert_assignments?.[method] || {}), level: e.target.value } } })} className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs">
+                        <option value="">Level 선택</option><option value="Level I">Level I</option><option value="Level II">Level II</option>
+                      </select>
+                      <input value={formData.cert_assignments?.[method]?.cert_no || ''} onChange={(e) => setFormData({ ...formData, cert_assignments: { ...(formData.cert_assignments || {}), [method]: { ...(formData.cert_assignments?.[method] || {}), cert_no: e.target.value } } })} placeholder="Cert' No" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">YARD 자격</label>
+                  <input value={formData.yard_certificates || ''} onChange={(e) => setFormData({ ...formData, yard_certificates: e.target.value })} placeholder="보유 YARD 자격 / 교육명" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
+                </div>
+                <p className="text-[10px] text-[#64748B]">Level 또는 Cert' No가 등록된 항목은 구성원 카드/목록의 자격현황과 연결됩니다. 상세 취득일·갱신일은 상단 자격현황에서 관리합니다.</p>
+              </div>
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
-                  <label className="block font-bold text-[#64748B] mb-1">사내 자격</label>
-                  <input
-                    type="text"
-                    placeholder="사내 자격 입력"
-                    value={formData.internal_certificates}
-                    onChange={(e) => setFormData({ ...formData, internal_certificates: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
-                  />
+                  <label className="block font-bold text-[#64748B] mb-1">국가 자격</label>
+                  <input type="text" placeholder="국가 자격 요약" value={formData.national_certificates} onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none" />
                 </div>
                 <div>
-                  <label className="block font-bold text-[#64748B] mb-1">국가 자격</label>
-                  <input
-                    type="text"
-                    placeholder="국가 자격 입력"
-                    value={formData.national_certificates}
-                    onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
-                  />
+                  <label className="block font-bold text-[#64748B] mb-1">기존 사내자격 메모</label>
+                  <input type="text" placeholder="기존 자격 메모(선택)" value={formData.internal_certificates} onChange={(e) => setFormData({ ...formData, internal_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none" />
                 </div>
+              </div>
+
+              <div className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] p-2.5 text-[11px] text-[#64748B]">
+                RT / UT / MT / PT / LT의 Level 및 Cert' No와 YARD 자격 상세 등록·수정·삭제는 상단의 <b className="text-[#243B5A]">자격현황</b>에서 구성원별로 관리됩니다. 구성원 아이디와 연결되어 동일한 인원 정보로 관리됩니다.
               </div>
 
               <div className="flex justify-end space-x-2 pt-2.5 border-t border-[#E2E5E9]">
@@ -1531,6 +1584,10 @@ function renderMemberCard(
       </div>
 
       <div className="pt-1.5 border-t border-[#E2E5E9] text-[10px] space-y-1">
+        {Object.entries(member.cert_assignments || {}).some(([, v]: any) => v?.level || v?.cert_no) && (
+          <div className="text-[#243B5A] font-semibold">Cert': {Object.entries(member.cert_assignments || {}).filter(([, v]: any) => v?.level || v?.cert_no).map(([m, v]: any) => `${m} ${v.level || ''}${v.cert_no ? ` (${v.cert_no})` : ''}`).join(', ')}</div>
+        )}
+        {member.yard_certificates && <div className="text-[#64748B]">YARD: {member.yard_certificates}</div>}
         <div className="flex items-center justify-between text-[#64748B]">
           {member.phone ? (
             <button
