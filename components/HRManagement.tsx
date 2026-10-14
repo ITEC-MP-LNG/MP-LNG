@@ -49,7 +49,7 @@ export interface HRUser {
   photo_url?: string | null;
   yard_certificates?: string;
   cert_assignments?: Record<string, { level?: string; cert_no?: string; cert_type?: string }>;
-  national_cert_list?: Array<{ method?: string; grade?: string; cert_no?: string }>;
+  national_cert_list?: Array<{ method: string; grade: string; cert_no: string }>;
 }
 
 interface HRManagementProps {
@@ -215,7 +215,11 @@ export default function HRManagement({
         ...u,
         national_certificates: u.national_certificates || u.certificates || '',
         cert_assignments: u.cert_assignments || {},
-        national_cert_list: u.national_cert_list || []
+        national_cert_list: (u.national_cert_list || []).map((item: any) => ({
+          method: item.method || '',
+          grade: item.grade || '기사',
+          cert_no: item.cert_no || ''
+        }))
       }));
 
       setUsers(formatted);
@@ -408,7 +412,11 @@ export default function HRManagement({
       national_certificates: user.national_certificates || user.certificates || '',
       yard_certificates: user.yard_certificates || '',
       cert_assignments: user.cert_assignments || { RT: { level: '', cert_no: '', cert_type: '사내발급' }, UT: { level: '', cert_no: '', cert_type: '사내발급' }, MT: { level: '', cert_no: '', cert_type: '사내발급' }, PT: { level: '', cert_no: '', cert_type: '사내발급' }, LT: { level: '', cert_no: '', cert_type: '사내발급' } },
-      national_cert_list: user.national_cert_list || [],
+      national_cert_list: (user.national_cert_list || []).map(item => ({
+        method: item.method || '',
+        grade: item.grade || '기사',
+        cert_no: item.cert_no || ''
+      })),
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
       birthDate: user.password || '' 
@@ -492,6 +500,12 @@ export default function HRManagement({
 
     try {
       let savedPhotoUrl: string | null = null;
+      const cleanNationalCertList = (formData.national_cert_list || []).map(item => ({
+        method: item.method || '',
+        grade: item.grade || '기사',
+        cert_no: item.cert_no || ''
+      }));
+
       const payload: any = {
         id: formData.inputId.trim(), 
         name: formData.name || '이름 없음',
@@ -508,7 +522,7 @@ export default function HRManagement({
         certificates: formData.national_certificates || '',
         yard_certificates: formData.yard_certificates || '',
         cert_assignments: formData.cert_assignments || {},
-        national_cert_list: formData.national_cert_list || [],
+        national_cert_list: cleanNationalCertList,
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
       };
@@ -589,7 +603,7 @@ export default function HRManagement({
         national_certificates: payload.national_certificates || payload.certificates || selectedUser?.national_certificates || '',
         yard_certificates: payload.yard_certificates || '',
         cert_assignments: payload.cert_assignments || {},
-        national_cert_list: payload.national_cert_list || []
+        national_cert_list: cleanNationalCertList
       };
       setUsers(prev => {
         const next = selectedUser
@@ -1469,7 +1483,7 @@ export default function HRManagement({
                 </div>
               </div>
 
-              {/* 국가 자격 세분화 영역 (종목 직접 작성 및 종류(기능사, 산업기사, 기사) 선택) */}
+              {/* 국가 자격 세분화 영역 */}
               <div className="rounded-xl border border-[#E2E5E9] bg-[#F8FAFC] p-3 space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="font-bold text-[#243B5A]">국가 자격 (종목 / 종류 / 자격번호)</div>
