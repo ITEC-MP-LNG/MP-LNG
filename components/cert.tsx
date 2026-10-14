@@ -57,12 +57,14 @@ const dayDiff = (date: string) => Math.ceil((new Date(`${date}T00:00:00`).getTim
 const esc = (v: any) => v == null ? '' : String(v);
 const fieldClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white';
 
-export default function CertManagement({ users, currentUser, isAdmin, onUsersChanged }: {
+export default function CertManagement({ users, currentUser, isAdmin, onUsersChanged, sharedRecords, recordsReady, onRecordsChanged }: {
   users: Person[]; currentUser: any; isAdmin: boolean; onUsersChanged?: (updates: Array<Partial<Person> & {id:string}>) => void;
+  sharedRecords?: CertRecord[]; recordsReady?: boolean; onRecordsChanged?: (records: CertRecord[]) => void;
 }) {
   const [category, setCategory] = useState<Category>('YARD');
   const [records, setRecords] = useState<CertRecord[]>([]);
   const recordsLoadedRef = useRef(false);
+  const syncingSharedRecordsRef = useRef(false);
   const migrationInProgressRef = useRef(false);
   const migratedLegacyKeysRef = useRef<Set<string>>(new Set());
   const legacyInternalImportedRef = useRef<Set<string>>(new Set());
@@ -94,24 +96,43 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     return () => window.clearTimeout(t);
   }, [notice]);
 
+  const useSharedRecords = sharedRecords !== undefined;
   const load = useCallback(async () => {
     setLoading(true); setLoadError('');
     try {
-      // 자격 목록과 휴일 목록만 각 1회 조회. 입력/수정 후에는 화면 상태를 직접 갱신합니다.
-      const [r, h] = await Promise.all([
-        supabase.from('cert_records').select('*').order('category').order('title'),
-        supabase.from('cert_holidays').select('holiday_date,name'),
-      ]);
-      if (r.error) throw r.error;
+      // 자격 레코드는 HRManagement에서 한 번 조회해 카드뷰/목록뷰와 공유합니다.
+      // 이 화면에서는 공휴일만 조회하여 중복 Supabase 호출을 줄입니다.
+      const h = await supabase.from('cert_holidays').select('holiday_date,name');
       if (h.error && h.error.code !== '42P01') throw h.error;
-      setRecords((r.data || []) as CertRecord[]);
-      recordsLoadedRef.current = true;
       setHolidays((h.data || []) as Holiday[]);
+      if (!useSharedRecords) {
+        const r = await supabase.from('cert_records').select('*').order('category').order('title');
+        if (r.error) throw r.error;
+        setRecords((r.data || []) as CertRecord[]);
+        recordsLoadedRef.current = true;
+      }
     } catch (e: any) {
       setLoadError(e?.message || '자격현황을 불러오지 못했습니다. SQL 설정을 확인해주세요.');
     } finally { setLoading(false); }
-  }, []);
+  }, [useSharedRecords]);
   useEffect(() => { void load(); }, [load]);
+
+  useEffect(() => {
+    if (!useSharedRecords || !recordsReady || !sharedRecords) return;
+    recordsLoadedRef.current = true;
+    syncingSharedRecordsRef.current = true;
+    setRecords(sharedRecords);
+  }, [useSharedRecords, recordsReady, sharedRecords]);
+
+  useEffect(() => {
+    if (!recordsLoadedRef.current) return;
+    // 부모가 전달한 공용 데이터를 자식 상태에 반영한 직후에는 빈 배열로 덮어쓰지 않습니다.
+    if (syncingSharedRecordsRef.current) {
+      syncingSharedRecordsRef.current = false;
+      return;
+    }
+    onRecordsChanged?.(records);
+  }, [records, onRecordsChanged]);
 
   const personById = useMemo(() => new Map(users.map(u => [u.id, u])), [users]);
   const careerHoursFromMember = useCallback((startDate?: string) => {
