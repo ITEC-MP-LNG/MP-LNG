@@ -49,7 +49,6 @@ export interface HRUser {
   photo_url?: string | null;
   yard_certificates?: string;
   cert_assignments?: Record<string, { level?: string; cert_no?: string; cert_type?: string }>;
-  national_cert_list?: Array<{ method: string; grade: string; cert_no: string }>;
 }
 
 interface HRManagementProps {
@@ -161,7 +160,6 @@ export default function HRManagement({
     national_certificates: '',
     yard_certificates: '',
     cert_assignments: { RT: { level: '', cert_no: '', cert_type: '사내발급' }, UT: { level: '', cert_no: '', cert_type: '사내발급' }, MT: { level: '', cert_no: '', cert_type: '사내발급' }, PT: { level: '', cert_no: '', cert_type: '사내발급' }, LT: { level: '', cert_no: '', cert_type: '사내발급' } } as Record<string, { level?: string; cert_no?: string; cert_type?: string }>,
-    national_cert_list: [] as Array<{ method: string; grade: string; cert_no: string }>,
     join_date: '',
     career_start_date: '',
     birthDate: ''
@@ -206,7 +204,7 @@ export default function HRManagement({
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, certificates, yard_certificates, cert_assignments, national_cert_list, join_date, career_start_date, password, photo_url, pos_x, pos_y')
+        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, certificates, yard_certificates, cert_assignments, join_date, career_start_date, password, photo_url, pos_x, pos_y')
         .order('name', { ascending: true });
 
       if (error) throw error;
@@ -214,12 +212,7 @@ export default function HRManagement({
       const formatted = (data || []).map((u: any) => ({
         ...u,
         national_certificates: u.national_certificates || u.certificates || '',
-        cert_assignments: u.cert_assignments || {},
-        national_cert_list: (u.national_cert_list || []).map((item: any) => ({
-          method: item.method || '',
-          grade: item.grade || '기사',
-          cert_no: item.cert_no || ''
-        }))
+        cert_assignments: u.cert_assignments || {}
       }));
 
       setUsers(formatted);
@@ -380,7 +373,6 @@ export default function HRManagement({
       national_certificates: '',
       yard_certificates: '',
       cert_assignments: { RT: { level: '', cert_no: '', cert_type: '사내발급' }, UT: { level: '', cert_no: '', cert_type: '사내발급' }, MT: { level: '', cert_no: '', cert_type: '사내발급' }, PT: { level: '', cert_no: '', cert_type: '사내발급' }, LT: { level: '', cert_no: '', cert_type: '사내발급' } },
-      national_cert_list: [],
       join_date: new Date().toISOString().split('T')[0],
       career_start_date: new Date().toISOString().split('T')[0],
       birthDate: ''
@@ -412,11 +404,6 @@ export default function HRManagement({
       national_certificates: user.national_certificates || user.certificates || '',
       yard_certificates: user.yard_certificates || '',
       cert_assignments: user.cert_assignments || { RT: { level: '', cert_no: '', cert_type: '사내발급' }, UT: { level: '', cert_no: '', cert_type: '사내발급' }, MT: { level: '', cert_no: '', cert_type: '사내발급' }, PT: { level: '', cert_no: '', cert_type: '사내발급' }, LT: { level: '', cert_no: '', cert_type: '사내발급' } },
-      national_cert_list: (user.national_cert_list || []).map(item => ({
-        method: item.method || '',
-        grade: item.grade || '기사',
-        cert_no: item.cert_no || ''
-      })),
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
       birthDate: user.password || '' 
@@ -500,12 +487,6 @@ export default function HRManagement({
 
     try {
       let savedPhotoUrl: string | null = null;
-      const cleanNationalCertList = (formData.national_cert_list || []).map(item => ({
-        method: item.method || '',
-        grade: item.grade || '기사',
-        cert_no: item.cert_no || ''
-      }));
-
       const payload: any = {
         id: formData.inputId.trim(), 
         name: formData.name || '이름 없음',
@@ -522,7 +503,6 @@ export default function HRManagement({
         certificates: formData.national_certificates || '',
         yard_certificates: formData.yard_certificates || '',
         cert_assignments: formData.cert_assignments || {},
-        national_cert_list: cleanNationalCertList,
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
       };
@@ -602,8 +582,7 @@ export default function HRManagement({
         photo_url: savedPhotoUrl || selectedUser?.photo_url || null,
         national_certificates: payload.national_certificates || payload.certificates || selectedUser?.national_certificates || '',
         yard_certificates: payload.yard_certificates || '',
-        cert_assignments: payload.cert_assignments || {},
-        national_cert_list: cleanNationalCertList
+        cert_assignments: payload.cert_assignments || {}
       };
       setUsers(prev => {
         const next = selectedUser
@@ -1482,93 +1461,9 @@ export default function HRManagement({
                   <input value={formData.yard_certificates || ''} onChange={(e) => setFormData({ ...formData, yard_certificates: e.target.value })} placeholder="보유 YARD 자격 / 교육명" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
                 </div>
               </div>
-
-              {/* 국가 자격 세분화 영역 */}
-              <div className="rounded-xl border border-[#E2E5E9] bg-[#F8FAFC] p-3 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-bold text-[#243B5A]">국가 자격 (종목 / 종류 / 자격번호)</div>
-                  <button 
-                    type="button" 
-                    onClick={() => {
-                      setFormData(prev => ({
-                        ...prev,
-                        national_cert_list: [...(prev.national_cert_list || []), { method: '', grade: '기사', cert_no: '' }]
-                      }));
-                    }} 
-                    className="flex items-center gap-1 rounded-lg border border-[#D5DEE9] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A]"
-                  >
-                    <Plus className="h-3 w-3"/> 자격 추가
-                  </button>
-                </div>
-                <div className="space-y-2">
-                  {(formData.national_cert_list || []).map((nc, index) => (
-                    <div key={index} className="grid grid-cols-[1fr_110px_1fr_28px] items-center gap-2">
-                      <input 
-                        type="text"
-                        placeholder="종목 직접 입력 (예: 용접)" 
-                        value={nc.method || ''} 
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setFormData(prev => {
-                            const list = [...(prev.national_cert_list || [])];
-                            list[index] = { ...list[index], method: val };
-                            return { ...prev, national_cert_list: list };
-                          });
-                        }}
-                        className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" 
-                      />
-                      <select 
-                        value={nc.grade || '기사'} 
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setFormData(prev => {
-                            const list = [...(prev.national_cert_list || [])];
-                            list[index] = { ...list[index], grade: val };
-                            return { ...prev, national_cert_list: list };
-                          });
-                        }} 
-                        className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs cursor-pointer font-bold"
-                      >
-                        <option value="기능사">기능사</option>
-                        <option value="산업기사">산업기사</option>
-                        <option value="기사">기사</option>
-                        <option value="기술사">기술사</option>
-                        <option value="기타">기타</option>
-                      </select>
-                      <input 
-                        type="text"
-                        placeholder="자격증 번호" 
-                        value={nc.cert_no || ''} 
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          setFormData(prev => {
-                            const list = [...(prev.national_cert_list || [])];
-                            list[index] = { ...list[index], cert_no: val };
-                            return { ...prev, national_cert_list: list };
-                          });
-                        }}
-                        className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" 
-                      />
-                      <button 
-                        type="button" 
-                        title="국가자격 항목 삭제" 
-                        onClick={() => {
-                          setFormData(prev => {
-                            const list = [...(prev.national_cert_list || [])];
-                            list.splice(index, 1);
-                            return { ...prev, national_cert_list: list };
-                          });
-                        }} 
-                        className="flex h-7 w-7 items-center justify-center rounded-md border border-red-200 bg-white text-red-600"
-                      >
-                        <Trash2 className="h-3.5 w-3.5"/>
-                      </button>
-                    </div>
-                  ))}
-                  {(!formData.national_cert_list || formData.national_cert_list.length === 0) && (
-                    <div className="text-xs text-[#64748B]">등록된 국가 자격이 없습니다. ‘자격 추가’를 눌러 추가하세요.</div>
-                  )}
-                </div>
+              <div>
+                <label className="block font-bold text-[#64748B] mb-1">국가 자격 (삭제 후 저장 검증 반영)</label>
+                <input type="text" placeholder="국가 자격 요약 (비워두어도 정상 저장 가능)" value={formData.national_certificates} onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none" />
               </div>
 
               <div className="flex justify-end space-x-2 pt-2.5 border-t border-[#E2E5E9]">
