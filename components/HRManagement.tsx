@@ -19,7 +19,9 @@ import {
   AtSign,
   Network,
   GitCommit,
-  Shield
+  Shield,
+  Plus,
+  Trash2
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
@@ -156,7 +158,7 @@ export default function HRManagement({
     internal_certificates: '',
     national_certificates: '',
     yard_certificates: '',
-    cert_assignments: { RT: { level: '', cert_no: '' }, UT: { level: '', cert_no: '' }, MT: { level: '', cert_no: '' }, PT: { level: '', cert_no: '' }, LT: { level: '', cert_no: '' } },
+    cert_assignments: { RT: { level: '', cert_no: '' }, UT: { level: '', cert_no: '' }, MT: { level: '', cert_no: '' }, PT: { level: '', cert_no: '' }, LT: { level: '', cert_no: '' } } as Record<string, { level?: string; cert_no?: string }>,
     join_date: '',
     career_start_date: '',
     birthDate: ''
@@ -345,11 +347,12 @@ export default function HRManagement({
       national_certificates: user.national_certificates || user.certificates || '',
       yard_certificates: user.yard_certificates || user.internal_certificates || '',
       cert_assignments: {
-        RT: { level: user.cert_assignments?.RT?.level || '', cert_no: user.cert_assignments?.RT?.cert_no || '' },
-        UT: { level: user.cert_assignments?.UT?.level || '', cert_no: user.cert_assignments?.UT?.cert_no || '' },
-        MT: { level: user.cert_assignments?.MT?.level || '', cert_no: user.cert_assignments?.MT?.cert_no || '' },
-        PT: { level: user.cert_assignments?.PT?.level || '', cert_no: user.cert_assignments?.PT?.cert_no || '' },
-        LT: { level: user.cert_assignments?.LT?.level || '', cert_no: user.cert_assignments?.LT?.cert_no || '' },
+        ...(user.cert_assignments || {}),
+        RT: user.cert_assignments?.RT || { level: '', cert_no: '' },
+        UT: user.cert_assignments?.UT || { level: '', cert_no: '' },
+        MT: user.cert_assignments?.MT || { level: '', cert_no: '' },
+        PT: user.cert_assignments?.PT || { level: '', cert_no: '' },
+        LT: user.cert_assignments?.LT || { level: '', cert_no: '' },
       },
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
@@ -448,7 +451,7 @@ export default function HRManagement({
         internal_certificates: '',
         national_certificates: formData.national_certificates,
         certificates: formData.national_certificates,
-        yard_certificates: formData.yard_certificates || formData.internal_certificates,
+        yard_certificates: formData.yard_certificates,
         cert_assignments: formData.cert_assignments,
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
@@ -1375,33 +1378,40 @@ export default function HRManagement({
               </div>
 
               <div className="rounded-xl border border-[#E2E5E9] bg-[#F8FAFC] p-3 space-y-3">
-                <div className="font-bold text-[#243B5A]">사내자격(Cert') · 방법별 Level / Cert' No</div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-bold text-[#243B5A]">사내자격(Cert') · 방법별 Level / Cert' No</div>
+                  <button type="button" onClick={() => {
+                    const method = window.prompt('추가할 자격 방법명을 입력하세요. (예: VT)')?.trim().toUpperCase();
+                    if (!method) return;
+                    if (formData.cert_assignments?.[method]) { showNotice('이미 등록된 방법입니다.', 'warning'); return; }
+                    setFormData(prev => ({ ...prev, cert_assignments: { ...(prev.cert_assignments || {}), [method]: { level: '', cert_no: '' } } }));
+                  }} className="flex items-center gap-1 rounded-lg border border-[#D5DEE9] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A]"><Plus className="h-3 w-3"/> 방법 추가</button>
+                </div>
                 <div className="space-y-2">
-                  {(['RT','UT','MT','PT','LT'] as const).map((method) => (
-                    <div key={method} className="grid grid-cols-[52px_1fr_1.4fr] items-center gap-2">
+                  {Object.entries(formData.cert_assignments || {}).map(([method, cert]: [string, any]) => (
+                    <div key={method} className="grid grid-cols-[52px_1fr_1.4fr_28px] items-center gap-2">
                       <div className="text-xs font-bold">{method}</div>
-                      <select value={formData.cert_assignments?.[method]?.level || ''} onChange={(e) => setFormData({ ...formData, cert_assignments: { ...(formData.cert_assignments || {}), [method]: { ...(formData.cert_assignments?.[method] || {}), level: e.target.value } } })} className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs">
+                      <select value={cert?.level || ''} onChange={(e) => setFormData(prev => ({ ...prev, cert_assignments: { ...(prev.cert_assignments || {}), [method]: { ...(prev.cert_assignments?.[method] || {}), level: e.target.value } } }))} className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs">
                         <option value="">Level 선택</option><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option>
                       </select>
-                      <input value={formData.cert_assignments?.[method]?.cert_no || ''} onChange={(e) => setFormData({ ...formData, cert_assignments: { ...(formData.cert_assignments || {}), [method]: { ...(formData.cert_assignments?.[method] || {}), cert_no: e.target.value } } })} placeholder="Cert' No" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
+                      <input value={cert?.cert_no || ''} onChange={(e) => setFormData(prev => ({ ...prev, cert_assignments: { ...(prev.cert_assignments || {}), [method]: { ...(prev.cert_assignments?.[method] || {}), cert_no: e.target.value } } }))} placeholder="Cert' No" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
+                      <button type="button" title={`${method} 항목 삭제`} onClick={() => {
+                        if (!window.confirm(`${method} 자격 항목을 삭제할까요?`)) return;
+                        setFormData(prev => { const next = { ...(prev.cert_assignments || {}) }; delete next[method]; return { ...prev, cert_assignments: next }; });
+                      }} className="flex h-7 w-7 items-center justify-center rounded-md border border-red-200 bg-white text-red-600"><Trash2 className="h-3.5 w-3.5"/></button>
                     </div>
                   ))}
+                  {Object.keys(formData.cert_assignments || {}).length === 0 && <div className="text-xs text-[#64748B]">등록된 자격 방법이 없습니다. ‘방법 추가’를 눌러 추가하세요.</div>}
                 </div>
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">YARD 자격</label>
                   <input value={formData.yard_certificates || ''} onChange={(e) => setFormData({ ...formData, yard_certificates: e.target.value })} placeholder="보유 YARD 자격 / 교육명" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
                 </div>
-                <p className="text-[10px] text-[#64748B]">Level 또는 Cert' No가 등록된 항목은 구성원 카드/목록의 자격현황과 연결됩니다. 상세 취득일·갱신일은 상단 자격현황에서 관리합니다.</p>
+                <p className="text-[10px] text-[#64748B]">방법별 Level 또는 Cert' No를 관리할 수 있습니다. 취득일과 유효날짜는 자격현황에서 관리합니다.</p>
               </div>
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block font-bold text-[#64748B] mb-1">국가 자격</label>
-                  <input type="text" placeholder="국가 자격 요약" value={formData.national_certificates} onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none" />
-                </div>
-                <div>
-                  <label className="block font-bold text-[#64748B] mb-1">기존 사내자격 메모</label>
-                  <div className="w-full min-h-[36px] p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#64748B]">기존 메모는 위의 YARD 자격 항목으로 연동됩니다.</div>
-                </div>
+              <div>
+                <label className="block font-bold text-[#64748B] mb-1">국가 자격</label>
+                <input type="text" placeholder="국가 자격 요약" value={formData.national_certificates} onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none" />
               </div>
 
               <div className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] p-2.5 text-[11px] text-[#64748B]">
