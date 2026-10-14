@@ -312,6 +312,8 @@ export default function HRManagement({
       experience: '',
       internal_certificates: '',
       national_certificates: '',
+      yard_certificates: '',
+      cert_assignments: { RT: { level: '', cert_no: '' }, UT: { level: '', cert_no: '' }, MT: { level: '', cert_no: '' }, PT: { level: '', cert_no: '' }, LT: { level: '', cert_no: '' } },
       join_date: new Date().toISOString().split('T')[0],
       career_start_date: new Date().toISOString().split('T')[0],
       birthDate: ''
@@ -341,6 +343,14 @@ export default function HRManagement({
       experience: user.experience || '',
       internal_certificates: user.internal_certificates || '',
       national_certificates: user.national_certificates || user.certificates || '',
+      yard_certificates: user.yard_certificates || '',
+      cert_assignments: {
+        RT: { level: user.cert_assignments?.RT?.level || '', cert_no: user.cert_assignments?.RT?.cert_no || '' },
+        UT: { level: user.cert_assignments?.UT?.level || '', cert_no: user.cert_assignments?.UT?.cert_no || '' },
+        MT: { level: user.cert_assignments?.MT?.level || '', cert_no: user.cert_assignments?.MT?.cert_no || '' },
+        PT: { level: user.cert_assignments?.PT?.level || '', cert_no: user.cert_assignments?.PT?.cert_no || '' },
+        LT: { level: user.cert_assignments?.LT?.level || '', cert_no: user.cert_assignments?.LT?.cert_no || '' },
+      },
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
       birthDate: user.password || '' 
