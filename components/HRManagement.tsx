@@ -20,8 +20,7 @@ import {
   Network,
   GitCommit,
   Shield,
-  Plus,
-  Trash2
+  Plus
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
@@ -129,6 +128,8 @@ export default function HRManagement({
   currentUser = null 
 }: HRManagementProps) {
   const [users, setUsers] = useState<HRUser[]>([]);
+  const [certRecords, setCertRecords] = useState<any[]>([]);
+  const [certRecordsReady, setCertRecordsReady] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'ORG' | 'LIST' | 'CERT'>('ORG');
   const [searchTerm, setSearchTerm] = useState('');
@@ -225,6 +226,64 @@ export default function HRManagement({
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  // 자격현황의 상세 레코드를 한 번 조회하여 카드뷰/목록뷰와 공유합니다.
+  // cert.tsx에서도 이 동일한 데이터 상태를 갱신하므로 별도 재조회 없이 화면에 반영됩니다.
+  useEffect(() => {
+    let active = true;
+    const loadCertRecords = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('cert_records')
+          .select('id, user_id, category, title, obtained_date, expiry_date, method, level, cert_no, sticker_no, education_completed, training_date_1, training_date_2, training_date_3, training_date_4')
+          .order('category')
+          .order('title');
+        if (error) throw error;
+        if (active) setCertRecords((data || []) as any[]);
+      } catch (error) {
+        console.error('자격현황 연동 조회 실패:', error);
+        if (active) setCertRecords([]);
+      } finally {
+        if (active) setCertRecordsReady(true);
+      }
+    };
+    void loadCertRecords();
+    return () => { active = false; };
+  }, []);
+
+  const handleCertRecordsChanged = useCallback((nextRecords: any[]) => {
+    setCertRecords(nextRecords);
+  }, []);
+
+  const getQualificationSummary = (userId: string, category: 'YARD' | 'NATIONAL' | 'NDT') => {
+    const list = certRecords.filter((r) => r.user_id === userId && r.category === category);
+    if (!list.length) return '';
+    const summaries = list.map((r) => {
+      const label = category === 'NDT'
+        ? (() => {
+            const method = (r.method || '').trim().toUpperCase();
+            let title = (r.title || '').trim();
+            if (r.level) title = title.replace(new RegExp(r.level.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').trim();
+            while (method && title.toUpperCase().startsWith(method)) title = title.slice(method.length).trim();
+            return [method, title, r.level || ''].filter(Boolean).join(' ');
+          })()
+        : category === 'NATIONAL'
+          ? `${r.method ? `${r.method} ` : ''}${r.title || ''}`.trim()
+          : (r.title || 'YARD 자격');
+      const dates: string[] = [];
+      if (r.obtained_date || r.education_completed) dates.push(`취득 ${r.education_completed || r.obtained_date}`);
+      if (category === 'YARD') {
+        const refresh = [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4].filter(Boolean);
+        if (refresh.length) dates.push(`보수 ${refresh[refresh.length - 1]}`);
+      }
+      if (r.expiry_date) dates.push(`유효 ${r.expiry_date}`);
+      if (category === 'NDT' && !r.obtained_date) dates.push('Cert’ 미발급');
+      if (r.cert_no) dates.push(`No. ${r.cert_no}`);
+      if (category === 'YARD' && r.sticker_no) dates.push(`스티커 ${r.sticker_no}`);
+      return `${label}${dates.length ? ` (${dates.join(' · ')})` : ''}`;
+    });
+    return Array.from(new Set(summaries)).join(' / ');
+  };
 
   useEffect(() => {
     setSelectedSubCategory('ALL');
@@ -345,7 +404,7 @@ export default function HRManagement({
       experience: user.experience || '',
       internal_certificates: user.internal_certificates || '',
       national_certificates: user.national_certificates || user.certificates || '',
-      yard_certificates: user.yard_certificates || user.internal_certificates || '',
+      yard_certificates: user.yard_certificates || '',
       cert_assignments: {
         ...(user.cert_assignments || {}),
         RT: user.cert_assignments?.RT || { level: '', cert_no: '' },
@@ -561,7 +620,10 @@ export default function HRManagement({
       (u.phone || '').toLowerCase().includes(term) ||
       (u.internal_certificates || '').toLowerCase().includes(term) ||
       (u.national_certificates || '').toLowerCase().includes(term) ||
-      (u.certificates || '').toLowerCase().includes(term)
+      (u.certificates || '').toLowerCase().includes(term) ||
+      getQualificationSummary(u.id, 'YARD').toLowerCase().includes(term) ||
+      getQualificationSummary(u.id, 'NATIONAL').toLowerCase().includes(term) ||
+      getQualificationSummary(u.id, 'NDT').toLowerCase().includes(term)
     );
   });
 
@@ -774,6 +836,9 @@ export default function HRManagement({
           users={users}
           currentUser={currentUser}
           isAdmin={isAdmin}
+          sharedRecords={certRecords}
+          recordsReady={certRecordsReady}
+          onRecordsChanged={handleCertRecordsChanged}
           onUsersChanged={(updates) => setUsers(prev => prev.map(u => {
             const patch = updates.find(item => item.id === u.id);
             return patch ? { ...u, ...patch } : u;
@@ -843,7 +908,7 @@ export default function HRManagement({
                           <span>파트 리더 (본부장/소장/팀장)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser))}
+                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser, getQualificationSummary))}
                         </div>
                       </div>
                     )}
@@ -861,7 +926,7 @@ export default function HRManagement({
                           <span>소속 구성원 ({members.length}명)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser))}
+                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser, getQualificationSummary))}
                         </div>
                       </div>
                     )}
@@ -953,10 +1018,12 @@ export default function HRManagement({
                       <span className="font-semibold text-[#2563EB]">{totalCareer || '-'}</span>
                     </div>
                   </div>
-                  {(u.yard_certificates || Object.entries(u.cert_assignments || {}).some(([, v]: any) => v?.level || v?.cert_no)) && (
-                    <div className="rounded-lg border border-[#E2E5E9] bg-white p-2 text-[10px] text-[#243B5A]">
-                      {Object.entries(u.cert_assignments || {}).filter(([, v]: any) => v?.level || v?.cert_no).map(([m, v]: any) => `${m} ${v.level || ''}${v.cert_no ? ` (${v.cert_no})` : ''}`).join(', ')}
-                      {u.yard_certificates ? ` · YARD: ${u.yard_certificates}` : ''}
+                  {(['YARD', 'NATIONAL', 'NDT'] as const).some((kind) => !!getQualificationSummary(u.id, kind)) && (
+                    <div className="rounded-lg border border-[#E2E5E9] bg-white p-2 text-[10px] space-y-1">
+                      {(['YARD', 'NATIONAL', 'NDT'] as const).map((kind) => {
+                        const summary = getQualificationSummary(u.id, kind);
+                        return summary ? <div key={kind} className={kind === 'NDT' ? 'text-[#243B5A] font-semibold' : 'text-[#64748B]'}><span className="font-bold">{kind === 'YARD' ? 'YARD' : kind === 'NATIONAL' ? '국가자격' : '사내자격(NDT)'}:</span> {summary}</div> : null;
+                      })}
                     </div>
                   )}
                 </div>
@@ -974,8 +1041,8 @@ export default function HRManagement({
                   <th className="p-3">권한</th>
                   <th className="p-3">자사 근속 (입사일)</th>
                   <th className="p-3">총 경력 (시작일)</th>
-                  <th className="p-3">사내자격</th>
-                  <th className="p-3">국가자격</th>
+                  <th className="p-3">사내자격(NDT)</th>
+                  <th className="p-3">국가자격 / YARD</th>
                   <th className="p-3 text-center">관리</th>
                 </tr>
               </thead>
@@ -1027,8 +1094,8 @@ export default function HRManagement({
                         <div className="text-[#2563EB] font-semibold">{calculateCareerDetails(u.career_start_date) || '-'}</div>
                         <div className="text-[10px] text-[#64748B]">{u.career_start_date || ''}</div>
                       </td>
-                      <td className="p-3 text-[#1F2937] font-medium">{u.internal_certificates || Object.entries(u.cert_assignments || {}).filter(([, v]: any) => v?.level || v?.cert_no).map(([m, v]: any) => `${m} ${v.level || ''} ${v.cert_no || ''}`.trim()).join(', ') || '-'}</td>
-                      <td className="p-3 text-[#1F2937] font-medium"><div>{u.national_certificates || '-'}</div><div className="mt-1 text-[10px] text-[#64748B]">YARD: {u.yard_certificates || '-'}</div></td>
+                      <td className="p-3 text-[#1F2937] font-medium">{getQualificationSummary(u.id, 'NDT') || '-'}</td>
+                      <td className="p-3 text-[#1F2937] font-medium"><div>{getQualificationSummary(u.id, 'NATIONAL') || '-'}</div><div className="mt-1 text-[10px] text-[#64748B]">YARD: {getQualificationSummary(u.id, 'YARD') || '-'}</div></td>
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center space-x-1">
                           {canEdit && (
@@ -1144,9 +1211,9 @@ export default function HRManagement({
               </div>
 
               <div className="bg-[#F5F6F8] p-2.5 rounded-lg space-y-1 border border-[#E2E5E9]">
-                <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격:</span> {detailUser.internal_certificates || Object.entries(detailUser.cert_assignments || {}).filter(([, v]: any) => v?.level || v?.cert_no).map(([m, v]: any) => `${m} ${v.level || ''} ${v.cert_no || ''}`.trim()).join(', ') || '없음'}</div>
-                <div className="text-[11px]"><span className="font-bold text-[#64748B]">국가자격:</span> {detailUser.national_certificates || '없음'}</div>
-                <div className="text-[11px]"><span className="font-bold text-[#64748B]">YARD 자격:</span> {detailUser.yard_certificates || '없음'}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격(NDT):</span> {getQualificationSummary(detailUser.id, 'NDT') || '없음'}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">국가자격:</span> {getQualificationSummary(detailUser.id, 'NATIONAL') || '없음'}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">YARD 자격:</span> {getQualificationSummary(detailUser.id, 'YARD') || '없음'}</div>
               </div>
             </div>
 
@@ -1525,7 +1592,8 @@ function renderMemberCard(
   handleDeleteUser: (user: HRUser) => void,
   canEditUser: (user: HRUser) => boolean,
   isAdmin: boolean,
-  handleCallUser: (user: HRUser) => void
+  handleCallUser: (user: HRUser) => void,
+  getQualificationSummary: (userId: string, category: 'YARD' | 'NATIONAL' | 'NDT') => string
 ) {
   const joinCareer = calculateCareerDetails(member.join_date);
   const totalCareer = calculateCareerDetails(member.career_start_date);
@@ -1604,10 +1672,10 @@ function renderMemberCard(
       </div>
 
       <div className="pt-1.5 border-t border-[#E2E5E9] text-[10px] space-y-1">
-        {Object.entries(member.cert_assignments || {}).some(([, v]: any) => v?.level || v?.cert_no) && (
-          <div className="text-[#243B5A] font-semibold">Cert': {Object.entries(member.cert_assignments || {}).filter(([, v]: any) => v?.level || v?.cert_no).map(([m, v]: any) => `${m} ${v.level || ''}${v.cert_no ? ` (${v.cert_no})` : ''}`).join(', ')}</div>
-        )}
-        {member.yard_certificates && <div className="text-[#64748B]">YARD: {member.yard_certificates}</div>}
+        {(['YARD', 'NATIONAL', 'NDT'] as const).map((kind) => {
+          const summary = getQualificationSummary(member.id, kind);
+          return summary ? <div key={kind} className={kind === 'NDT' ? 'text-[#243B5A] font-semibold' : 'text-[#64748B]'}><span className="font-bold">{kind === 'YARD' ? 'YARD' : kind === 'NATIONAL' ? '국가자격' : '사내자격(NDT)'}:</span> {summary}</div> : null;
+        })}
         <div className="flex items-center justify-between text-[#64748B]">
           {member.phone ? (
             <button
