@@ -161,10 +161,6 @@ export type TankStepKey = typeof TANK_STEPS[number]['key'];
 export function getTankStepStatus(stepKey: TankStepKey, step: { date?: string; startDate?: string; endDate?: string; value?: string; finalValue?: string } | undefined): CommissioningProcessStatus {
   if (!step) return '대기';
   const valueText = String(step.value ?? '').trim();
-  // NH3 U/F·Welding에서 No leak는 누출 없음이 확인된 완료 상태로 처리합니다.
-  if ((stepKey === 'nh3_uf' || stepKey === 'nh3_welding') && valueText.toLowerCase() === 'no leak') {
-    return '완료';
-  }
   const hasAnyValue = !!(valueText || step.finalValue || step.date || step.startDate || step.endDate);
   if (!hasAnyValue) return '대기';
   const dateComplete = stepKey === 'pbgt' || stepKey === 'nh3_welding'
@@ -474,8 +470,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     return result;
   }, []);
 
-  // 저장 시 미사용 탱크는 NH3의 빈 값을 No leak로 자동 변환하지 않습니다.
-  // 사용 중인 탱크에 대해서만 빈 값 -> No leak, 숫자 -> 숫자 Leak 규칙을 적용합니다.
+  // No Leak는 사용자가 드롭다운에서 직접 선택한 경우에만 저장합니다.
+  // 숫자 Leak 수량은 기존 저장 형식과 호환되도록 '숫자 Leak' 형식으로 정규화합니다.
   const prepareTankStatusForSave = useCallback((raw: any): ShipTankStatus => {
     const prepared = JSON.parse(JSON.stringify(raw || getDefaultTankStatus())) as ShipTankStatus;
     TANKS.forEach((tank) => {
@@ -491,8 +487,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           return;
         }
         let normalizedValue = currentValue;
-        if (!currentValue) normalizedValue = 'No leak';
-        else if (/^\d+(?:\.\d+)?$/.test(currentValue)) normalizedValue = `${currentValue} Leak`;
+        if (/^\d+(?:\.\d+)?$/.test(currentValue)) normalizedValue = `${currentValue} Leak`;
         tankData[stepKey] = { ...tankData[stepKey], value: normalizedValue };
       });
     });
@@ -1024,7 +1019,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     if (!isAdmin || !statusEditFormData.id) return;
 
     try {
-      // 사용 중인 탱크에만 NH3 자동 No leak/숫자 Leak 규칙을 적용합니다.
+      // 사용 중인 탱크의 NH3 입력값은 사용자가 선택/입력한 값만 저장합니다.
       const updatePayload = {
         ship_name: statusEditFormData.ship_name,
         shipowner: statusEditFormData.shipowner,
@@ -2121,7 +2116,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <h4 className="text-xs font-bold text-[#1F2937] flex items-center gap-1">
-                  <Activity className="h-3.5 w-3.5 text-[#243B5A]" /> 시운전 공정 현황
+                  <Activity className="h-3.5 w-3.5 text-[#243B5A]" /> 공정현황
                 </h4>
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold text-[#243B5A]">
@@ -2696,12 +2691,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       if (String(step.key) === 'nh3') {
                         // NH3 상태는 기존 U/F와 Welding 완료 여부에 연동됩니다.
                         const currentTank = statusCreateFormData.tank_status[statusCreateTankTab];
-                        const isNh3Done = getTankStepStatus('nh3_uf', currentTank.nh3_uf) === '완료' && getTankStepStatus('nh3_welding', currentTank.nh3_welding) === '완료';
+                        const ufStatus = getTankStepStatus('nh3_uf', currentTank.nh3_uf);
+                        const weldingStatus = getTankStepStatus('nh3_welding', currentTank.nh3_welding);
+                        const nh3Status = ufStatus === '완료' && weldingStatus === '완료' ? '완료' : (ufStatus !== '대기' || weldingStatus !== '대기') ? '진행중' : '대기';
                         return (
                           <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between">
                             <span className="font-bold text-sm text-amber-900">NH3 (Primary Barrier Tightness Test)</span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isNh3Done ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                              {isNh3Done ? '완료' : '대기'}
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${nh3Status === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : nh3Status === '진행중' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                              {nh3Status}
                             </span>
                           </div>
                         );
@@ -2809,43 +2806,74 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 </div>
                               )}
 
-                              <input
-                                type="text"
-                                disabled={!isCurrentTankEnabled && (step.key === 'nh3_uf' || step.key === 'nh3_welding')}
-                                placeholder={step.key === 'pbgt' ? "Ref. 값 입력" : (step.key === 'nh3_uf' || step.key === 'nh3_welding') ? "No leak" : "값 (예: 250 mbar)"}
-                                value={currentStepData.value || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setStatusCreateFormData(prev => ({
-                                    ...prev,
-                                    tank_status: {
-                                      ...prev.tank_status,
-                                      [statusCreateTankTab]: {
-                                        ...prev.tank_status[statusCreateTankTab],
-                                        [step.key]: {
-                                          ...prev.tank_status[statusCreateTankTab][step.key],
-                                          value: val,
-                                        }
-                                      }
-                                    }
-                                  }));
-                                }}
-                                onBlur={(e) => {
-                                  if (isCurrentTankEnabled && (step.key === 'nh3_uf' || step.key === 'nh3_welding') && !e.currentTarget.value.trim()) {
+                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? (
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <select
+                                    aria-label="No Leak 선택"
+                                    disabled={!isCurrentTankEnabled}
+                                    value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? 'No Leak' : ''}
+                                    onChange={(e) => {
+                                      const selectedValue = e.target.value === 'No Leak' ? 'No Leak' : '';
+                                      setStatusCreateFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusCreateTankTab]: {
+                                            ...prev.tank_status[statusCreateTankTab],
+                                            [step.key]: { ...prev.tank_status[statusCreateTankTab][step.key], value: selectedValue },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="px-2 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                                  >
+                                    <option value="">Leak 수량 입력</option>
+                                    <option value="No Leak">No Leak</option>
+                                  </select>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    disabled={!isCurrentTankEnabled || String(currentStepData.value || '').trim().toLowerCase() === 'no leak'}
+                                    placeholder="Leak 수량"
+                                    value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? '' : String(currentStepData.value || '').replace(/\s*Leak$/i, '')}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setStatusCreateFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusCreateTankTab]: {
+                                            ...prev.tank_status[statusCreateTankTab],
+                                            [step.key]: { ...prev.tank_status[statusCreateTankTab][step.key], value: val },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="w-20 sm:w-24 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
+                                  />
+                                </div>
+                              ) : (
+                                <input
+                                  type="text"
+                                  placeholder={step.key === 'pbgt' ? "Ref. 값 입력" : "값 (예: 250 mbar)"}
+                                  value={currentStepData.value || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
                                     setStatusCreateFormData(prev => ({
                                       ...prev,
                                       tank_status: {
                                         ...prev.tank_status,
                                         [statusCreateTankTab]: {
                                           ...prev.tank_status[statusCreateTankTab],
-                                          [step.key]: { ...prev.tank_status[statusCreateTankTab][step.key], value: 'No leak' },
+                                          [step.key]: { ...prev.tank_status[statusCreateTankTab][step.key], value: val },
                                         },
                                       },
                                     }));
-                                  }
-                                }}
-                                className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                              />
+                                  }}
+                                  className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
+                                />
+                              )}
 
                               {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
@@ -3120,12 +3148,14 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                       if (String(step.key) === 'nh3') {
                         // NH3 상태는 기존 U/F와 Welding 완료 여부에 연동됩니다.
                         const currentTank = statusEditFormData.tank_status[statusModalTankTab];
-                        const isNh3Done = getTankStepStatus('nh3_uf', currentTank.nh3_uf) === '완료' && getTankStepStatus('nh3_welding', currentTank.nh3_welding) === '완료';
+                        const ufStatus = getTankStepStatus('nh3_uf', currentTank.nh3_uf);
+                        const weldingStatus = getTankStepStatus('nh3_welding', currentTank.nh3_welding);
+                        const nh3Status = ufStatus === '완료' && weldingStatus === '완료' ? '완료' : (ufStatus !== '대기' || weldingStatus !== '대기') ? '진행중' : '대기';
                         return (
                           <div key={step.key} className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-center justify-between">
                             <span className="font-bold text-sm text-amber-900">NH3 (Primary Barrier Tightness Test)</span>
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${isNh3Done ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
-                              {isNh3Done ? '완료' : '대기'}
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${nh3Status === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : nh3Status === '진행중' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-100 text-slate-500 border-slate-200'}`}>
+                              {nh3Status}
                             </span>
                           </div>
                         );
@@ -3233,43 +3263,74 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 </div>
                               )}
 
-                              <input
-                                type="text"
-                                disabled={!isCurrentTankEnabled && (step.key === 'nh3_uf' || step.key === 'nh3_welding')}
-                                placeholder={step.key === 'pbgt' ? "Ref. 값" : (step.key === 'nh3_uf' || step.key === 'nh3_welding') ? "No leak" : "값"}
-                                value={currentStepData.value || ''}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setStatusEditFormData(prev => ({
-                                    ...prev,
-                                    tank_status: {
-                                      ...prev.tank_status,
-                                      [statusModalTankTab]: {
-                                        ...prev.tank_status[statusModalTankTab],
-                                        [step.key]: {
-                                          ...prev.tank_status[statusModalTankTab][step.key],
-                                          value: val,
-                                        }
-                                      }
-                                    }
-                                  }));
-                                }}
-                                onBlur={(e) => {
-                                  if (isCurrentTankEnabled && (step.key === 'nh3_uf' || step.key === 'nh3_welding') && !e.currentTarget.value.trim()) {
+                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? (
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <select
+                                    aria-label="No Leak 선택"
+                                    disabled={!isCurrentTankEnabled}
+                                    value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? 'No Leak' : ''}
+                                    onChange={(e) => {
+                                      const selectedValue = e.target.value === 'No Leak' ? 'No Leak' : '';
+                                      setStatusEditFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusModalTankTab]: {
+                                            ...prev.tank_status[statusModalTankTab],
+                                            [step.key]: { ...prev.tank_status[statusModalTankTab][step.key], value: selectedValue },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="px-2 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                                  >
+                                    <option value="">Leak 수량 입력</option>
+                                    <option value="No Leak">No Leak</option>
+                                  </select>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="any"
+                                    disabled={!isCurrentTankEnabled || String(currentStepData.value || '').trim().toLowerCase() === 'no leak'}
+                                    placeholder="Leak 수량"
+                                    value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? '' : String(currentStepData.value || '').replace(/\s*Leak$/i, '')}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setStatusEditFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusModalTankTab]: {
+                                            ...prev.tank_status[statusModalTankTab],
+                                            [step.key]: { ...prev.tank_status[statusModalTankTab][step.key], value: val },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="w-20 sm:w-24 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
+                                  />
+                                </div>
+                              ) : (
+                                <input
+                                  type="text"
+                                  placeholder={step.key === 'pbgt' ? "Ref. 값" : "값"}
+                                  value={currentStepData.value || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
                                     setStatusEditFormData(prev => ({
                                       ...prev,
                                       tank_status: {
                                         ...prev.tank_status,
                                         [statusModalTankTab]: {
                                           ...prev.tank_status[statusModalTankTab],
-                                          [step.key]: { ...prev.tank_status[statusModalTankTab][step.key], value: 'No leak' },
+                                          [step.key]: { ...prev.tank_status[statusModalTankTab][step.key], value: val },
                                         },
                                       },
                                     }));
-                                  }
-                                }}
-                                className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                              />
+                                  }}
+                                  className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
+                                />
+                              )}
 
                               {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
