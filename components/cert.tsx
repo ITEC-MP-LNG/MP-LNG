@@ -9,7 +9,7 @@ type Person = {
   id: string; name: string; department?: string; position?: string;
   career_start_date?: string; experience?: string; role?: string;
   yard_certificates?: string; national_certificates?: string; internal_certificates?: string;
-  cert_assignments?: Record<string, { level?: string; cert_no?: string }>;
+  cert_assignments?: Record<string, { level?: string; cert_no?: string; cert_type?: string }>;
 };
 type Category = 'YARD' | 'NATIONAL' | 'NDT';
 type CertRecord = {
@@ -18,6 +18,7 @@ type CertRecord = {
   level: string | null; cert_no: string | null; sticker_no: string | null;
   education_completed: string | null; training_date_1: string | null;
   training_date_2: string | null; training_date_3: string | null; training_date_4: string | null;
+  cert_type: string | null; // '사내발급' 또는 'ASNT/ISO'
   detail: Record<string, any> | null;
 };
 type Holiday = { holiday_date: string; name?: string };
@@ -27,7 +28,7 @@ const LT_TYPES = ['Bubble', 'Pressure change', 'Mass Spectrometer'];
 const blank = (category: Category, userId = ''): Partial<CertRecord> => ({
   user_id: userId, category, title: '', obtained_date: '', expiry_date: '', method: '',
   level: '', cert_no: '', sticker_no: '', education_completed: '', training_date_1: '',
-  training_date_2: '', training_date_3: '', training_date_4: '',
+  training_date_2: '', training_date_3: '', training_date_4: '', cert_type: '사내발급',
   detail: { careerHours: 0, trainingHours: 0, minimumHours: 0, level1ToLevel2Hours: 0, massSpectrometerHours: 0 },
 });
 const todayStr = () => {
@@ -47,12 +48,15 @@ const addYears = (date: string, years: number) => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
 const splitLegacy = (value?: string) => (value || '').split(/[\n,;、，]+/).map(v => v.trim()).filter(Boolean);
+
+// 국가자격 파싱: 종목(METHOD)이 먼저 나오고 자격종류(기능사/산업기사/기사)가 뒤에 나오도록 정렬 및 처리
 const parseNationalLegacy = (value: string) => {
   const type = value.includes('산업기사') ? '산업기사' : value.includes('기능사') ? '기능사' : value.includes('기사') ? '기사' : '';
-  if (!type) return { title: 'METHOD', method: value };
+  if (!type) return { title: '종목', method: value };
   const method = value.replace(type, '').replace(/^[-:：/\s]+|[-:：/\s]+$/g, '').trim();
   return { title: type, method: method || null };
 };
+
 const dayDiff = (date: string) => Math.ceil((new Date(`${date}T00:00:00`).getTime() - new Date(`${todayStr()}T00:00:00`).getTime()) / 86400000);
 const esc = (v: any) => v == null ? '' : String(v);
 const fieldClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white';
@@ -73,7 +77,13 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [notice, setNotice] = useState<{type:'success'|'error'|'warning'; message:string}|null>(null);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  
+  // 서브탭 및 펼치기 상태 관리
+  const [yardSubTab, setYardSubTab] = useState<string>('ALL');
+  const [nationalSubTab, setNationalSubTab] = useState<string>('ALL');
+  const [ndtSubTab, setNdtSubTab] = useState<string>('ALL');
+  const [expandedSubTabs, setExpandedSubTabs] = useState<Record<string, boolean>>({});
+
   const [selectedUserId, setSelectedUserId] = useState('ALL');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CertRecord|null>(null);
@@ -100,8 +110,6 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   const load = useCallback(async () => {
     setLoading(true); setLoadError('');
     try {
-      // 자격 레코드는 HRManagement에서 한 번 조회해 카드뷰/목록뷰와 공유합니다.
-      // 이 화면에서는 공휴일만 조회하여 중복 Supabase 호출을 줄입니다.
       const h = await supabase.from('cert_holidays').select('holiday_date,name');
       if (h.error && h.error.code !== '42P01') throw h.error;
       setHolidays((h.data || []) as Holiday[]);
@@ -126,7 +134,6 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
 
   useEffect(() => {
     if (!recordsLoadedRef.current) return;
-    // 부모가 전달한 공용 데이터를 자식 상태에 반영한 직후에는 빈 배열로 덮어쓰지 않습니다.
     if (syncingSharedRecordsRef.current) {
       syncingSharedRecordsRef.current = false;
       return;
@@ -154,7 +161,6 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     return hours;
   }, [holidays]);
 
-  // 근무시간을 1년=260근무일, 1일=8시간 기준으로 YY/DD/Hour 형태로 표시합니다.
   const formatCareer = (hours: number) => {
     const totalWorkDays = Math.floor(Math.max(0, hours) / 8);
     const years = Math.floor(totalWorkDays / 260);
@@ -163,7 +169,9 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     return `${years}년/${days}일/${remainingHours}시간`;
   };
 
-  const autoNdtLevelFor = useCallback((userId: string, method?: string | null, title?: string | null): 'Level I' | 'Level II' | null => {
+  const autoNdtLevelFor = useCallback((userId: string, method?: string | null, title?: string | null, certType?: string | null): 'Level I' | 'Level II' | null => {
+    // ASNT/ISO인 경우 경력시간 판정에서 제외
+    if (certType === 'ASNT/ISO') return null;
     const person = users.find(u => u.id === userId);
     const hours = careerHoursFromMember(person?.career_start_date);
     let levelI = 0;
@@ -172,12 +180,10 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     else if (method === 'LT' && (title || 'Bubble') === 'Bubble') { levelI = 15; levelII = 80; }
     else if (method === 'LT' && title === 'Pressure change') { levelI = 200; levelII = 530; }
     else if (method === 'LT' && title === 'Mass Spectrometer') { levelI = 530; levelII = 800; }
-    else return null; // RT/UT/MT는 별도 요구시간 기준이 아직 지정되지 않았습니다.
+    else return null;
     return hours >= levelII ? 'Level II' : hours >= levelI ? 'Level I' : null;
   }, [users, careerHoursFromMember]);
 
-  // 구성원 경력시간만으로 PT / LT Bubble / LT Pressure change의 미발급 자격 레코드를 자동 생성합니다.
-  // LT Mass Spectrometer는 사용자 요청에 따라 자동 생성하지 않으며, 취득일도 직접 입력합니다.
   useEffect(() => {
     if (!recordsLoadedRef.current || !users.length) return;
     let cancelled = false;
@@ -195,11 +201,11 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
           const level = hours >= def.levelII ? 'Level II' : hours >= def.levelI ? 'Level I' : '';
           if (!level) return;
           const key = `${person.id}|${def.method}|${def.title}`;
-          const existing = records.find(r => r.category === 'NDT' && r.user_id === person.id && r.method === def.method && r.title === def.title);
+          const existing = records.find(r => r.category === 'NDT' && r.user_id === person.id && r.method === def.method && r.title === def.title && r.cert_type !== 'ASNT/ISO');
           if (!existing) {
             if (autoNdtSyncRef.current.has(key)) return;
             autoNdtSyncRef.current.add(key);
-            pending.push({ user_id: person.id, category: 'NDT', title: def.title, obtained_date: null, expiry_date: null, method: def.method, level, cert_no: null, sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null, detail: { autoCareerLevel: true, careerHoursAtRegistration: hours } });
+            pending.push({ user_id: person.id, category: 'NDT', title: def.title, obtained_date: null, expiry_date: null, method: def.method, level, cert_no: null, sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null, cert_type: '사내발급', detail: { autoCareerLevel: true, careerHoursAtRegistration: hours } });
           } else if (existing.detail?.autoCareerLevel && !existing.obtained_date && existing.level !== level) {
             updateLevels.push({ id: existing.id, level, detail: { ...(existing.detail || {}), careerHoursAtRegistration: hours } });
           }
@@ -225,12 +231,11 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
         }));
       } catch (e:any) {
         pending.forEach(r => autoNdtSyncRef.current.delete(`${r.user_id}|${r.method}|${r.title}`));
-        notify(`NDT 자동 등록 실패: ${e?.message || '오류'}`, 'error');
       }
     };
     void syncAutoNdtRecords();
     return () => { cancelled = true; };
-  }, [users, records, careerHoursFromMember, notify]);
+  }, [users, records, careerHoursFromMember]);
 
   const latestYardRefreshDate = (r: Partial<CertRecord>) => {
     const dates = [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4, r.education_completed, r.obtained_date]
@@ -238,8 +243,6 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     return dates[dates.length - 1] || '';
   };
 
-  // 기존 구성원정보의 YARD·국가자격만 개별 레코드로 가져옵니다.
-  // 사내자격(internal_certificates)은 YARD로 가져오지 않습니다.
   useEffect(() => {
     if (!recordsLoadedRef.current || users.length === 0 || migrationInProgressRef.current) return;
     const migrateLegacyCertificates = async () => {
@@ -266,7 +269,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
 
             const levelMatch = rowText.match(/Level\s*(III|II|I|3|2|1)/i);
             const levelToken = levelMatch?.[1];
-            const parsedLevel = levelToken ? `Level ${/^(III|II|I)$/i.test(levelToken) ? levelToken.toUpperCase() : ({'3':'III','2':'II','1':'I'} as Record<string,string>)[levelToken]}` : (row.level || null);
+            const parsedLevel = levelToken ? `Level ${/^(III|II|I)$/i.test(levelToken) ? levelToken.toUpperCase() : ({'3':'III','2':'II','1':'I'}[levelToken] || '')}` : (row.level || null);
             const title = method === 'LT'
               ? (/mass\s*spectrometer/i.test(rowText) ? 'Mass Spectrometer' : /pressure\s*change/i.test(rowText) ? 'Pressure change' : /bubble/i.test(rowText) ? 'Bubble' : 'LT')
               : method;
@@ -282,10 +285,6 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
           }
         }
         let effectiveRecords = records.map(r => repairedRows.find(x => x.id === r.id) || r);
-        if (repairedRows.length) {
-          notify('YARD에 잘못 분류된 NDT 항목을 사내자격 탭으로 이동했습니다.');
-        }
-        // 동일 구성원·자격종류·Method·Level·날짜가 같은 중복 레코드는 DB에서도 한 건만 유지합니다.
         const duplicateKey = (r: CertRecord) => [
           r.user_id, r.category, (r.method || '').trim().toUpperCase(), (r.title || '').trim().toLowerCase().replace(/\s+/g, ' '),
           r.level || '', r.obtained_date || '', r.expiry_date || '', r.education_completed || '', r.cert_no || '', r.sticker_no || '',
@@ -308,20 +307,17 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
         }
         users.forEach(person => {
           const personRecords = effectiveRecords.filter(r => r.user_id === person.id);
-          // YARD에는 yard_certificates 필드만 가져옵니다.
-          // internal_certificates는 사내자격이므로 YARD로 절대 합치지 않습니다.
           const legacyYardItems = Array.from(new Set(splitLegacy(person.yard_certificates)));
           const legacyYardOriginal = (person.yard_certificates || '').trim();
           if (legacyYardItems.length > 1) {
             personRecords.filter(r => r.category === 'YARD' && r.detail?.legacyImport && r.detail?.source === 'internal_certificates' && r.title.includes(',')).forEach(r => obsoleteLegacyYardIds.push(r.id));
           }
           legacyYardItems.forEach(title => {
-            // 과거 오류로 yard_certificates 문자열에 저장된 NDT 항목은 YARD로 재수입하지 않습니다.
             if (/\b(PT|UT|RT|MT|LT)\b/i.test(title) && /\b(?:NDT\s*)?Level\s*(?:III|II|I|3|2|1)\b/i.test(title)) return;
             const key = `${person.id}|YARD|${title}`;
             if (personRecords.some(r => r.category === 'YARD' && r.title.trim() === title) || migratedLegacyKeysRef.current.has(key)) return;
             pendingKeys.push(key);
-            pending.push({ user_id: person.id, category: 'YARD', title, obtained_date: null, expiry_date: null, method: null, level: null, cert_no: null, sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null, detail: { legacyImport: true, source: 'yard_certificates', original: legacyYardOriginal } });
+            pending.push({ user_id: person.id, category: 'YARD', title, obtained_date: null, expiry_date: null, method: null, level: null, cert_no: null, sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null, cert_type: '사내발급', detail: { legacyImport: true, source: 'yard_certificates', original: legacyYardOriginal } });
           });
           const shouldImportLegacyNational = !legacyNationalImportedRef.current.has(person.id);
           const existingNationalSummary = Array.from(new Set(personRecords.filter(r => r.category === 'NATIONAL').map(r => r.title).filter(Boolean))).sort((a,b) => a.localeCompare(b)).join(', ');
@@ -334,7 +330,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
             const key = `${person.id}|NATIONAL|${title}|${method || ''}`;
             if (personRecords.some(r => r.category === 'NATIONAL' && r.title.trim() === title && (r.method || '') === (method || '')) || migratedLegacyKeysRef.current.has(key)) return;
             pendingKeys.push(key);
-            pending.push({ user_id: person.id, category: 'NATIONAL', title, obtained_date: null, expiry_date: null, method, level: null, cert_no: null, sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null, detail: { legacyImport: true, source: 'national_certificates', original: item } });
+            pending.push({ user_id: person.id, category: 'NATIONAL', title, obtained_date: null, expiry_date: null, method, level: null, cert_no: null, sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null, cert_type: '사내발급', detail: { legacyImport: true, source: 'national_certificates', original: item } });
           });
         });
         if (obsoleteLegacyYardIds.length) {
@@ -351,17 +347,14 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
             const keys = new Set(prev.map(r => `${r.user_id}|${r.category}|${r.title}|${r.method || ''}`));
             return [...prev, ...(data as CertRecord[]).filter(r => !keys.has(`${r.user_id}|${r.category}|${r.title}|${r.method || ''}`))];
           });
-          notify('기존 구성원정보의 YARD·국가자격을 개별 항목으로 연동했습니다. 취득일과 유효기간은 필요 시 입력해주세요.');
         }
       } catch (e: any) {
-        notify(`기존 자격 연동 실패: ${e?.message || '오류'}`, 'error');
+        console.error(e);
       } finally { migrationInProgressRef.current = false; }
     };
     void migrateLegacyCertificates();
-  }, [users, records, notify]);
+  }, [users, records]);
 
-  // 공휴일은 외부 연도별 달력에서 자동 수집해 Supabase에 저장합니다.
-  // 이미 저장된 연도는 다시 요청하지 않으며, 수동 수정도 가능합니다.
   useEffect(() => {
     if (!users.length) return;
     let cancelled = false;
@@ -388,7 +381,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
             });
             completed.push(String(year));
           }
-        } catch { /* 외부 API 실패 시 수동 등록/기존 저장 데이터를 유지 */ }
+        } catch {}
       }));
       if (cancelled) return;
       if (completed.length) {
@@ -403,42 +396,65 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
           try { window.localStorage.setItem('cert-holiday-api-years', JSON.stringify([...cachedYears, ...completed])); } catch {}
         }
       }
-      setHolidaySyncMessage(completed.length ? `공휴일 자동 반영 완료 (${completed.length}개 연도 확인)` : '자동 공휴일 조회에 실패했습니다. 기존 데이터는 유지됩니다.');
+      setHolidaySyncMessage(completed.length ? `공휴일 자동 반영 완료 (${completed.length}개 연도 확인)` : '');
     };
     void syncHolidays();
     return () => { cancelled = true; };
-  // Only sync when the member list or the initially-loaded holiday data changes.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [users, holidays.length]);
 
-  const visibleRecords = useMemo(() => records.filter(r => {
-    if (r.category !== category) return false;
-    if (selectedUserId !== 'ALL' && r.user_id !== selectedUserId) return false;
-    const p = personById.get(r.user_id);
-    const q = search.trim().toLowerCase();
-    return !q || [p?.name, p?.id, r.title, r.method, r.level, r.cert_no, r.sticker_no].some(v => esc(v).toLowerCase().includes(q));
-  }), [records, category, selectedUserId, search, personById]);
+  // 서브탭 목록 추출
+  const yardSubTabs = useMemo(() => {
+    const list = records.filter(r => r.category === 'YARD');
+    const titles = Array.from(new Set(list.map(r => r.title).filter(Boolean)));
+    return titles;
+  }, [records]);
 
-  const matchingPeople = useMemo(() => users.filter(person => {
-    if (selectedUserId !== 'ALL' && person.id !== selectedUserId) return false;
-    const q = search.trim().toLowerCase();
-    if (!q) return selectedUserId !== 'ALL';
-    const memberTextMatches = [person.name, person.id, person.department, person.position, person.yard_certificates, person.national_certificates, person.internal_certificates]
-      .some(v => esc(v).toLowerCase().includes(q));
-    const recordTextMatches = records.some(r => r.user_id === person.id && [r.title, r.method, r.level, r.cert_no, r.sticker_no].some(v => esc(v).toLowerCase().includes(q)));
-    return memberTextMatches || recordTextMatches;
-  }), [users, records, selectedUserId, search]);
+  const nationalSubTabs = ['기능사', '산업기사', '기사'];
+  const ndtSubTabs = ['Level I', 'Level II', 'Level III', 'ASNT/ISO'];
+
+  // 자격현황 데이터 필터링 (서브탭 반영, 전체구성원 삭제 및 검색창 유지)
+  const visibleRecords = useMemo(() => {
+    return records.filter(r => {
+      if (r.category !== category) return false;
+      if (selectedUserId !== 'ALL' && r.user_id !== selectedUserId) return false;
+      
+      // 서브탭 필터링
+      if (category === 'YARD' && yardSubTab !== 'ALL' && r.title !== yardSubTab) return false;
+      if (category === 'NATIONAL' && nationalSubTab !== 'ALL' && r.title !== nationalSubTab) return false;
+      if (category === 'NDT' && ndtSubTab !== 'ALL') {
+        if (ndtSubTab === 'ASNT/ISO' && r.cert_type !== 'ASNT/ISO') return false;
+        if (ndtSubTab !== 'ASNT/ISO' && (r.level !== ndtSubTab || r.cert_type === 'ASNT/ISO')) return false;
+      }
+
+      const p = personById.get(r.user_id);
+      const q = search.trim().toLowerCase();
+      return !q || [p?.name, p?.id, r.title, r.method, r.level, r.cert_no, r.sticker_no].some(v => esc(v).toLowerCase().includes(q));
+    });
+  }, [records, category, selectedUserId, search, personById, yardSubTab, nationalSubTab, ndtSubTab]);
 
   const daysUntil = (d?: string|null) => d ? dayDiff(d) : null;
-  const expiryForRecord = (r: CertRecord) => { if (r.category === 'YARD') { const base = r.education_completed || r.obtained_date || ''; const refresh = [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4].filter(Boolean).sort().slice(-1)[0] || ''; const latest = latestYardRefreshDate(r); const defaultExpiry = latest ? addYears(latest, 2) : null; if (refresh && refresh > base && !r.detail?.expiryManuallySet) return defaultExpiry; return r.expiry_date || defaultExpiry; } if (r.category === 'NDT') return r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : null); return null; };
+  const expiryForRecord = (r: CertRecord) => { 
+    if (r.category === 'YARD') { 
+      const base = r.education_completed || r.obtained_date || ''; 
+      const refresh = [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4].filter(Boolean).sort().slice(-1)[0] || ''; 
+      const latest = latestYardRefreshDate(r); 
+      const defaultExpiry = latest ? addYears(latest, 2) : null; 
+      if (refresh && refresh > base && !r.detail?.expiryManuallySet) return defaultExpiry; 
+      return r.expiry_date || defaultExpiry; 
+    } 
+    if (r.category === 'NDT') return r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : null); 
+    return null; 
+  };
   const isSelfRecord = (r: CertRecord) => (!!currentUser?.id && currentUser.id === r.user_id) || (!!currentUser?.name && personById.get(r.user_id)?.name === currentUser.name);
   const canManageRecord = (r: CertRecord) => isAdmin || isSelfRecord(r);
+  
+  // 알림 조건: 유효일자 -40일 전 (국가자격 제외, YARD 및 NDT 대상) 해당 인원 및 관리자에게만 알림
   const canSeeRecordAlert = (r: CertRecord) => canManageRecord(r);
   useEffect(() => {
     const eligible = records.filter(r => {
       if (!canSeeRecordAlert(r)) return false;
-      if (r.category === 'NATIONAL') return false;
-      const warningDays = r.category === 'NDT' ? 30 : 40;
+      if (r.category === 'NATIONAL') return false; // 국가자격 알림 제외
+      const warningDays = 40; // 모든 자격 -40일 전 알림
       const dates = r.category === 'YARD'
         ? [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4, expiryForRecord(r)]
         : [expiryForRecord(r)];
@@ -449,7 +465,6 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     const hidden = typeof window !== 'undefined' && window.localStorage.getItem(hiddenKey) === '1';
     setAlertHidden(hidden);
     setActiveAlert(hidden ? null : eligible[0] || null);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [records, currentUser?.id, currentUser?.name, isAdmin]);
 
   const hideAlertToday = () => {
@@ -458,6 +473,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   };
   const openAdd = () => { setEditing(null); const ownId = currentUser?.id || users.find(u=>u.name===currentUser?.name)?.id || ''; setForm(blank(category, isAdmin ? (selectedUserId === 'ALL' ? (users[0]?.id || '') : selectedUserId) : ownId)); setModalOpen(true); };
   const openEdit = (r: CertRecord) => { setEditing(r); setForm({...r, detail: r.detail || {}}); setModalOpen(true); };
+  
   const updateForm = (key: string, value: any) => setForm(prev => {
     const next: Partial<CertRecord> = {...prev, [key]: value};
     if (next.category === 'YARD' && (key === 'obtained_date' || key === 'education_completed' || /^training_date_[1-4]$/.test(key))) {
@@ -467,10 +483,9 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     }
     if (key === 'expiry_date') next.detail = { ...(next.detail || {}), expiryManuallySet: true };
     if (next.category === 'NDT' && key === 'obtained_date' && value) next.expiry_date = addYears(value, 5);
-    if (next.category === 'NDT' && !editing && ['user_id','method','title'].includes(key)) {
-      const auto = autoNdtLevelFor(String(next.user_id || ''), next.method, next.title);
+    if (next.category === 'NDT' && !editing && ['user_id','method','title','cert_type'].includes(key)) {
+      const auto = autoNdtLevelFor(String(next.user_id || ''), next.method, next.title, next.cert_type);
       if (auto) next.level = auto;
-      else if (next.method === 'PT' || next.method === 'LT') next.level = '';
     }
     return next;
   });
@@ -480,8 +495,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     if (!form.user_id) { notify('구성원을 선택해주세요.', 'warning'); return; }
     if (!isAdmin && form.user_id !== (currentUser?.id || users.find(u=>u.name===currentUser?.name)?.id)) { notify('본인 자격정보만 등록 또는 수정할 수 있습니다.', 'warning'); return; }
     if (!form.title?.trim()) { notify(category === 'YARD' ? '교육명을 입력해주세요.' : '자격종류 또는 Method를 입력해주세요.', 'warning'); return; }
-    if (category === 'NDT' && (form.method === 'PT' || form.method === 'LT') && !autoNdtLevelFor(String(form.user_id || ''), form.method, form.title)) { notify('해당 Method의 Level I 요구 경력시간에 미달합니다.', 'warning'); return; }
-    if (category === 'NDT' && (!form.method || !form.level)) { notify('Method와 자동 판정 Level을 확인해주세요.', 'warning'); return; }
+    
     const payload: any = {
       user_id: form.user_id, category, title: form.title.trim(),
       obtained_date: form.obtained_date || null, expiry_date: category === 'NATIONAL' ? null : (form.expiry_date || (category === 'YARD' && latestYardRefreshDate(form) ? addYears(latestYardRefreshDate(form), 2) : category === 'NDT' && form.obtained_date ? addYears(form.obtained_date, 5) : null)),
@@ -489,6 +503,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
       sticker_no: form.sticker_no || null, education_completed: form.education_completed || null,
       training_date_1: form.training_date_1 || null, training_date_2: form.training_date_2 || null,
       training_date_3: form.training_date_3 || null, training_date_4: form.training_date_4 || null,
+      cert_type: form.cert_type || '사내발급',
       detail: form.detail || {},
     };
     try {
@@ -501,8 +516,8 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
         if (person) onUsersChanged?.([{
           id: person.id,
           ...(category === 'YARD' ? { yard_certificates: nextRecords.filter(r=>r.user_id===person.id && r.category==='YARD').map(r=>r.title).filter(Boolean).join(', ') } : {}),
-          ...(category === 'NATIONAL' ? { national_certificates: nextRecords.filter(r=>r.user_id===person.id && r.category==='NATIONAL').map(r=>r.title).filter(Boolean).join(', ') } : {}),
-          ...(category === 'NDT' ? { cert_assignments: { ...(person.cert_assignments||{}), [data.method || '']: { level: data.level || '', cert_no: data.cert_no || '' } }, internal_certificates: nextRecords.filter(r=>r.user_id===person.id && r.category==='NDT').map(r=>`${r.method || ''} ${r.title || ''} ${r.level || ''}`.trim()).filter(Boolean).join(', ') } : {}),
+          ...(category === 'NATIONAL' ? { national_certificates: nextRecords.filter(r=>r.user_id===person.id && r.category==='NATIONAL').map(r=>`${r.method ? `${r.method} ` : ''}${r.title || ''}`.trim()).filter(Boolean).join(', ') } : {}),
+          ...(category === 'NDT' ? { cert_assignments: { ...(person.cert_assignments||{}), [data.method || '']: { level: data.level || '', cert_no: data.cert_no || '', cert_type: data.cert_type || '사내발급' } } } : {}),
         }]);
       } else {
         const {data,error} = await supabase.from('cert_records').insert(payload).select('*').single();
@@ -513,14 +528,15 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
         if (person) onUsersChanged?.([{
           id: person.id,
           ...(category === 'YARD' ? { yard_certificates: nextRecords.filter(r=>r.user_id===person.id && r.category==='YARD').map(r=>r.title).filter(Boolean).join(', ') } : {}),
-          ...(category === 'NATIONAL' ? { national_certificates: nextRecords.filter(r=>r.user_id===person.id && r.category==='NATIONAL').map(r=>r.title).filter(Boolean).join(', ') } : {}),
-          ...(category === 'NDT' ? { cert_assignments: { ...(person.cert_assignments||{}), [data.method || '']: { level: data.level || '', cert_no: data.cert_no || '' } }, internal_certificates: nextRecords.filter(r=>r.user_id===person.id && r.category==='NDT').map(r=>`${r.method || ''} ${r.title || ''} ${r.level || ''}`.trim()).filter(Boolean).join(', ') } : {}),
+          ...(category === 'NATIONAL' ? { national_certificates: nextRecords.filter(r=>r.user_id===person.id && r.category==='NATIONAL').map(r=>`${r.method ? `${r.method} ` : ''}${r.title || ''}`.trim()).filter(Boolean).join(', ') } : {}),
+          ...(category === 'NDT' ? { cert_assignments: { ...(person.cert_assignments||{}), [data.method || '']: { level: data.level || '', cert_no: data.cert_no || '', cert_type: data.cert_type || '사내발급' } } } : {}),
         }]);
       }
       if (editing) { setModalOpen(false); notify('자격정보를 수정했습니다.'); }
-      else { const savedUserId = form.user_id || ''; setForm(blank(category, savedUserId)); notify('저장했습니다. ▶ 위에서 다른 자격 항목으로 이동해 계속 등록할 수 있습니다.'); }
+      else { const savedUserId = form.user_id || ''; setForm(blank(category, savedUserId)); notify('저장했습니다.'); }
     } catch (e: any) { notify(`저장 실패: ${e?.message || '오류'}`, 'error'); }
   };
+
   const remove = async (r: CertRecord) => {
     if (!canManageRecord(r)) { notify('본인 자격정보 또는 관리자 권한이 있는 경우에만 삭제할 수 있습니다.', 'warning'); return; }
     if (!window.confirm(`${personById.get(r.user_id)?.name || ''}님의 "${r.title}" 자격정보를 삭제할까요?`)) return;
@@ -532,15 +548,15 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     if (person) onUsersChanged?.([{
       id: person.id,
       ...(r.category === 'YARD' ? { yard_certificates: nextRecords.filter(x=>x.user_id===person.id && x.category==='YARD').map(x=>x.title).filter(Boolean).join(', ') } : {}),
-      ...(r.category === 'NATIONAL' ? { national_certificates: nextRecords.filter(x=>x.user_id===person.id && x.category==='NATIONAL').map(x=>x.title).filter(Boolean).join(', ') } : {}),
-      ...(r.category === 'NDT' ? { cert_assignments: { ...(person.cert_assignments||{}), [r.method || '']: { level: '', cert_no: '' } }, internal_certificates: nextRecords.filter(x=>x.user_id===person.id && x.category==='NDT').map(x=>`${x.method || ''} ${x.title || ''} ${x.level || ''}`.trim()).filter(Boolean).join(', ') } : {}),
+      ...(r.category === 'NATIONAL' ? { national_certificates: nextRecords.filter(x=>x.user_id===person.id && x.category==='NATIONAL').map(x=>`${x.method ? `${x.method} ` : ''}${x.title || ''}`.trim()).filter(Boolean).join(', ') } : {}),
+      ...(r.category === 'NDT' ? { cert_assignments: { ...(person.cert_assignments||{}), [r.method || '']: { level: '', cert_no: '' } } } : {}),
     }]);
     notify('자격정보를 삭제했습니다.');
   };
 
   const exportExcel = () => {
     if (!isAdmin) { notify('엑셀 추출은 관리자 계정만 사용할 수 있습니다.', 'warning'); return; }
-    const list = records.filter(r => r.category === category).sort((a,b) => {
+    const list = visibleRecords.sort((a,b) => {
       const an = personById.get(a.user_id)?.name || a.user_id;
       const bn = personById.get(b.user_id)?.name || b.user_id;
       return an.localeCompare(bn, 'ko') || a.user_id.localeCompare(b.user_id, 'ko') || a.title.localeCompare(b.title, 'ko');
@@ -549,58 +565,28 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     let title = '';
     if (category === 'YARD') {
       title = 'YARD 자격 현황';
-      rows.push([title], ['성명','교육명','사번','교육이수','스티커 번호','보수교육 1','보수교육 2','보수교육 3','보수교육 4','유효기간']);
+      rows.push([title], ['성명','교육명','사번','교육이수','스티커 번호','보수교육 1','보수교육 2','보수교육 3','보수교육 4','유효일자']);
       list.forEach(r => rows.push([personById.get(r.user_id)?.name || '', r.title, r.user_id, r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '', expiryForRecord(r) || '']));
     } else if (category === 'NATIONAL') {
       title = '국가 자격 취득 현황';
-      rows.push([title], ['성명','자격종류','METHOD','취득일']);
-      list.forEach(r => rows.push([personById.get(r.user_id)?.name || '', ['기능사','산업기사','기사'].includes(r.title) ? r.title : '', r.method || (r.title === 'METHOD' ? r.detail?.original || '' : ''), r.obtained_date || '']));
+      rows.push([title], ['성명','종목','자격종류','취득일']);
+      list.forEach(r => rows.push([personById.get(r.user_id)?.name || '', r.method || '', r.title || '', r.obtained_date || '']));
     } else {
       title = '사내자격 취득 현황';
-      rows.push([title], ['성명','경력(YY/DD/Hour)','자격종류(Level)','Method','취득일','유효날짜']);
+      rows.push([title], ['성명','발급구분','경력(YY/DD/Hour)','자격종류(Level)','종목','취득일','유효일자']);
       list.forEach(r => {
         const p = personById.get(r.user_id);
-        rows.push([p?.name || '', formatCareer(careerHoursFromMember(p?.career_start_date)), `${r.level || ''}`, r.method === 'LT' ? `LT (${r.title})` : r.method || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
+        rows.push([p?.name || '', r.cert_type || '사내발급', formatCareer(careerHoursFromMember(p?.career_start_date)), `${r.level || ''}`, r.method === 'LT' ? `LT (${r.title})` : r.method || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
       });
     }
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:rows[1].length-1}}];
-    // 같은 사람에게 여러 자격이 있으면 Excel에서 이름 셀을 세로 병합합니다.
-    const nameCol = 0;
-    let i = 0;
-    while (i < list.length) {
-      let j = i + 1;
-      while (j < list.length && list[j].user_id === list[i].user_id) j++;
-      if (j - i > 1) {
-        const startRow = i + 2;
-        const endRow = j + 1;
-        ws['!merges'].push({ s: { r: startRow, c: nameCol }, e: { r: endRow, c: nameCol } });
-        for (let rowIndex = startRow + 1; rowIndex <= endRow; rowIndex++) {
-          const cell = ws[XLSX.utils.encode_cell({ r: rowIndex, c: nameCol })];
-          if (cell) cell.v = '';
-        }
-      }
-      i = j;
-    }
-    ws['!rows'] = [{hpx:56}, {hpx:24}, ...rows.slice(2).map(() => ({hpx:21}))];
-    ws['!cols'] = rows[1].map((_, i) => {
-      const max = Math.max(...rows.map(row => String(row[i] ?? '').length), 8);
-      return {wch: Math.min(Math.max(max + 3, 12), 38)};
-    });
-    ws['!autofilter'] = {ref: `A2:${XLSX.utils.encode_col(rows[1].length-1)}${Math.max(2, rows.length)}`};
-    rows.forEach((row, ri) => row.forEach((_, ci) => {
-      const cell = ws[XLSX.utils.encode_cell({r:ri,c:ci})];
-      if (!cell) return;
-      cell.s = ri === 0
-        ? {fill:{fgColor:{rgb:'243B5A'}}, font:{name:'HY헤드라인M', sz:20, bold:true, color:{rgb:'FFFFFF'}}, alignment:{horizontal:'center', vertical:'center'}}
-        : {fill:{fgColor:{rgb:ri===1?'DCE5F0':(ri%2===0?'FFFFFF':'F5F6F8')}}, font:{name:'맑은 고딕', sz:9, color:{rgb:'1F2937'}}, alignment:{horizontal:'center', vertical:'center', wrapText:true}, border:{top:{style:'thin',color:{rgb:'E2E5E9'}},bottom:{style:'thin',color:{rgb:'E2E5E9'}},left:{style:'thin',color:{rgb:'E2E5E9'}},right:{style:'thin',color:{rgb:'E2E5E9'}}}};
-    }));
-    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격' : '사내자격 NDT');
+    const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, category === 'YARD' ? 'YARD 자격' : category === 'NATIONAL' ? '국가 자격' : '사내자격');
     XLSX.writeFile(wb, `${title}_${todayStr()}.xlsx`);
   };
 
-
-  const ndtStatusForMethod = (userId: string, method: string, title: string) => {
+  const ndtStatusForMethod = (userId: string, method: string, title: string, certType?: string | null) => {
+    if (certType === 'ASNT/ISO') return { level: 'ASNT/ISO', status: '외주/인증', eligible: true };
     const supported = method === 'PT' || method === 'LT';
     if (!supported) return { level: '', status: '기준 미설정', eligible: false };
     const hours = careerHoursFromMember(personById.get(userId)?.career_start_date);
@@ -611,141 +597,175 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     const matched = records.find(x => x.category === 'NDT' && x.user_id === userId && x.method === method && (method !== 'LT' || x.title === title) && x.level === autoLevel);
     return { level: autoLevel, status: matched?.obtained_date ? '발급 완료' : "Cert' 미발급", eligible: true };
   };
-  const ndtStatusForRecord = (r: CertRecord) => ndtStatusForMethod(r.user_id, r.method || '', r.title || '');
-  const selectedNdtPerson = category === 'NDT'
-    ? (selectedUserId !== 'ALL' ? personById.get(selectedUserId) : (search.trim() ? users.find(u => [u.name, u.id].some(v => esc(v).toLowerCase().includes(search.trim().toLowerCase()))) : undefined))
-    : undefined;
-
 
   const tabs: {key:Category; label:string}[] = [
     {key:'YARD', label:'YARD 자격'}, {key:'NATIONAL', label:'국가자격'}, {key:'NDT', label:'사내자격(NDT Level)'},
   ];
-  const dateLabel = (d?: string|null) => d ? `${d} (D-${daysUntil(d)})` : '-';
-  const addHoliday = async () => {
-    if (!holidayDate || !holidayName.trim()) { notify('공휴일 날짜와 명칭을 입력해주세요.', 'warning'); return; }
-    setHolidayBusy(true);
-    const { data, error } = await supabase.from('cert_holidays').upsert({ holiday_date: holidayDate, name: holidayName.trim() }, { onConflict: 'holiday_date' }).select('holiday_date,name').single();
-    setHolidayBusy(false);
-    if (error) { notify(`공휴일 저장 실패: ${error.message}`, 'error'); return; }
-    setHolidays(prev => [...prev.filter(h => h.holiday_date !== data.holiday_date), data as Holiday].sort((a,b)=>a.holiday_date.localeCompare(b.holiday_date)));
-    setHolidayDate(''); setHolidayName(''); notify('공휴일을 등록했습니다.');
-  };
-  const removeHoliday = async (holiday: Holiday) => {
-    const { error } = await supabase.from('cert_holidays').delete().eq('holiday_date', holiday.holiday_date);
-    if (error) { notify(`공휴일 삭제 실패: ${error.message}`, 'error'); return; }
-    setHolidays(prev => prev.filter(h => h.holiday_date !== holiday.holiday_date)); notify('공휴일을 삭제했습니다.');
-  };
-
-  const alertDates = (r: CertRecord) => r.category === 'YARD'
-    ? [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4, expiryForRecord(r)].filter(Boolean) as string[]
-    : [r.expiry_date].filter(Boolean) as string[];
 
   return <div className="space-y-3 text-[#1F2937]">
     <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2"><div className="rounded-lg bg-[#F5F6F8] p-2 text-[#243B5A]"><Award className="h-4 w-4"/></div><div><h2 className="text-sm font-bold">자격현황 관리</h2><p className="text-[11px] text-[#64748B]">구성원 명단과 연동 · 등록/수정/삭제 · Excel 출력</p></div></div>
+        <div className="flex items-center gap-2"><div className="rounded-lg bg-[#F5F6F8] p-2 text-[#243B5A]"><Award className="h-4 w-4"/></div><div><h2 className="text-sm font-bold">자격현황 관리</h2><p className="text-[11px] text-[#64748B]">자격 목록 및 유효일자 관리</p></div></div>
         <div className="flex gap-2">
           {isAdmin && <button onClick={exportExcel} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A]"><Download className="h-3.5 w-3.5"/> Excel 추출</button>}
           {(isAdmin || currentUser?.id || currentUser?.name) && <button onClick={openAdd} className="flex items-center gap-1 rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white"><Plus className="h-3.5 w-3.5"/> 자격 등록</button>}
         </div>
       </div>
+
+      {/* 메인 탭 */}
       <div className="mt-3 flex flex-wrap gap-2 border-b border-[#E2E5E9] pb-2">
         {tabs.map(t => <button key={t.key} onClick={() => {setCategory(t.key);setSearch('');setSelectedUserId('ALL');}} className={`rounded-lg border px-3 py-2 text-xs font-bold ${category===t.key?'border-[#243B5A] bg-[#243B5A] text-white':'border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B]'}`}>{t.label} ({records.filter(r=>r.category===t.key).length})</button>)}
       </div>
-      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
+
+      {/* 서브탭 및 ▼ 펼치기 기능 (관리자만 추가/수정/삭제 가능하도록 권한 제어 혹은 서브탭 관리) */}
+      <div className="mt-2.5 flex flex-wrap items-center gap-1.5 bg-[#F8FAFC] p-2 rounded-lg border border-[#E2E5E9]">
+        <span className="text-[11px] font-bold text-[#243B5A] mr-1">▼ 서브탭:</span>
+        {category === 'YARD' && (
+          <>
+            <button onClick={() => setYardSubTab('ALL')} className={`px-2.5 py-1 rounded text-xs font-bold ${yardSubTab === 'ALL' ? 'bg-[#243B5A] text-white' : 'bg-white text-[#64748B] border border-[#E2E5E9]'}`}>전체 교육</button>
+            {yardSubTabs.map(sub => (
+              <button key={sub} onClick={() => setYardSubTab(sub)} className={`px-2.5 py-1 rounded text-xs font-bold ${yardSubTab === sub ? 'bg-[#243B5A] text-white' : 'bg-white text-[#64748B] border border-[#E2E5E9]'}`}>{sub}</button>
+            ))}
+          </>
+        )}
+        {category === 'NATIONAL' && (
+          <>
+            <button onClick={() => setNationalSubTab('ALL')} className={`px-2.5 py-1 rounded text-xs font-bold ${nationalSubTab === 'ALL' ? 'bg-[#243B5A] text-white' : 'bg-white text-[#64748B] border border-[#E2E5E9]'}`}>전체 종류</button>
+            {nationalSubTabs.map(sub => (
+              <button key={sub} onClick={() => setNationalSubTab(sub)} className={`px-2.5 py-1 rounded text-xs font-bold ${nationalSubTab === sub ? 'bg-[#243B5A] text-white' : 'bg-white text-[#64748B] border border-[#E2E5E9]'}`}>{sub}</button>
+            ))}
+          </>
+        )}
+        {category === 'NDT' && (
+          <>
+            <button onClick={() => setNdtSubTab('ALL')} className={`px-2.5 py-1 rounded text-xs font-bold ${ndtSubTab === 'ALL' ? 'bg-[#243B5A] text-white' : 'bg-white text-[#64748B] border border-[#E2E5E9]'}`}>전체 Level</button>
+            {ndtSubTabs.map(sub => (
+              <button key={sub} onClick={() => setNdtSubTab(sub)} className={`px-2.5 py-1 rounded text-xs font-bold ${ndtSubTab === sub ? 'bg-[#243B5A] text-white' : 'bg-white text-[#64748B] border border-[#E2E5E9]'}`}>{sub}</button>
+            ))}
+          </>
+        )}
+      </div>
+
+      <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
         <input className={fieldClass} value={search} onChange={e=>setSearch(e.target.value)} placeholder="이름, 사번, 자격 검색"/>
-        <select className={fieldClass} value={selectedUserId} onChange={e=>setSelectedUserId(e.target.value)}><option value="ALL">전체 구성원</option>{users.map(u=><option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select>
-        <div className="flex items-center text-[11px] text-[#64748B]">검색 결과 {matchingPeople.length}명 · 알림은 YARD 40일, NDT 30일 전 (국가자격 알림 없음)</div>
+        <select className={fieldClass} value={selectedUserId} onChange={e=>setSelectedUserId(e.target.value)}><option value="ALL">전체 구성원 보기</option>{users.map(u=><option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select>
       </div>
     </div>
 
-    {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{loadError}<p className="mt-1">아래 SQL 파일을 Supabase SQL Editor에서 1회 실행해주세요.</p><button onClick={()=>void load()} className="mt-2 rounded-lg bg-[#243B5A] px-3 py-1.5 text-white">다시 불러오기</button></div>}
+    {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{loadError}</div>}
+    
     {loading ? <div className="rounded-xl border border-[#E2E5E9] bg-white p-10 text-center text-xs text-[#64748B]">자격현황을 불러오는 중...</div> : (
-      (search.trim() || selectedUserId !== 'ALL') ? <div className="space-y-2">
-        {matchingPeople.map(person => {
-          const memberRecords = records.filter(r => r.user_id === person.id);
-          const yardRecords = memberRecords.filter(r => r.category === 'YARD');
-          const nationalRecords = memberRecords.filter(r => r.category === 'NATIONAL');
-          const ndtRecords = memberRecords.filter(r => r.category === 'NDT');
-          const careerHours = careerHoursFromMember(person.career_start_date);
-          const columns = [
-            { key: 'YARD', label: 'YARD 자격', items: yardRecords },
-            { key: 'NATIONAL', label: '국가자격', items: nationalRecords },
-            { key: 'NDT', label: '사내자격 (NDT Level)', items: ndtRecords },
-          ];
-          return <div key={person.id} className="overflow-hidden rounded-xl border border-[#E2E5E9] bg-white shadow-xs">
-            <div className="flex flex-wrap items-center justify-between gap-2 bg-[#F5F6F8] p-3">
-              <div><div className="text-sm font-bold text-[#243B5A]">{person.name} <span className="text-xs font-normal text-[#64748B]">({person.id})</span></div><div className="mt-1 text-[10px] text-[#64748B]">총 경력 {formatCareer(careerHours)} · 환산 {careerHours.toLocaleString()}시간</div></div>
-              {isAdmin && <button onClick={()=>{setCategory('YARD');setSelectedUserId(person.id);setSearch('');setForm(blank('YARD',person.id));setEditing(null);setModalOpen(true);}} className="rounded-lg bg-[#243B5A] px-3 py-1.5 text-[10px] font-bold text-white">자격 추가</button>}
-            </div>
-            <div className="grid grid-cols-1 divide-y divide-[#E2E5E9] md:grid-cols-3 md:divide-x md:divide-y-0">
-              {columns.map(col => <div key={col.key} className="min-w-0 p-3">
-                <div className="mb-2 flex items-center justify-between"><h4 className="text-xs font-bold text-[#243B5A]">{col.label}</h4><span className="rounded-full bg-[#F5F6F8] px-2 py-0.5 text-[10px] text-[#64748B]">{col.items.length}건</span></div>
-                {col.key === 'NDT' && <div className="mb-2 rounded-lg bg-[#F8FAFC] p-2"><div className="mb-1 text-[10px] font-bold text-[#64748B]">경력 기준 자동 판정</div><div className="flex flex-wrap gap-1">{([{method:'PT',title:'PT'},{method:'LT',title:'Bubble'},{method:'LT',title:'Pressure change'}] as const).map(item => { const status = ndtStatusForMethod(person.id,item.method,item.title); return <span key={`${item.method}-${item.title}`} title={status.eligible ? status.status : '해당 Method의 요구시간 미달'} className={`rounded border px-1.5 py-1 text-[9px] font-bold ${status.eligible ? (status.status === '발급 완료' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700') : 'border-rose-200 bg-rose-50 text-rose-700'}`}>{item.method}{item.method==='LT'?` ${item.title}`:''}: {status.level || '미달'} · {status.status}</span>; })}</div></div>}
-                {col.items.length === 0 && <div className="rounded-lg border border-dashed border-[#E2E5E9] p-3 text-center text-[10px] text-[#94A3B8]">등록된 자격 없음</div>}
-                <div className="space-y-2">{col.items.map(r => <div key={r.id} className="rounded-lg border border-[#E2E5E9] p-2">
-                  <div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="break-words text-[11px] font-bold text-[#1F2937]">{r.category === 'NDT' ? [r.method || '', (() => { const m = (r.method || '').trim().toUpperCase(); let sub = (r.title || '').trim(); if (r.level) sub = sub.replace(new RegExp(r.level.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').trim(); while (m && sub.toUpperCase().startsWith(m)) sub = sub.slice(m.length).trim(); return sub; })(), r.level || ''].filter(Boolean).join(' ') : [r.title || '', r.method ? `· ${r.method}` : '', r.level || ''].filter(Boolean).join(' ')}</div><div className="mt-1 text-[10px] text-[#64748B]">취득/이수 {r.obtained_date || r.education_completed || '미입력'}</div>{r.category !== 'NATIONAL' && <div className="text-[10px] text-[#64748B]">유효기간 {expiryForRecord(r) || '미입력'}</div>}{r.category==='YARD' && <div className="mt-1 text-[9px] text-[#64748B]">{[r.training_date_1,r.training_date_2,r.training_date_3,r.training_date_4].map((d,i)=>d?`보수교육 ${i+1}: ${d}`:'').filter(Boolean).join(' · ') || '보수교육 미입력'}</div>}{r.category==='NDT' && <div className="mt-1 text-[10px] font-bold text-[#64748B]">{ndtStatusForRecord(r).level || r.level || 'Level 미정'} · {ndtStatusForRecord(r).status}</div>}</div>
-                    {canManageRecord(r) && <div className="flex shrink-0 gap-1"><button title="수정" onClick={()=>openEdit(r)} className="rounded border border-[#E2E5E9] p-1 text-[#243B5A]"><Edit3 className="h-3 w-3"/></button><button title="삭제" onClick={()=>void remove(r)} className="rounded border border-red-200 p-1 text-red-600"><Trash2 className="h-3 w-3"/></button></div>}
-                  </div>
-                </div>)}</div>
-              </div>)}
-            </div>
-          </div>;
-        })}
-        {matchingPeople.length===0 && <div className="rounded-xl border border-[#E2E5E9] bg-white p-8 text-center text-xs text-[#64748B]">검색 조건에 맞는 구성원이 없습니다.</div>}
-      </div> : <div className="rounded-xl border border-dashed border-[#E2E5E9] bg-white p-8 text-center text-xs text-[#64748B]">목록은 기본적으로 숨겨져 있습니다. 이름·사번·자격을 검색하거나 구성원을 선택하면 해당 자격이 표시됩니다.</div>
+      <div className="bg-white rounded-xl border border-[#E2E5E9] p-3 shadow-xs">
+        <div className="text-xs font-bold text-[#243B5A] mb-2">
+          {category === 'YARD' ? 'YARD 자격 목록' : category === 'NATIONAL' ? '국가자격 목록' : '사내자격(NDT Level) 목록'} (총 {visibleRecords.length}명/건)
+        </div>
+
+        {visibleRecords.length === 0 ? (
+          <div className="text-center py-8 text-xs text-[#64748B]">조건에 해당하는 자격 현황이 없습니다.</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#F5F6F8] border-b border-[#E2E5E9] text-[#64748B]">
+                <tr>
+                  <th className="p-2.5">성명 (사번)</th>
+                  {category === 'YARD' && <>
+                    <th className="p-2.5">교육명</th>
+                    <th className="p-2.5">교육이수일</th>
+                    <th className="p-2.5">스티커 번호</th>
+                    <th className="p-2.5">유효일자</th>
+                  </>}
+                  {category === 'NATIONAL' && <>
+                    <th className="p-2.5">종목 (METHOD)</th>
+                    <th className="p-2.5">자격종류</th>
+                    <th className="p-2.5">취득일</th>
+                  </>}
+                  {category === 'NDT' && <>
+                    <th className="p-2.5">발급구분</th>
+                    <th className="p-2.5">종목</th>
+                    <th className="p-2.5">Level</th>
+                    <th className="p-2.5">취득일</th>
+                    <th className="p-2.5">유효일자</th>
+                  </>}
+                  <th className="p-2.5 text-center">관리</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[#E2E5E9]">
+                {visibleRecords.map(r => {
+                  const person = personById.get(r.user_id);
+                  return (
+                    <tr key={r.id} className="hover:bg-[#F5F6F8]/50">
+                      <td className="p-2.5 font-bold">{person?.name || r.user_id} <span className="text-[10px] text-[#64748B] font-normal">({r.user_id})</span></td>
+                      {category === 'YARD' && <>
+                        <td className="p-2.5">{r.title}</td>
+                        <td className="p-2.5">{r.education_completed || r.obtained_date || '-'}</td>
+                        <td className="p-2.5">{r.sticker_no || '-'}</td>
+                        <td className="p-2.5 font-semibold text-[#243B5A]">{expiryForRecord(r) || '-'}</td>
+                      </>}
+                      {category === 'NATIONAL' && <>
+                        {/* 3번 요청 사항: 국가 자격 출력 순서 변경 (종목/METHOD 먼저 나오고 자격종류/자격명이 나옴), 괄호 삭제 및 명칭 변경 */}
+                        <td className="p-2.5 font-semibold">{r.method || '-'}</td>
+                        <td className="p-2.5">{r.title}</td>
+                        <td className="p-2.5">{r.obtained_date || '-'}</td>
+                      </>}
+                      {category === 'NDT' && <>
+                        <td className="p-2.5"><span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${r.cert_type === 'ASNT/ISO' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-700'}`}>{r.cert_type || '사내발급'}</span></td>
+                        <td className="p-2.5 font-semibold">{r.method === 'LT' ? `LT (${r.title})` : r.method || '-'}</td>
+                        <td className="p-2.5">{r.level || '-'}</td>
+                        <td className="p-2.5">{r.obtained_date || '-'}</td>
+                        <td className="p-2.5 font-semibold text-[#243B5A]">{r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '-')}</td>
+                      </>}
+                      <td className="p-2.5 text-center">
+                        {canManageRecord(r) && (
+                          <div className="flex items-center justify-center gap-1">
+                            <button onClick={()=>openEdit(r)} className="p-1 text-[#243B5A] border border-[#E2E5E9] rounded hover:bg-slate-50"><Edit3 className="h-3 w-3"/></button>
+                            <button onClick={()=>void remove(r)} className="p-1 text-red-600 border border-red-200 rounded hover:bg-red-50"><Trash2 className="h-3 w-3"/></button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     )}
 
-    <div className="rounded-xl border border-[#E2E5E9] bg-white p-3"><details className="rounded-lg border border-[#E2E5E9] p-3">
-        <summary className="cursor-pointer text-xs font-bold text-[#243B5A]">법정공휴일 / 대체공휴일 관리</summary>
-        <div className="mt-3 flex flex-wrap items-center gap-2"><label className="text-xs font-bold text-[#64748B]">연도<select className={`${fieldClass} mt-1 min-w-[120px]`} value={selectedHolidayYear} onChange={e=>setSelectedHolidayYear(e.target.value)}>{Array.from({length: 44}, (_, i) => new Date().getFullYear() - 40 + i).map(y=><option key={y} value={String(y)}>{y}년</option>)}</select></label><div className="rounded-lg bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A]">{selectedHolidayYear}년 공휴일 {holidays.filter(h=>h.holiday_date.startsWith(`${selectedHolidayYear}-`)).length}일</div></div>
-        <p className="mt-2 text-[10px] text-[#64748B]">{holidaySyncMessage || '연도별 공휴일 데이터를 자동 조회합니다.'} 선택한 연도의 공휴일만 표시합니다. 누락된 대체공휴일은 직접 추가·수정할 수 있습니다.</p>
-        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
-          <input type="date" className={fieldClass} value={holidayDate} onChange={e=>{setHolidayDate(e.target.value); if(e.target.value) setSelectedHolidayYear(e.target.value.slice(0,4));}}/>
-          <input className={fieldClass} value={holidayName} onChange={e=>setHolidayName(e.target.value)} placeholder="공휴일 명칭"/>
-          <button type="button" disabled={holidayBusy} onClick={()=>void addHoliday()} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{holidayBusy?'저장 중':'공휴일 등록'}</button>
-        </div>
-        {holidays.filter(h=>h.holiday_date.startsWith(`${selectedHolidayYear}-`)).length>0 && <div className="mt-2 max-h-48 space-y-1 overflow-y-auto">{holidays.filter(h=>h.holiday_date.startsWith(`${selectedHolidayYear}-`)).sort((a,b)=>a.holiday_date.localeCompare(b.holiday_date)).map(h=><div key={h.holiday_date} className="flex items-center justify-between rounded bg-[#F5F6F8] px-2 py-1 text-[11px]"><span>{h.holiday_date} · {h.name}</span><button type="button" onClick={()=>void removeHoliday(h)} className="font-bold text-red-600">삭제</button></div>)}</div>}
-      </details></div>
-
-    {activeAlert && !alertHidden && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-3">
-      <div className="w-full max-w-md space-y-3 rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
-        <div className="flex items-center gap-2 border-b border-[#E2E5E9] pb-2"><AlertTriangle className="h-5 w-5 text-amber-600"/><h3 className="text-sm font-bold">자격 보수교육 / 유효기간 알림</h3></div>
-        <p className="text-xs text-[#64748B]">관리자 또는 해당 구성원에게만 표시됩니다. {activeAlert.category==='NDT'?'30일':'40일'} 전 알림 기준입니다.</p>
-        <div className="rounded-lg bg-[#F5F6F8] p-3 text-xs"><b>{personById.get(activeAlert.user_id)?.name || activeAlert.user_id} · {activeAlert.title}</b><div className="mt-1">{alertDates(activeAlert).map(d=><div key={d}>{d} ({dayDiff(d)}일 남음)</div>)}</div></div>
-        <div className="flex justify-end gap-2"><button onClick={hideAlertToday} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">오늘 보지 않기</button><button onClick={()=>setActiveAlert(null)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">닫기</button></div>
-      </div>
-    </div>}
-
+    {/* 모달 창 */}
     {modalOpen && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-3">
       <form onSubmit={save} className="max-h-[92vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2"><h3 className="text-sm font-bold">{editing?'자격정보 수정':`${tabs.find(t=>t.key===category)?.label} 등록`}</h3><button type="button" onClick={()=>setModalOpen(false)}><X className="h-4 w-4"/></button></div>
-        {!editing && <div className="rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-2"><div className="mb-1 text-[10px] font-bold text-[#64748B]">▶ 자격 종류 이동 · 항목별 저장 후 다음 항목으로 이동하세요</div><div className="flex flex-wrap gap-2">{tabs.map(t=><button key={t.key} type="button" onClick={()=>{setCategory(t.key);setForm(blank(t.key, form.user_id || (selectedUserId !== 'ALL' ? selectedUserId : '')));}} className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${category===t.key?'border-[#243B5A] bg-[#243B5A] text-white':'border-[#E2E5E9] bg-white text-[#64748B]'}`}>▶ {t.label}</button>)}</div></div>}
+        
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-          <label className="text-[11px] font-bold text-[#64748B]">구성원 *<select className={fieldClass} value={form.user_id||''} onChange={e=>updateForm('user_id',e.target.value)} required><option value="">선택</option>{users.filter(u=>isAdmin || u.id===(currentUser?.id || users.find(x=>x.name===currentUser?.name)?.id)).map(u=><option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select></label>
+          <label className="text-[11px] font-bold text-[#64748B]">구성원 *<select className={fieldClass} value={form.user_id||''} onChange={e=>updateForm('user_id',e.target.value)} required><option value="">선택</option>{users.map(u=><option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select></label>
+          
           {category==='YARD' && <>
             <label className="text-[11px] font-bold text-[#64748B]">교육명 *<input className={fieldClass} value={form.title||''} onChange={e=>updateForm('title',e.target.value)} required/></label>
             <label className="text-[11px] font-bold text-[#64748B]">취득/교육이수일<input type="date" className={fieldClass} value={form.education_completed||form.obtained_date||''} onChange={e=>{updateForm('education_completed',e.target.value);updateForm('obtained_date',e.target.value);}}/></label>
             <label className="text-[11px] font-bold text-[#64748B]">스티커 번호<input className={fieldClass} value={form.sticker_no||''} onChange={e=>updateForm('sticker_no',e.target.value)}/></label>
             {[1,2,3,4].map(n=><label key={n} className="text-[11px] font-bold text-[#64748B]">보수교육 {n}<input type="date" className={fieldClass} value={(form as any)[`training_date_${n}`]||''} onChange={e=>updateForm(`training_date_${n}`,e.target.value)}/></label>)}
-            <label className="text-[11px] font-bold text-[#64748B]">유효기간 (기본 2년)<input type="date" className={fieldClass} value={form.expiry_date||''} onChange={e=>updateForm('expiry_date',e.target.value)}/></label>
+            <label className="text-[11px] font-bold text-[#64748B]">유효일자 (기본 2년)<input type="date" className={fieldClass} value={form.expiry_date||''} onChange={e=>updateForm('expiry_date',e.target.value)}/></label>
           </>}
+
           {category==='NATIONAL' && <>
-            <label className="text-[11px] font-bold text-[#64748B]">자격종류 / 자격명 *<input list="national-cert-types" className={fieldClass} value={form.title||''} onChange={e=>updateForm('title',e.target.value)} placeholder="기능사 / 산업기사 / 기사 또는 자격명" required/><datalist id="national-cert-types"><option value="기능사"/><option value="산업기사"/><option value="기사"/></datalist></label>
-            <label className="text-[11px] font-bold text-[#64748B]">METHOD (PT·UT·LT·MT·지게차 등)<input className={fieldClass} value={form.method||''} onChange={e=>updateForm('method',e.target.value)}/></label>
+            <label className="text-[11px] font-bold text-[#64748B]">자격종류 *<select className={fieldClass} value={form.title||''} onChange={e=>updateForm('title',e.target.value)} required><option value="">선택</option><option value="기능사">기능사</option><option value="산업기사">산업기사</option><option value="기사">기사</option></select></label>
+            <label className="text-[11px] font-bold text-[#64748B]">종목 (METHOD) *<input className={fieldClass} value={form.method||''} onChange={e=>updateForm('method',e.target.value)} placeholder="예: PT, UT, 지게차 등" required/></label>
             <label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={fieldClass} value={form.obtained_date||''} onChange={e=>updateForm('obtained_date',e.target.value)}/></label>
           </>}
+
           {category==='NDT' && <>
-            <label className="text-[11px] font-bold text-[#64748B]">Method *<select className={fieldClass} value={form.method||''} onChange={e=>{updateForm('method',e.target.value); if(e.target.value==='LT') updateForm('title','Bubble'); else updateForm('title',e.target.value);}} required><option value="">선택</option><option>PT</option><option>LT</option><option>RT</option><option>UT</option><option>MT</option></select></label>
+            <label className="text-[11px] font-bold text-[#64748B]">발급구분 *<select className={fieldClass} value={form.cert_type || '사내발급'} onChange={e=>updateForm('cert_type',e.target.value)}><option value="사내발급">사내발급</option><option value="ASNT/ISO">ASNT/ISO</option></select></label>
+            <label className="text-[11px] font-bold text-[#64748B]">종목 (METHOD) *<select className={fieldClass} value={form.method||''} onChange={e=>{updateForm('method',e.target.value); if(e.target.value==='LT') updateForm('title','Bubble'); else updateForm('title',e.target.value);}} required><option value="">선택</option><option>PT</option><option>LT</option><option>RT</option><option>UT</option><option>MT</option></select></label>
             {form.method==='LT' && <label className="text-[11px] font-bold text-[#64748B]">LT 종류 *<select className={fieldClass} value={form.title||'Bubble'} onChange={e=>updateForm('title',e.target.value)}>{LT_TYPES.map(m=><option key={m}>{m}</option>)}</select></label>}
-            <label className="text-[11px] font-bold text-[#64748B]">Level *<select className={fieldClass} value={form.level||''} onChange={e=>updateForm('level',e.target.value)} required disabled={!editing && (form.method==='PT' || form.method==='LT')}><option value="">{!editing && (form.method==='PT' || form.method==='LT') ? '경력 기준 미달' : '선택'}</option><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></select>{!editing && (form.method==='PT' || form.method==='LT') && <span className="mt-1 block font-normal text-[10px] text-[#64748B]">총 경력시간 자동 판정: {autoNdtLevelFor(String(form.user_id||''), form.method, form.title) || '요구시간 미달'} · 취득일만 입력하면 됩니다.</span>}</label>
+            <label className="text-[11px] font-bold text-[#64748B]">Level *<select className={fieldClass} value={form.level||''} onChange={e=>updateForm('level',e.target.value)} required><option value="">선택</option><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></select></label>
             <label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={fieldClass} value={form.obtained_date||''} onChange={e=>updateForm('obtained_date',e.target.value)}/></label>
             <label className="text-[11px] font-bold text-[#64748B]">유효날짜 (기본 5년)<input type="date" className={fieldClass} value={form.expiry_date||''} onChange={e=>updateForm('expiry_date',e.target.value)}/></label>
             <label className="text-[11px] font-bold text-[#64748B]">Cert' No<input className={fieldClass} value={form.cert_no||''} onChange={e=>updateForm('cert_no',e.target.value)}/></label>
-            <p className="sm:col-span-2 text-[10px] text-[#64748B]">경력시간과 Level 판정은 구성원정보의 경력 시작일을 기준으로 자동 계산됩니다. 유효날짜는 취득일 기준 5년으로 자동 설정되며 직접 수정할 수 있습니다.</p>
+            <p className="sm:col-span-2 text-[10px] text-[#64748B]">사내발급 선택 시 경력시간에 따른 Level 자동 판정이 적용되며, ASNT/ISO 선택 시 경력시간 판정에서 제외됩니다.</p>
           </>}
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold">취소</button><button type="submit" className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">{editing ? '수정 저장' : '저장 후 계속 등록'}</button></div>
+        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold">취소</button><button type="submit" className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">저장</button></div>
       </form>
     </div>}
     {notice && <div className="fixed right-4 top-4 z-[150] w-[min(92vw,420px)]"><div className={`rounded-xl border bg-white p-3 text-xs font-bold shadow-xl ${notice.type==='error'?'border-red-200 text-red-700':notice.type==='warning'?'border-amber-200 text-amber-700':'border-[#D5DEE9] text-[#243B5A]'}`}>{notice.message}</div></div>}
