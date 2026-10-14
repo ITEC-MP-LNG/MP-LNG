@@ -901,7 +901,7 @@ export default function HRManagement({
                           <span>파트 리더 (본부장/소장/팀장)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser))}
+                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser, getQualificationSummary))}
                         </div>
                       </div>
                     )}
@@ -919,7 +919,7 @@ export default function HRManagement({
                           <span>소속 구성원 ({members.length}명)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser))}
+                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser, getQualificationSummary))}
                         </div>
                       </div>
                     )}
@@ -1585,7 +1585,8 @@ function renderMemberCard(
   handleDeleteUser: (user: HRUser) => void,
   canEditUser: (user: HRUser) => boolean,
   isAdmin: boolean,
-  handleCallUser: (user: HRUser) => void
+  handleCallUser: (user: HRUser) => void,
+  getQualificationSummary: (userId: string, category: 'YARD' | 'NATIONAL' | 'NDT') => string
 ) {
   const joinCareer = calculateCareerDetails(member.join_date);
   const totalCareer = calculateCareerDetails(member.career_start_date);
