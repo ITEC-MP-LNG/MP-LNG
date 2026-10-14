@@ -397,7 +397,7 @@ export default function HRManagement({
       experience: user.experience || '',
       internal_certificates: user.internal_certificates || '',
       national_certificates: user.national_certificates || user.certificates || '',
-      yard_certificates: user.yard_certificates || user.internal_certificates || '',
+      yard_certificates: user.yard_certificates || '',
       cert_assignments: {
         ...(user.cert_assignments || {}),
         RT: user.cert_assignments?.RT || { level: '', cert_no: '' },

@@ -238,8 +238,8 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     return dates[dates.length - 1] || '';
   };
 
-  // 기존 구성원정보에 저장된 자격 메모를 개별 자격으로 1회 가져옵니다.
-  // YARD/국가자격의 쉼표·줄바꿈 구분 항목을 개별 레코드로 생성합니다.
+  // 기존 구성원정보의 YARD·국가자격만 개별 레코드로 가져옵니다.
+  // 사내자격(internal_certificates)은 YARD로 가져오지 않습니다.
   useEffect(() => {
     if (!recordsLoadedRef.current || users.length === 0 || migrationInProgressRef.current) return;
     const migrateLegacyCertificates = async () => {
@@ -248,16 +248,35 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
         const pending: any[] = [];
         const pendingKeys: string[] = [];
         const obsoleteLegacyYardIds: string[] = [];
-        const internalUsersToMark: string[] = [];
         const nationalUsersToMark: string[] = [];
+        const repairedRows: CertRecord[] = [];
+        for (const person of users) {
+          const personRecords = records.filter(r => r.user_id === person.id);
+          const trueYardTitles = new Set(splitLegacy(person.yard_certificates).map(v => v.toLowerCase()));
+          const internalTitles = new Set(splitLegacy(person.internal_certificates).map(v => v.toLowerCase()));
+          for (const row of personRecords) {
+            if (row.category !== 'YARD' || trueYardTitles.has(row.title.trim().toLowerCase()) || !internalTitles.has(row.title.trim().toLowerCase())) continue;
+            const methodMatch = row.title.match(/\b(PT|UT|RT|MT|LT)\b/i);
+            if (!methodMatch) continue; // 불명확한 항목은 데이터 손실 방지를 위해 자동 변경하지 않습니다.
+            const method = methodMatch[1].toUpperCase();
+            const levelMatch = row.title.match(/Level\s*(III|II|I|3|2|1)/i);
+            const level = levelMatch ? `Level ${/^(III|II|I)$/i.test(levelMatch[1]) ? levelMatch[1].toUpperCase() : ({'3':'III','2':'II','1':'I'} as Record<string,string>)[levelMatch[1]]}` : null;
+            const title = method === 'LT' ? ( /mass\s*spectrometer/i.test(row.title) ? 'Mass Spectrometer' : /pressure\s*change/i.test(row.title) ? 'Pressure change' : /bubble/i.test(row.title) ? 'Bubble' : 'LT') : method;
+            const { data: repaired, error: repairError } = await supabase.from('cert_records').update({ category: 'NDT', method, title, level, detail: { ...(row.detail || {}), repairedFromMisclassifiedYard: true } }).eq('id', row.id).select('*').single();
+            if (repairError) throw repairError;
+            if (repaired) repairedRows.push(repaired as CertRecord);
+          }
+        }
+        if (repairedRows.length) {
+          setRecords(prev => prev.map(r => repairedRows.find(x => x.id === r.id) || r));
+          notify('사내자격으로 잘못 분류된 NDT 항목을 사내자격 탭으로 이동했습니다.');
+        }
         users.forEach(person => {
           const personRecords = records.filter(r => r.user_id === person.id);
-          const shouldImportLegacyInternal = !legacyInternalImportedRef.current.has(person.id);
-          const existingNdtSummary = personRecords.filter(r => r.category === 'NDT').map(r => `${r.method || ''} ${r.title || ''} ${r.level || ''}`.trim()).sort((a,b) => a.localeCompare(b)).join(', ');
-          const internalTextMatchesNdtSummary = !!existingNdtSummary && (person.internal_certificates || '').trim().replace(/\s+/g, ' ') === existingNdtSummary.replace(/\s+/g, ' ');
-          const legacyYardItems = Array.from(new Set([...splitLegacy(person.yard_certificates), ...(shouldImportLegacyInternal && !internalTextMatchesNdtSummary ? splitLegacy(person.internal_certificates) : [])]));
-          const legacyYardOriginal = [person.yard_certificates, shouldImportLegacyInternal && !internalTextMatchesNdtSummary ? person.internal_certificates : ''].filter(Boolean).join(' | ').trim();
-          if (shouldImportLegacyInternal) internalUsersToMark.push(person.id);
+          // YARD에는 yard_certificates 필드만 가져옵니다.
+          // internal_certificates는 사내자격이므로 YARD로 절대 합치지 않습니다.
+          const legacyYardItems = Array.from(new Set(splitLegacy(person.yard_certificates)));
+          const legacyYardOriginal = (person.yard_certificates || '').trim();
           if (legacyYardItems.length > 1) {
             personRecords.filter(r => r.category === 'YARD' && r.detail?.legacyImport && r.detail?.source === 'internal_certificates' && r.title.includes(',')).forEach(r => obsoleteLegacyYardIds.push(r.id));
           }
@@ -285,10 +304,9 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
           await supabase.from('cert_records').delete().in('id', obsoleteLegacyYardIds);
           setRecords(prev => prev.filter(r => !obsoleteLegacyYardIds.includes(r.id)));
         }
-        if (!pending.length) { internalUsersToMark.forEach(id => legacyInternalImportedRef.current.add(id)); nationalUsersToMark.forEach(id => legacyNationalImportedRef.current.add(id)); return; }
+        if (!pending.length) { nationalUsersToMark.forEach(id => legacyNationalImportedRef.current.add(id)); return; }
         const { data, error } = await supabase.from('cert_records').insert(pending).select('*');
         if (error) throw error;
-        internalUsersToMark.forEach(id => legacyInternalImportedRef.current.add(id));
         nationalUsersToMark.forEach(id => legacyNationalImportedRef.current.add(id));
         pendingKeys.forEach(key => migratedLegacyKeysRef.current.add(key));
         if (data?.length) {
