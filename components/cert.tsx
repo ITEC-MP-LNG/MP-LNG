@@ -252,27 +252,62 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
         const repairedRows: CertRecord[] = [];
         for (const person of users) {
           const personRecords = records.filter(r => r.user_id === person.id);
-          const trueYardTitles = new Set(splitLegacy(person.yard_certificates).map(v => v.toLowerCase()));
-          const internalTitles = new Set(splitLegacy(person.internal_certificates).map(v => v.toLowerCase()));
           for (const row of personRecords) {
-            if (row.category !== 'YARD' || trueYardTitles.has(row.title.trim().toLowerCase()) || !internalTitles.has(row.title.trim().toLowerCase())) continue;
-            const methodMatch = row.title.match(/\b(PT|UT|RT|MT|LT)\b/i);
-            if (!methodMatch) continue; // 불명확한 항목은 데이터 손실 방지를 위해 자동 변경하지 않습니다.
-            const method = methodMatch[1].toUpperCase();
-            const levelMatch = row.title.match(/Level\s*(III|II|I|3|2|1)/i);
-            const level = levelMatch ? `Level ${/^(III|II|I)$/i.test(levelMatch[1]) ? levelMatch[1].toUpperCase() : ({'3':'III','2':'II','1':'I'} as Record<string,string>)[levelMatch[1]]}` : null;
-            const title = method === 'LT' ? ( /mass\s*spectrometer/i.test(row.title) ? 'Mass Spectrometer' : /pressure\s*change/i.test(row.title) ? 'Pressure change' : /bubble/i.test(row.title) ? 'Bubble' : 'LT') : method;
-            const { data: repaired, error: repairError } = await supabase.from('cert_records').update({ category: 'NDT', method, title, level, detail: { ...(row.detail || {}), repairedFromMisclassifiedYard: true } }).eq('id', row.id).select('*').single();
+            if (row.category !== 'YARD' && row.category !== 'NDT') continue;
+            const rowText = `${row.title || ''} ${row.method || ''} ${row.level || ''}`.trim();
+            const normalizedRowTitle = row.title.trim().toLowerCase().replace(/\s+/g, ' ');
+            const explicitMethodMatch = rowText.match(/\b(PT|UT|RT|MT|LT)\b/i);
+            if (!explicitMethodMatch) continue;
+            const method = (row.method || explicitMethodMatch[1]).toUpperCase();
+            const hasExplicitLevel = /\b(?:NDT\s*)?Level\s*(?:III|II|I|3|2|1)\b/i.test(rowText);
+            const internalTitles = new Set(splitLegacy(person.internal_certificates).map(v => v.toLowerCase().replace(/\s+/g, ' ')));
+            const wasImportedFromInternal = row.detail?.source === 'internal_certificates' || internalTitles.has(normalizedRowTitle);
+            if (row.category === 'YARD' && !(hasExplicitLevel || wasImportedFromInternal || row.detail?.repairedFromMisclassifiedYard)) continue;
+
+            const levelMatch = rowText.match(/Level\s*(III|II|I|3|2|1)/i);
+            const levelToken = levelMatch?.[1];
+            const parsedLevel = levelToken ? `Level ${/^(III|II|I)$/i.test(levelToken) ? levelToken.toUpperCase() : ({'3':'III','2':'II','1':'I'} as Record<string,string>)[levelToken]}` : (row.level || null);
+            const title = method === 'LT'
+              ? (/mass\s*spectrometer/i.test(rowText) ? 'Mass Spectrometer' : /pressure\s*change/i.test(rowText) ? 'Pressure change' : /bubble/i.test(rowText) ? 'Bubble' : 'LT')
+              : method;
+            const needsRepair = row.category !== 'NDT' || row.method !== method || row.title !== title || (row.level || null) !== parsedLevel;
+            if (!needsRepair) continue;
+            const detail = {
+              ...(row.detail || {}),
+              ...(row.category === 'YARD' ? { repairedFromMisclassifiedYard: true } : { normalizedNdtLabel: true }),
+            };
+            const { data: repaired, error: repairError } = await supabase.from('cert_records').update({ category: 'NDT', method, title, level: parsedLevel, detail }).eq('id', row.id).select('*').single();
             if (repairError) throw repairError;
             if (repaired) repairedRows.push(repaired as CertRecord);
           }
         }
+        let effectiveRecords = records.map(r => repairedRows.find(x => x.id === r.id) || r);
         if (repairedRows.length) {
-          setRecords(prev => prev.map(r => repairedRows.find(x => x.id === r.id) || r));
-          notify('사내자격으로 잘못 분류된 NDT 항목을 사내자격 탭으로 이동했습니다.');
+          notify('YARD에 잘못 분류된 NDT 항목을 사내자격 탭으로 이동했습니다.');
+        }
+        // 동일 구성원·자격종류·Method·Level·날짜가 같은 중복 레코드는 DB에서도 한 건만 유지합니다.
+        const duplicateKey = (r: CertRecord) => [
+          r.user_id, r.category, (r.method || '').trim().toUpperCase(), (r.title || '').trim().toLowerCase().replace(/\s+/g, ' '),
+          r.level || '', r.obtained_date || '', r.expiry_date || '', r.education_completed || '', r.cert_no || '', r.sticker_no || '',
+          r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || ''
+        ].join('|');
+        const seenDuplicateKeys = new Set<string>();
+        const duplicateIds: string[] = [];
+        effectiveRecords.forEach(r => {
+          const key = duplicateKey(r);
+          if (seenDuplicateKeys.has(key)) duplicateIds.push(r.id);
+          else seenDuplicateKeys.add(key);
+        });
+        if (duplicateIds.length) {
+          const { error: duplicateDeleteError } = await supabase.from('cert_records').delete().in('id', duplicateIds);
+          if (duplicateDeleteError) throw duplicateDeleteError;
+          effectiveRecords = effectiveRecords.filter(r => !duplicateIds.includes(r.id));
+        }
+        if (repairedRows.length || duplicateIds.length) {
+          setRecords(effectiveRecords);
         }
         users.forEach(person => {
-          const personRecords = records.filter(r => r.user_id === person.id);
+          const personRecords = effectiveRecords.filter(r => r.user_id === person.id);
           // YARD에는 yard_certificates 필드만 가져옵니다.
           // internal_certificates는 사내자격이므로 YARD로 절대 합치지 않습니다.
           const legacyYardItems = Array.from(new Set(splitLegacy(person.yard_certificates)));
@@ -281,6 +316,8 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
             personRecords.filter(r => r.category === 'YARD' && r.detail?.legacyImport && r.detail?.source === 'internal_certificates' && r.title.includes(',')).forEach(r => obsoleteLegacyYardIds.push(r.id));
           }
           legacyYardItems.forEach(title => {
+            // 과거 오류로 yard_certificates 문자열에 저장된 NDT 항목은 YARD로 재수입하지 않습니다.
+            if (/\b(PT|UT|RT|MT|LT)\b/i.test(title) && /\b(?:NDT\s*)?Level\s*(?:III|II|I|3|2|1)\b/i.test(title)) return;
             const key = `${person.id}|YARD|${title}`;
             if (personRecords.some(r => r.category === 'YARD' && r.title.trim() === title) || migratedLegacyKeysRef.current.has(key)) return;
             pendingKeys.push(key);
@@ -647,7 +684,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
                 {col.key === 'NDT' && <div className="mb-2 rounded-lg bg-[#F8FAFC] p-2"><div className="mb-1 text-[10px] font-bold text-[#64748B]">경력 기준 자동 판정</div><div className="flex flex-wrap gap-1">{([{method:'PT',title:'PT'},{method:'LT',title:'Bubble'},{method:'LT',title:'Pressure change'}] as const).map(item => { const status = ndtStatusForMethod(person.id,item.method,item.title); return <span key={`${item.method}-${item.title}`} title={status.eligible ? status.status : '해당 Method의 요구시간 미달'} className={`rounded border px-1.5 py-1 text-[9px] font-bold ${status.eligible ? (status.status === '발급 완료' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700') : 'border-rose-200 bg-rose-50 text-rose-700'}`}>{item.method}{item.method==='LT'?` ${item.title}`:''}: {status.level || '미달'} · {status.status}</span>; })}</div></div>}
                 {col.items.length === 0 && <div className="rounded-lg border border-dashed border-[#E2E5E9] p-3 text-center text-[10px] text-[#94A3B8]">등록된 자격 없음</div>}
                 <div className="space-y-2">{col.items.map(r => <div key={r.id} className="rounded-lg border border-[#E2E5E9] p-2">
-                  <div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="break-words text-[11px] font-bold text-[#1F2937]">{r.title}{r.method ? ` · ${r.method}` : ''}{r.level ? ` ${r.level}` : ''}</div><div className="mt-1 text-[10px] text-[#64748B]">취득/이수 {r.obtained_date || r.education_completed || '미입력'}</div>{r.category !== 'NATIONAL' && <div className="text-[10px] text-[#64748B]">유효기간 {expiryForRecord(r) || '미입력'}</div>}{r.category==='YARD' && <div className="mt-1 text-[9px] text-[#64748B]">{[r.training_date_1,r.training_date_2,r.training_date_3,r.training_date_4].map((d,i)=>d?`보수교육 ${i+1}: ${d}`:'').filter(Boolean).join(' · ') || '보수교육 미입력'}</div>}{r.category==='NDT' && <div className="mt-1 text-[10px] font-bold text-[#64748B]">{ndtStatusForRecord(r).level || r.level || 'Level 미정'} · {ndtStatusForRecord(r).status}</div>}</div>
+                  <div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="break-words text-[11px] font-bold text-[#1F2937]">{r.category === 'NDT' ? [r.method || '', (() => { const m = (r.method || '').trim().toUpperCase(); let sub = (r.title || '').trim(); if (r.level) sub = sub.replace(new RegExp(r.level.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').trim(); while (m && sub.toUpperCase().startsWith(m)) sub = sub.slice(m.length).trim(); return sub; })(), r.level || ''].filter(Boolean).join(' ') : [r.title || '', r.method && r.category !== 'NDT' ? `· ${r.method}` : '', r.level || ''].filter(Boolean).join(' ')}</div><div className="mt-1 text-[10px] text-[#64748B]">취득/이수 {r.obtained_date || r.education_completed || '미입력'}</div>{r.category !== 'NATIONAL' && <div className="text-[10px] text-[#64748B]">유효기간 {expiryForRecord(r) || '미입력'}</div>}{r.category==='YARD' && <div className="mt-1 text-[9px] text-[#64748B]">{[r.training_date_1,r.training_date_2,r.training_date_3,r.training_date_4].map((d,i)=>d?`보수교육 ${i+1}: ${d}`:'').filter(Boolean).join(' · ') || '보수교육 미입력'}</div>}{r.category==='NDT' && <div className="mt-1 text-[10px] font-bold text-[#64748B]">{ndtStatusForRecord(r).level || r.level || 'Level 미정'} · {ndtStatusForRecord(r).status}</div>}</div>
                     {canManageRecord(r) && <div className="flex shrink-0 gap-1"><button title="수정" onClick={()=>openEdit(r)} className="rounded border border-[#E2E5E9] p-1 text-[#243B5A]"><Edit3 className="h-3 w-3"/></button><button title="삭제" onClick={()=>void remove(r)} className="rounded border border-red-200 p-1 text-red-600"><Trash2 className="h-3 w-3"/></button></div>}
                   </div>
                 </div>)}</div>

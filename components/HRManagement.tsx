@@ -258,9 +258,15 @@ export default function HRManagement({
   const getQualificationSummary = (userId: string, category: 'YARD' | 'NATIONAL' | 'NDT') => {
     const list = certRecords.filter((r) => r.user_id === userId && r.category === category);
     if (!list.length) return '';
-    return list.map((r) => {
+    const summaries = list.map((r) => {
       const label = category === 'NDT'
-        ? `${r.method || ''}${r.title && r.title !== r.method ? ` ${r.title}` : ''}${r.level ? ` ${r.level}` : ''}`.trim()
+        ? (() => {
+            const method = (r.method || '').trim().toUpperCase();
+            let title = (r.title || '').trim();
+            if (r.level) title = title.replace(new RegExp(r.level.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').trim();
+            while (method && title.toUpperCase().startsWith(method)) title = title.slice(method.length).trim();
+            return [method, title, r.level || ''].filter(Boolean).join(' ');
+          })()
         : category === 'NATIONAL'
           ? `${r.method ? `${r.method} ` : ''}${r.title || ''}`.trim()
           : (r.title || 'YARD 자격');
@@ -275,7 +281,8 @@ export default function HRManagement({
       if (r.cert_no) dates.push(`No. ${r.cert_no}`);
       if (category === 'YARD' && r.sticker_no) dates.push(`스티커 ${r.sticker_no}`);
       return `${label}${dates.length ? ` (${dates.join(' · ')})` : ''}`;
-    }).join(' / ');
+    });
+    return Array.from(new Set(summaries)).join(' / ');
   };
 
   useEffect(() => {
