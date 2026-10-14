@@ -1381,7 +1381,7 @@ export default function HRManagement({
                     <div key={method} className="grid grid-cols-[52px_1fr_1.4fr] items-center gap-2">
                       <div className="text-xs font-bold">{method}</div>
                       <select value={formData.cert_assignments?.[method]?.level || ''} onChange={(e) => setFormData({ ...formData, cert_assignments: { ...(formData.cert_assignments || {}), [method]: { ...(formData.cert_assignments?.[method] || {}), level: e.target.value } } })} className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs">
-                        <option value="">Level 선택</option><option value="Level I">Level I</option><option value="Level II">Level II</option>
+                        <option value="">Level 선택</option><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option>
                       </select>
                       <input value={formData.cert_assignments?.[method]?.cert_no || ''} onChange={(e) => setFormData({ ...formData, cert_assignments: { ...(formData.cert_assignments || {}), [method]: { ...(formData.cert_assignments?.[method] || {}), cert_no: e.target.value } } })} placeholder="Cert' No" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
                     </div>

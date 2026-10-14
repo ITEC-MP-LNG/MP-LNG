@@ -39,6 +39,20 @@ const addDays = (date: string, n: number) => {
   d.setDate(d.getDate() + n);
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 };
+const addYears = (date: string, years: number) => {
+  if (!date) return '';
+  const d = new Date(`${date}T12:00:00`);
+  if (Number.isNaN(d.getTime())) return '';
+  d.setFullYear(d.getFullYear() + years);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+};
+const splitLegacy = (value?: string) => (value || '').split(/[\n,;、，]+/).map(v => v.trim()).filter(Boolean);
+const parseNationalLegacy = (value: string) => {
+  const type = value.includes('산업기사') ? '산업기사' : value.includes('기능사') ? '기능사' : value.includes('기사') ? '기사' : '';
+  if (!type) return { title: 'METHOD', method: value };
+  const method = value.replace(type, '').replace(/^[-:：/\s]+|[-:：/\s]+$/g, '').trim();
+  return { title: type, method: method || null };
+};
 const dayDiff = (date: string) => Math.ceil((new Date(`${date}T00:00:00`).getTime() - new Date(`${todayStr()}T00:00:00`).getTime()) / 86400000);
 const esc = (v: any) => v == null ? '' : String(v);
 const fieldClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white';
@@ -51,6 +65,8 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   const recordsLoadedRef = useRef(false);
   const migrationInProgressRef = useRef(false);
   const migratedLegacyKeysRef = useRef<Set<string>>(new Set());
+  const legacyInternalImportedRef = useRef<Set<string>>(new Set());
+  const legacyNationalImportedRef = useRef<Set<string>>(new Set());
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState('');
@@ -64,11 +80,9 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   const [eligibilityUserId, setEligibilityUserId] = useState('');
   const [eligibilityMethod, setEligibilityMethod] = useState('PT');
   const [eligibilityLtType, setEligibilityLtType] = useState('Bubble');
-  const [eligibilityLevel, setEligibilityLevel] = useState<'I'|'II'>('II');
+  const [showEligibilityHint, setShowEligibilityHint] = useState(false);
+  const [holidaySyncMessage, setHolidaySyncMessage] = useState('');
   const [experienceHours, setExperienceHours] = useState('0');
-  const [minimumExperienceHours, setMinimumExperienceHours] = useState('0');
-  const [trainingHours, setTrainingHours] = useState('0');
-  const [level1ToLevel2Hours, setLevel1ToLevel2Hours] = useState('0');
   const [massHours, setMassHours] = useState('0');
   const [holidayDate, setHolidayDate] = useState('');
   const [holidayName, setHolidayName] = useState('');
@@ -123,60 +137,123 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     return hours;
   }, [holidays]);
 
-  // 기존 구성원정보에만 저장되어 있던 자격 메모를 자격현황 레코드로 1회 가져옵니다.
-  // YARD는 기존 사내자격 메모, 국가자격은 기존 국가자격 요약을 원문 그대로 보존합니다.
+  // 기존 구성원정보에 저장된 자격 메모를 개별 자격으로 1회 가져옵니다.
+  // YARD/국가자격의 쉼표·줄바꿈 구분 항목을 개별 레코드로 생성합니다.
   useEffect(() => {
     if (!recordsLoadedRef.current || users.length === 0 || migrationInProgressRef.current) return;
     const migrateLegacyCertificates = async () => {
       try {
+        migrationInProgressRef.current = true;
         const pending: any[] = [];
         const pendingKeys: string[] = [];
+        const obsoleteLegacyYardIds: string[] = [];
+        const internalUsersToMark: string[] = [];
+        const nationalUsersToMark: string[] = [];
         users.forEach(person => {
           const personRecords = records.filter(r => r.user_id === person.id);
-          const legacyYardTitle = person.internal_certificates?.trim() || '';
-          const yardKey = `${person.id}|YARD|${legacyYardTitle}`;
-          if (legacyYardTitle && !personRecords.some(r => r.category === 'YARD' && r.title.trim() === legacyYardTitle) && !migratedLegacyKeysRef.current.has(yardKey)) {
-            pendingKeys.push(yardKey);
-            pending.push({
-              user_id: person.id, category: 'YARD', title: legacyYardTitle,
-              obtained_date: null, expiry_date: null, method: null, level: null, cert_no: null,
-              sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null,
-              training_date_3: null, training_date_4: null, detail: { legacyImport: true, source: 'internal_certificates' },
-            });
+          const shouldImportLegacyInternal = !legacyInternalImportedRef.current.has(person.id);
+          const existingNdtSummary = personRecords.filter(r => r.category === 'NDT').map(r => `${r.method || ''} ${r.title || ''} ${r.level || ''}`.trim()).sort((a,b) => a.localeCompare(b)).join(', ');
+          const internalTextMatchesNdtSummary = !!existingNdtSummary && (person.internal_certificates || '').trim().replace(/\s+/g, ' ') === existingNdtSummary.replace(/\s+/g, ' ');
+          const legacyYardItems = Array.from(new Set([...splitLegacy(person.yard_certificates), ...(shouldImportLegacyInternal && !internalTextMatchesNdtSummary ? splitLegacy(person.internal_certificates) : [])]));
+          const legacyYardOriginal = [person.yard_certificates, shouldImportLegacyInternal && !internalTextMatchesNdtSummary ? person.internal_certificates : ''].filter(Boolean).join(' | ').trim();
+          if (shouldImportLegacyInternal) internalUsersToMark.push(person.id);
+          if (legacyYardItems.length > 1) {
+            personRecords.filter(r => r.category === 'YARD' && r.detail?.legacyImport && r.detail?.source === 'internal_certificates' && r.title.includes(',')).forEach(r => obsoleteLegacyYardIds.push(r.id));
           }
-          const legacyNationalNames = (person.national_certificates || '').split(/[\n,;、]+/).map(v => v.trim()).filter(Boolean);
-          legacyNationalNames.forEach(name => {
-            const nationalKey = `${person.id}|NATIONAL|${name}`;
-            if (personRecords.some(r => r.category === 'NATIONAL' && r.title.trim() === name) || migratedLegacyKeysRef.current.has(nationalKey)) return;
-            pendingKeys.push(nationalKey);
-            pending.push({
-              user_id: person.id, category: 'NATIONAL', title: name,
-              obtained_date: null, expiry_date: null, method: null, level: null, cert_no: null,
-              sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null,
-              training_date_3: null, training_date_4: null, detail: { legacyImport: true, source: 'national_certificates' },
-            });
+          legacyYardItems.forEach(title => {
+            const key = `${person.id}|YARD|${title}`;
+            if (personRecords.some(r => r.category === 'YARD' && r.title.trim() === title) || migratedLegacyKeysRef.current.has(key)) return;
+            pendingKeys.push(key);
+            pending.push({ user_id: person.id, category: 'YARD', title, obtained_date: null, expiry_date: null, method: null, level: null, cert_no: null, sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null, detail: { legacyImport: true, source: 'yard_certificates', original: legacyYardOriginal } });
+          });
+          const shouldImportLegacyNational = !legacyNationalImportedRef.current.has(person.id);
+          const existingNationalSummary = Array.from(new Set(personRecords.filter(r => r.category === 'NATIONAL').map(r => r.title).filter(Boolean))).sort((a,b) => a.localeCompare(b)).join(', ');
+          const nationalTextMatchesSummary = !!existingNationalSummary && (person.national_certificates || '').trim().replace(/\s+/g, ' ') === existingNationalSummary.replace(/\s+/g, ' ');
+          if (shouldImportLegacyNational) nationalUsersToMark.push(person.id);
+          (shouldImportLegacyNational && !nationalTextMatchesSummary ? splitLegacy(person.national_certificates) : []).forEach(item => {
+            const parsed = parseNationalLegacy(item);
+            const title = parsed.title;
+            const method = parsed.method;
+            const key = `${person.id}|NATIONAL|${title}|${method || ''}`;
+            if (personRecords.some(r => r.category === 'NATIONAL' && r.title.trim() === title && (r.method || '') === (method || '')) || migratedLegacyKeysRef.current.has(key)) return;
+            pendingKeys.push(key);
+            pending.push({ user_id: person.id, category: 'NATIONAL', title, obtained_date: null, expiry_date: null, method, level: null, cert_no: null, sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null, detail: { legacyImport: true, source: 'national_certificates', original: item } });
           });
         });
-        if (!pending.length) return;
-        migrationInProgressRef.current = true;
+        if (obsoleteLegacyYardIds.length) {
+          await supabase.from('cert_records').delete().in('id', obsoleteLegacyYardIds);
+          setRecords(prev => prev.filter(r => !obsoleteLegacyYardIds.includes(r.id)));
+        }
+        if (!pending.length) { internalUsersToMark.forEach(id => legacyInternalImportedRef.current.add(id)); nationalUsersToMark.forEach(id => legacyNationalImportedRef.current.add(id)); return; }
         const { data, error } = await supabase.from('cert_records').insert(pending).select('*');
         if (error) throw error;
+        internalUsersToMark.forEach(id => legacyInternalImportedRef.current.add(id));
+        nationalUsersToMark.forEach(id => legacyNationalImportedRef.current.add(id));
         pendingKeys.forEach(key => migratedLegacyKeysRef.current.add(key));
         if (data?.length) {
           setRecords(prev => {
-            const keys = new Set(prev.map(r => `${r.user_id}|${r.category}|${r.title}`));
-            return [...prev, ...(data as CertRecord[]).filter(r => !keys.has(`${r.user_id}|${r.category}|${r.title}`))];
+            const keys = new Set(prev.map(r => `${r.user_id}|${r.category}|${r.title}|${r.method || ''}`));
+            return [...prev, ...(data as CertRecord[]).filter(r => !keys.has(`${r.user_id}|${r.category}|${r.title}|${r.method || ''}`))];
           });
-          notify('구성원정보에 저장된 기존 자격을 자격현황에 연동했습니다.');
+          notify('기존 구성원정보의 YARD·국가자격을 개별 항목으로 연동했습니다. 취득일과 유효기간은 필요 시 입력해주세요.');
         }
       } catch (e: any) {
         notify(`기존 자격 연동 실패: ${e?.message || '오류'}`, 'error');
-      } finally {
-        migrationInProgressRef.current = false;
-      }
+      } finally { migrationInProgressRef.current = false; }
     };
     void migrateLegacyCertificates();
   }, [users, records, notify]);
+
+  // 공휴일은 외부 연도별 달력에서 자동 수집해 Supabase에 저장합니다.
+  // 이미 저장된 연도는 다시 요청하지 않으며, 수동 수정도 가능합니다.
+  useEffect(() => {
+    if (!users.length) return;
+    let cancelled = false;
+    const syncHolidays = async () => {
+      const nowYear = new Date().getFullYear();
+      const careerYears = users.map(u => Number((u.career_start_date || '').slice(0, 4))).filter(y => y >= 1990 && y <= nowYear);
+      const firstYear = careerYears.length ? Math.min(...careerYears) : nowYear;
+      const targetYears = Array.from({ length: Math.min(45, nowYear + 3 - firstYear + 1) }, (_, i) => firstYear + i);
+      const cachedYears = new Set<string>();
+      try { JSON.parse(window.localStorage.getItem('cert-holiday-api-years') || '[]').forEach((y: string) => cachedYears.add(y)); } catch {}
+      const missingYears = targetYears.filter(y => !cachedYears.has(String(y)));
+      if (!missingYears.length) return;
+      setHolidaySyncMessage('공휴일 달력 자동 동기화 중...');
+      const fetched: Holiday[] = [];
+      const completed: string[] = [];
+      await Promise.all(missingYears.map(async year => {
+        try {
+          const response = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${year}/KR`);
+          if (!response.ok) return;
+          const data = await response.json();
+          if (Array.isArray(data)) {
+            data.forEach((item: any) => {
+              if (item?.date) fetched.push({ holiday_date: item.date, name: item.localName || item.name || '공휴일' });
+            });
+            completed.push(String(year));
+          }
+        } catch { /* 외부 API 실패 시 수동 등록/기존 저장 데이터를 유지 */ }
+      }));
+      if (cancelled) return;
+      if (completed.length) {
+        const unique = Array.from(new Map(fetched.map(h => [h.holiday_date, h])).values());
+        let saveSucceeded = true;
+        if (unique.length) {
+          const { error } = await supabase.from('cert_holidays').upsert(unique, { onConflict: 'holiday_date' });
+          saveSucceeded = !error;
+          if (!error) setHolidays(prev => Array.from(new Map([...prev, ...unique].map(h => [h.holiday_date, h])).values()).sort((a,b)=>a.holiday_date.localeCompare(b.holiday_date)));
+        }
+        if (saveSucceeded) {
+          try { window.localStorage.setItem('cert-holiday-api-years', JSON.stringify([...cachedYears, ...completed])); } catch {}
+        }
+      }
+      setHolidaySyncMessage(completed.length ? `공휴일 자동 반영 완료 (${completed.length}개 연도 확인)` : '자동 공휴일 조회에 실패했습니다. 기존 데이터는 유지됩니다.');
+    };
+    void syncHolidays();
+    return () => { cancelled = true; };
+  // Only sync when the member list or the initially-loaded holiday data changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [users, holidays.length]);
 
   useEffect(() => {
     if (!eligibilityUserId) return;
@@ -186,9 +263,6 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     const detail = matching?.detail || {};
     const selectedPerson = users.find(u => u.id === eligibilityUserId);
     setExperienceHours(String(careerHoursFromMember(selectedPerson?.career_start_date)));
-    setTrainingHours(String(detail.trainingHours ?? 0));
-    setMinimumExperienceHours(String(detail.minimumHours ?? 0));
-    setLevel1ToLevel2Hours(String(detail.level1ToLevel2Hours ?? 0));
     setMassHours(String(detail.massSpectrometerHours ?? 0));
   }, [eligibilityUserId, eligibilityMethod, eligibilityLtType, records, users, careerHoursFromMember]);
   const visibleRecords = useMemo(() => records.filter(r => {
@@ -200,6 +274,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   }), [records, category, selectedUserId, search, personById]);
 
   const daysUntil = (d?: string|null) => d ? dayDiff(d) : null;
+  const expiryForRecord = (r: CertRecord) => r.expiry_date || (r.category === 'YARD' && (r.education_completed || r.obtained_date) ? addYears((r.education_completed || r.obtained_date) as string, 2) : r.category === 'NDT' && r.obtained_date ? addYears(r.obtained_date, 5) : null);
   const isSelfRecord = (r: CertRecord) => (!!currentUser?.id && currentUser.id === r.user_id) || (!!currentUser?.name && personById.get(r.user_id)?.name === currentUser.name);
   const canManageRecord = (r: CertRecord) => isAdmin || isSelfRecord(r);
   const canSeeRecordAlert = (r: CertRecord) => canManageRecord(r);
@@ -209,8 +284,8 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
       if (r.category === 'NATIONAL') return false;
       const warningDays = r.category === 'NDT' ? 30 : 40;
       const dates = r.category === 'YARD'
-        ? [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4, r.expiry_date]
-        : [r.expiry_date];
+        ? [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4, expiryForRecord(r)]
+        : [expiryForRecord(r)];
       return dates.some(d => d && daysUntil(d)! >= 0 && daysUntil(d)! <= warningDays);
     });
     setAlerts(eligible);
@@ -227,7 +302,14 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   };
   const openAdd = () => { setEditing(null); const ownId = currentUser?.id || users.find(u=>u.name===currentUser?.name)?.id || ''; setForm(blank(category, isAdmin ? (selectedUserId === 'ALL' ? (eligibilityUserId || users[0]?.id || '') : selectedUserId) : ownId)); setModalOpen(true); };
   const openEdit = (r: CertRecord) => { setEditing(r); setForm({...r, detail: r.detail || {}}); setModalOpen(true); };
-  const updateForm = (key: string, value: any) => setForm(prev => ({...prev, [key]: value}));
+  const updateForm = (key: string, value: any) => setForm(prev => {
+    const next: Partial<CertRecord> = {...prev, [key]: value};
+    if ((key === 'obtained_date' || key === 'education_completed') && value && (next.category === 'YARD' || next.category === 'NDT')) {
+      const baseDate = next.category === 'YARD' ? (key === 'education_completed' ? value : (next.education_completed || value)) : value;
+      if (!next.expiry_date || key === 'obtained_date' || key === 'education_completed') next.expiry_date = addYears(baseDate, next.category === 'YARD' ? 2 : next.category === 'NDT' ? 5 : 0) || next.expiry_date;
+    }
+    return next;
+  });
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -237,7 +319,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     if (category === 'NDT' && (!form.method || !form.level)) { notify('Method와 Level을 선택해주세요.', 'warning'); return; }
     const payload: any = {
       user_id: form.user_id, category, title: form.title.trim(),
-      obtained_date: form.obtained_date || null, expiry_date: form.expiry_date || null,
+      obtained_date: form.obtained_date || null, expiry_date: form.expiry_date || ((category === 'YARD' && (form.education_completed || form.obtained_date)) ? addYears((form.education_completed || form.obtained_date) as string, 2) : category === 'NDT' && form.obtained_date ? addYears(form.obtained_date, 5) : null),
       method: form.method || null, level: form.level || null, cert_no: form.cert_no || null,
       sticker_no: form.sticker_no || null, education_completed: form.education_completed || null,
       training_date_1: form.training_date_1 || null, training_date_2: form.training_date_2 || null,
@@ -270,7 +352,8 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
           ...(category === 'NDT' ? { cert_assignments: { ...(person.cert_assignments||{}), [data.method || '']: { level: data.level || '', cert_no: data.cert_no || '' } }, internal_certificates: nextRecords.filter(r=>r.user_id===person.id && r.category==='NDT').map(r=>`${r.method || ''} ${r.title || ''} ${r.level || ''}`.trim()).filter(Boolean).join(', ') } : {}),
         }]);
       }
-      setModalOpen(false); notify(editing ? '자격정보를 수정했습니다.' : '자격정보를 등록했습니다.');
+      if (editing) { setModalOpen(false); notify('자격정보를 수정했습니다.'); }
+      else { const savedUserId = form.user_id || ''; setForm(blank(category, savedUserId)); notify('저장했습니다. ▶ 위에서 다른 자격 항목으로 이동해 계속 등록할 수 있습니다.'); }
     } catch (e: any) { notify(`저장 실패: ${e?.message || '오류'}`, 'error'); }
   };
   const remove = async (r: CertRecord) => {
@@ -291,24 +374,48 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   };
 
   const exportExcel = () => {
-    const list = visibleRecords;
+    if (!search.trim() && selectedUserId === 'ALL') { notify('엑셀 추출 전에 이름·사번·자격을 검색하거나 구성원을 선택해주세요.', 'warning'); return; }
+    const list = [...visibleRecords].sort((a,b) => {
+      const an = personById.get(a.user_id)?.name || a.user_id;
+      const bn = personById.get(b.user_id)?.name || b.user_id;
+      return an.localeCompare(bn, 'ko') || a.title.localeCompare(b.title, 'ko');
+    });
     const rows: any[][] = [];
     let title = '';
     if (category === 'YARD') {
       title = 'YARD 자격 현황';
-      rows.push([title], ['교육명','성명','사번','교육이수','스티커 번호','보수교육 1','보수교육 2','보수교육 3','보수교육 4']);
-      list.forEach(r => rows.push([r.title, personById.get(r.user_id)?.name || '', r.user_id, r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '']));
+      rows.push([title], ['교육명','성명','사번','교육이수','스티커 번호','보수교육 1','보수교육 2','보수교육 3','보수교육 4','유효기간']);
+      list.forEach(r => rows.push([r.title, personById.get(r.user_id)?.name || '', r.user_id, r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '', r.expiry_date || (r.education_completed || r.obtained_date ? addYears((r.education_completed || r.obtained_date) as string, 2) : '')]));
     } else if (category === 'NATIONAL') {
       title = '국가 자격 취득 현황';
       rows.push([title], ['성명','자격종류','METHOD','취득일']);
-      list.forEach(r => rows.push([personById.get(r.user_id)?.name || '', r.title, r.method || '', r.obtained_date || '']));
+      list.forEach(r => rows.push([personById.get(r.user_id)?.name || '', ['기능사','산업기사','기사'].includes(r.title) ? r.title : '', r.method || (r.title === 'METHOD' ? r.detail?.original || '' : ''), r.obtained_date || '']));
     } else {
       title = '사내자격 취득 현황';
-      rows.push([title], ['성명','경력(시간)','자격종류(Level)','Method','취득일','갱신일']);
-      list.forEach(r => rows.push([personById.get(r.user_id)?.name || '', Number(r.detail?.careerHours || 0), `${r.level || ''}`, r.method === 'LT' ? `LT (${r.title})` : r.method || '', r.obtained_date || '', r.expiry_date || '']));
+      rows.push([title], ['성명','경력(시간)','자격종류(Level)','Method','취득일','유효날짜']);
+      list.forEach(r => {
+        const p = personById.get(r.user_id);
+        rows.push([p?.name || '', careerHoursFromMember(p?.career_start_date), `${r.level || ''}`, r.method === 'LT' ? `LT (${r.title})` : r.method || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
+      });
     }
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:rows[1].length-1}}];
+    // 같은 사람에게 여러 자격이 있으면 Excel에서 이름 셀을 세로 병합합니다.
+    const nameCol = category === 'YARD' ? 1 : 0;
+    let groupStart = 2;
+    while (groupStart < rows.length) {
+      const userId = list[groupStart - 2]?.user_id;
+      let groupEnd = groupStart;
+      while (groupEnd + 1 < rows.length && list[groupEnd - 1]?.user_id === userId) groupEnd++;
+      if (userId && groupEnd > groupStart) {
+        ws['!merges'].push({ s: { r: groupStart, c: nameCol }, e: { r: groupEnd, c: nameCol } });
+        for (let rowIndex = groupStart + 1; rowIndex <= groupEnd; rowIndex++) {
+          const cell = ws[XLSX.utils.encode_cell({ r: rowIndex, c: nameCol })];
+          if (cell) cell.v = '';
+        }
+      }
+      groupStart = groupEnd + 1;
+    }
     ws['!rows'] = [{hpx:56}, {hpx:24}, ...rows.slice(2).map(() => ({hpx:21}))];
     ws['!cols'] = rows[1].map((_, i) => {
       const max = Math.max(...rows.map(row => String(row[i] ?? '').length), 8);
@@ -326,17 +433,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     XLSX.writeFile(wb, `${title}_${todayStr()}.xlsx`);
   };
 
-  const workingDaysToDate = (hours: number) => {
-    if (!Number.isFinite(hours) || hours <= 0) return todayStr();
-    const holidaySet = new Set(holidays.map(h => h.holiday_date));
-    let remaining = Math.ceil(hours / 8), d = todayStr(), safety = 0;
-    while (remaining > 0 && safety < 5000) {
-      d = addDays(d, 1); safety++;
-      const weekday = new Date(`${d}T12:00:00`).getDay();
-      if (weekday !== 0 && weekday !== 6 && !holidaySet.has(d)) remaining--;
-    }
-    return d;
-  };
+
   const requirement = useMemo(() => {
     const key = eligibilityMethod === 'LT' ? `LT:${eligibilityLtType}` : eligibilityMethod;
     const table: Record<string, {i:{training:number,min:number,total:number};ii:{training:number,min:number,total:number;afterI:number}}> = {
@@ -347,13 +444,15 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     };
     return table[key] || table.PT;
   }, [eligibilityMethod, eligibilityLtType]);
+  const selectedEligibilityPerson = users.find(u => u.id === eligibilityUserId);
   const effectiveExperienceHours = eligibilityMethod === 'LT' && eligibilityLtType === 'Mass Spectrometer' ? Number(massHours || 0) : Number(experienceHours || 0);
-  const remainingHours = Math.max(0, (eligibilityLevel === 'I' ? requirement.i.total : requirement.ii.total) - effectiveExperienceHours);
-  const remainingTraining = Math.max(0, (eligibilityLevel === 'I' ? requirement.i.training : requirement.ii.training) - Number(trainingHours || 0));
-  const remainingMinimum = Math.max(0, (eligibilityLevel === 'I' ? requirement.i.min : requirement.ii.min) - (eligibilityMethod === 'LT' && eligibilityLtType === 'Mass Spectrometer' ? Number(massHours || 0) : Number(minimumExperienceHours || 0)));
-  const remainingAfterI = eligibilityLevel === 'II' ? Math.max(0, requirement.ii.afterI - Number(level1ToLevel2Hours || 0)) : 0;
-  const totalRemaining = Math.max(remainingHours, remainingTraining, remainingMinimum, remainingAfterI);
-  const eligibleDate = workingDaysToDate(totalRemaining);
+  const levelIRequirement = Math.max(requirement.i.training, requirement.i.min, requirement.i.total);
+  const levelIIRequirement = Math.max(requirement.ii.training, requirement.ii.min, requirement.ii.total, requirement.ii.afterI || 0);
+  const autoEligibilityLevel: 'I'|'II'|null = effectiveExperienceHours >= levelIIRequirement ? 'II' : effectiveExperienceHours >= levelIRequirement ? 'I' : null;
+  const requiredForNext = autoEligibilityLevel === 'II' ? levelIIRequirement : levelIRequirement;
+  const hoursShort = Math.max(0, requiredForNext - effectiveExperienceHours);
+  const eligibleRecord = records.find(r => r.category === 'NDT' && r.user_id === eligibilityUserId && r.method === eligibilityMethod && (eligibilityMethod !== 'LT' || r.title === eligibilityLtType) && r.level === `Level ${autoEligibilityLevel}`);
+  const issuanceStatus = !autoEligibilityLevel ? '미발급대상' : eligibleRecord?.obtained_date ? '발급 완료' : 'Cert\' 미발급';
 
   const tabs: {key:Category; label:string}[] = [
     {key:'YARD', label:'YARD 자격'}, {key:'NATIONAL', label:'국가자격'}, {key:'NDT', label:'사내자격(NDT Level)'},
@@ -375,7 +474,7 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   };
 
   const alertDates = (r: CertRecord) => r.category === 'YARD'
-    ? [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4, r.expiry_date].filter(Boolean) as string[]
+    ? [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4, expiryForRecord(r)].filter(Boolean) as string[]
     : [r.expiry_date].filter(Boolean) as string[];
 
   return <div className="space-y-3 text-[#1F2937]">
@@ -399,54 +498,58 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
 
     {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{loadError}<p className="mt-1">아래 SQL 파일을 Supabase SQL Editor에서 1회 실행해주세요.</p><button onClick={()=>void load()} className="mt-2 rounded-lg bg-[#243B5A] px-3 py-1.5 text-white">다시 불러오기</button></div>}
     {loading ? <div className="rounded-xl border border-[#E2E5E9] bg-white p-10 text-center text-xs text-[#64748B]">자격현황을 불러오는 중...</div> : (
-      <div className="space-y-2">
+      (search.trim() || selectedUserId !== 'ALL') ? <div className="space-y-2">
         {visibleRecords.map(r => {
           const p = personById.get(r.user_id); const isOpen = !!expanded[r.id];
           return <div key={r.id} className="overflow-hidden rounded-xl border border-[#E2E5E9] bg-white shadow-xs">
             <button onClick={()=>setExpanded(prev=>({...prev,[r.id]:!prev[r.id]}))} className="flex w-full items-center justify-between gap-2 bg-[#F5F6F8] p-3 text-left">
               <span className="flex min-w-0 items-center gap-2">{isOpen?<ChevronDown className="h-4 w-4 text-[#243B5A]"/>:<ChevronRight className="h-4 w-4 text-[#243B5A]"/>}<span className="truncate text-xs font-bold">{p?.name || r.user_id} · {r.title}{r.method ? ` / ${r.method}` : ''}{r.level ? ` ${r.level}` : ''}</span></span>
-              <span className="shrink-0 text-[10px] text-[#64748B]">{r.obtained_date || '취득일 미입력'} {r.expiry_date ? ` · 유효 ${r.expiry_date}` : ''}</span>
+              <span className="shrink-0 text-[10px] text-[#64748B]">{r.obtained_date || '취득일 미입력'} {expiryForRecord(r) ? ` · 유효 ${expiryForRecord(r)}` : ''}</span>
             </button>
             {isOpen && <div className="space-y-3 p-3">
               <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
                 <div className="rounded-lg bg-[#F5F6F8] p-2"><span className="block text-[10px] text-[#64748B]">성명 / 사번</span><b>{p?.name || '-'} / {r.user_id}</b></div>
                 <div className="rounded-lg bg-[#F5F6F8] p-2"><span className="block text-[10px] text-[#64748B]">취득/교육일</span><b>{r.obtained_date || r.education_completed || '-'}</b></div>
-                <div className="rounded-lg bg-[#F5F6F8] p-2"><span className="block text-[10px] text-[#64748B]">유효기간</span><b>{dateLabel(r.expiry_date)}</b></div>
+                <div className="rounded-lg bg-[#F5F6F8] p-2"><span className="block text-[10px] text-[#64748B]">유효기간</span><b>{dateLabel(expiryForRecord(r))}</b></div>
                 <div className="rounded-lg bg-[#F5F6F8] p-2"><span className="block text-[10px] text-[#64748B]">Cert' No / 스티커</span><b>{r.cert_no || r.sticker_no || '-'}</b></div>
               </div>
               {r.category==='YARD' && <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">{[r.training_date_1,r.training_date_2,r.training_date_3,r.training_date_4].map((d,i)=><div key={i} className="rounded-lg border border-[#E2E5E9] p-2">보수교육 {i+1}<b className="mt-1 block">{dateLabel(d)}</b></div>)}</div>}
-              {r.category==='NDT' && <div className="rounded-lg border border-[#E2E5E9] p-2 text-xs">경력 {r.detail?.careerHours ?? 0}시간 · 교육 {r.detail?.trainingHours ?? 0}시간 · 최소시간 {r.detail?.minimumHours ?? 0}시간</div>}
+              {r.category==='NDT' && <div className="rounded-lg border border-[#E2E5E9] p-2 text-xs">구성원 총 경력 환산 {careerHoursFromMember(p?.career_start_date).toLocaleString()}시간 · 유효날짜 {r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '-')}</div>}
               {canManageRecord(r) && <div className="flex justify-end gap-2"><button onClick={()=>openEdit(r)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] px-3 py-1.5 text-xs font-bold text-[#243B5A]"><Edit3 className="h-3 w-3"/> 수정</button><button onClick={()=>void remove(r)} className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600"><Trash2 className="h-3 w-3"/> 삭제</button></div>}
             </div>}
           </div>;
         })}
         {visibleRecords.length===0 && <div className="rounded-xl border border-[#E2E5E9] bg-white p-10 text-center text-xs text-[#64748B]">등록된 자격정보가 없습니다. 자격 등록을 눌러 추가해주세요.</div>}
-      </div>
+      </div> : <div className="rounded-xl border border-dashed border-[#E2E5E9] bg-white p-8 text-center text-xs text-[#64748B]">목록은 기본적으로 숨겨져 있습니다. 이름·사번·자격을 검색하거나 구성원을 선택하면 해당 자격이 표시됩니다.</div>
     )}
 
     <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-xs space-y-3">
-      <div className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-[#243B5A]"/><h3 className="text-sm font-bold">NDT Level II 취득 가능일 계산</h3></div>
-      <p className="text-[11px] text-[#64748B]">구성원정보의 총 경력 시작일부터 주 5일·하루 8시간으로 환산하며, 토·일요일과 cert_holidays에 등록된 법정·대체공휴일을 제외합니다. Mass Spectrometer 검사시간은 별도 입력합니다.</p>
+      <div className="flex items-center gap-2"><CalendarClock className="h-4 w-4 text-[#243B5A]"/><h3 className="text-sm font-bold">NDT Level 자동 자격 판정</h3></div>
+      <p className="text-[11px] text-[#64748B]">구성원을 선택하면 구성원정보의 경력 시작일부터 주 5일·하루 8시간으로 환산합니다. 총 경력시간과 Method별 요구시간을 비교해 Level I / II를 자동 판정합니다.</p>
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        <select className={fieldClass} value={eligibilityUserId} onChange={e=>setEligibilityUserId(e.target.value)}><option value="">대상 구성원 선택</option>{users.map(u=><option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select>
-        <select className={fieldClass} value={eligibilityMethod} onChange={e=>setEligibilityMethod(e.target.value)}>{['PT','LT'].map(m=><option key={m}>{m}</option>)}</select>
-        {eligibilityMethod==='LT' && <select className={fieldClass} value={eligibilityLtType} onChange={e=>setEligibilityLtType(e.target.value)}>{LT_TYPES.map(m=><option key={m}>{m}</option>)}</select>}
+        <select className={fieldClass} value={eligibilityUserId} onChange={e=>{setEligibilityUserId(e.target.value);setShowEligibilityHint(false);}}><option value="">대상 구성원 선택</option>{users.map(u=><option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select>
+        <select className={fieldClass} value={eligibilityMethod} onChange={e=>{setEligibilityMethod(e.target.value);setShowEligibilityHint(false);}}>{['PT','LT'].map(m=><option key={m}>{m}</option>)}</select>
+        {eligibilityMethod==='LT' && <select className={fieldClass} value={eligibilityLtType} onChange={e=>{setEligibilityLtType(e.target.value);setShowEligibilityHint(false);}}>{LT_TYPES.map(m=><option key={m}>{m}</option>)}</select>}
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <label className="text-[11px] text-[#64748B]">구성원정보 총 경력 환산(시간)<input type="number" min="0" className={fieldClass} value={experienceHours} readOnly title="구성원정보의 총 경력 시작일을 기준으로 주 5일·하루 8시간 환산"/></label>
-        <label className="text-[11px] text-[#64748B]">교육시간<input type="number" min="0" className={fieldClass} value={trainingHours} onChange={e=>setTrainingHours(e.target.value)}/></label>
-        <label className="text-[11px] text-[#64748B]">최소 요구시간 누적<input type="number" min="0" className={fieldClass} value={minimumExperienceHours} onChange={e=>setMinimumExperienceHours(e.target.value)}/></label>
-        <label className="text-[11px] text-[#64748B]">Level I 후 Level II 인정시간(PT 기준 270h)<input type="number" min="0" className={fieldClass} value={level1ToLevel2Hours} onChange={e=>setLevel1ToLevel2Hours(e.target.value)}/></label>
-        {eligibilityMethod==='LT' && eligibilityLtType==='Mass Spectrometer' && <label className="text-[11px] text-[#64748B]">Mass Spectrometer 누적 검사시간(별도 입력)<input type="number" min="0" className={fieldClass} value={massHours} onChange={e=>setMassHours(e.target.value)}/></label>}
-      </div>
-      <div className="rounded-xl border border-[#D5DEE9] bg-[#F5F6F8] p-3">
-        <div className="text-xs font-bold text-[#243B5A]">선택 인원: {users.find(u=>u.id===eligibilityUserId)?.name || '미선택'} · {eligibilityMethod}{eligibilityMethod==='LT'?` (${eligibilityLtType})`:''} Level II</div>
-        <div className="mt-1 text-sm font-extrabold">예상 취득 가능일: {eligibleDate}</div>
-        <div className="mt-1 text-[11px] text-[#64748B]">필요 잔여시간 약 {totalRemaining}시간 / 주 40시간 기준 약 {Math.ceil(totalRemaining/40)}주. 정확한 계산을 위해 현재시간과 Level I 후 별도 인정시간을 확인하세요.</div>
-      </div>
+      {eligibilityUserId && <div className="rounded-xl border border-[#D5DEE9] bg-[#F5F6F8] p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2"><div className="text-xs font-bold text-[#243B5A]">{selectedEligibilityPerson?.name} · {eligibilityMethod}{eligibilityMethod==='LT'?` (${eligibilityLtType})`:''}</div><span className="rounded-full border border-[#D5DEE9] bg-white px-2.5 py-1 text-[11px] font-bold">총 경력 환산 {effectiveExperienceHours.toLocaleString()}시간</span></div>
+        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+          <div className="rounded-lg bg-white p-2"><div className="text-[10px] text-[#64748B]">Level I 요구시간</div><b className="text-sm">{levelIRequirement.toLocaleString()}시간</b></div>
+          <div className="rounded-lg bg-white p-2"><div className="text-[10px] text-[#64748B]">Level II 요구시간</div><b className="text-sm">{levelIIRequirement.toLocaleString()}시간</b></div>
+          <div className="rounded-lg bg-white p-2"><div className="text-[10px] text-[#64748B]">자동 판정 Level</div><b className="text-sm">{autoEligibilityLevel ? `Level ${autoEligibilityLevel}` : '기준 미달'}</b></div>
+        </div>
+        {eligibilityMethod==='LT' && eligibilityLtType==='Mass Spectrometer' && <label className="mt-2 block text-[11px] text-[#64748B]">Mass Spectrometer 누적 검사시간 (별도 입력)<input type="number" min="0" className={fieldClass} value={massHours} onChange={e=>setMassHours(e.target.value)}/></label>}
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button type="button" onClick={()=>{ if (!autoEligibilityLevel) setShowEligibilityHint(v=>!v); else { setShowEligibilityHint(false); notify(`${selectedEligibilityPerson?.name}: ${autoEligibilityLevel==='II'?'Level II':'Level I'} 요구시간 충족 · ${eligibleRecord?.obtained_date ? '취득일 등록됨' : "Cert' 미발급"}`, eligibleRecord?.obtained_date ? 'success' : 'warning'); } }} className={`rounded-lg px-3 py-2 text-xs font-bold text-white ${autoEligibilityLevel ? 'bg-emerald-700' : 'bg-rose-700'}`}>{autoEligibilityLevel ? '발급 대상' : '미발급대상'}</button>
+          <span className={`text-xs font-bold ${eligibleRecord?.obtained_date ? 'text-emerald-700' : autoEligibilityLevel ? 'text-amber-700' : 'text-rose-700'}`}>{autoEligibilityLevel ? (eligibleRecord?.obtained_date ? `Level ${autoEligibilityLevel} · 발급 완료 (${eligibleRecord.obtained_date})` : `Level ${autoEligibilityLevel} · Cert' 미발급`) : '요구시간 미달'}</span>
+          {autoEligibilityLevel && <span className="text-[11px] text-[#64748B]">잔여시간 0시간 · 기준일 {todayStr()}</span>}
+        </div>
+        {showEligibilityHint && !autoEligibilityLevel && <div className="mt-2 rounded-lg border border-rose-200 bg-white px-3 py-2 text-[11px] text-rose-700" role="status">Level I 기준까지 {hoursShort.toLocaleString()}시간 미달입니다. (현재 {effectiveExperienceHours.toLocaleString()}시간 / 요구 {levelIRequirement.toLocaleString()}시간)</div>}
+        {autoEligibilityLevel && !eligibleRecord?.obtained_date && <div className="mt-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-[11px] text-amber-800">요구 경력시간은 충족했지만, 자격현황에 해당 Level의 취득일이 없어 Cert' 미발급으로 표시됩니다. 자격 등록에서 취득일을 입력하면 발급 완료로 변경됩니다.</div>}
+      </div>}
       <details className="rounded-lg border border-[#E2E5E9] p-3">
-        <summary className="cursor-pointer text-xs font-bold text-[#243B5A]">법정공휴일 / 대체공휴일 관리 ({holidays.length}일)</summary>
-        <p className="mt-2 text-[10px] text-[#64748B]">토·일요일은 자동 제외됩니다. 공휴일은 매년 공식 달력 기준으로 등록해야 계산에 반영됩니다.</p>
+        <summary className="cursor-pointer text-xs font-bold text-[#243B5A]">법정공휴일 / 대체공휴일 관리 ({holidays.length}일) · 자동 동기화</summary>
+        <p className="mt-2 text-[10px] text-[#64748B]">{holidaySyncMessage || '연도별 공휴일 데이터를 자동 조회합니다.'} 외부 달력에 누락된 대체공휴일은 직접 추가·수정할 수 있습니다.</p>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
           <input type="date" className={fieldClass} value={holidayDate} onChange={e=>setHolidayDate(e.target.value)}/>
           <input className={fieldClass} value={holidayName} onChange={e=>setHolidayName(e.target.value)} placeholder="공휴일 명칭"/>
@@ -468,32 +571,33 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     {modalOpen && <div className="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/40 p-3">
       <form onSubmit={save} className="max-h-[92vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2"><h3 className="text-sm font-bold">{editing?'자격정보 수정':`${tabs.find(t=>t.key===category)?.label} 등록`}</h3><button type="button" onClick={()=>setModalOpen(false)}><X className="h-4 w-4"/></button></div>
+        {!editing && <div className="rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-2"><div className="mb-1 text-[10px] font-bold text-[#64748B]">▶ 자격 종류 이동 · 항목별 저장 후 다음 항목으로 이동하세요</div><div className="flex flex-wrap gap-2">{tabs.map(t=><button key={t.key} type="button" onClick={()=>{setCategory(t.key);setForm(blank(t.key, form.user_id || (selectedUserId !== 'ALL' ? selectedUserId : '')));}} className={`rounded-lg border px-3 py-1.5 text-[11px] font-bold ${category===t.key?'border-[#243B5A] bg-[#243B5A] text-white':'border-[#E2E5E9] bg-white text-[#64748B]'}`}>▶ {t.label}</button>)}</div></div>}
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <label className="text-[11px] font-bold text-[#64748B]">구성원 *<select className={fieldClass} value={form.user_id||''} onChange={e=>updateForm('user_id',e.target.value)} required><option value="">선택</option>{users.filter(u=>isAdmin || u.id===(currentUser?.id || users.find(x=>x.name===currentUser?.name)?.id)).map(u=><option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select></label>
           {category==='YARD' && <>
             <label className="text-[11px] font-bold text-[#64748B]">교육명 *<input className={fieldClass} value={form.title||''} onChange={e=>updateForm('title',e.target.value)} required/></label>
-            <label className="text-[11px] font-bold text-[#64748B]">교육이수일<input type="date" className={fieldClass} value={form.education_completed||''} onChange={e=>updateForm('education_completed',e.target.value)}/></label>
+            <label className="text-[11px] font-bold text-[#64748B]">취득/교육이수일<input type="date" className={fieldClass} value={form.education_completed||form.obtained_date||''} onChange={e=>{updateForm('education_completed',e.target.value);updateForm('obtained_date',e.target.value);if(e.target.value) updateForm('expiry_date',addYears(e.target.value,2));}}/></label>
             <label className="text-[11px] font-bold text-[#64748B]">스티커 번호<input className={fieldClass} value={form.sticker_no||''} onChange={e=>updateForm('sticker_no',e.target.value)}/></label>
             {[1,2,3,4].map(n=><label key={n} className="text-[11px] font-bold text-[#64748B]">보수교육 {n}<input type="date" className={fieldClass} value={(form as any)[`training_date_${n}`]||''} onChange={e=>updateForm(`training_date_${n}`,e.target.value)}/></label>)}
-            <label className="text-[11px] font-bold text-[#64748B]">유효기간<input type="date" className={fieldClass} value={form.expiry_date||''} onChange={e=>updateForm('expiry_date',e.target.value)}/></label>
+            <label className="text-[11px] font-bold text-[#64748B]">유효기간 (기본 2년)<input type="date" className={fieldClass} value={form.expiry_date||''} onChange={e=>updateForm('expiry_date',e.target.value)}/></label>
           </>}
           {category==='NATIONAL' && <>
             <label className="text-[11px] font-bold text-[#64748B]">자격종류 / 자격명 *<input list="national-cert-types" className={fieldClass} value={form.title||''} onChange={e=>updateForm('title',e.target.value)} placeholder="기능사 / 산업기사 / 기사 또는 자격명" required/><datalist id="national-cert-types"><option value="기능사"/><option value="산업기사"/><option value="기사"/></datalist></label>
-            <label className="text-[11px] font-bold text-[#64748B]">METHOD<input className={fieldClass} value={form.method||''} onChange={e=>updateForm('method',e.target.value)}/></label>
+            <label className="text-[11px] font-bold text-[#64748B]">METHOD (PT·UT·LT·MT·지게차 등)<input className={fieldClass} value={form.method||''} onChange={e=>updateForm('method',e.target.value)}/></label>
             <label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={fieldClass} value={form.obtained_date||''} onChange={e=>updateForm('obtained_date',e.target.value)}/></label>
             <label className="text-[11px] font-bold text-[#64748B]">유효기간<input type="date" className={fieldClass} value={form.expiry_date||''} onChange={e=>updateForm('expiry_date',e.target.value)}/></label>
           </>}
           {category==='NDT' && <>
-            <label className="text-[11px] font-bold text-[#64748B]">Method *<select className={fieldClass} value={form.method||''} onChange={e=>{updateForm('method',e.target.value); if(e.target.value==='LT') updateForm('title','Bubble'); else updateForm('title',e.target.value);}} required><option value="">선택</option><option>PT</option><option>LT</option></select></label>
+            <label className="text-[11px] font-bold text-[#64748B]">Method *<select className={fieldClass} value={form.method||''} onChange={e=>{updateForm('method',e.target.value); if(e.target.value==='LT') updateForm('title','Bubble'); else updateForm('title',e.target.value);}} required><option value="">선택</option><option>PT</option><option>LT</option><option>RT</option><option>UT</option><option>MT</option></select></label>
             {form.method==='LT' && <label className="text-[11px] font-bold text-[#64748B]">LT 종류 *<select className={fieldClass} value={form.title||'Bubble'} onChange={e=>updateForm('title',e.target.value)}>{LT_TYPES.map(m=><option key={m}>{m}</option>)}</select></label>}
-            <label className="text-[11px] font-bold text-[#64748B]">Level *<select className={fieldClass} value={form.level||''} onChange={e=>updateForm('level',e.target.value)} required><option value="">선택</option><option value="Level I">Level I</option><option value="Level II">Level II</option></select></label>
+            <label className="text-[11px] font-bold text-[#64748B]">Level *<select className={fieldClass} value={form.level||''} onChange={e=>updateForm('level',e.target.value)} required><option value="">선택</option><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></select></label>
             <label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={fieldClass} value={form.obtained_date||''} onChange={e=>updateForm('obtained_date',e.target.value)}/></label>
-            <label className="text-[11px] font-bold text-[#64748B]">유효일자 / 갱신일<input type="date" className={fieldClass} value={form.expiry_date||''} onChange={e=>updateForm('expiry_date',e.target.value)}/></label>
+            <label className="text-[11px] font-bold text-[#64748B]">유효날짜 (기본 5년)<input type="date" className={fieldClass} value={form.expiry_date||''} onChange={e=>updateForm('expiry_date',e.target.value)}/></label>
             <label className="text-[11px] font-bold text-[#64748B]">Cert' No<input className={fieldClass} value={form.cert_no||''} onChange={e=>updateForm('cert_no',e.target.value)}/></label>
-            {(['careerHours','trainingHours','minimumHours','level1ToLevel2Hours','massSpectrometerHours'] as const).map((key,i)=><label key={key} className="text-[11px] font-bold text-[#64748B]">{['기존 경력/검사시간 메모(계산은 구성원정보 기준)','교육시간 누적','최소시간 누적(인정시간)','Level I 후 Level II 별도시간','Mass Spectrometer 누적 검사시간'][i]}<input type="number" min="0" className={fieldClass} value={form.detail?.[key] ?? 0} onChange={e=>updateForm('detail',{...(form.detail||{}),[key]:Number(e.target.value)})}/></label>)}
+            <p className="sm:col-span-2 text-[10px] text-[#64748B]">경력시간과 Level 판정은 구성원정보의 경력 시작일을 기준으로 자동 계산됩니다. 유효날짜는 취득일 기준 5년으로 자동 설정되며 직접 수정할 수 있습니다.</p>
           </>}
         </div>
-        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold">취소</button><button type="submit" className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">저장</button></div>
+        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold">취소</button><button type="submit" className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">{editing ? '수정 저장' : '저장 후 계속 등록'}</button></div>
       </form>
     </div>}
     {notice && <div className="fixed right-4 top-4 z-[150] w-[min(92vw,420px)]"><div className={`rounded-xl border bg-white p-3 text-xs font-bold shadow-xl ${notice.type==='error'?'border-red-200 text-red-700':notice.type==='warning'?'border-amber-200 text-amber-700':'border-[#D5DEE9] text-[#243B5A]'}`}>{notice.message}</div></div>}
