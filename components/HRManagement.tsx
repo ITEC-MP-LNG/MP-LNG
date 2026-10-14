@@ -20,8 +20,7 @@ import {
   Network,
   GitCommit,
   Shield,
-  Plus,
-  Trash2
+  Plus
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
