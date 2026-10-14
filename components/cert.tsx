@@ -79,6 +79,8 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
   const [search, setSearch] = useState('');
   const [holidaySyncMessage, setHolidaySyncMessage] = useState('');
   const [holidayDate, setHolidayDate] = useState('');
+  const [selectedHolidayYear, setSelectedHolidayYear] = useState(String(new Date().getFullYear()));
+  const autoNdtSyncRef = useRef<Set<string>>(new Set());
   const [holidayName, setHolidayName] = useState('');
   const [holidayBusy, setHolidayBusy] = useState(false);
   const [alerts, setAlerts] = useState<CertRecord[]>([]);
@@ -131,6 +133,15 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     return hours;
   }, [holidays]);
 
+  // 근무시간을 1년=260근무일, 1일=8시간 기준으로 YY/DD/Hour 형태로 표시합니다.
+  const formatCareer = (hours: number) => {
+    const totalWorkDays = Math.floor(Math.max(0, hours) / 8);
+    const years = Math.floor(totalWorkDays / 260);
+    const days = totalWorkDays % 260;
+    const remainingHours = Math.max(0, hours) % 8;
+    return `${years}년/${days}일/${remainingHours}시간`;
+  };
+
   const autoNdtLevelFor = useCallback((userId: string, method?: string | null, title?: string | null): 'Level I' | 'Level II' | null => {
     const person = users.find(u => u.id === userId);
     const hours = careerHoursFromMember(person?.career_start_date);
@@ -143,6 +154,62 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     else return null; // RT/UT/MT는 별도 요구시간 기준이 아직 지정되지 않았습니다.
     return hours >= levelII ? 'Level II' : hours >= levelI ? 'Level I' : null;
   }, [users, careerHoursFromMember]);
+
+  // 구성원 경력시간만으로 PT / LT Bubble / LT Pressure change의 미발급 자격 레코드를 자동 생성합니다.
+  // LT Mass Spectrometer는 사용자 요청에 따라 자동 생성하지 않으며, 취득일도 직접 입력합니다.
+  useEffect(() => {
+    if (!recordsLoadedRef.current || !users.length) return;
+    let cancelled = false;
+    const syncAutoNdtRecords = async () => {
+      const pending: any[] = [];
+      const updateLevels: Array<{id:string; level:string; detail:any}> = [];
+      users.forEach(person => {
+        const hours = careerHoursFromMember(person.career_start_date);
+        const definitions = [
+          { method: 'PT', title: 'PT', levelI: 130, levelII: 270 },
+          { method: 'LT', title: 'Bubble', levelI: 15, levelII: 80 },
+          { method: 'LT', title: 'Pressure change', levelI: 200, levelII: 530 },
+        ];
+        definitions.forEach(def => {
+          const level = hours >= def.levelII ? 'Level II' : hours >= def.levelI ? 'Level I' : '';
+          if (!level) return;
+          const key = `${person.id}|${def.method}|${def.title}`;
+          const existing = records.find(r => r.category === 'NDT' && r.user_id === person.id && r.method === def.method && r.title === def.title);
+          if (!existing) {
+            if (autoNdtSyncRef.current.has(key)) return;
+            autoNdtSyncRef.current.add(key);
+            pending.push({ user_id: person.id, category: 'NDT', title: def.title, obtained_date: null, expiry_date: null, method: def.method, level, cert_no: null, sticker_no: null, education_completed: null, training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null, detail: { autoCareerLevel: true, careerHoursAtRegistration: hours } });
+          } else if (existing.detail?.autoCareerLevel && !existing.obtained_date && existing.level !== level) {
+            updateLevels.push({ id: existing.id, level, detail: { ...(existing.detail || {}), careerHoursAtRegistration: hours } });
+          }
+        });
+      });
+      try {
+        for (const item of updateLevels) {
+          if (cancelled) return;
+          const { error } = await supabase.from('cert_records').update({ level: item.level, detail: item.detail }).eq('id', item.id);
+          if (error) throw error;
+        }
+        if (pending.length && !cancelled) {
+          const { data, error } = await supabase.from('cert_records').insert(pending).select('*');
+          if (error) throw error;
+          if (data?.length) setRecords(prev => {
+            const keys = new Set(prev.map(r => `${r.user_id}|${r.category}|${r.method || ''}|${r.title}`));
+            return [...prev, ...(data as CertRecord[]).filter(r => !keys.has(`${r.user_id}|${r.category}|${r.method || ''}|${r.title}`))];
+          });
+        }
+        if (updateLevels.length && !cancelled) setRecords(prev => prev.map(r => {
+          const update = updateLevels.find(u => u.id === r.id);
+          return update ? { ...r, level: update.level, detail: update.detail } : r;
+        }));
+      } catch (e:any) {
+        pending.forEach(r => autoNdtSyncRef.current.delete(`${r.user_id}|${r.method}|${r.title}`));
+        notify(`NDT 자동 등록 실패: ${e?.message || '오류'}`, 'error');
+      }
+    };
+    void syncAutoNdtRecords();
+    return () => { cancelled = true; };
+  }, [users, records, careerHoursFromMember, notify]);
 
   const latestYardRefreshDate = (r: Partial<CertRecord>) => {
     const dates = [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4, r.education_completed, r.obtained_date]
@@ -276,6 +343,16 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     return !q || [p?.name, p?.id, r.title, r.method, r.level, r.cert_no, r.sticker_no].some(v => esc(v).toLowerCase().includes(q));
   }), [records, category, selectedUserId, search, personById]);
 
+  const matchingPeople = useMemo(() => users.filter(person => {
+    if (selectedUserId !== 'ALL' && person.id !== selectedUserId) return false;
+    const q = search.trim().toLowerCase();
+    if (!q) return selectedUserId !== 'ALL';
+    const memberTextMatches = [person.name, person.id, person.department, person.position, person.yard_certificates, person.national_certificates, person.internal_certificates]
+      .some(v => esc(v).toLowerCase().includes(q));
+    const recordTextMatches = records.some(r => r.user_id === person.id && [r.title, r.method, r.level, r.cert_no, r.sticker_no].some(v => esc(v).toLowerCase().includes(q)));
+    return memberTextMatches || recordTextMatches;
+  }), [users, records, selectedUserId, search]);
+
   const daysUntil = (d?: string|null) => d ? dayDiff(d) : null;
   const expiryForRecord = (r: CertRecord) => { if (r.category === 'YARD') { const base = r.education_completed || r.obtained_date || ''; const refresh = [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4].filter(Boolean).sort().slice(-1)[0] || ''; const latest = latestYardRefreshDate(r); const defaultExpiry = latest ? addYears(latest, 2) : null; if (refresh && refresh > base && !r.detail?.expiryManuallySet) return defaultExpiry; return r.expiry_date || defaultExpiry; } if (r.category === 'NDT') return r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : null); return null; };
   const isSelfRecord = (r: CertRecord) => (!!currentUser?.id && currentUser.id === r.user_id) || (!!currentUser?.name && personById.get(r.user_id)?.name === currentUser.name);
@@ -396,24 +473,24 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
     let title = '';
     if (category === 'YARD') {
       title = 'YARD 자격 현황';
-      rows.push([title], ['교육명','성명','사번','교육이수','스티커 번호','보수교육 1','보수교육 2','보수교육 3','보수교육 4','유효기간']);
-      list.forEach(r => rows.push([r.title, personById.get(r.user_id)?.name || '', r.user_id, r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '', expiryForRecord(r) || '']));
+      rows.push([title], ['성명','교육명','사번','교육이수','스티커 번호','보수교육 1','보수교육 2','보수교육 3','보수교육 4','유효기간']);
+      list.forEach(r => rows.push([personById.get(r.user_id)?.name || '', r.title, r.user_id, r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '', expiryForRecord(r) || '']));
     } else if (category === 'NATIONAL') {
       title = '국가 자격 취득 현황';
       rows.push([title], ['성명','자격종류','METHOD','취득일']);
       list.forEach(r => rows.push([personById.get(r.user_id)?.name || '', ['기능사','산업기사','기사'].includes(r.title) ? r.title : '', r.method || (r.title === 'METHOD' ? r.detail?.original || '' : ''), r.obtained_date || '']));
     } else {
       title = '사내자격 취득 현황';
-      rows.push([title], ['성명','경력(시간)','자격종류(Level)','Method','취득일','유효날짜']);
+      rows.push([title], ['성명','경력(YY/DD/Hour)','자격종류(Level)','Method','취득일','유효날짜']);
       list.forEach(r => {
         const p = personById.get(r.user_id);
-        rows.push([p?.name || '', careerHoursFromMember(p?.career_start_date), `${r.level || ''}`, r.method === 'LT' ? `LT (${r.title})` : r.method || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
+        rows.push([p?.name || '', formatCareer(careerHoursFromMember(p?.career_start_date)), `${r.level || ''}`, r.method === 'LT' ? `LT (${r.title})` : r.method || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
       });
     }
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = [{s:{r:0,c:0}, e:{r:0,c:rows[1].length-1}}];
     // 같은 사람에게 여러 자격이 있으면 Excel에서 이름 셀을 세로 병합합니다.
-    const nameCol = category === 'YARD' ? 1 : 0;
+    const nameCol = 0;
     let i = 0;
     while (i < list.length) {
       let j = i + 1;
@@ -502,50 +579,57 @@ export default function CertManagement({ users, currentUser, isAdmin, onUsersCha
       <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3">
         <input className={fieldClass} value={search} onChange={e=>setSearch(e.target.value)} placeholder="이름, 사번, 자격 검색"/>
         <select className={fieldClass} value={selectedUserId} onChange={e=>setSelectedUserId(e.target.value)}><option value="ALL">전체 구성원</option>{users.map(u=><option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select>
-        <div className="flex items-center text-[11px] text-[#64748B]">표시 {visibleRecords.length}건 · 알림은 YARD 40일, NDT 30일 전 (국가자격 알림 없음)</div>
+        <div className="flex items-center text-[11px] text-[#64748B]">검색 결과 {matchingPeople.length}명 · 알림은 YARD 40일, NDT 30일 전 (국가자격 알림 없음)</div>
       </div>
     </div>
 
     {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">{loadError}<p className="mt-1">아래 SQL 파일을 Supabase SQL Editor에서 1회 실행해주세요.</p><button onClick={()=>void load()} className="mt-2 rounded-lg bg-[#243B5A] px-3 py-1.5 text-white">다시 불러오기</button></div>}
     {loading ? <div className="rounded-xl border border-[#E2E5E9] bg-white p-10 text-center text-xs text-[#64748B]">자격현황을 불러오는 중...</div> : (
       (search.trim() || selectedUserId !== 'ALL') ? <div className="space-y-2">
-        {category === 'NDT' && selectedNdtPerson && <div className="rounded-xl border border-[#D5DEE9] bg-[#F8FAFC] p-3">
-          <div className="mb-2 text-xs font-bold text-[#243B5A]">{selectedNdtPerson.name} · NDT 자동 자격 상태 <span className="font-normal text-[#64748B]">(총 경력 {careerHoursFromMember(selectedNdtPerson.career_start_date).toLocaleString()}시간)</span></div>
-          <div className="flex flex-wrap gap-2">{([{method:'PT',title:'PT'},{method:'LT',title:'Bubble'},{method:'LT',title:'Pressure change'},{method:'LT',title:'Mass Spectrometer'}] as const).map(item => { const status = ndtStatusForMethod(selectedNdtPerson.id, item.method, item.title); return <span key={`${item.method}-${item.title}`} className={`rounded-full border px-2.5 py-1 text-[10px] font-bold ${status.eligible ? (status.status === '발급 완료' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700') : 'border-rose-200 bg-rose-50 text-rose-700'}`}>{item.method}{item.method==='LT' ? ` ${item.title}` : ''}: {status.level || '미달'} · {status.status}</span>; })}</div>
-        </div>}
-        {visibleRecords.map(r => {
-          const p = personById.get(r.user_id); const isOpen = !!expanded[r.id];
-          return <div key={r.id} className="overflow-hidden rounded-xl border border-[#E2E5E9] bg-white shadow-xs">
-            <button onClick={()=>setExpanded(prev=>({...prev,[r.id]:!prev[r.id]}))} className="flex w-full items-center justify-between gap-2 bg-[#F5F6F8] p-3 text-left">
-              <span className="flex min-w-0 items-center gap-2">{isOpen?<ChevronDown className="h-4 w-4 text-[#243B5A]"/>:<ChevronRight className="h-4 w-4 text-[#243B5A]"/>}<span className="truncate text-xs font-bold">{p?.name || r.user_id} · {r.title}{r.method ? ` / ${r.method}` : ''}{r.level ? ` ${r.level}` : ''}</span></span>
-              <span className="shrink-0 text-[10px] text-[#64748B]">{r.obtained_date || r.education_completed || '취득일 미입력'} {expiryForRecord(r) ? ` · 유효 ${expiryForRecord(r)}` : ''} {r.category==='NDT' ? ` · ${ndtStatusForRecord(r).level || r.level || 'Level 미정'} / ${ndtStatusForRecord(r).status}` : ''}</span>
-            </button>
-            {isOpen && <div className="space-y-3 p-3">
-              <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-                <div className="rounded-lg bg-[#F5F6F8] p-2"><span className="block text-[10px] text-[#64748B]">성명 / 사번</span><b>{p?.name || '-'} / {r.user_id}</b></div>
-                <div className="rounded-lg bg-[#F5F6F8] p-2"><span className="block text-[10px] text-[#64748B]">취득/교육일</span><b>{r.obtained_date || r.education_completed || '-'}</b></div>
-                {r.category !== 'NATIONAL' && <div className="rounded-lg bg-[#F5F6F8] p-2"><span className="block text-[10px] text-[#64748B]">{r.category === 'NDT' ? '유효날짜' : '유효기간'}</span><b>{dateLabel(expiryForRecord(r))}</b></div>}
-                <div className="rounded-lg bg-[#F5F6F8] p-2"><span className="block text-[10px] text-[#64748B]">Cert' No / 스티커</span><b>{r.cert_no || r.sticker_no || '-'}</b></div>
-              </div>
-              {r.category==='YARD' && <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">{[r.training_date_1,r.training_date_2,r.training_date_3,r.training_date_4].map((d,i)=><div key={i} className="rounded-lg border border-[#E2E5E9] p-2">보수교육 {i+1}<b className="mt-1 block">{dateLabel(d)}</b></div>)}</div>}
-              {r.category==='NDT' && <div className="rounded-lg border border-[#E2E5E9] p-2 text-xs">구성원 총 경력 환산 {careerHoursFromMember(p?.career_start_date).toLocaleString()}시간 · 자동 판정 {ndtStatusForRecord(r).level || '기준 미달/미설정'} · 상태 <b className={ndtStatusForRecord(r).eligible ? 'text-emerald-700' : 'text-rose-700'}>{ndtStatusForRecord(r).status}</b> · 유효날짜 {expiryForRecord(r) || '-'}</div>}
-              {canManageRecord(r) && <div className="flex justify-end gap-2"><button onClick={()=>openEdit(r)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] px-3 py-1.5 text-xs font-bold text-[#243B5A]"><Edit3 className="h-3 w-3"/> 수정</button><button onClick={()=>void remove(r)} className="flex items-center gap-1 rounded-lg border border-red-200 px-3 py-1.5 text-xs font-bold text-red-600"><Trash2 className="h-3 w-3"/> 삭제</button></div>}
-            </div>}
+        {matchingPeople.map(person => {
+          const memberRecords = records.filter(r => r.user_id === person.id);
+          const yardRecords = memberRecords.filter(r => r.category === 'YARD');
+          const nationalRecords = memberRecords.filter(r => r.category === 'NATIONAL');
+          const ndtRecords = memberRecords.filter(r => r.category === 'NDT');
+          const careerHours = careerHoursFromMember(person.career_start_date);
+          const columns = [
+            { key: 'YARD', label: 'YARD 자격', items: yardRecords },
+            { key: 'NATIONAL', label: '국가자격', items: nationalRecords },
+            { key: 'NDT', label: '사내자격 (NDT Level)', items: ndtRecords },
+          ];
+          return <div key={person.id} className="overflow-hidden rounded-xl border border-[#E2E5E9] bg-white shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-[#F5F6F8] p-3">
+              <div><div className="text-sm font-bold text-[#243B5A]">{person.name} <span className="text-xs font-normal text-[#64748B]">({person.id})</span></div><div className="mt-1 text-[10px] text-[#64748B]">총 경력 {formatCareer(careerHours)} · 환산 {careerHours.toLocaleString()}시간</div></div>
+              {isAdmin && <button onClick={()=>{setCategory('YARD');setSelectedUserId(person.id);setSearch('');setForm(blank('YARD',person.id));setEditing(null);setModalOpen(true);}} className="rounded-lg bg-[#243B5A] px-3 py-1.5 text-[10px] font-bold text-white">자격 추가</button>}
+            </div>
+            <div className="grid grid-cols-1 divide-y divide-[#E2E5E9] md:grid-cols-3 md:divide-x md:divide-y-0">
+              {columns.map(col => <div key={col.key} className="min-w-0 p-3">
+                <div className="mb-2 flex items-center justify-between"><h4 className="text-xs font-bold text-[#243B5A]">{col.label}</h4><span className="rounded-full bg-[#F5F6F8] px-2 py-0.5 text-[10px] text-[#64748B]">{col.items.length}건</span></div>
+                {col.key === 'NDT' && <div className="mb-2 rounded-lg bg-[#F8FAFC] p-2"><div className="mb-1 text-[10px] font-bold text-[#64748B]">경력 기준 자동 판정</div><div className="flex flex-wrap gap-1">{([{method:'PT',title:'PT'},{method:'LT',title:'Bubble'},{method:'LT',title:'Pressure change'}] as const).map(item => { const status = ndtStatusForMethod(person.id,item.method,item.title); return <span key={`${item.method}-${item.title}`} title={status.eligible ? status.status : '해당 Method의 요구시간 미달'} className={`rounded border px-1.5 py-1 text-[9px] font-bold ${status.eligible ? (status.status === '발급 완료' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700') : 'border-rose-200 bg-rose-50 text-rose-700'}`}>{item.method}{item.method==='LT'?` ${item.title}`:''}: {status.level || '미달'} · {status.status}</span>; })}</div></div>}
+                {col.items.length === 0 && <div className="rounded-lg border border-dashed border-[#E2E5E9] p-3 text-center text-[10px] text-[#94A3B8]">등록된 자격 없음</div>}
+                <div className="space-y-2">{col.items.map(r => <div key={r.id} className="rounded-lg border border-[#E2E5E9] p-2">
+                  <div className="flex items-start justify-between gap-2"><div className="min-w-0"><div className="break-words text-[11px] font-bold text-[#1F2937]">{r.title}{r.method ? ` · ${r.method}` : ''}{r.level ? ` ${r.level}` : ''}</div><div className="mt-1 text-[10px] text-[#64748B]">취득/이수 {r.obtained_date || r.education_completed || '미입력'}</div>{r.category !== 'NATIONAL' && <div className="text-[10px] text-[#64748B]">유효기간 {expiryForRecord(r) || '미입력'}</div>}{r.category==='YARD' && <div className="mt-1 text-[9px] text-[#64748B]">{[r.training_date_1,r.training_date_2,r.training_date_3,r.training_date_4].map((d,i)=>d?`보수교육 ${i+1}: ${d}`:'').filter(Boolean).join(' · ') || '보수교육 미입력'}</div>}{r.category==='NDT' && <div className="mt-1 text-[10px] font-bold text-[#64748B]">{ndtStatusForRecord(r).level || r.level || 'Level 미정'} · {ndtStatusForRecord(r).status}</div>}</div>
+                    {canManageRecord(r) && <div className="flex shrink-0 gap-1"><button title="수정" onClick={()=>openEdit(r)} className="rounded border border-[#E2E5E9] p-1 text-[#243B5A]"><Edit3 className="h-3 w-3"/></button><button title="삭제" onClick={()=>void remove(r)} className="rounded border border-red-200 p-1 text-red-600"><Trash2 className="h-3 w-3"/></button></div>}
+                  </div>
+                </div>)}</div>
+              </div>)}
+            </div>
           </div>;
         })}
-        {visibleRecords.length===0 && <div className="rounded-xl border border-[#E2E5E9] bg-white p-10 text-center text-xs text-[#64748B]">등록된 자격정보가 없습니다. 자격 등록을 눌러 추가해주세요.</div>}
+        {matchingPeople.length===0 && <div className="rounded-xl border border-[#E2E5E9] bg-white p-8 text-center text-xs text-[#64748B]">검색 조건에 맞는 구성원이 없습니다.</div>}
       </div> : <div className="rounded-xl border border-dashed border-[#E2E5E9] bg-white p-8 text-center text-xs text-[#64748B]">목록은 기본적으로 숨겨져 있습니다. 이름·사번·자격을 검색하거나 구성원을 선택하면 해당 자격이 표시됩니다.</div>
     )}
 
-    <div className="rounded-xl border border-[#E2E5E9] bg-white p-3">      <details className="rounded-lg border border-[#E2E5E9] p-3">
-        <summary className="cursor-pointer text-xs font-bold text-[#243B5A]">법정공휴일 / 대체공휴일 관리 ({holidays.length}일) · 자동 동기화</summary>
-        <p className="mt-2 text-[10px] text-[#64748B]">{holidaySyncMessage || '연도별 공휴일 데이터를 자동 조회합니다.'} 외부 달력에 누락된 대체공휴일은 직접 추가·수정할 수 있습니다.</p>
+    <div className="rounded-xl border border-[#E2E5E9] bg-white p-3"><details className="rounded-lg border border-[#E2E5E9] p-3">
+        <summary className="cursor-pointer text-xs font-bold text-[#243B5A]">법정공휴일 / 대체공휴일 관리</summary>
+        <div className="mt-3 flex flex-wrap items-center gap-2"><label className="text-xs font-bold text-[#64748B]">연도<select className={`${fieldClass} mt-1 min-w-[120px]`} value={selectedHolidayYear} onChange={e=>setSelectedHolidayYear(e.target.value)}>{Array.from({length: 44}, (_, i) => new Date().getFullYear() - 40 + i).map(y=><option key={y} value={String(y)}>{y}년</option>)}</select></label><div className="rounded-lg bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A]">{selectedHolidayYear}년 공휴일 {holidays.filter(h=>h.holiday_date.startsWith(`${selectedHolidayYear}-`)).length}일</div></div>
+        <p className="mt-2 text-[10px] text-[#64748B]">{holidaySyncMessage || '연도별 공휴일 데이터를 자동 조회합니다.'} 선택한 연도의 공휴일만 표시합니다. 누락된 대체공휴일은 직접 추가·수정할 수 있습니다.</p>
         <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-[1fr_1fr_auto]">
-          <input type="date" className={fieldClass} value={holidayDate} onChange={e=>setHolidayDate(e.target.value)}/>
+          <input type="date" className={fieldClass} value={holidayDate} onChange={e=>{setHolidayDate(e.target.value); if(e.target.value) setSelectedHolidayYear(e.target.value.slice(0,4));}}/>
           <input className={fieldClass} value={holidayName} onChange={e=>setHolidayName(e.target.value)} placeholder="공휴일 명칭"/>
           <button type="button" disabled={holidayBusy} onClick={()=>void addHoliday()} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{holidayBusy?'저장 중':'공휴일 등록'}</button>
         </div>
-        {holidays.length>0 && <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">{holidays.map(h=><div key={h.holiday_date} className="flex items-center justify-between rounded bg-[#F5F6F8] px-2 py-1 text-[11px]"><span>{h.holiday_date} · {h.name}</span><button type="button" onClick={()=>void removeHoliday(h)} className="font-bold text-red-600">삭제</button></div>)}</div>}
+        {holidays.filter(h=>h.holiday_date.startsWith(`${selectedHolidayYear}-`)).length>0 && <div className="mt-2 max-h-48 space-y-1 overflow-y-auto">{holidays.filter(h=>h.holiday_date.startsWith(`${selectedHolidayYear}-`)).sort((a,b)=>a.holiday_date.localeCompare(b.holiday_date)).map(h=><div key={h.holiday_date} className="flex items-center justify-between rounded bg-[#F5F6F8] px-2 py-1 text-[11px]"><span>{h.holiday_date} · {h.name}</span><button type="button" onClick={()=>void removeHoliday(h)} className="font-bold text-red-600">삭제</button></div>)}</div>}
       </details></div>
 
     {activeAlert && !alertHidden && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-3">
