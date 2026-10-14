@@ -343,7 +343,7 @@ export default function HRManagement({
       experience: user.experience || '',
       internal_certificates: user.internal_certificates || '',
       national_certificates: user.national_certificates || user.certificates || '',
-      yard_certificates: user.yard_certificates || '',
+      yard_certificates: user.yard_certificates || user.internal_certificates || '',
       cert_assignments: {
         RT: { level: user.cert_assignments?.RT?.level || '', cert_no: user.cert_assignments?.RT?.cert_no || '' },
         UT: { level: user.cert_assignments?.UT?.level || '', cert_no: user.cert_assignments?.UT?.cert_no || '' },
@@ -445,10 +445,10 @@ export default function HRManagement({
         phone: formData.phone,
         address: formData.address,
         experience: formData.experience,
-        internal_certificates: formData.internal_certificates,
+        internal_certificates: '',
         national_certificates: formData.national_certificates,
         certificates: formData.national_certificates,
-        yard_certificates: formData.yard_certificates,
+        yard_certificates: formData.yard_certificates || formData.internal_certificates,
         cert_assignments: formData.cert_assignments,
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
@@ -1400,7 +1400,7 @@ export default function HRManagement({
                 </div>
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">기존 사내자격 메모</label>
-                  <input type="text" placeholder="기존 자격 메모(선택)" value={formData.internal_certificates} onChange={(e) => setFormData({ ...formData, internal_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none" />
+                  <div className="w-full min-h-[36px] p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#64748B]">기존 메모는 위의 YARD 자격 항목으로 연동됩니다.</div>
                 </div>
               </div>
 
