@@ -24,7 +24,6 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
-import CertManagement from './cert';
 
 export interface HRUser {
   id: string;          
@@ -47,8 +46,9 @@ export interface HRUser {
   pos_x?: number;              
   pos_y?: number;              
   photo_url?: string | null;
-  yard_national_certificates?: string;
+  // UI compatibility field mapped to app_users.yard_national_certificates
   yard_certificates?: string;
+  yard_national_certificates?: string;
   cert_assignments?: Record<string, { level?: string; cert_no?: string }>;
 }
 
@@ -123,28 +123,14 @@ const JOB_TITLE_ORDER_IN_RANK: Record<string, number> = {
   '없음': 5
 };
 
-
-type InternalCertRow = { id: string; source: '사내발급' | 'ASNT/ISO'; method: string; level: string };
-type NationalCertRow = { id: string; method: string; kind: string };
-const NATIONAL_KINDS = ['기능사', '산업기사', '기사', '기술사', 'RI', 'SRI'];
-const CERT_LEVELS = ['I', 'II', 'III'];
-function parseStoredRows<T>(value: unknown): T[] {
-  if (!value || typeof value !== 'string') return [];
-  try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
-}
-
 export default function HRManagement({ 
   isAdmin = false, 
   currentUserRole = '',
   currentUser = null 
 }: HRManagementProps) {
   const [users, setUsers] = useState<HRUser[]>([]);
-  const [internalCertRows, setInternalCertRows] = useState<InternalCertRow[]>([]);
-  const [nationalCertRows, setNationalCertRows] = useState<NationalCertRow[]>([]);
-  const [certRecords, setCertRecords] = useState<any[]>([]);
-  const [certRecordsReady, setCertRecordsReady] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'ORG' | 'LIST' | 'CERT'>('ORG');
+  const [activeTab, setActiveTab] = useState<'ORG' | 'LIST'>('ORG');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [subGroupType, setSubGroupType] = useState<'DEPT' | 'POS'>('DEPT');
@@ -225,7 +211,8 @@ export default function HRManagement({
       const formatted = (data || []).map((u: any) => ({
         ...u,
         national_certificates: u.national_certificates || '',
-        yard_national_certificates: u.yard_national_certificates || '',
+        internal_certificates: u.internal_certificates || '',
+        yard_certificates: u.yard_national_certificates || '',
         cert_assignments: u.cert_assignments || {}
       }));
 
@@ -241,62 +228,39 @@ export default function HRManagement({
     fetchUsers();
   }, [fetchUsers]);
 
-  // 자격현황의 상세 레코드를 한 번 조회하여 카드뷰/목록뷰와 공유합니다.
-  // cert.tsx에서도 이 동일한 데이터 상태를 갱신하므로 별도 재조회 없이 화면에 반영됩니다.
-  useEffect(() => {
-    let active = true;
-    const loadCertRecords = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('cert_records')
-          .select('id, user_id, category, title, obtained_date, expiry_date, method, level, cert_no, sticker_no, education_completed, training_date_1, training_date_2, training_date_3, training_date_4')
-          .order('category')
-          .order('title');
-        if (error) throw error;
-        if (active) setCertRecords((data || []) as any[]);
-      } catch (error) {
-        console.error('자격현황 연동 조회 실패:', error);
-        if (active) setCertRecords([]);
-      } finally {
-        if (active) setCertRecordsReady(true);
-      }
-    };
-    void loadCertRecords();
-    return () => { active = false; };
-  }, []);
-
-  const handleCertRecordsChanged = useCallback((nextRecords: any[]) => {
-    setCertRecords(nextRecords);
-  }, []);
-
+  // 자격현황(cert.tsx / cert_records)과 임시로 분리합니다.
+  // 카드뷰·목록뷰의 자격 표시는 app_users에 저장된 기존 필드만 읽습니다.
   const getQualificationSummary = (userId: string, category: 'YARD' | 'NATIONAL' | 'NDT') => {
-    const list = certRecords.filter((r) => r.user_id === userId && r.category === category);
-    if (!list.length) return '';
-    const summaries = list.map((r) => {
-      const label = category === 'NDT'
-        ? (() => {
-            const method = (r.method || '').trim().toUpperCase();
-            let title = (r.title || '').trim();
-            if (r.level) title = title.replace(new RegExp(r.level.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'), '').trim();
-            while (method && title.toUpperCase().startsWith(method)) title = title.slice(method.length).trim();
-            return [method, title, r.level || ''].filter(Boolean).join(' ');
-          })()
-        : category === 'NATIONAL'
-          ? `${r.method ? `${r.method} ` : ''}${r.title || ''}`.trim()
-          : (r.title || 'YARD 자격');
-      const dates: string[] = [];
-      if (r.obtained_date || r.education_completed) dates.push(`취득 ${r.education_completed || r.obtained_date}`);
-      if (category === 'YARD') {
-        const refresh = [r.training_date_1, r.training_date_2, r.training_date_3, r.training_date_4].filter(Boolean);
-        if (refresh.length) dates.push(`보수 ${refresh[refresh.length - 1]}`);
+    const person = users.find((u) => u.id === userId);
+    if (!person) return '';
+    const raw = category === 'YARD'
+      ? (person.yard_national_certificates || person.yard_certificates)
+      : category === 'NATIONAL'
+        ? person.national_certificates
+        : person.internal_certificates;
+    if (!raw || !raw.trim()) return '';
+
+    // 이전에 JSON 배열 형태로 저장된 값도 표시할 수 있게 하되,
+    // 원본 문자열이 일반 텍스트라면 내용을 변형하지 않고 그대로 표시합니다.
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        const rows = parsed.map((item: any) => {
+          if (!item || typeof item !== 'object') return String(item || '').trim();
+          if (category === 'NATIONAL') {
+            return [item.method, item.kind || item.title, item.level].filter(Boolean).join(' ').trim();
+          }
+          if (category === 'NDT') {
+            return [item.source, item.method, item.level ? `Level ${String(item.level).replace(/^Level\s*/i, '')}` : ''].filter(Boolean).join(' ').trim();
+          }
+          return [item.title, item.method, item.education].filter(Boolean).join(' ').trim();
+        }).filter(Boolean);
+        return Array.from(new Set(rows)).join(' / ');
       }
-      if (r.expiry_date) dates.push(`유효 ${r.expiry_date}`);
-      if (category === 'NDT' && !r.obtained_date) dates.push('Cert’ 미발급');
-      if (r.cert_no) dates.push(`No. ${r.cert_no}`);
-      if (category === 'YARD' && r.sticker_no) dates.push(`스티커 ${r.sticker_no}`);
-      return `${label}${dates.length ? ` (${dates.join(' · ')})` : ''}`;
-    });
-    return Array.from(new Set(summaries)).join(' / ');
+    } catch {
+      // JSON이 아닌 기존 텍스트는 아래에서 그대로 표시합니다.
+    }
+    return raw.trim();
   };
 
   useEffect(() => {
@@ -371,8 +335,6 @@ export default function HRManagement({
       return;
     }
     setSelectedUser(null);
-    setInternalCertRows([]);
-    setNationalCertRows([]);
     setPhotoFile(null);
     setPhotoPreview(null);
     setFormData({
@@ -404,8 +366,6 @@ export default function HRManagement({
       return;
     }
     setSelectedUser(user);
-    setInternalCertRows(parseStoredRows<any>(user.internal_certificates).map((r: any, i: number) => ({ id: String(r.id || i), source: r.source === 'ASNT/ISO' ? 'ASNT/ISO' : '사내발급', method: String(r.method || ''), level: String(r.level || '').replace(/^Level\s*/i, '') })));
-    setNationalCertRows(parseStoredRows<any>(user.national_certificates).map((r: any, i: number) => ({ id: String(r.id || i), method: String(r.method || ''), kind: NATIONAL_KINDS.includes(r.kind) ? r.kind : '' })));
     setPhotoFile(null);
     setPhotoPreview(user.photo_url || null);
     setFormData({ 
@@ -421,7 +381,7 @@ export default function HRManagement({
       address: user.address || '',
       experience: user.experience || '',
       internal_certificates: user.internal_certificates || '',
-      national_certificates: user.national_certificates || user.certificates || '',
+      national_certificates: user.national_certificates || '',
       yard_certificates: user.yard_national_certificates || user.yard_certificates || '',
       cert_assignments: {
         ...(user.cert_assignments || {}),
@@ -525,9 +485,9 @@ export default function HRManagement({
         phone: formData.phone,
         address: formData.address,
         experience: formData.experience,
-        internal_certificates: JSON.stringify(internalCertRows.filter(r => r.method.trim()).map(({source, method, level}) => ({source, method: method.trim(), level}))),
-        national_certificates: JSON.stringify(nationalCertRows.filter(r => r.method.trim() && r.kind).map(({method, kind}) => ({method: method.trim(), kind}))),
-        yard_national_certificates: formData.yard_certificates,
+        internal_certificates: formData.internal_certificates || selectedUser?.internal_certificates || '',
+        national_certificates: formData.national_certificates,
+        yard_national_certificates: formData.yard_certificates || '',
         cert_assignments: formData.cert_assignments,
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
@@ -608,8 +568,9 @@ export default function HRManagement({
         id: formData.inputId.trim(),
         role: payload.role ?? selectedUser?.role ?? (isSuperAdmin ? (formData.role || 'USER') : 'USER'),
         photo_url: savedPhotoUrl || selectedUser?.photo_url || null,
-        national_certificates: payload.national_certificates || '',
-        yard_national_certificates: payload.yard_national_certificates || '',
+        national_certificates: payload.national_certificates || selectedUser?.national_certificates || '',
+        yard_certificates: payload.yard_national_certificates || selectedUser?.yard_national_certificates || '',
+        yard_national_certificates: payload.yard_national_certificates || selectedUser?.yard_national_certificates || '',
         cert_assignments: payload.cert_assignments || {}
       };
       setUsers(prev => {
@@ -637,7 +598,6 @@ export default function HRManagement({
       (u.phone || '').toLowerCase().includes(term) ||
       (u.internal_certificates || '').toLowerCase().includes(term) ||
       (u.national_certificates || '').toLowerCase().includes(term) ||
-      (u.certificates || '').toLowerCase().includes(term) ||
       getQualificationSummary(u.id, 'YARD').toLowerCase().includes(term) ||
       getQualificationSummary(u.id, 'NATIONAL').toLowerCase().includes(term) ||
       getQualificationSummary(u.id, 'NDT').toLowerCase().includes(term)
@@ -713,14 +673,6 @@ export default function HRManagement({
             >
               목록 뷰
             </button>
-            <button
-              onClick={() => setActiveTab('CERT')}
-              className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
-                activeTab === 'CERT' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
-              }`}
-            >
-              자격현황
-            </button>
           </div>
 
           {isAdmin && (
@@ -779,13 +731,6 @@ export default function HRManagement({
               >
                 <Briefcase className="h-3.5 w-3.5" />
                 <span>직급별 조직도</span>
-              </button>
-              <button
-                onClick={() => setActiveTab('CERT')}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition border bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]"
-              >
-                <Shield className="h-3.5 w-3.5" />
-                <span>자격현황</span>
               </button>
             </div>
 
@@ -848,19 +793,6 @@ export default function HRManagement({
 
       {loading ? (
         <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-16 text-xs text-[#64748B]">인사 정보를 불러오는 중...</div>
-      ) : activeTab === 'CERT' ? (
-        <CertManagement
-          users={users}
-          currentUser={currentUser}
-          isAdmin={isAdmin}
-          sharedRecords={certRecords}
-          recordsReady={certRecordsReady}
-          onRecordsChanged={handleCertRecordsChanged}
-          onUsersChanged={(updates) => setUsers(prev => prev.map(u => {
-            const patch = updates.find(item => item.id === u.id);
-            return patch ? { ...u, ...patch } : u;
-          }))}
-        />
       ) : activeTab === 'ORG' ? (
         <div className="space-y-3">
           {displayedCategories.map((catName) => {
@@ -1461,37 +1393,41 @@ export default function HRManagement({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-[#E2E5E9] bg-[#F8FAFC] p-3 space-y-4">
-                <div className="space-y-2">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-bold text-[#243B5A]">사내자격 · 발급 구분 / 방법 / Level</div>
-                    <button type="button" onClick={() => setInternalCertRows(prev => [...prev, { id: `${Date.now()}-${prev.length}`, source: '사내발급', method: '', level: '' }])} className="flex items-center gap-1 rounded-lg border border-[#D5DEE9] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A]"><Plus className="h-3 w-3"/> 자격 추가</button>
-                  </div>
-                  {internalCertRows.map((row, idx) => <div key={row.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_1fr_30px] gap-2 rounded-lg border border-[#E2E5E9] bg-white p-2">
-                    <select value={row.source} onChange={e => setInternalCertRows(prev => prev.map((r,i) => i===idx ? {...r, source: e.target.value as InternalCertRow['source']} : r))} className="w-full p-2 border border-[#E2E5E9] rounded-lg text-xs"><option value="사내발급">사내발급</option><option value="ASNT/ISO">ASNT/ISO</option></select>
-                    <input value={row.method} onChange={e => setInternalCertRows(prev => prev.map((r,i) => i===idx ? {...r, method:e.target.value} : r))} placeholder="방법 (예: UT, RT)" className="w-full p-2 border border-[#E2E5E9] rounded-lg text-xs"/>
-                    <select value={row.level} onChange={e => setInternalCertRows(prev => prev.map((r,i) => i===idx ? {...r, level:e.target.value} : r))} className="w-full p-2 border border-[#E2E5E9] rounded-lg text-xs"><option value="">Level 선택</option>{CERT_LEVELS.map(level => <option key={level} value={level}>{level}</option>)}</select>
-                    <button type="button" title="자격 삭제" onClick={() => setInternalCertRows(prev => prev.filter((_,i) => i!==idx))} className="flex h-8 w-8 items-center justify-center rounded-md border border-red-200 text-red-600"><Trash2 className="h-3.5 w-3.5"/></button>
-                  </div>)}
-                  {internalCertRows.length===0 && <p className="text-[11px] text-[#64748B]">등록된 사내자격이 없습니다.</p>}
+              <div className="rounded-xl border border-[#E2E5E9] bg-[#F8FAFC] p-3 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="font-bold text-[#243B5A]">사내자격(Cert') · 방법별 Level / Cert' No</div>
+                  <button type="button" onClick={() => {
+                    const method = window.prompt('추가할 자격 방법명을 입력하세요. (예: VT)')?.trim().toUpperCase();
+                    if (!method) return;
+                    if (formData.cert_assignments?.[method]) { showNotice('이미 등록된 방법입니다.', 'warning'); return; }
+                    setFormData(prev => ({ ...prev, cert_assignments: { ...(prev.cert_assignments || {}), [method]: { level: '', cert_no: '' } } }));
+                  }} className="flex items-center gap-1 rounded-lg border border-[#D5DEE9] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A]"><Plus className="h-3 w-3"/> 방법 추가</button>
                 </div>
-                <div className="space-y-2 border-t border-[#E2E5E9] pt-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="font-bold text-[#243B5A]">국가자격 · 종목 / 종류</div>
-                    <button type="button" onClick={() => setNationalCertRows(prev => [...prev, { id: `${Date.now()}-${prev.length}`, method: '', kind: '' }])} className="flex items-center gap-1 rounded-lg border border-[#D5DEE9] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A]"><Plus className="h-3 w-3"/> 국가자격 추가</button>
-                  </div>
-                  {nationalCertRows.map((row, idx) => <div key={row.id} className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_30px] gap-2 rounded-lg border border-[#E2E5E9] bg-white p-2">
-                    <input value={row.method} onChange={e => setNationalCertRows(prev => prev.map((r,i) => i===idx ? {...r, method:e.target.value} : r))} placeholder="종목 직접 입력 (예: 용접)" className="w-full p-2 border border-[#E2E5E9] rounded-lg text-xs"/>
-                    <select value={row.kind} onChange={e => setNationalCertRows(prev => prev.map((r,i) => i===idx ? {...r, kind:e.target.value} : r))} className="w-full p-2 border border-[#E2E5E9] rounded-lg text-xs"><option value="">종류 선택</option>{NATIONAL_KINDS.map(kind => <option key={kind} value={kind}>{kind}</option>)}</select>
-                    <button type="button" title="국가자격 삭제" onClick={() => setNationalCertRows(prev => prev.filter((_,i) => i!==idx))} className="flex h-8 w-8 items-center justify-center rounded-md border border-red-200 text-red-600"><Trash2 className="h-3.5 w-3.5"/></button>
-                  </div>)}
-                  {nationalCertRows.length===0 && <p className="text-[11px] text-[#64748B]">등록된 국가자격이 없습니다.</p>}
+                <div className="space-y-2">
+                  {Object.entries(formData.cert_assignments || {}).map(([method, cert]: [string, any]) => (
+                    <div key={method} className="grid grid-cols-[52px_1fr_1.4fr_28px] items-center gap-2">
+                      <div className="text-xs font-bold">{method}</div>
+                      <select value={cert?.level || ''} onChange={(e) => setFormData(prev => ({ ...prev, cert_assignments: { ...(prev.cert_assignments || {}), [method]: { ...(prev.cert_assignments?.[method] || {}), level: e.target.value } } }))} className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs">
+                        <option value="">Level 선택</option><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option>
+                      </select>
+                      <input value={cert?.cert_no || ''} onChange={(e) => setFormData(prev => ({ ...prev, cert_assignments: { ...(prev.cert_assignments || {}), [method]: { ...(prev.cert_assignments?.[method] || {}), cert_no: e.target.value } } }))} placeholder="Cert' No" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
+                      <button type="button" title={`${method} 항목 삭제`} onClick={() => {
+                        if (!window.confirm(`${method} 자격 항목을 삭제할까요?`)) return;
+                        setFormData(prev => { const next = { ...(prev.cert_assignments || {}) }; delete next[method]; return { ...prev, cert_assignments: next }; });
+                      }} className="flex h-7 w-7 items-center justify-center rounded-md border border-red-200 bg-white text-red-600"><Trash2 className="h-3.5 w-3.5"/></button>
+                    </div>
+                  ))}
+                  {Object.keys(formData.cert_assignments || {}).length === 0 && <div className="text-xs text-[#64748B]">등록된 자격 방법이 없습니다. ‘방법 추가’를 눌러 추가하세요.</div>}
                 </div>
                 <div>
-                  <label className="block font-bold text-[#64748B] mb-1">YARD 자격 / 교육명</label>
-                  <input value={formData.yard_certificates || ''} onChange={(e) => setFormData({ ...formData, yard_certificates: e.target.value })} placeholder="교육명을 쉼표(,)로 구분하여 입력" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
+                  <label className="block font-bold text-[#64748B] mb-1">YARD 자격</label>
+                  <input value={formData.yard_certificates || ''} onChange={(e) => setFormData({ ...formData, yard_certificates: e.target.value })} placeholder="보유 YARD 자격 / 교육명" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
                 </div>
-                <p className="text-[10px] text-[#64748B]">사내자격과 국가자격은 항목별로 추가·삭제할 수 있습니다. 취득일·유효기간 등 상세 정보는 자격현황에서 관리합니다.</p>
+                <p className="text-[10px] text-[#64748B]">방법별 Level 또는 Cert' No를 관리할 수 있습니다. 취득일과 유효날짜는 자격현황에서 관리합니다.</p>
+              </div>
+              <div>
+                <label className="block font-bold text-[#64748B] mb-1">국가 자격</label>
+                <input type="text" placeholder="국가 자격 요약" value={formData.national_certificates} onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none" />
               </div>
 
               <div className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] p-2.5 text-[11px] text-[#64748B]">
