@@ -239,6 +239,16 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   useEffect(() => {
     if (subTab !== 'ALL' && !subTabs.includes(subTab)) setSubTab('ALL');
   }, [subTabs, subTab]);
+  const selectedSubtabPeopleCount = useMemo(() => {
+    const matching = activeRecords.filter(r => {
+      if (r.category !== category) return false;
+      if (subTab === 'ALL') return true;
+      const subName = category === 'NATIONAL' ? (r.method || r.title) : r.title;
+      return subName === subTab;
+    });
+    return new Set(matching.map(r => String(r.user_id))).size;
+  }, [activeRecords, category, subTab]);
+
   const visibleRecords = useMemo(() => activeRecords.filter(r => {
     if (r.category !== category) return false;
     const p = personById.get(String(r.user_id));
@@ -289,7 +299,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     setForm({
       user_id: String(record.user_id), category: record.category, title: record.title || '', method: record.method || '', level: record.level || '',
       obtained_date: record.obtained_date || '', expiry_date: record.expiry_date || '', education_completed: record.education_completed || '',
-      sticker_no: record.sticker_no || '', cert_no: record.cert_no || '', training_date_1: record.training_date_1 || '',
+      sticker_no: record.sticker_no || '', cert_no: record.cert_no || text(record.detail?.cert_no) || '', training_date_1: record.training_date_1 || '',
       training_date_2: record.training_date_2 || '', training_date_3: record.training_date_3 || '', training_date_4: record.training_date_4 || '',
       issuer: String(record.detail?.issuer || record.method || '사내'),
     });
@@ -315,11 +325,11 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       training_date_2: form.category === 'YARD' ? (form.training_date_2 || null) : null,
       training_date_3: form.category === 'YARD' ? (form.training_date_3 || null) : null,
       training_date_4: form.category === 'YARD' ? (form.training_date_4 || null) : null,
-      detail: { ...oldDetail, issuer: form.issuer, localModified: true, editedInCert: true },
+      detail: { ...oldDetail, issuer: form.issuer, cert_no: form.category === 'NDT' ? form.cert_no.trim() : null, localModified: true, editedInCert: true },
     };
     try {
       if (editing) {
-        const { data, error } = await supabase.from('cert_management_records').update(values).eq('id', editing.id).select('*').single();
+        const { data, error } = await supabase.from('cert_management_records').update({ ...values, cert_no: form.category === 'NDT' ? (form.cert_no.trim() || null) : null }).eq('id', editing.id).select('*').single();
         if (error) throw error;
         setRecords(prev => prev.map(r => r.id === editing.id ? data as CertRecord : r));
         notify('자격정보를 수정했습니다. HRManagement 원본에는 변경사항을 보내지 않았습니다.');
@@ -457,12 +467,12 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     </div>
 
     <div className="flex flex-wrap gap-2 rounded-xl border border-[#E2E5E9] bg-white p-2">
-      {categories.map(item => <button key={item.key} type="button" onClick={() => changeCategory(item.key)} className={`rounded-lg border px-3 py-2 text-xs font-bold ${category === item.key ? 'border-[#243B5A] bg-[#243B5A] text-white' : 'border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B] hover:text-[#243B5A]'}`}>{item.label} <span className="ml-1 opacity-80">({activeRecords.filter(r => r.category === item.key).length})</span></button>)}
+      {categories.map(item => <button key={item.key} type="button" onClick={() => changeCategory(item.key)} className={`rounded-lg border px-3 py-2 text-xs font-bold ${category === item.key ? 'border-[#243B5A] bg-[#243B5A] text-white' : 'border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B] hover:text-[#243B5A]'}`}>{item.label}</button>)}
     </div>
 
     <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(180px,1fr)_minmax(180px,2fr)]">
-        <label className="text-[10px] font-bold text-[#64748B]">교육명 / 종목 서브탭<select className={`${inputClass} mt-1`} value={subTab} onChange={e => setSubTab(e.target.value)}><option value="ALL">전체 자격</option>{subTabs.map(name => <option key={name} value={name}>{name}</option>)}</select></label>
+        <label className="text-[10px] font-bold text-[#64748B]">교육명 / 종목 서브탭<select className={`${inputClass} mt-1`} value={subTab} onChange={e => setSubTab(e.target.value)}><option value="ALL">전체 자격</option>{subTabs.map(name => <option key={name} value={name}>{name}</option>)}</select><span className="mt-1 block text-[11px] font-bold text-[#243B5A]">{subTab === 'ALL' ? '전체' : subTab} 인원: {selectedSubtabPeopleCount}명</span></label>
         <label className="text-[10px] font-bold text-[#64748B]">이름 · 사번 · 자격명 검색<div className="relative mt-1"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]"/><input className={`${inputClass} pl-8`} value={search} onChange={e => setSearch(e.target.value)} placeholder="이름, 로그인 아이디(사번), 교육명 또는 종목" /></div></label>
       </div>
       {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700"><b>불러오기 실패</b><p className="mt-1 break-words">{loadError}</p><p className="mt-1">먼저 제공된 Supabase SQL을 실행했는지 확인해주세요.</p></div>}
@@ -494,7 +504,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
                   <div className="mt-3 grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-2 lg:grid-cols-3">
                     {category === 'YARD' && <><div><span className="font-bold text-[#64748B]">스티커 번호</span><p className="mt-1">{record.sticker_no || '-'}</p></div>{[1,2,3,4].map(n => <div key={n}><span className="font-bold text-[#64748B]">보수교육 {n}</span><p className="mt-1">{(record as any)[`training_date_${n}`] || '-'}</p></div>)} </>}
                     {category === 'NATIONAL' && <><div><span className="font-bold text-[#64748B]">자격종류</span><p className="mt-1">{record.title || '-'}</p></div><div><span className="font-bold text-[#64748B]">종목</span><p className="mt-1">{record.method || '-'}</p></div></>}
-                    {category === 'NDT' && <><div><span className="font-bold text-[#64748B]">경력</span><p className="mt-1">{person?.experience || '-'}</p></div><div><span className="font-bold text-[#64748B]">발급형태</span><p className="mt-1">{record.detail?.issuer || record.method || '-'}</p></div><div><span className="font-bold text-[#64748B]">Cert No.</span><p className="mt-1">{record.cert_no || '-'}</p></div></>}
+                    {category === 'NDT' && <><div><span className="font-bold text-[#64748B]">경력</span><p className="mt-1">{person?.experience || '-'}</p></div><div><span className="font-bold text-[#64748B]">발급형태</span><p className="mt-1">{record.detail?.issuer || record.method || '-'}</p></div><div><span className="font-bold text-[#64748B]">Cert No.</span><p className="mt-1">{record.cert_no || text(record.detail?.cert_no) || '-'}</p></div></>}
                   </div>
                   <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-[#E2E5E9] pt-3">{canEdit(record) && <button type="button" onClick={() => openEdit(record)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-[11px] font-bold text-[#243B5A]"><Edit3 className="h-3.5 w-3.5"/> 수정</button>}{admin && <button type="button" onClick={() => void removeRecord(record)} className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-2 text-[11px] font-bold text-red-600"><Trash2 className="h-3.5 w-3.5"/> 삭제</button>}</div>
                 </div>;

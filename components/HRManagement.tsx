@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Fragment, useState, useEffect, useCallback } from 'react';
 import { 
   Users, 
   Building2, 
@@ -151,6 +151,14 @@ function getNdtCertLabels(user: HRUser): string[] {
 
 function renderCertText(labels: string[]): string {
   return labels.length ? labels.join(', ') : '없음';
+}
+
+// 목록뷰에서 퇴사/퇴직으로 표시된 구성원은 별도 구역으로 모아 맨 아래에 표시합니다.
+// 현재 조회되는 기존 필드만 검사하며 DB 컬럼이나 기존 데이터를 변경하지 않습니다.
+function isFormerEmployee(user: HRUser): boolean {
+  const values = [user.department, user.position, user.job_title, user.field]
+    .map(value => String(value || '').trim().toLowerCase());
+  return values.some(value => /퇴사|퇴직|퇴사자|퇴직자/.test(value));
 }
 
 const RANK_ORDER: Record<string, number> = {
@@ -626,6 +634,13 @@ export default function HRManagement({
     );
   });
 
+  // 카드뷰 순서는 유지하고, 목록뷰에서만 퇴사자를 별도 그룹으로 맨 아래에 둡니다.
+  const listViewUsers = [...filteredUsers].sort((a, b) => {
+    const formerDifference = Number(isFormerEmployee(a)) - Number(isFormerEmployee(b));
+    if (formerDifference !== 0) return formerDifference;
+    return (a.name || '').localeCompare(b.name || '', 'ko');
+  });
+
   const rawSubCategories = Array.from(
     new Set(
       filteredUsers
@@ -934,14 +949,17 @@ export default function HRManagement({
       ) : (
         <div>
           <div className="block md:hidden space-y-2.5">
-            {filteredUsers.map((u) => {
+            {listViewUsers.map((u, index) => {
               const canEdit = canEditUser(u);
               const joinCareer = calculateCareerDetails(u.join_date);
               const totalCareer = calculateCareerDetails(u.career_start_date);
               const age = calculateAge(u.password);
 
+              const isFirstFormer = isFormerEmployee(u) && (index === 0 || !isFormerEmployee(listViewUsers[index - 1]));
               return (
-                <div key={u.id} className="bg-white p-3 border border-[#E2E5E9] rounded-xl shadow-xs space-y-2">
+                <Fragment key={u.id}>
+                {isFirstFormer && <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">퇴사자</div>}
+                <div className={`bg-white p-3 border rounded-xl shadow-xs space-y-2 ${isFormerEmployee(u) ? 'border-amber-200' : 'border-[#E2E5E9]'}`}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="space-y-1 min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -1015,6 +1033,7 @@ export default function HRManagement({
                     <div><span className="font-bold text-[#64748B]">YARD 자격:</span> {renderCertText(getYardCertLabels(u))}</div>
                   </div>
                 </div>
+                </Fragment>
               );
             })}
           </div>
@@ -1036,11 +1055,14 @@ export default function HRManagement({
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#E2E5E9]">
-                {filteredUsers.map((u) => {
+                {listViewUsers.map((u, index) => {
                   const canEdit = canEditUser(u);
                   const age = calculateAge(u.password);
+                  const isFirstFormer = isFormerEmployee(u) && (index === 0 || !isFormerEmployee(listViewUsers[index - 1]));
                   return (
-                    <tr key={u.id} className="hover:bg-[#F5F6F8]/60 transition">
+                    <Fragment key={u.id}>
+                    {isFirstFormer && <tr><td colSpan={10} className="border-y border-amber-200 bg-amber-50 px-3 py-2 font-bold text-amber-800">퇴사자</td></tr>}
+                    <tr className={`transition ${isFormerEmployee(u) ? 'bg-amber-50/30 hover:bg-amber-50/60' : 'hover:bg-[#F5F6F8]/60'}`}>
                       <td className="p-3 font-bold text-[#1F2937]">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span>{u.name}</span>
@@ -1109,6 +1131,7 @@ export default function HRManagement({
                         </div>
                       </td>
                     </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>
