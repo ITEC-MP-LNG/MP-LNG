@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
+import CertManagement from './cert';
 
 export interface HRUser {
   id: string;          
@@ -139,7 +140,7 @@ export default function HRManagement({
 }: HRManagementProps) {
   const [users, setUsers] = useState<HRUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'ORG' | 'LIST'>('ORG');
+  const [activeTab, setActiveTab] = useState<'ORG' | 'LIST' | 'CERT'>('ORG');
   const [searchTerm, setSearchTerm] = useState('');
 
   const [subGroupType, setSubGroupType] = useState<'DEPT' | 'POS'>('DEPT');
@@ -631,16 +632,18 @@ export default function HRManagement({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 sm:w-80 sm:min-w-[320px]">
-            <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
-            <input
-              type="text"
-              placeholder="이름, 아이디, 파트, 자격 검색..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#E2E5E9] rounded-lg bg-[#F5F6F8] text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none transition"
-            />
-          </div>
+          {activeTab !== 'CERT' && (
+            <div className="relative flex-1 sm:w-80 sm:min-w-[320px]">
+              <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
+              <input
+                type="text"
+                placeholder="이름, 아이디, 파트, 자격 검색..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#E2E5E9] rounded-lg bg-[#F5F6F8] text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none transition"
+              />
+            </div>
+          )}
 
           <div className="flex bg-[#F5F6F8] border border-[#E2E5E9] p-0.5 rounded-lg">
             <button
@@ -659,8 +662,17 @@ export default function HRManagement({
             >
               목록 뷰
             </button>
+            <button
+              onClick={() => setActiveTab('CERT')}
+              className={`px-2.5 py-1 rounded-md text-xs font-bold transition ${
+                activeTab === 'CERT' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
+              }`}
+            >
+              CERT 자격관리
+            </button>
           </div>
 
+          {activeTab !== 'CERT' && <>
           {isAdmin && (
             <button
               onClick={handleOpenAddModal}
@@ -686,9 +698,18 @@ export default function HRManagement({
           >
             PPT 출력
           </button>
+          </>}
         </div>
       </div>
 
+      {activeTab === 'CERT' ? (
+        <CertManagement
+          users={users}
+          currentUser={currentUser}
+          isAdmin={isAdmin}
+          currentUserRole={currentUserRole}
+        />
+      ) : <>
       {activeTab === 'ORG' && (
         <div className="bg-white border border-[#E2E5E9] rounded-xl p-3 shadow-xs space-y-2.5">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E2E5E9] pb-2.5">
@@ -1531,6 +1552,7 @@ export default function HRManagement({
           </div>
         </div>
       )}
+      </>}
     </div>
   );
 }
