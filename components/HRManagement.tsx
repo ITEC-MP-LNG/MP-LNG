@@ -194,17 +194,21 @@ export default function HRManagement({
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('app_users')
-        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y')
-        .order('name', { ascending: true });
+    
+const { data, error } = await supabase
+  .from('app_users')
+  .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y')
+  .order('name', { ascending: true });
 
-      if (error) throw error;
+if (error) throw error;
 
-      const formatted = (data || []).map((u: any) => ({
-        ...u,
-        national_certificates: u.national_certificates || u.certificates || ''
-      }));
+const formatted = (data || []).map((u: any) => ({
+  ...u,
+  national_certificates: u.national_certificates || ''
+}));
+
+setUsers(formatted);
+
 
       setUsers(formatted);
     } catch (err: any) {
