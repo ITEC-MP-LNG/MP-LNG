@@ -40,7 +40,7 @@ export interface HRUser {
   national_certificates?: string; 
   certificates?: string;
   national_cert_details?: Array<{ method: string; kind: string }>;
-  yard_cert_details?: { names: string; education_date: string; renewal_count: number; renewal_dates: string[] };
+  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>; 
   ndt_certificates?: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>; 
   join_date?: string;          
   career_start_date?: string;  
@@ -152,6 +152,9 @@ export default function HRManagement({
   const [selectedUser, setSelectedUser] = useState<HRUser | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [ndtSubjectOptions, setNdtSubjectOptions] = useState<string[]>(DEFAULT_NDT_SUBJECTS);
+  const [newNdtSubject, setNewNdtSubject] = useState('');
+
   const [formData, setFormData] = useState({
     inputId: '',
     name: '',
@@ -167,7 +170,7 @@ export default function HRManagement({
     internal_certificates: '',
     national_certificates: '',
     national_cert_details: [] as Array<{ method: string; kind: string }>,
-    yard_cert_details: { names: '', education_date: '', renewal_count: 0, renewal_dates: [] as string[] },
+    yard_cert_details: [] as Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>,
     ndt_certificates: [] as Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>,
     join_date: '',
     career_start_date: '',
@@ -222,7 +225,7 @@ export default function HRManagement({
         ...u,
         national_certificates: u.national_certificates || u.certificates || '',
         national_cert_details: Array.isArray(u.national_cert_details) ? u.national_cert_details : [],
-        yard_cert_details: u.yard_cert_details || { names: '', education_date: '', renewal_count: 0, renewal_dates: [] },
+        yard_cert_details: Array.isArray(u.yard_cert_details) ? u.yard_cert_details : (u.yard_cert_details?.names ? u.yard_cert_details.names.split(',').map((name: string) => ({ name: name.trim(), education_date: u.yard_cert_details.education_date || '', renewal_count: Number(u.yard_cert_details.renewal_count || 0), renewal_dates: Array.isArray(u.yard_cert_details.renewal_dates) ? u.yard_cert_details.renewal_dates : [] })).filter((item: any) => item.name) : []),
         ndt_certificates: Array.isArray(u.ndt_certificates) ? u.ndt_certificates : []
       }));
 
@@ -237,6 +240,20 @@ export default function HRManagement({
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadNdtSubjects = async () => {
+      const { data, error } = await supabase.from('ndt_subject_options').select('subject').order('subject', { ascending: true });
+      if (error) {
+        console.warn('NDT 종목 목록 조회 실패:', error.message);
+        return;
+      }
+      if (!cancelled && data) setNdtSubjectOptions(data.length ? Array.from(new Set(data.map((row: any) => row.subject).filter(Boolean))) : DEFAULT_NDT_SUBJECTS);
+    };
+    loadNdtSubjects();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     setSelectedSubCategory('ALL');
@@ -327,7 +344,7 @@ export default function HRManagement({
       internal_certificates: '',
       national_certificates: '',
       national_cert_details: [],
-      yard_cert_details: { names: '', education_date: '', renewal_count: 0, renewal_dates: [] },
+      yard_cert_details: [],
       ndt_certificates: [],
       join_date: new Date().toISOString().split('T')[0],
       career_start_date: new Date().toISOString().split('T')[0],
@@ -359,7 +376,7 @@ export default function HRManagement({
       internal_certificates: user.internal_certificates || '',
       national_certificates: user.national_certificates || user.certificates || '',
       national_cert_details: Array.isArray(user.national_cert_details) ? user.national_cert_details : [],
-      yard_cert_details: user.yard_cert_details || { names: '', education_date: '', renewal_count: 0, renewal_dates: [] },
+      yard_cert_details: Array.isArray(user.yard_cert_details) ? user.yard_cert_details : (user.yard_cert_details && !Array.isArray(user.yard_cert_details) && (user.yard_cert_details as any).names ? (user.yard_cert_details as any).names.split(',').map((name: string) => ({ name: name.trim(), education_date: (user.yard_cert_details as any).education_date || '', renewal_count: Number((user.yard_cert_details as any).renewal_count || 0), renewal_dates: Array.isArray((user.yard_cert_details as any).renewal_dates) ? (user.yard_cert_details as any).renewal_dates : [] })).filter((item: any) => item.name) : []),
       ndt_certificates: Array.isArray(user.ndt_certificates) ? user.ndt_certificates : [],
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
@@ -1353,63 +1370,72 @@ export default function HRManagement({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-[#E2E5E9] p-3 space-y-2.5">
-                <div className="font-bold text-[#243B5A]">국가자격 세분화</div>
-                <div className="text-[10px] text-[#64748B]">종목은 직접 입력하고, 종류는 접이식 메뉴에서 선택합니다.</div>
-                {formData.national_cert_details.map((cert, index) => (
-                  <div key={`national-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
-                    <details>
-                      <summary className="cursor-pointer font-semibold text-[#1F2937]">국가자격 {index + 1}: {cert.method || '종목 미입력'} · {cert.kind || '종류 선택'}</summary>
+              <details className="rounded-xl border border-[#E2E5E9] p-3" open={false}>
+                <summary className="cursor-pointer font-bold text-[#243B5A] flex items-center justify-between">국가 자격 <span className="text-[10px] text-[#64748B] font-normal">{formData.national_cert_details.length}개 · 눌러서 펼치기</span></summary>
+                <div className="pt-3 space-y-2.5">
+                  <div className="text-[10px] text-[#64748B]">종목은 직접 입력하고, 종류는 메뉴에서 선택합니다.</div>
+                  {formData.national_cert_details.map((cert, index) => (
+                    <details key={`national-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
+                      <summary className="cursor-pointer font-semibold text-[#1F2937]">국가 자격 {index + 1}: {cert.method || '종목 미입력'} · {cert.kind || '종류 선택'}</summary>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
                         <input value={cert.method} placeholder="종목 직접 입력" onChange={(e) => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.map((item, i) => i === index ? { ...item, method: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
                         <select value={cert.kind} onChange={(e) => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.map((item, i) => i === index ? { ...item, kind: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs">
                           <option value="">종류 선택</option>{NATIONAL_KINDS.map(kind => <option key={kind} value={kind}>{kind}</option>)}
                         </select>
-                        <button type="button" onClick={() => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 국가자격 삭제</button>
+                        <button type="button" onClick={() => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 국가 자격 삭제</button>
                       </div>
                     </details>
-                  </div>
-                ))}
-                <button type="button" onClick={() => setFormData(prev => ({ ...prev, national_cert_details: [...prev.national_cert_details, { method: '', kind: '' }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ 국가자격 추가</button>
-              </div>
+                  ))}
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, national_cert_details: [...prev.national_cert_details, { method: '', kind: '' }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ 국가 자격 추가</button>
+                </div>
+              </details>
 
-              <div className="rounded-xl border border-[#E2E5E9] p-3 space-y-2.5">
-                <div className="font-bold text-[#243B5A]">YARD 자격</div>
-                <label className="block font-bold text-[#64748B]">교육명 (쉼표로 구분)</label>
-                <textarea rows={2} placeholder="예: YARD 안전교육, 특수교육" value={formData.yard_cert_details.names} onChange={(e) => setFormData(prev => ({ ...prev, yard_cert_details: { ...prev.yard_cert_details, names: e.target.value } }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
-                <label className="block font-bold text-[#64748B]">교육일</label>
-                <input type="date" value={formData.yard_cert_details.education_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, yard_cert_details: { ...prev.yard_cert_details, education_date: date, renewal_dates: Array.from({ length: prev.yard_cert_details.renewal_count }, (_, i) => addYearsToDate(date, 2 * (i + 1))) } })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
-                <details className="rounded-lg border border-[#E2E5E9] p-2">
-                  <summary className="cursor-pointer font-semibold">보수일 횟수 선택 (현재 {formData.yard_cert_details.renewal_count}회)</summary>
-                  <select value={formData.yard_cert_details.renewal_count} onChange={(e) => { const count = Number(e.target.value); setFormData(prev => ({ ...prev, yard_cert_details: { ...prev.yard_cert_details, renewal_count: count, renewal_dates: Array.from({ length: count }, (_, i) => addYearsToDate(prev.yard_cert_details.education_date, 2 * (i + 1))) } })); }} className="mt-2 w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value={0}>0회</option><option value={1}>1회</option><option value={2}>2회</option><option value={3}>3회</option><option value={4}>4회</option></select>
-                </details>
-                {formData.yard_cert_details.renewal_dates.map((date, index) => <div key={`yard-renewal-${index}`} className="grid grid-cols-2 gap-2 items-center"><label className="text-[#64748B]">보수일 {index + 1}회 (2년 주기)</label><input type="date" value={date} onChange={(e) => setFormData(prev => ({ ...prev, yard_cert_details: { ...prev.yard_cert_details, renewal_dates: prev.yard_cert_details.renewal_dates.map((d, i) => i === index ? e.target.value : d) } }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>)}
-              </div>
+              <details className="rounded-xl border border-[#E2E5E9] p-3">
+                <summary className="cursor-pointer font-bold text-[#243B5A] flex items-center justify-between">YARD 자격 <span className="text-[10px] text-[#64748B] font-normal">{formData.yard_cert_details.length}개 · 눌러서 펼치기</span></summary>
+                <div className="pt-3 space-y-2.5">
+                  <div className="text-[10px] text-[#64748B]">각 교육별로 교육일과 보수일을 따로 관리합니다. 보수일은 교육일 기준 2년 주기로 자동 계산됩니다.</div>
+                  {formData.yard_cert_details.map((yard, index) => (
+                    <details key={`yard-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
+                      <summary className="cursor-pointer font-semibold text-[#1F2937]">{yard.name || `YARD 교육 ${index + 1}`} · {yard.education_date || '교육일 미입력'}</summary>
+                      <div className="pt-2 space-y-2">
+                        <label className="block text-[10px] font-bold text-[#64748B]">교육명</label>
+                        <input value={yard.name} placeholder="교육명 입력" onChange={(e) => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, name: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
+                        <label className="block text-[10px] font-bold text-[#64748B]">교육일</label>
+                        <input type="date" value={yard.education_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, education_date: date, renewal_dates: Array.from({ length: item.renewal_count }, (_, j) => addYearsToDate(date, 2 * (j + 1))) } : item) })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
+                        <details className="rounded-lg border border-[#E2E5E9] p-2">
+                          <summary className="cursor-pointer font-semibold">보수교육 횟수 선택 (현재 {yard.renewal_count}회)</summary>
+                          <select value={yard.renewal_count} onChange={(e) => { const count = Number(e.target.value); setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_count: count, renewal_dates: Array.from({ length: count }, (_, j) => addYearsToDate(item.education_date, 2 * (j + 1))) } : item) })); }} className="mt-2 w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value={0}>0회</option><option value={1}>1회</option><option value={2}>2회</option><option value={3}>3회</option><option value={4}>4회</option></select>
+                        </details>
+                        {yard.renewal_dates.map((date, renewalIndex) => <div key={`yard-${index}-renewal-${renewalIndex}`} className="space-y-1"><label className="block text-[10px] text-[#64748B]">보수교육일 {renewalIndex + 1}회</label><input type="date" value={date} onChange={(e) => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_dates: item.renewal_dates.map((d, j) => j === renewalIndex ? e.target.value : d) } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>)}
+                        <button type="button" onClick={() => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 YARD 교육 삭제</button>
+                      </div>
+                    </details>
+                  ))}
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, yard_cert_details: [...prev.yard_cert_details, { name: '', education_date: '', renewal_count: 0, renewal_dates: [] }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ YARD 교육 추가</button>
+                </div>
+              </details>
 
-              <div className="rounded-xl border border-[#E2E5E9] p-3 space-y-2.5">
-                <div className="font-bold text-[#243B5A]">사내자격 (NDT Level)</div>
-                <div className="text-[10px] text-[#64748B]">발행일 입력 시 유효기간은 5년 후 날짜로 자동 계산됩니다. 종목은 직접 입력하여 추가·삭제할 수 있습니다.</div>
-                {formData.ndt_certificates.map((cert, index) => (
-                  <div key={`ndt-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
-                    <details>
-                      <summary className="cursor-pointer font-semibold">NDT 자격 {index + 1}: {cert.subject || '종목 미입력'} · {cert.level || 'Level 선택'}</summary>
+              <details className="rounded-xl border border-[#E2E5E9] p-3">
+                <summary className="cursor-pointer font-bold text-[#243B5A] flex items-center justify-between">사내자격 (NDT Level) <span className="text-[10px] text-[#64748B] font-normal">{formData.ndt_certificates.length}개 · 눌러서 펼치기</span></summary>
+                <div className="pt-3 space-y-2.5">
+                  <div className="text-[10px] text-[#64748B]">종목은 드롭다운에서 선택합니다. 발행일 기준 5년 후 유효기간이 자동 입력되며, 자격별 유효일을 확인할 수 있습니다.</div>
+                  {formData.ndt_certificates.map((cert, index) => (
+                    <details key={`ndt-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
+                      <summary className="cursor-pointer font-semibold">{cert.subject || '종목 미선택'} · {cert.level || 'Level 선택'} · 유효일 {cert.expiry_date || '미입력'}</summary>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                        <select value={cert.issuer} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issuer: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></select>
-                        <input value={cert.subject} placeholder="종목 (예: LT(BUBBLE))" onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, subject: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
-                        <select value={cert.level} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, level: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></select>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">발급형태</label><select value={cert.issuer} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issuer: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></select></div>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">종목</label><select value={cert.subject} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, subject: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="">종목 선택</option>{Array.from(new Set([...ndtSubjectOptions, ...(cert.subject && !ndtSubjectOptions.includes(cert.subject) ? [cert.subject] : [])])).map(subject => <option key={subject} value={subject}>{subject}</option>)}</select></div>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">종류</label><select value={cert.level} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, level: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></select></div>
                         <div><label className="block text-[10px] text-[#64748B] mb-1">발행일</label><input type="date" value={cert.issue_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issue_date: date, expiry_date: addYearsToDate(date, 5) } : item) })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
-                        <div><label className="block text-[10px] text-[#64748B] mb-1">유효기간 (5년)</label><input type="date" value={cert.expiry_date} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, expiry_date: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">유효일 (발행일 + 5년)</label><input type="date" value={cert.expiry_date} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, expiry_date: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
                         <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 NDT 자격 삭제</button>
                       </div>
                     </details>
-                  </div>
-                ))}
-                <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: [...prev.ndt_certificates, { issuer: '사내', subject: DEFAULT_NDT_SUBJECTS[0], level: 'Level I', issue_date: '', expiry_date: '' }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ NDT 자격/종목 추가</button>
-                <div className="border-t border-[#E2E5E9] pt-2">
-                  <label className="block font-bold text-[#64748B] mb-1">기존 사내자격 메모 (유지)</label>
-                  <input type="text" placeholder="기존 사내 자격 입력" value={formData.internal_certificates} onChange={(e) => setFormData({ ...formData, internal_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
+                  ))}
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: [...prev.ndt_certificates, { issuer: '사내', subject: '', level: 'Level I', issue_date: '', expiry_date: '' }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ NDT 자격 추가</button>
+                  {isAdmin && <details className="rounded-lg border border-[#E2E5E9] p-2"><summary className="cursor-pointer font-semibold">종목 목록 관리</summary><div className="pt-2 space-y-2"><div className="flex flex-wrap gap-2">{ndtSubjectOptions.map(subject => <span key={subject} className="inline-flex items-center gap-1 rounded-full bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-1 text-xs">{subject}<button type="button" aria-label={`${subject} 삭제`} onClick={async () => { const { error } = await supabase.from('ndt_subject_options').delete().eq('subject', subject); if (error) { showNotice(`종목 삭제 실패: ${error.message}`, 'error'); return; } setNdtSubjectOptions(prev => prev.filter(item => item !== subject)); showNotice('종목을 삭제했습니다.', 'success'); }} className="text-red-600 font-bold">×</button></span>)}</div><div className="flex gap-2"><input value={newNdtSubject} onChange={e => setNewNdtSubject(e.target.value)} placeholder="추가할 종목명" className="min-w-0 flex-1 p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"/><button type="button" onClick={async () => { const subject = newNdtSubject.trim(); if (!subject) return; if (ndtSubjectOptions.includes(subject)) { showNotice('이미 등록된 종목입니다.', 'warning'); return; } const { error } = await supabase.from('ndt_subject_options').insert({ subject }); if (error) { showNotice(`종목 추가 실패: ${error.message}`, 'error'); return; } setNdtSubjectOptions(prev => [...prev, subject]); setNewNdtSubject(''); showNotice('종목을 추가했습니다.', 'success'); }} className="px-3 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-semibold">추가</button></div></div></details>}
                 </div>
-              </div>
+              </details>
 
               <div className="flex justify-end space-x-2 pt-2.5 border-t border-[#E2E5E9]">
                 <button
