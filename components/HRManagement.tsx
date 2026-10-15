@@ -39,6 +39,9 @@ export interface HRUser {
   internal_certificates?: string;
   national_certificates?: string; 
   certificates?: string;
+  national_cert_details?: Array<{ method: string; kind: string }>;
+  yard_cert_details?: { names: string; education_date: string; renewal_count: number; renewal_dates: string[] };
+  ndt_certificates?: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>; 
   join_date?: string;          
   career_start_date?: string;  
   password?: string;           
@@ -79,6 +82,17 @@ function calculateCareerDetails(startDateStr?: string) {
 
   return `${years}년 ${remainingDays}일`;
 }
+
+function addYearsToDate(dateStr: string, years: number) {
+  if (!dateStr) return '';
+  const date = new Date(`${dateStr}T12:00:00`);
+  if (Number.isNaN(date.getTime())) return '';
+  date.setFullYear(date.getFullYear() + years);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+const NATIONAL_KINDS = ['기능사', '산업기사', '기사', '기술사', 'RI', 'SRI'];
+const DEFAULT_NDT_SUBJECTS = ['LT(BUBBLE)', 'LT(Pressure Change)', 'LT(MST-He)', 'PT'];
 
 function calculateAge(birthStr?: string) {
   if (!birthStr) return null;
@@ -152,6 +166,9 @@ export default function HRManagement({
     experience: '',
     internal_certificates: '',
     national_certificates: '',
+    national_cert_details: [] as Array<{ method: string; kind: string }>,
+    yard_cert_details: { names: '', education_date: '', renewal_count: 0, renewal_dates: [] as string[] },
+    ndt_certificates: [] as Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>,
     join_date: '',
     career_start_date: '',
     birthDate: ''
@@ -194,21 +211,20 @@ export default function HRManagement({
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
-    
-const { data, error } = await supabase
-  .from('app_users')
-  .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y')
-  .order('name', { ascending: true });
+      const { data, error } = await supabase
+        .from('app_users')
+        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, national_cert_details, yard_cert_details, ndt_certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y')
+        .order('name', { ascending: true });
 
-if (error) throw error;
+      if (error) throw error;
 
-const formatted = (data || []).map((u: any) => ({
-  ...u,
-  national_certificates: u.national_certificates || ''
-}));
-
-setUsers(formatted);
-
+      const formatted = (data || []).map((u: any) => ({
+        ...u,
+        national_certificates: u.national_certificates || u.certificates || '',
+        national_cert_details: Array.isArray(u.national_cert_details) ? u.national_cert_details : [],
+        yard_cert_details: u.yard_cert_details || { names: '', education_date: '', renewal_count: 0, renewal_dates: [] },
+        ndt_certificates: Array.isArray(u.ndt_certificates) ? u.ndt_certificates : []
+      }));
 
       setUsers(formatted);
     } catch (err: any) {
@@ -310,6 +326,9 @@ setUsers(formatted);
       experience: '',
       internal_certificates: '',
       national_certificates: '',
+      national_cert_details: [],
+      yard_cert_details: { names: '', education_date: '', renewal_count: 0, renewal_dates: [] },
+      ndt_certificates: [],
       join_date: new Date().toISOString().split('T')[0],
       career_start_date: new Date().toISOString().split('T')[0],
       birthDate: ''
@@ -339,6 +358,9 @@ setUsers(formatted);
       experience: user.experience || '',
       internal_certificates: user.internal_certificates || '',
       national_certificates: user.national_certificates || user.certificates || '',
+      national_cert_details: Array.isArray(user.national_cert_details) ? user.national_cert_details : [],
+      yard_cert_details: user.yard_cert_details || { names: '', education_date: '', renewal_count: 0, renewal_dates: [] },
+      ndt_certificates: Array.isArray(user.ndt_certificates) ? user.ndt_certificates : [],
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
       birthDate: user.password || '' 
@@ -434,8 +456,10 @@ setUsers(formatted);
         address: formData.address,
         experience: formData.experience,
         internal_certificates: formData.internal_certificates,
-        national_certificates: formData.national_certificates,
-        certificates: formData.national_certificates,
+        national_certificates: formData.national_cert_details.map(c => `${c.method}${c.kind ? ` ${c.kind}` : ''}`.trim()).filter(Boolean).join(', ') || formData.national_certificates,
+        national_cert_details: formData.national_cert_details,
+        yard_cert_details: formData.yard_cert_details,
+        ndt_certificates: formData.ndt_certificates,
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
       };
@@ -515,7 +539,10 @@ setUsers(formatted);
         id: formData.inputId.trim(),
         role: payload.role ?? selectedUser?.role ?? (isSuperAdmin ? (formData.role || 'USER') : 'USER'),
         photo_url: savedPhotoUrl || selectedUser?.photo_url || null,
-        national_certificates: payload.national_certificates || payload.certificates || selectedUser?.national_certificates || ''
+        national_certificates: payload.national_certificates || payload.certificates || selectedUser?.national_certificates || '',
+        national_cert_details: formData.national_cert_details,
+        yard_cert_details: formData.yard_cert_details,
+        ndt_certificates: formData.ndt_certificates
       };
       setUsers(prev => {
         const next = selectedUser
@@ -539,7 +566,10 @@ setUsers(formatted);
       (u.position || '').toLowerCase().includes(term) ||
       (u.job_title || '').toLowerCase().includes(term) ||
       (u.field || '').toLowerCase().includes(term) ||
-      (u.phone || '').toLowerCase().includes(term)
+      (u.phone || '').toLowerCase().includes(term) ||
+      (u.internal_certificates || '').toLowerCase().includes(term) ||
+      (u.national_certificates || '').toLowerCase().includes(term) ||
+      (u.certificates || '').toLowerCase().includes(term)
     );
   });
 
@@ -584,11 +614,11 @@ setUsers(formatted);
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="relative flex-1 sm:w-56">
+          <div className="relative flex-1 sm:w-80 sm:min-w-[320px]">
             <Search className="h-3.5 w-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-[#64748B]" />
             <input
               type="text"
-              placeholder="이름, 아이디, 파트 검색..."
+              placeholder="이름, 아이디, 파트, 자격 검색..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="w-full pl-8 pr-3 py-1.5 text-xs border border-[#E2E5E9] rounded-lg bg-[#F5F6F8] text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none transition"
@@ -1323,26 +1353,61 @@ setUsers(formatted);
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block font-bold text-[#64748B] mb-1">사내 자격</label>
-                  <input
-                    type="text"
-                    placeholder="사내 자격 입력"
-                    value={formData.internal_certificates}
-                    onChange={(e) => setFormData({ ...formData, internal_certificates: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
-                  />
-                </div>
-                <div>
-                  <label className="block font-bold text-[#64748B] mb-1">국가 자격</label>
-                  <input
-                    type="text"
-                    placeholder="국가 자격 입력"
-                    value={formData.national_certificates}
-                    onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
-                  />
+              <div className="rounded-xl border border-[#E2E5E9] p-3 space-y-2.5">
+                <div className="font-bold text-[#243B5A]">국가자격 세분화</div>
+                <div className="text-[10px] text-[#64748B]">종목은 직접 입력하고, 종류는 접이식 메뉴에서 선택합니다.</div>
+                {formData.national_cert_details.map((cert, index) => (
+                  <div key={`national-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
+                    <details>
+                      <summary className="cursor-pointer font-semibold text-[#1F2937]">국가자격 {index + 1}: {cert.method || '종목 미입력'} · {cert.kind || '종류 선택'}</summary>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                        <input value={cert.method} placeholder="종목 직접 입력" onChange={(e) => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.map((item, i) => i === index ? { ...item, method: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
+                        <select value={cert.kind} onChange={(e) => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.map((item, i) => i === index ? { ...item, kind: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs">
+                          <option value="">종류 선택</option>{NATIONAL_KINDS.map(kind => <option key={kind} value={kind}>{kind}</option>)}
+                        </select>
+                        <button type="button" onClick={() => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 국가자격 삭제</button>
+                      </div>
+                    </details>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setFormData(prev => ({ ...prev, national_cert_details: [...prev.national_cert_details, { method: '', kind: '' }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ 국가자격 추가</button>
+              </div>
+
+              <div className="rounded-xl border border-[#E2E5E9] p-3 space-y-2.5">
+                <div className="font-bold text-[#243B5A]">YARD 자격</div>
+                <label className="block font-bold text-[#64748B]">교육명 (쉼표로 구분)</label>
+                <textarea rows={2} placeholder="예: YARD 안전교육, 특수교육" value={formData.yard_cert_details.names} onChange={(e) => setFormData(prev => ({ ...prev, yard_cert_details: { ...prev.yard_cert_details, names: e.target.value } }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
+                <label className="block font-bold text-[#64748B]">교육일</label>
+                <input type="date" value={formData.yard_cert_details.education_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, yard_cert_details: { ...prev.yard_cert_details, education_date: date, renewal_dates: Array.from({ length: prev.yard_cert_details.renewal_count }, (_, i) => addYearsToDate(date, 2 * (i + 1))) } })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
+                <details className="rounded-lg border border-[#E2E5E9] p-2">
+                  <summary className="cursor-pointer font-semibold">보수일 횟수 선택 (현재 {formData.yard_cert_details.renewal_count}회)</summary>
+                  <select value={formData.yard_cert_details.renewal_count} onChange={(e) => { const count = Number(e.target.value); setFormData(prev => ({ ...prev, yard_cert_details: { ...prev.yard_cert_details, renewal_count: count, renewal_dates: Array.from({ length: count }, (_, i) => addYearsToDate(prev.yard_cert_details.education_date, 2 * (i + 1))) } })); }} className="mt-2 w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value={0}>0회</option><option value={1}>1회</option><option value={2}>2회</option><option value={3}>3회</option><option value={4}>4회</option></select>
+                </details>
+                {formData.yard_cert_details.renewal_dates.map((date, index) => <div key={`yard-renewal-${index}`} className="grid grid-cols-2 gap-2 items-center"><label className="text-[#64748B]">보수일 {index + 1}회 (2년 주기)</label><input type="date" value={date} onChange={(e) => setFormData(prev => ({ ...prev, yard_cert_details: { ...prev.yard_cert_details, renewal_dates: prev.yard_cert_details.renewal_dates.map((d, i) => i === index ? e.target.value : d) } }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>)}
+              </div>
+
+              <div className="rounded-xl border border-[#E2E5E9] p-3 space-y-2.5">
+                <div className="font-bold text-[#243B5A]">사내자격 (NDT Level)</div>
+                <div className="text-[10px] text-[#64748B]">발행일 입력 시 유효기간은 5년 후 날짜로 자동 계산됩니다. 종목은 직접 입력하여 추가·삭제할 수 있습니다.</div>
+                {formData.ndt_certificates.map((cert, index) => (
+                  <div key={`ndt-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
+                    <details>
+                      <summary className="cursor-pointer font-semibold">NDT 자격 {index + 1}: {cert.subject || '종목 미입력'} · {cert.level || 'Level 선택'}</summary>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
+                        <select value={cert.issuer} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issuer: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></select>
+                        <input value={cert.subject} placeholder="종목 (예: LT(BUBBLE))" onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, subject: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
+                        <select value={cert.level} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, level: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></select>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">발행일</label><input type="date" value={cert.issue_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issue_date: date, expiry_date: addYearsToDate(date, 5) } : item) })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">유효기간 (5년)</label><input type="date" value={cert.expiry_date} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, expiry_date: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
+                        <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 NDT 자격 삭제</button>
+                      </div>
+                    </details>
+                  </div>
+                ))}
+                <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: [...prev.ndt_certificates, { issuer: '사내', subject: DEFAULT_NDT_SUBJECTS[0], level: 'Level I', issue_date: '', expiry_date: '' }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ NDT 자격/종목 추가</button>
+                <div className="border-t border-[#E2E5E9] pt-2">
+                  <label className="block font-bold text-[#64748B] mb-1">기존 사내자격 메모 (유지)</label>
+                  <input type="text" placeholder="기존 사내 자격 입력" value={formData.internal_certificates} onChange={(e) => setFormData({ ...formData, internal_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
                 </div>
               </div>
 
