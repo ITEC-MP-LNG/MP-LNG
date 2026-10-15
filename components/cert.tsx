@@ -254,6 +254,16 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     return nameA.localeCompare(nameB, 'ko') || a.title.localeCompare(b.title, 'ko');
   }), [activeRecords, category, subTab, search, personById]);
 
+  const visibleGroups = useMemo(() => {
+    const groups = new Map<string, { user_id: string; person?: Person; records: CertRecord[] }>();
+    for (const record of visibleRecords) {
+      const userId = String(record.user_id);
+      if (!groups.has(userId)) groups.set(userId, { user_id: userId, person: personById.get(userId), records: [] });
+      groups.get(userId)!.records.push(record);
+    }
+    return Array.from(groups.values());
+  }, [visibleRecords, personById]);
+
   const setField = (key: keyof FormData, value: string) => {
     setForm(prev => {
       const next = { ...prev, [key]: value };
@@ -319,7 +329,12 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         setRecords(prev => [...prev, data as CertRecord]);
         notify('자격정보를 등록했습니다. HRManagement 원본에는 변경사항을 보내지 않았습니다.');
       }
-      setModalOpen(false);
+      if (editing) {
+        setModalOpen(false);
+      } else {
+        // 등록 화면을 유지해 자격 구분을 바꾸며 연속 등록할 수 있게 합니다.
+        setForm(emptyForm(form.category, admin ? form.user_id : String(selfPerson?.id || '')));
+      }
     } catch (e: any) {
       notify(`저장 실패: ${e?.message || '오류가 발생했습니다.'}`, 'error');
     } finally { setSaving(false); }
@@ -361,16 +376,19 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
 
   const exportExcel = () => {
     const list = activeRecords.filter(r => r.category === category).slice().sort((a, b) => {
-      const aName = personById.get(String(a.user_id))?.name || '';
-      const bName = personById.get(String(b.user_id))?.name || '';
-      return aName.localeCompare(bName, 'ko');
+      const aPerson = personById.get(String(a.user_id));
+      const bPerson = personById.get(String(b.user_id));
+      const byName = (aPerson?.name || '').localeCompare(bPerson?.name || '', 'ko');
+      return byName || String(a.user_id).localeCompare(String(b.user_id), 'ko') || a.title.localeCompare(b.title, 'ko');
     });
     const title = category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
     let headers: string[];
     let rows: any[][];
+    let nameColumn = 0;
     if (category === 'YARD') {
-      headers = ['교육명', '성명', '사번', '교육일', '스티커 번호', '보수교육 1', '보수교육 2', '보수교육 3', '보수교육 4'];
-      rows = list.map(r => [r.title, personById.get(String(r.user_id))?.name || '', String(r.user_id), r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '']);
+      // 요청사항: 성명 다음에 교육명, 동일인의 여러 교육은 성명 셀을 병합합니다.
+      headers = ['성명', '교육명', '사번', '교육일', '스티커 번호', '보수교육 1', '보수교육 2', '보수교육 3', '보수교육 4'];
+      rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', String(r.user_id), r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '']);
     } else if (category === 'NATIONAL') {
       headers = ['성명', '자격종류', '종목', '취득일'];
       rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', r.method || '', r.obtained_date || '']);
@@ -381,6 +399,16 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     const sheetRows: any[][] = [[title], headers, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(sheetRows);
     ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+    // 연속된 같은 사번의 이름 셀을 세로 병합합니다. (데이터 시작 행은 Excel 3행)
+    let groupStart = 0;
+    while (groupStart < list.length) {
+      let groupEnd = groupStart + 1;
+      while (groupEnd < list.length && String(list[groupEnd].user_id) === String(list[groupStart].user_id)) groupEnd++;
+      if (groupEnd - groupStart > 1) {
+        ws['!merges'].push({ s: { r: groupStart + 2, c: nameColumn }, e: { r: groupEnd + 1, c: nameColumn } });
+      }
+      groupStart = groupEnd;
+    }
     ws['!rows'] = [{ hpt: 42 }, { hpt: 24 }, ...rows.map(() => ({ hpt: 21 }))];
     ws['!cols'] = headers.map((header, col) => {
       const maxLength = Math.max(header.length, ...rows.map(row => String(row[col] ?? '').length));
@@ -429,29 +457,39 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         <label className="text-[10px] font-bold text-[#64748B]">이름 · 사번 · 자격명 검색<div className="relative mt-1"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]"/><input className={`${inputClass} pl-8`} value={search} onChange={e => setSearch(e.target.value)} placeholder="이름, 로그인 아이디(사번), 교육명 또는 종목" /></div></label>
       </div>
       {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700"><b>불러오기 실패</b><p className="mt-1 break-words">{loadError}</p><p className="mt-1">먼저 제공된 Supabase SQL을 실행했는지 확인해주세요.</p></div>}
-      {loading ? <div className="py-12 text-center text-xs text-[#64748B]">자격정보를 불러오는 중...</div> : visibleRecords.length === 0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] bg-[#F5F6F8] p-8 text-center text-xs text-[#64748B]">표시할 자격이 없습니다. HRManagement에 등록된 자격이 있으면 새로고침을 눌러 가져올 수 있습니다.</div> : <div className="space-y-2">
-        {visibleRecords.map(record => {
-          const person = personById.get(String(record.user_id));
-          const expiry = expiryFor(record);
-          const remaining = expiry ? daysUntil(expiry) : null;
-          const key = `${record.id}`;
+      {loading ? <div className="py-12 text-center text-xs text-[#64748B]">자격정보를 불러오는 중...</div> : visibleGroups.length === 0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] bg-[#F5F6F8] p-8 text-center text-xs text-[#64748B]">표시할 자격이 없습니다. HRManagement에 등록된 자격이 있으면 새로고침을 눌러 가져올 수 있습니다.</div> : <div className="space-y-2">
+        {visibleGroups.map(group => {
+          const key = `person:${group.user_id}`;
           const isOpen = !!expanded[key];
-          return <div key={record.id} className="overflow-hidden rounded-lg border border-[#E2E5E9] bg-white">
-            <button type="button" onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))} className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left hover:bg-[#F8FAFC]">
-              <span className="flex min-w-0 items-center gap-2">{isOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-[#64748B]"/> : <ChevronRight className="h-4 w-4 shrink-0 text-[#64748B]"/>}<span className="min-w-0"><span className="block truncate text-xs font-bold text-[#243B5A]">{person?.name || record.user_id} <span className="font-normal text-[#64748B]">({record.user_id})</span></span><span className="mt-1 block break-words text-[11px] text-[#1F2937]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.method || ''}${record.title ? ` · ${record.title}` : ''}` : record.title}</span></span></span>
-              <span className="shrink-0 text-right text-[10px] text-[#64748B]">{category === 'YARD' ? `교육일 ${record.education_completed || record.obtained_date || '미입력'}` : category === 'NATIONAL' ? `취득일 ${record.obtained_date || '미입력'}` : `유효 ${expiry || '미입력'}`}{remaining !== null && remaining >= 0 && remaining <= 40 ? <span className="mt-1 block font-bold text-amber-700">만료 {remaining}일 전</span> : null}</span>
+          const refreshRecords = group.records;
+          const renewalRecords = refreshRecords.filter(record => {
+            if (record.category === 'NATIONAL') return false;
+            const expiry = expiryFor(record);
+            if (!expiry) return false;
+            const remaining = daysUntil(expiry);
+            return remaining >= 0 && remaining <= 40;
+          });
+          return <div key={group.user_id} className="overflow-hidden rounded-lg border border-[#E2E5E9] bg-white">
+            <button type="button" onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))} className="flex w-full items-start justify-between gap-3 px-3 py-3 text-left hover:bg-[#F8FAFC]">
+              <span className="flex min-w-0 flex-1 items-start gap-2">{isOpen ? <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]"/> : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]"/>}<span className="min-w-0 flex-1"><span className="block text-xs font-bold text-[#243B5A]">{group.person?.name || group.user_id} <span className="font-normal text-[#64748B]">({group.user_id})</span></span><span className="mt-1 flex flex-wrap gap-1.5">{refreshRecords.map(record => <span key={record.id} className="rounded-md border border-[#E2E5E9] bg-[#F5F6F8] px-2 py-1 text-[10px] text-[#1F2937]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</span>)}</span></span></span>
+              <span className="flex shrink-0 flex-col items-end gap-1 text-right">{renewalRecords.length > 0 && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">자격갱신</span>}<span className="text-[10px] text-[#64748B]">자격 {refreshRecords.length}건</span></span>
             </button>
-            {isOpen && <div className="border-t border-[#E2E5E9] bg-[#F8FAFC] p-3">
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 text-[11px]">
-                <div><span className="font-bold text-[#64748B]">성명 / 사번</span><p className="mt-1">{person?.name || '-'} / {record.user_id}</p></div>
-                {category === 'YARD' && <><div><span className="font-bold text-[#64748B]">교육명</span><p className="mt-1">{record.title || '-'}</p></div><div><span className="font-bold text-[#64748B]">교육일</span><p className="mt-1">{record.education_completed || record.obtained_date || '-'}</p></div><div><span className="font-bold text-[#64748B]">스티커 번호</span><p className="mt-1">{record.sticker_no || '-'}</p></div>{[1,2,3,4].map(n => <div key={n}><span className="font-bold text-[#64748B]">보수교육 {n}</span><p className="mt-1">{(record as any)[`training_date_${n}`] || '-'}</p></div>)}<div><span className="font-bold text-[#64748B]">유효기간(예상)</span><p className="mt-1">{expiry || '-'}</p></div></>}
-                {category === 'NATIONAL' && <><div><span className="font-bold text-[#64748B]">자격종류</span><p className="mt-1">{record.title || '-'}</p></div><div><span className="font-bold text-[#64748B]">종목</span><p className="mt-1">{record.method || '-'}</p></div><div><span className="font-bold text-[#64748B]">취득일</span><p className="mt-1">{record.obtained_date || '-'}</p></div></>}
-                {category === 'NDT' && <><div><span className="font-bold text-[#64748B]">경력</span><p className="mt-1">{person?.experience || '-'}</p></div><div><span className="font-bold text-[#64748B]">발급형태</span><p className="mt-1">{record.detail?.issuer || record.method || '-'}</p></div><div><span className="font-bold text-[#64748B]">Level</span><p className="mt-1">{record.level || '-'}</p></div><div><span className="font-bold text-[#64748B]">취득일</span><p className="mt-1">{record.obtained_date || '-'}</p></div><div><span className="font-bold text-[#64748B]">갱신일 / 유효일</span><p className="mt-1">{expiry || '-'}</p></div><div><span className="font-bold text-[#64748B]">Cert No.</span><p className="mt-1">{record.cert_no || '-'}</p></div></>}
-              </div>
-              <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-[#E2E5E9] pt-3">
-                {canEdit(record) && <button type="button" onClick={() => openEdit(record)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-[11px] font-bold text-[#243B5A]"><Edit3 className="h-3.5 w-3.5"/> 수정</button>}
-                {admin && <button type="button" onClick={() => void removeRecord(record)} className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-2 text-[11px] font-bold text-red-600"><Trash2 className="h-3.5 w-3.5"/> 삭제</button>}
-              </div>
+            {isOpen && <div className="space-y-2 border-t border-[#E2E5E9] bg-[#F8FAFC] p-3">
+              {refreshRecords.map(record => {
+                const person = group.person;
+                const expiry = expiryFor(record);
+                const remaining = expiry ? daysUntil(expiry) : null;
+                const needsRenewal = record.category !== 'NATIONAL' && remaining !== null && remaining >= 0 && remaining <= 40;
+                return <div key={record.id} className="rounded-lg border border-[#E2E5E9] bg-white p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-bold text-[#243B5A]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</div><div className="mt-1 text-[10px] text-[#64748B]">{category === 'YARD' ? `교육일 ${record.education_completed || record.obtained_date || '미입력'} · 유효기간 ${expiry || '미입력'}` : category === 'NATIONAL' ? `취득일 ${record.obtained_date || '미입력'}` : `취득일 ${record.obtained_date || '미입력'} · 갱신일 ${expiry || '미입력'}`}</div></div>{needsRenewal && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">자격갱신{remaining !== null ? ` · ${remaining}일 전` : ''}</span>}</div>
+                  <div className="mt-3 grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-2 lg:grid-cols-3">
+                    {category === 'YARD' && <><div><span className="font-bold text-[#64748B]">스티커 번호</span><p className="mt-1">{record.sticker_no || '-'}</p></div>{[1,2,3,4].map(n => <div key={n}><span className="font-bold text-[#64748B]">보수교육 {n}</span><p className="mt-1">{(record as any)[`training_date_${n}`] || '-'}</p></div>)} </>}
+                    {category === 'NATIONAL' && <><div><span className="font-bold text-[#64748B]">자격종류</span><p className="mt-1">{record.title || '-'}</p></div><div><span className="font-bold text-[#64748B]">종목</span><p className="mt-1">{record.method || '-'}</p></div></>}
+                    {category === 'NDT' && <><div><span className="font-bold text-[#64748B]">경력</span><p className="mt-1">{person?.experience || '-'}</p></div><div><span className="font-bold text-[#64748B]">발급형태</span><p className="mt-1">{record.detail?.issuer || record.method || '-'}</p></div><div><span className="font-bold text-[#64748B]">Cert No.</span><p className="mt-1">{record.cert_no || '-'}</p></div></>}
+                  </div>
+                  <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-[#E2E5E9] pt-3">{canEdit(record) && <button type="button" onClick={() => openEdit(record)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-[11px] font-bold text-[#243B5A]"><Edit3 className="h-3.5 w-3.5"/> 수정</button>}{admin && <button type="button" onClick={() => void removeRecord(record)} className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-2 text-[11px] font-bold text-red-600"><Trash2 className="h-3.5 w-3.5"/> 삭제</button>}</div>
+                </div>;
+              })}
             </div>}
           </div>;
         })}
@@ -461,7 +499,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     {activeAlert && !alertHidden && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-3">
       <div className="w-full max-w-md space-y-3 rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
         <div className="flex items-center gap-2 border-b border-[#E2E5E9] pb-2"><AlertTriangle className="h-5 w-5 text-amber-600"/><h3 className="text-sm font-bold text-[#243B5A]">자격 유효기간 알림</h3></div>
-        <p className="text-xs text-[#64748B]">YARD 및 NDT Level 자격의 유효기간이 40일 이내로 남은 경우 본인과 관리자에게 표시됩니다.</p>
+        <p className="text-xs text-[#64748B]">YARD 및 사내자격(NDT Level)의 유효기간이 40일 이내로 남은 경우 본인과 관리자에게 표시됩니다.</p>
         <div className="rounded-lg bg-[#F5F6F8] p-3 text-xs"><b>{personById.get(String(activeAlert.user_id))?.name || activeAlert.user_id} · {activeAlert.title}</b><div className="mt-1">유효기간: {expiryFor(activeAlert)} ({daysUntil(expiryFor(activeAlert))}일 남음)</div></div>
         <div className="flex justify-end gap-2"><button type="button" onClick={hideAlertToday} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">오늘 보지 않기</button><button type="button" onClick={() => setActiveAlert(null)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">닫기</button></div>
       </div>
