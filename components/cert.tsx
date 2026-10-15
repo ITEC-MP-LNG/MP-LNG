@@ -106,7 +106,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<CertRecord | null>(null);
   const [form, setForm] = useState<FormData>(emptyForm('YARD'));
-  const [activeAlert, setActiveAlert] = useState<CertRecord | null>(null);
+  const [activeAlert, setActiveAlert] = useState<CertRecord[] | null>(null);
   const [alertHidden, setAlertHidden] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
@@ -358,19 +358,28 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     const expiry = expiryFor(r);
     if (!expiry) return false;
     const remaining = daysUntil(expiry);
-    return remaining >= 0 && remaining <= 40;
+    return remaining <= 40;
   }).sort((a, b) => (expiryFor(a) || '').localeCompare(expiryFor(b) || '')), [activeRecords, admin, selfPerson]);
   useEffect(() => {
-    const key = `cert-management-alert-hidden:${selfPerson?.id || currentUser?.id || currentUser?.name || 'guest'}:${todayStr()}`;
-    let hidden = false;
-    try { hidden = window.localStorage.getItem(key) === '1'; } catch { /* storage unavailable */ }
-    setAlertHidden(hidden);
-    if (!hidden && alerts.length) setActiveAlert(alerts[0]);
-    else setActiveAlert(null);
+    const userKey = selfPerson?.id || currentUser?.id || currentUser?.name || 'guest';
+    const key = `cert-management-alert-last-shown:${userKey}`;
+    let lastShown = 0;
+    try { lastShown = Number(window.localStorage.getItem(key) || 0); } catch { /* storage unavailable */ }
+    const fiveDaysMs = 5 * 24 * 60 * 60 * 1000;
+    const canShow = !lastShown || Date.now() - lastShown >= fiveDaysMs;
+    if (alerts.length && canShow) {
+      setActiveAlert(alerts);
+      setAlertHidden(false);
+      try { window.localStorage.setItem(key, String(Date.now())); } catch { /* storage unavailable */ }
+    } else {
+      setActiveAlert(null);
+      setAlertHidden(true);
+    }
   }, [alerts, selfPerson?.id, currentUser?.id, currentUser?.name]);
-  const hideAlertToday = () => {
-    const key = `cert-management-alert-hidden:${selfPerson?.id || currentUser?.id || currentUser?.name || 'guest'}:${todayStr()}`;
-    try { window.localStorage.setItem(key, '1'); } catch { /* storage unavailable */ }
+  const hideAlertForFiveDays = () => {
+    const userKey = selfPerson?.id || currentUser?.id || currentUser?.name || 'guest';
+    const key = `cert-management-alert-last-shown:${userKey}`;
+    try { window.localStorage.setItem(key, String(Date.now())); } catch { /* storage unavailable */ }
     setAlertHidden(true); setActiveAlert(null);
   };
 
@@ -467,7 +476,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
             const expiry = expiryFor(record);
             if (!expiry) return false;
             const remaining = daysUntil(expiry);
-            return remaining >= 0 && remaining <= 40;
+            return remaining <= 40;
           });
           return <div key={group.user_id} className="overflow-hidden rounded-lg border border-[#E2E5E9] bg-white">
             <button type="button" onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))} className="flex w-full items-start justify-between gap-3 px-3 py-3 text-left hover:bg-[#F8FAFC]">
@@ -479,9 +488,9 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
                 const person = group.person;
                 const expiry = expiryFor(record);
                 const remaining = expiry ? daysUntil(expiry) : null;
-                const needsRenewal = record.category !== 'NATIONAL' && remaining !== null && remaining >= 0 && remaining <= 40;
+                const needsRenewal = record.category !== 'NATIONAL' && remaining !== null && remaining <= 40;
                 return <div key={record.id} className="rounded-lg border border-[#E2E5E9] bg-white p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-bold text-[#243B5A]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</div><div className="mt-1 text-[10px] text-[#64748B]">{category === 'YARD' ? `교육일 ${record.education_completed || record.obtained_date || '미입력'} · 유효기간 ${expiry || '미입력'}` : category === 'NATIONAL' ? `취득일 ${record.obtained_date || '미입력'}` : `취득일 ${record.obtained_date || '미입력'} · 갱신일 ${expiry || '미입력'}`}</div></div>{needsRenewal && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">자격갱신{remaining !== null ? ` · ${remaining}일 전` : ''}</span>}</div>
+                  <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-bold text-[#243B5A]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</div><div className="mt-1 text-[10px] text-[#64748B]">{category === 'YARD' ? `교육일 ${record.education_completed || record.obtained_date || '미입력'} · 유효기간 ${expiry || '미입력'}` : category === 'NATIONAL' ? `취득일 ${record.obtained_date || '미입력'}` : `취득일 ${record.obtained_date || '미입력'} · 갱신일 ${expiry || '미입력'}`}</div></div>{needsRenewal && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">자격갱신{remaining !== null ? (remaining < 0 ? ` · ${Math.abs(remaining)}일 경과` : remaining === 0 ? ' · 오늘 만료' : ` · ${remaining}일 남음`) : ''}</span>}</div>
                   <div className="mt-3 grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-2 lg:grid-cols-3">
                     {category === 'YARD' && <><div><span className="font-bold text-[#64748B]">스티커 번호</span><p className="mt-1">{record.sticker_no || '-'}</p></div>{[1,2,3,4].map(n => <div key={n}><span className="font-bold text-[#64748B]">보수교육 {n}</span><p className="mt-1">{(record as any)[`training_date_${n}`] || '-'}</p></div>)} </>}
                     {category === 'NATIONAL' && <><div><span className="font-bold text-[#64748B]">자격종류</span><p className="mt-1">{record.title || '-'}</p></div><div><span className="font-bold text-[#64748B]">종목</span><p className="mt-1">{record.method || '-'}</p></div></>}
@@ -496,12 +505,21 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       </div>}
     </div>
 
-    {activeAlert && !alertHidden && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-3">
-      <div className="w-full max-w-md space-y-3 rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
-        <div className="flex items-center gap-2 border-b border-[#E2E5E9] pb-2"><AlertTriangle className="h-5 w-5 text-amber-600"/><h3 className="text-sm font-bold text-[#243B5A]">자격 유효기간 알림</h3></div>
-        <p className="text-xs text-[#64748B]">YARD 및 사내자격(NDT Level)의 유효기간이 40일 이내로 남은 경우 본인과 관리자에게 표시됩니다.</p>
-        <div className="rounded-lg bg-[#F5F6F8] p-3 text-xs"><b>{personById.get(String(activeAlert.user_id))?.name || activeAlert.user_id} · {activeAlert.title}</b><div className="mt-1">유효기간: {expiryFor(activeAlert)} ({daysUntil(expiryFor(activeAlert))}일 남음)</div></div>
-        <div className="flex justify-end gap-2"><button type="button" onClick={hideAlertToday} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">오늘 보지 않기</button><button type="button" onClick={() => setActiveAlert(null)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">닫기</button></div>
+    {activeAlert && !alertHidden && activeAlert.length > 0 && <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-3">
+      <div className="w-full max-w-xl space-y-3 rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
+        <div className="flex items-center gap-2 border-b border-[#E2E5E9] pb-2"><AlertTriangle className="h-5 w-5 text-red-600"/><h3 className="text-sm font-bold text-[#243B5A]">자격갱신 알림</h3><span className="ml-auto rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">{activeAlert.length}건</span></div>
+        <p className="text-xs text-[#64748B]">YARD 및 사내자격(NDT Level)의 유효기간이 40일 이내이거나 이미 지난 자격입니다. 알림은 5일 간격으로 표시됩니다.</p>
+        <div className="max-h-[55vh] space-y-2 overflow-y-auto rounded-lg bg-[#F5F6F8] p-2">{activeAlert.map(record => {
+          const expiry = expiryFor(record);
+          const remaining = expiry ? daysUntil(expiry) : null;
+          const person = personById.get(String(record.user_id));
+          const categoryLabel = record.category === 'YARD' ? 'YARD' : 'NDT Level';
+          return <div key={record.id} className="rounded-lg border border-[#E2E5E9] bg-white p-3 text-xs">
+            <div className="flex flex-wrap items-start justify-between gap-2"><div><b className="text-[#243B5A]">{person?.name || record.user_id}</b><span className="ml-1 text-[#64748B]">({record.user_id})</span><div className="mt-1 font-semibold">{categoryLabel} · {record.title}{record.level ? ` · ${record.level}` : ''}</div></div><span className="rounded-md bg-red-50 px-2 py-1 font-bold text-red-600">자격갱신</span></div>
+            <div className="mt-2 text-[#64748B]">유효기간: {expiry || '미입력'} · {remaining === null ? '기간 확인 필요' : remaining < 0 ? `${Math.abs(remaining)}일 경과` : remaining === 0 ? '오늘 만료' : `${remaining}일 남음`}</div>
+          </div>;
+        })}</div>
+        <div className="flex justify-end gap-2"><button type="button" onClick={hideAlertForFiveDays} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">5일간 보지 않기</button><button type="button" onClick={() => { setAlertHidden(true); setActiveAlert(null); }} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">닫기</button></div>
       </div>
     </div>}
 
