@@ -19,8 +19,7 @@ import {
   AtSign,
   Network,
   GitCommit,
-  Shield,
-  Plus
+  Shield
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
@@ -46,10 +45,6 @@ export interface HRUser {
   pos_x?: number;              
   pos_y?: number;              
   photo_url?: string | null;
-  // UI compatibility field mapped to app_users.yard_national_certificates
-  yard_certificates?: string;
-  yard_national_certificates?: string;
-  cert_assignments?: Record<string, { level?: string; cert_no?: string }>;
 }
 
 interface HRManagementProps {
@@ -157,8 +152,6 @@ export default function HRManagement({
     experience: '',
     internal_certificates: '',
     national_certificates: '',
-    yard_certificates: '',
-    cert_assignments: { RT: { level: '', cert_no: '' }, UT: { level: '', cert_no: '' }, MT: { level: '', cert_no: '' }, PT: { level: '', cert_no: '' }, LT: { level: '', cert_no: '' } } as Record<string, { level?: string; cert_no?: string }>,
     join_date: '',
     career_start_date: '',
     birthDate: ''
@@ -203,17 +196,14 @@ export default function HRManagement({
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, yard_national_certificates, cert_assignments, join_date, career_start_date, password, photo_url, pos_x, pos_y')
+        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y')
         .order('name', { ascending: true });
 
       if (error) throw error;
 
       const formatted = (data || []).map((u: any) => ({
         ...u,
-        national_certificates: u.national_certificates || '',
-        internal_certificates: u.internal_certificates || '',
-        yard_certificates: u.yard_national_certificates || '',
-        cert_assignments: u.cert_assignments || {}
+        national_certificates: u.national_certificates || u.certificates || ''
       }));
 
       setUsers(formatted);
@@ -227,41 +217,6 @@ export default function HRManagement({
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
-
-  // 자격현황(cert.tsx / cert_records)과 임시로 분리합니다.
-  // 카드뷰·목록뷰의 자격 표시는 app_users에 저장된 기존 필드만 읽습니다.
-  const getQualificationSummary = (userId: string, category: 'YARD' | 'NATIONAL' | 'NDT') => {
-    const person = users.find((u) => u.id === userId);
-    if (!person) return '';
-    const raw = category === 'YARD'
-      ? (person.yard_national_certificates || person.yard_certificates)
-      : category === 'NATIONAL'
-        ? person.national_certificates
-        : person.internal_certificates;
-    if (!raw || !raw.trim()) return '';
-
-    // 이전에 JSON 배열 형태로 저장된 값도 표시할 수 있게 하되,
-    // 원본 문자열이 일반 텍스트라면 내용을 변형하지 않고 그대로 표시합니다.
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        const rows = parsed.map((item: any) => {
-          if (!item || typeof item !== 'object') return String(item || '').trim();
-          if (category === 'NATIONAL') {
-            return [item.method, item.kind || item.title, item.level].filter(Boolean).join(' ').trim();
-          }
-          if (category === 'NDT') {
-            return [item.source, item.method, item.level ? `Level ${String(item.level).replace(/^Level\s*/i, '')}` : ''].filter(Boolean).join(' ').trim();
-          }
-          return [item.title, item.method, item.education].filter(Boolean).join(' ').trim();
-        }).filter(Boolean);
-        return Array.from(new Set(rows)).join(' / ');
-      }
-    } catch {
-      // JSON이 아닌 기존 텍스트는 아래에서 그대로 표시합니다.
-    }
-    return raw.trim();
-  };
 
   useEffect(() => {
     setSelectedSubCategory('ALL');
@@ -351,8 +306,6 @@ export default function HRManagement({
       experience: '',
       internal_certificates: '',
       national_certificates: '',
-      yard_certificates: '',
-      cert_assignments: { RT: { level: '', cert_no: '' }, UT: { level: '', cert_no: '' }, MT: { level: '', cert_no: '' }, PT: { level: '', cert_no: '' }, LT: { level: '', cert_no: '' } },
       join_date: new Date().toISOString().split('T')[0],
       career_start_date: new Date().toISOString().split('T')[0],
       birthDate: ''
@@ -381,16 +334,7 @@ export default function HRManagement({
       address: user.address || '',
       experience: user.experience || '',
       internal_certificates: user.internal_certificates || '',
-      national_certificates: user.national_certificates || '',
-      yard_certificates: user.yard_national_certificates || user.yard_certificates || '',
-      cert_assignments: {
-        ...(user.cert_assignments || {}),
-        RT: user.cert_assignments?.RT || { level: '', cert_no: '' },
-        UT: user.cert_assignments?.UT || { level: '', cert_no: '' },
-        MT: user.cert_assignments?.MT || { level: '', cert_no: '' },
-        PT: user.cert_assignments?.PT || { level: '', cert_no: '' },
-        LT: user.cert_assignments?.LT || { level: '', cert_no: '' },
-      },
+      national_certificates: user.national_certificates || user.certificates || '',
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
       birthDate: user.password || '' 
@@ -485,10 +429,9 @@ export default function HRManagement({
         phone: formData.phone,
         address: formData.address,
         experience: formData.experience,
-        internal_certificates: formData.internal_certificates ?? '',
+        internal_certificates: formData.internal_certificates,
         national_certificates: formData.national_certificates,
-        yard_national_certificates: formData.yard_certificates || '',
-        cert_assignments: formData.cert_assignments,
+        certificates: formData.national_certificates,
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
       };
@@ -568,10 +511,7 @@ export default function HRManagement({
         id: formData.inputId.trim(),
         role: payload.role ?? selectedUser?.role ?? (isSuperAdmin ? (formData.role || 'USER') : 'USER'),
         photo_url: savedPhotoUrl || selectedUser?.photo_url || null,
-        national_certificates: payload.national_certificates ?? '',
-        yard_certificates: payload.yard_national_certificates ?? '',
-        yard_national_certificates: payload.yard_national_certificates ?? '',
-        cert_assignments: payload.cert_assignments || {}
+        national_certificates: payload.national_certificates || payload.certificates || selectedUser?.national_certificates || ''
       };
       setUsers(prev => {
         const next = selectedUser
@@ -598,9 +538,7 @@ export default function HRManagement({
       (u.phone || '').toLowerCase().includes(term) ||
       (u.internal_certificates || '').toLowerCase().includes(term) ||
       (u.national_certificates || '').toLowerCase().includes(term) ||
-      getQualificationSummary(u.id, 'YARD').toLowerCase().includes(term) ||
-      getQualificationSummary(u.id, 'NATIONAL').toLowerCase().includes(term) ||
-      getQualificationSummary(u.id, 'NDT').toLowerCase().includes(term)
+      (u.certificates || '').toLowerCase().includes(term)
     );
   });
 
@@ -857,7 +795,7 @@ export default function HRManagement({
                           <span>파트 리더 (본부장/소장/팀장)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser, getQualificationSummary))}
+                          {leaders.map((leader) => renderMemberCard(leader, true, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser))}
                         </div>
                       </div>
                     )}
@@ -875,7 +813,7 @@ export default function HRManagement({
                           <span>소속 구성원 ({members.length}명)</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5">
-                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser, getQualificationSummary))}
+                          {members.map((member) => renderMemberCard(member, false, setDetailUser, isSelf, handleOpenEditModal, handleDeleteUser, canEditUser, isAdmin, handleCallUser))}
                         </div>
                       </div>
                     )}
@@ -967,14 +905,6 @@ export default function HRManagement({
                       <span className="font-semibold text-[#2563EB]">{totalCareer || '-'}</span>
                     </div>
                   </div>
-                  {(['YARD', 'NATIONAL', 'NDT'] as const).some((kind) => !!getQualificationSummary(u.id, kind)) && (
-                    <div className="rounded-lg border border-[#E2E5E9] bg-white p-2 text-[10px] space-y-1">
-                      {(['YARD', 'NATIONAL', 'NDT'] as const).map((kind) => {
-                        const summary = getQualificationSummary(u.id, kind);
-                        return summary ? <div key={kind} className={kind === 'NDT' ? 'text-[#243B5A] font-semibold' : 'text-[#64748B]'}><span className="font-bold">{kind === 'YARD' ? 'YARD' : kind === 'NATIONAL' ? '국가자격' : '사내자격(NDT)'}:</span> {summary}</div> : null;
-                      })}
-                    </div>
-                  )}
                 </div>
               );
             })}
@@ -990,8 +920,8 @@ export default function HRManagement({
                   <th className="p-3">권한</th>
                   <th className="p-3">자사 근속 (입사일)</th>
                   <th className="p-3">총 경력 (시작일)</th>
-                  <th className="p-3">사내자격(NDT)</th>
-                  <th className="p-3">국가자격 / YARD</th>
+                  <th className="p-3">사내자격</th>
+                  <th className="p-3">국가자격</th>
                   <th className="p-3 text-center">관리</th>
                 </tr>
               </thead>
@@ -1043,8 +973,8 @@ export default function HRManagement({
                         <div className="text-[#2563EB] font-semibold">{calculateCareerDetails(u.career_start_date) || '-'}</div>
                         <div className="text-[10px] text-[#64748B]">{u.career_start_date || ''}</div>
                       </td>
-                      <td className="p-3 text-[#1F2937] font-medium">{getQualificationSummary(u.id, 'NDT') || '-'}</td>
-                      <td className="p-3 text-[#1F2937] font-medium"><div>{getQualificationSummary(u.id, 'NATIONAL') || '-'}</div><div className="mt-1 text-[10px] text-[#64748B]">YARD: {getQualificationSummary(u.id, 'YARD') || '-'}</div></td>
+                      <td className="p-3 text-[#1F2937] font-medium">{u.internal_certificates || '-'}</td>
+                      <td className="p-3 text-[#1F2937] font-medium">{u.national_certificates || '-'}</td>
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center space-x-1">
                           {canEdit && (
@@ -1160,9 +1090,8 @@ export default function HRManagement({
               </div>
 
               <div className="bg-[#F5F6F8] p-2.5 rounded-lg space-y-1 border border-[#E2E5E9]">
-                <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격(NDT):</span> {getQualificationSummary(detailUser.id, 'NDT') || '없음'}</div>
-                <div className="text-[11px]"><span className="font-bold text-[#64748B]">국가자격:</span> {getQualificationSummary(detailUser.id, 'NATIONAL') || '없음'}</div>
-                <div className="text-[11px]"><span className="font-bold text-[#64748B]">YARD 자격:</span> {getQualificationSummary(detailUser.id, 'YARD') || '없음'}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격:</span> {detailUser.internal_certificates || '없음'}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">국가자격:</span> {detailUser.national_certificates || '없음'}</div>
               </div>
             </div>
 
@@ -1393,45 +1322,27 @@ export default function HRManagement({
                 </div>
               </div>
 
-              <div className="rounded-xl border border-[#E2E5E9] bg-[#F8FAFC] p-3 space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="font-bold text-[#243B5A]">사내자격(Cert') · 방법별 Level / Cert' No</div>
-                  <button type="button" onClick={() => {
-                    const method = window.prompt('추가할 자격 방법명을 입력하세요. (예: VT)')?.trim().toUpperCase();
-                    if (!method) return;
-                    if (formData.cert_assignments?.[method]) { showNotice('이미 등록된 방법입니다.', 'warning'); return; }
-                    setFormData(prev => ({ ...prev, cert_assignments: { ...(prev.cert_assignments || {}), [method]: { level: '', cert_no: '' } } }));
-                  }} className="flex items-center gap-1 rounded-lg border border-[#D5DEE9] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A]"><Plus className="h-3 w-3"/> 방법 추가</button>
-                </div>
-                <div className="space-y-2">
-                  {Object.entries(formData.cert_assignments || {}).map(([method, cert]: [string, any]) => (
-                    <div key={method} className="grid grid-cols-[52px_1fr_1.4fr_28px] items-center gap-2">
-                      <div className="text-xs font-bold">{method}</div>
-                      <select value={cert?.level || ''} onChange={(e) => setFormData(prev => ({ ...prev, cert_assignments: { ...(prev.cert_assignments || {}), [method]: { ...(prev.cert_assignments?.[method] || {}), level: e.target.value } } }))} className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs">
-                        <option value="">Level 선택</option><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option>
-                      </select>
-                      <input value={cert?.cert_no || ''} onChange={(e) => setFormData(prev => ({ ...prev, cert_assignments: { ...(prev.cert_assignments || {}), [method]: { ...(prev.cert_assignments?.[method] || {}), cert_no: e.target.value } } }))} placeholder="Cert' No" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
-                      <button type="button" title={`${method} 항목 삭제`} onClick={() => {
-                        if (!window.confirm(`${method} 자격 항목을 삭제할까요?`)) return;
-                        setFormData(prev => { const next = { ...(prev.cert_assignments || {}) }; delete next[method]; return { ...prev, cert_assignments: next }; });
-                      }} className="flex h-7 w-7 items-center justify-center rounded-md border border-red-200 bg-white text-red-600"><Trash2 className="h-3.5 w-3.5"/></button>
-                    </div>
-                  ))}
-                  {Object.keys(formData.cert_assignments || {}).length === 0 && <div className="text-xs text-[#64748B]">등록된 자격 방법이 없습니다. ‘방법 추가’를 눌러 추가하세요.</div>}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block font-bold text-[#64748B] mb-1">사내 자격</label>
+                  <input
+                    type="text"
+                    placeholder="사내 자격 입력"
+                    value={formData.internal_certificates}
+                    onChange={(e) => setFormData({ ...formData, internal_certificates: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
                 </div>
                 <div>
-                  <label className="block font-bold text-[#64748B] mb-1">YARD 자격</label>
-                  <input value={formData.yard_certificates || ''} onChange={(e) => setFormData({ ...formData, yard_certificates: e.target.value })} placeholder="보유 YARD 자격 / 교육명" className="w-full p-2 bg-white border border-[#E2E5E9] rounded-lg text-xs" />
+                  <label className="block font-bold text-[#64748B] mb-1">국가 자격</label>
+                  <input
+                    type="text"
+                    placeholder="국가 자격 입력"
+                    value={formData.national_certificates}
+                    onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })}
+                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
+                  />
                 </div>
-                <p className="text-[10px] text-[#64748B]">방법별 Level 또는 Cert' No를 관리할 수 있습니다. 취득일과 유효날짜는 자격현황에서 관리합니다.</p>
-              </div>
-              <div>
-                <label className="block font-bold text-[#64748B] mb-1">국가 자격</label>
-                <input type="text" placeholder="국가 자격 요약" value={formData.national_certificates} onChange={(e) => setFormData({ ...formData, national_certificates: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none" />
-              </div>
-
-              <div className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] p-2.5 text-[11px] text-[#64748B]">
-                RT / UT / MT / PT / LT의 Level 및 Cert' No와 YARD 자격 상세 등록·수정·삭제는 상단의 <b className="text-[#243B5A]">자격현황</b>에서 구성원별로 관리됩니다. 구성원 아이디와 연결되어 동일한 인원 정보로 관리됩니다.
               </div>
 
               <div className="flex justify-end space-x-2 pt-2.5 border-t border-[#E2E5E9]">
@@ -1541,8 +1452,7 @@ function renderMemberCard(
   handleDeleteUser: (user: HRUser) => void,
   canEditUser: (user: HRUser) => boolean,
   isAdmin: boolean,
-  handleCallUser: (user: HRUser) => void,
-  getQualificationSummary: (userId: string, category: 'YARD' | 'NATIONAL' | 'NDT') => string
+  handleCallUser: (user: HRUser) => void
 ) {
   const joinCareer = calculateCareerDetails(member.join_date);
   const totalCareer = calculateCareerDetails(member.career_start_date);
@@ -1621,10 +1531,6 @@ function renderMemberCard(
       </div>
 
       <div className="pt-1.5 border-t border-[#E2E5E9] text-[10px] space-y-1">
-        {(['YARD', 'NATIONAL', 'NDT'] as const).map((kind) => {
-          const summary = getQualificationSummary(member.id, kind);
-          return summary ? <div key={kind} className={kind === 'NDT' ? 'text-[#243B5A] font-semibold' : 'text-[#64748B]'}><span className="font-bold">{kind === 'YARD' ? 'YARD' : kind === 'NATIONAL' ? '국가자격' : '사내자격(NDT)'}:</span> {summary}</div> : null;
-        })}
         <div className="flex items-center justify-between text-[#64748B]">
           {member.phone ? (
             <button
