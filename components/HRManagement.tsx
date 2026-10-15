@@ -485,7 +485,7 @@ export default function HRManagement({
         phone: formData.phone,
         address: formData.address,
         experience: formData.experience,
-        internal_certificates: formData.internal_certificates || selectedUser?.internal_certificates || '',
+        internal_certificates: formData.internal_certificates ?? '',
         national_certificates: formData.national_certificates,
         yard_national_certificates: formData.yard_certificates || '',
         cert_assignments: formData.cert_assignments,
@@ -568,9 +568,9 @@ export default function HRManagement({
         id: formData.inputId.trim(),
         role: payload.role ?? selectedUser?.role ?? (isSuperAdmin ? (formData.role || 'USER') : 'USER'),
         photo_url: savedPhotoUrl || selectedUser?.photo_url || null,
-        national_certificates: payload.national_certificates || selectedUser?.national_certificates || '',
-        yard_certificates: payload.yard_national_certificates || selectedUser?.yard_national_certificates || '',
-        yard_national_certificates: payload.yard_national_certificates || selectedUser?.yard_national_certificates || '',
+        national_certificates: payload.national_certificates ?? '',
+        yard_certificates: payload.yard_national_certificates ?? '',
+        yard_national_certificates: payload.yard_national_certificates ?? '',
         cert_assignments: payload.cert_assignments || {}
       };
       setUsers(prev => {
