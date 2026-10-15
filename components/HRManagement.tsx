@@ -118,6 +118,41 @@ function calculateAge(birthStr?: string) {
 
 const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
 
+// 자격 표시는 구조화된 자격 상세 데이터만 사용합니다.
+// 과거 national_certificates / internal_certificates 문자열에 남아 있는 잘못된 값은
+// 화면에 재사용하지 않으며, 기존 DB 문자열 자체는 자동 삭제하지 않습니다.
+function getNationalCertLabels(user: HRUser): string[] {
+  return (Array.isArray(user.national_cert_details) ? user.national_cert_details : [])
+    .map((cert) => [String(cert.kind || '').trim(), String(cert.method || '').trim()].filter(Boolean).join(' '))
+    .filter(Boolean);
+}
+
+function getYardCertLabels(user: HRUser): string[] {
+  const raw = user.yard_cert_details as any;
+  const list = Array.isArray(raw)
+    ? raw
+    : (raw && typeof raw === 'object' && typeof raw.names === 'string'
+      ? raw.names.split(',').map((name: string) => ({ name: name.trim() }))
+      : []);
+  return list.map((cert: any) => String(cert?.name || '').trim()).filter(Boolean);
+}
+
+function getNdtCertLabels(user: HRUser): string[] {
+  return (Array.isArray(user.ndt_certificates) ? user.ndt_certificates : [])
+    .map((cert) => {
+      const subject = String(cert.subject || '').trim();
+      const level = String(cert.level || '').trim();
+      const issuer = String(cert.issuer || '').trim();
+      const main = [subject, level].filter(Boolean).join(' ');
+      return main || issuer;
+    })
+    .filter(Boolean);
+}
+
+function renderCertText(labels: string[]): string {
+  return labels.length ? labels.join(', ') : '없음';
+}
+
 const RANK_ORDER: Record<string, number> = {
   '책임': 1,
   '프로': 2,
@@ -585,9 +620,9 @@ export default function HRManagement({
       (u.job_title || '').toLowerCase().includes(term) ||
       (u.field || '').toLowerCase().includes(term) ||
       (u.phone || '').toLowerCase().includes(term) ||
-      (u.internal_certificates || '').toLowerCase().includes(term) ||
-      (u.national_certificates || '').toLowerCase().includes(term) ||
-      (u.certificates || '').toLowerCase().includes(term)
+      getNdtCertLabels(u).join(' ').toLowerCase().includes(term) ||
+      getNationalCertLabels(u).join(' ').toLowerCase().includes(term) ||
+      getYardCertLabels(u).join(' ').toLowerCase().includes(term)
     );
   });
 
@@ -974,6 +1009,11 @@ export default function HRManagement({
                       <span className="font-semibold text-[#2563EB]">{totalCareer || '-'}</span>
                     </div>
                   </div>
+                  <div className="text-[10px] text-[#1F2937] bg-white border border-[#E2E5E9] rounded-lg p-2 space-y-1">
+                    <div><span className="font-bold text-[#64748B]">사내자격(NDT Level):</span> {renderCertText(getNdtCertLabels(u))}</div>
+                    <div><span className="font-bold text-[#64748B]">국가 자격:</span> {renderCertText(getNationalCertLabels(u))}</div>
+                    <div><span className="font-bold text-[#64748B]">YARD 자격:</span> {renderCertText(getYardCertLabels(u))}</div>
+                  </div>
                 </div>
               );
             })}
@@ -989,8 +1029,9 @@ export default function HRManagement({
                   <th className="p-3">권한</th>
                   <th className="p-3">자사 근속 (입사일)</th>
                   <th className="p-3">총 경력 (시작일)</th>
-                  <th className="p-3">사내자격</th>
-                  <th className="p-3">국가자격</th>
+                  <th className="p-3">사내자격(NDT Level)</th>
+                  <th className="p-3">국가 자격</th>
+                  <th className="p-3">YARD 자격</th>
                   <th className="p-3 text-center">관리</th>
                 </tr>
               </thead>
@@ -1042,8 +1083,9 @@ export default function HRManagement({
                         <div className="text-[#2563EB] font-semibold">{calculateCareerDetails(u.career_start_date) || '-'}</div>
                         <div className="text-[10px] text-[#64748B]">{u.career_start_date || ''}</div>
                       </td>
-                      <td className="p-3 text-[#1F2937] font-medium">{u.internal_certificates || '-'}</td>
-                      <td className="p-3 text-[#1F2937] font-medium">{u.national_certificates || '-'}</td>
+                      <td className="p-3 text-[#1F2937] font-medium">{renderCertText(getNdtCertLabels(u))}</td>
+                      <td className="p-3 text-[#1F2937] font-medium">{renderCertText(getNationalCertLabels(u))}</td>
+                      <td className="p-3 text-[#1F2937] font-medium">{renderCertText(getYardCertLabels(u))}</td>
                       <td className="p-3 text-center">
                         <div className="flex items-center justify-center space-x-1">
                           {canEdit && (
@@ -1159,8 +1201,9 @@ export default function HRManagement({
               </div>
 
               <div className="bg-[#F5F6F8] p-2.5 rounded-lg space-y-1 border border-[#E2E5E9]">
-                <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격:</span> {detailUser.internal_certificates || '없음'}</div>
-                <div className="text-[11px]"><span className="font-bold text-[#64748B]">국가자격:</span> {detailUser.national_certificates || '없음'}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">사내자격(NDT Level):</span> {renderCertText(getNdtCertLabels(detailUser))}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">국가 자격:</span> {renderCertText(getNationalCertLabels(detailUser))}</div>
+                <div className="text-[11px]"><span className="font-bold text-[#64748B]">YARD 자격:</span> {renderCertText(getYardCertLabels(detailUser))}</div>
               </div>
             </div>
 
@@ -1670,6 +1713,11 @@ function renderMemberCard(
             <span className="font-semibold text-[#2563EB]">총경력 {totalCareer || '-'}</span>
           </div>
         </div>
+      </div>
+      <div className="pt-1 border-t border-[#E2E5E9] text-[9px] text-[#64748B] space-y-0.5">
+        <div><span className="font-bold">사내자격(NDT Level):</span> <span className="text-[#1F2937]">{renderCertText(getNdtCertLabels(member))}</span></div>
+        <div><span className="font-bold">국가 자격:</span> <span className="text-[#1F2937]">{renderCertText(getNationalCertLabels(member))}</span></div>
+        <div><span className="font-bold">YARD 자격:</span> <span className="text-[#1F2937]">{renderCertText(getYardCertLabels(member))}</span></div>
       </div>
     </div>
   );
