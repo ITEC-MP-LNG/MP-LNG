@@ -1599,8 +1599,8 @@ export default function HRManagement({
       )}
 
       {notice && (
-        <div className="fixed top-5 right-5 z-[100] w-[min(92vw,420px)]">
-          <div className={`rounded-xl border bg-white px-4 py-3 shadow-lg flex items-start gap-3 ${
+        <div className="fixed top-3 left-3 right-3 sm:top-5 sm:left-auto sm:right-5 z-[100] w-auto sm:w-[min(92vw,420px)] pt-[env(safe-area-inset-top)]">
+          <div role="status" aria-live="polite" className={`rounded-xl border bg-white px-3.5 sm:px-4 py-3 shadow-lg flex items-start gap-3 ${
             notice.type === 'success' ? 'border-green-200' :
             notice.type === 'error' ? 'border-red-200' :
             notice.type === 'warning' ? 'border-amber-200' : 'border-blue-200'
@@ -1617,25 +1617,25 @@ export default function HRManagement({
       )}
 
       {callConfirmUser && (
-        <div className="fixed inset-0 z-[115] bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-6">
+        <div className="fixed inset-0 z-[115] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div role="dialog" aria-modal="true" className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-xl bg-white shadow-2xl border border-[#E2E5E9] p-4 sm:p-5">
             <h3 className="text-lg font-bold text-[#1F2937]">전화 연결</h3>
             <p className="mt-2 text-sm text-[#64748B] leading-6">
               <span className="font-bold text-[#1F2937]">[{callConfirmUser.name}]</span>님에게 전화 연결하시겠습니까?
               <br />{callConfirmUser.phone}
             </p>
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-5 flex flex-col-reverse sm:flex-row justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setCallConfirmUser(null)}
-                className="px-4 py-2 rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC] transition"
               >
                 취소
               </button>
               <button
                 type="button"
                 onClick={handleConfirmCall}
-                className="px-4 py-2 rounded-lg bg-[#243B5A] text-white text-sm font-semibold hover:bg-[#1d3049]"
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg bg-[#243B5A] text-white text-sm font-semibold hover:bg-[#1d3049] transition"
               >
                 확인
               </button>
@@ -1645,25 +1645,25 @@ export default function HRManagement({
       )}
 
       {confirmUser && (
-        <div className="fixed inset-0 z-[110] bg-black/40 flex items-center justify-center p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-6">
+        <div className="fixed inset-0 z-[110] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div role="dialog" aria-modal="true" className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-xl bg-white shadow-2xl border border-[#E2E5E9] p-4 sm:p-5">
             <h3 className="text-lg font-bold text-[#1F2937]">구성원 삭제</h3>
             <p className="mt-2 text-sm text-[#64748B] leading-6">
               정말로 <span className="font-bold text-[#1F2937]">[{confirmUser.name}]</span> 님의 인사 정보를 삭제하시겠습니까?
               <br />삭제 후에는 복구할 수 없습니다.
             </p>
-            <div className="mt-6 flex justify-end gap-2">
+            <div className="mt-5 flex flex-col-reverse sm:flex-row justify-end gap-2">
               <button
                 type="button"
                 onClick={() => setConfirmUser(null)}
-                className="px-4 py-2 rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC]"
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg border border-[#CBD5E1] text-sm font-semibold text-[#475569] hover:bg-[#F8FAFC] transition"
               >
                 취소
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700"
+                className="w-full sm:w-auto px-4 py-2.5 sm:py-2 rounded-lg bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition"
               >
                 삭제
               </button>
