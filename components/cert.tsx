@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ChevronDown, ChevronRight, Plus, Edit3, Trash2, X, Download, Award, AlertTriangle, Search, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
@@ -111,10 +111,20 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const [activeAlert, setActiveAlert] = useState<CertRecord[] | null>(null);
   const [alertHidden, setAlertHidden] = useState(false);
   const [renewalSummaryOpen, setRenewalSummaryOpen] = useState(false);
-  
-  // 엑셀 선택 다운로드 관련 상태 추가
-  const [excelModalOpen, setExcelModalOpen] = useState(false);
-  const [selectedExcelSubTabs, setSelectedExcelSubTabs] = useState<Record<string, boolean>>({});
+
+  // 엑셀 드롭다운 메뉴 상태 및 외부 클릭 감지용 Ref
+  const [excelDropdownOpen, setExcelDropdownOpen] = useState(false);
+  const excelDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (excelDropdownRef.current && !excelDropdownRef.current.contains(event.target as Node)) {
+        setExcelDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const notify = useCallback((message: string, type: 'success' | 'error' | 'warning' = 'success') => setNotice({ message, type }), []);
   useEffect(() => {
@@ -408,52 +418,35 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     setAlertHidden(true); setActiveAlert(null);
   };
 
-  // 엑셀 다운로드 모달 오픈 함수
-  const openExcelModal = () => {
-    const initialSelection: Record<string, boolean> = {};
-    subTabs.forEach(tab => { initialSelection[tab] = true; });
-    setSelectedExcelSubTabs(initialSelection);
-    setExcelModalOpen(true);
-  };
-
-  // 엑셀 실행 함수 (전체 또는 선택 항목)
-  const executeExcelExport = (mode: 'ALL' | 'SELECTED') => {
-    const list = activeRecords.filter(r => {
-      if (r.category !== category) return false;
-      if (mode === 'SELECTED') {
-        const subName = category === 'NATIONAL' ? (r.method || r.title) : r.title;
-        return selectedExcelSubTabs[subName];
-      }
-      return true;
-    }).slice().sort((a, b) => {
+  // 엑셀 내보내기 공통 시트 생성 헬퍼 함수
+  const createCategoryWorksheet = (cat: Category) => {
+    const list = activeRecords.filter(r => r.category === cat).slice().sort((a, b) => {
       const aPerson = personById.get(String(a.user_id));
       const bPerson = personById.get(String(b.user_id));
       const byName = (aPerson?.name || '').localeCompare(bPerson?.name || '', 'ko');
       return byName || String(a.user_id).localeCompare(String(b.user_id), 'ko') || a.title.localeCompare(b.title, 'ko');
     });
 
-    if (list.length === 0) {
-      notify('다운로드할 자격 데이터가 없습니다.', 'warning');
-      return;
-    }
-
-    const title = category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
+    const title = cat === 'YARD' ? 'YARD 자격 현황' : cat === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
     let headers: string[];
     let rows: any[][];
     let nameColumn = 0;
-    if (category === 'YARD') {
+
+    if (cat === 'YARD') {
       headers = ['성명', '교육명', '사번', '교육일', '스티커 번호', '보수교육 1', '보수교육 2', '보수교육 3', '보수교육 4'];
       rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', String(r.user_id), r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '']);
-    } else if (category === 'NATIONAL') {
+    } else if (cat === 'NATIONAL') {
       headers = ['성명', '자격종류', '종목', '취득일'];
       rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', r.method || '', r.obtained_date || '']);
     } else {
       headers = ['성명', '경력', '자격종류(Level)', '종목', '취득일', '갱신일'];
       rows = list.map(r => [personById.get(String(r.user_id))?.name || '', personById.get(String(r.user_id))?.experience || '', r.level || '', r.title || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
     }
+
     const sheetRows: any[][] = [[title], headers, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(sheetRows);
     ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+    
     let groupStart = 0;
     while (groupStart < list.length) {
       let groupEnd = groupStart + 1;
@@ -463,14 +456,17 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       }
       groupStart = groupEnd;
     }
+    
     ws['!rows'] = [{ hpt: 42 }, { hpt: 24 }, ...rows.map(() => ({ hpt: 21 }))];
     ws['!cols'] = headers.map((header, col) => {
       const maxLength = Math.max(header.length, ...rows.map(row => String(row[col] ?? '').length));
       return { wch: Math.min(Math.max(maxLength + 3, 12), 42) };
     });
+
     const lastCol = XLSX.utils.encode_col(headers.length - 1);
     const lastRow = Math.max(2, sheetRows.length - 1);
     ws['!autofilter'] = { ref: `A2:${lastCol}${lastRow + 1}` };
+
     for (let r = 0; r < sheetRows.length; r++) {
       for (let c = 0; c < headers.length; c++) {
         const address = XLSX.utils.encode_cell({ r, c });
@@ -482,10 +478,32 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
             : { font: { name: '맑은 고딕', sz: 9 }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { bottom: { style: 'thin', color: { rgb: 'E2E5E9' } } } };
       }
     }
+    return ws;
+  };
+
+  // 엑셀 내보내기 실행 함수 (전체 내려받기 시 각 시트별로 추가, 개별 선택 시 해당 시트만 저장)
+  const executeExcelExport = (target: 'ALL' | Category) => {
+    setExcelDropdownOpen(false);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격' : '사내자격 NDT');
-    XLSX.writeFile(wb, `${title}_${mode === 'SELECTED' ? '선택항목_' : '전체_'}${todayStr()}.xlsx`);
-    setExcelModalOpen(false);
+
+    if (target === 'ALL') {
+      const yardWs = createCategoryWorksheet('YARD');
+      const nationalWs = createCategoryWorksheet('NATIONAL');
+      const ndtWs = createCategoryWorksheet('NDT');
+
+      XLSX.utils.book_append_sheet(wb, yardWs, 'YARD 자격 현황');
+      XLSX.utils.book_append_sheet(wb, nationalWs, '국가 자격');
+      XLSX.utils.book_append_sheet(wb, ndtWs, '사내자격 NDT');
+
+      XLSX.writeFile(wb, `전체_자격현황_${todayStr()}.xlsx`);
+    } else {
+      const ws = createCategoryWorksheet(target);
+      const sheetName = target === 'YARD' ? 'YARD 자격 현황' : target === 'NATIONAL' ? '국가 자격' : '사내자격 NDT';
+      const fileNameTitle = target === 'YARD' ? 'YARD 자격 현황' : target === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
+
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
+      XLSX.writeFile(wb, `${fileNameTitle}_${todayStr()}.xlsx`);
+    }
   };
 
   const selectedPeople = admin ? people : people.filter(p => selfPerson && String(p.id) === String(selfPerson.id));
@@ -518,13 +536,46 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" onClick={() => void loadData()} disabled={loading} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A] disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}/> 새로고침</button>
         {admin && (
-          <div className="flex items-center gap-1">
-            <button type="button" onClick={() => executeExcelExport('ALL')} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A]">
-              <Download className="h-3.5 w-3.5"/> 전체 Excel 내려받기
+          <div className="relative" ref={excelDropdownRef}>
+            <button 
+              type="button" 
+              onClick={() => setExcelDropdownOpen(prev => !prev)} 
+              className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F8FAFC]"
+            >
+              <Download className="h-3.5 w-3.5"/> Excel 저장 <ChevronDown className="h-3.5 w-3.5 ml-0.5"/>
             </button>
-            <button type="button" onClick={openExcelModal} className="flex items-center gap-1 rounded-lg border border-[#243B5A] bg-[#243B5A] px-3 py-2 text-xs font-bold text-white">
-              <Download className="h-3.5 w-3.5"/> 자격별 선택 저장
-            </button>
+            {excelDropdownOpen && (
+              <div className="absolute right-0 mt-1 w-48 rounded-lg border border-[#E2E5E9] bg-white shadow-lg z-50 py-1">
+                <button 
+                  type="button" 
+                  onClick={() => executeExcelExport('ALL')} 
+                  className="w-full text-left px-3 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8] border-b border-[#E2E5E9]"
+                >
+                  전체 내려받기
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => executeExcelExport('YARD')} 
+                  className="w-full text-left px-3 py-2 text-xs font-medium text-[#1F2937] hover:bg-[#F5F6F8]"
+                >
+                  YARD 자격
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => executeExcelExport('NATIONAL')} 
+                  className="w-full text-left px-3 py-2 text-xs font-medium text-[#1F2937] hover:bg-[#F5F6F8]"
+                >
+                  국가 자격
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => executeExcelExport('NDT')} 
+                  className="w-full text-left px-3 py-2 text-xs font-medium text-[#1F2937] hover:bg-[#F5F6F8]"
+                >
+                  사내자격 (NDT Level)
+                </button>
+              </div>
+            )}
           </div>
         )}
         <button type="button" onClick={openCreate} className="flex items-center gap-1 rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white"><Plus className="h-3.5 w-3.5"/> 자격 등록</button>
@@ -602,49 +653,6 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
           </div>;
         })}</div>
         <div className="flex justify-end gap-2"><button type="button" onClick={hideAlertForFiveDays} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">5일간 보지 않기</button><button type="button" onClick={() => { setAlertHidden(true); setActiveAlert(null); }} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">닫기</button></div>
-      </div>
-    </div>}
-
-    {/* 선택 저장 모달 */}
-    {excelModalOpen && <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-3">
-      <div className="w-full max-w-md space-y-3 rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
-          <h3 className="text-sm font-bold text-[#243B5A]">저장할 자격(종목) 선택</h3>
-          <button type="button" onClick={() => setExcelModalOpen(false)} aria-label="닫기"><X className="h-4 w-4"/></button>
-        </div>
-        <p className="text-xs text-[#64748B]">다운로드할 항목을 선택해주세요.</p>
-        
-        <div className="flex gap-2 pb-1">
-          <button type="button" onClick={() => {
-            const all: Record<string, boolean> = {};
-            subTabs.forEach(t => { all[t] = true; });
-            setSelectedExcelSubTabs(all);
-          }} className="text-[11px] font-bold text-[#243B5A] underline">전체 선택</button>
-          <button type="button" onClick={() => setSelectedExcelSubTabs({})} className="text-[11px] font-bold text-[#64748B] underline">선택 해제</button>
-        </div>
-
-        <div className="max-h-60 space-y-2 overflow-y-auto rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-3">
-          {subTabs.length === 0 ? (
-            <p className="text-xs text-[#64748B]">선택 가능한 하위 자격 항목이 없습니다.</p>
-          ) : (
-            subTabs.map(tab => (
-              <label key={tab} className="flex items-center gap-2 text-xs font-medium text-[#1F2937] cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={!!selectedExcelSubTabs[tab]} 
-                  onChange={e => setSelectedExcelSubTabs(prev => ({ ...prev, [tab]: e.target.checked }))} 
-                  className="rounded border-[#E2E5E9]"
-                />
-                {tab}
-              </label>
-            ))
-          )}
-        </div>
-
-        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3">
-          <button type="button" onClick={() => setExcelModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">취소</button>
-          <button type="button" onClick={() => executeExcelExport('SELECTED')} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">선택 항목 다운로드</button>
-        </div>
       </div>
     </div>}
 
