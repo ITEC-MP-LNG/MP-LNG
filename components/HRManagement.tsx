@@ -112,7 +112,12 @@ function CalendarDatePicker({
     : new Date();
   const [viewYear, setViewYear] = useState(initialDate.getFullYear());
   const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+  const [inputText, setInputText] = useState(value || '');
   const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setInputText(value || '');
+  }, [value]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -144,30 +149,68 @@ function CalendarDatePicker({
     const now = new Date();
     return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
   })();
+  const commitTypedDate = () => {
+    const trimmed = inputText.trim();
+    if (!trimmed) {
+      onChange('');
+      setInputText('');
+      return;
+    }
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const candidate = new Date(year, month - 1, day);
+      if (candidate.getFullYear() === year && candidate.getMonth() === month - 1 && candidate.getDate() === day) {
+        const normalized = `${match[1]}-${match[2]}-${match[3]}`;
+        onChange(normalized);
+        setInputText(normalized);
+        return;
+      }
+    }
+    // 입력 중인 값이 유효한 YYYY-MM-DD 형식이 아니면 기존 저장값으로 되돌립니다.
+    setInputText(value || '');
+  };
   const chooseDate = (day: number) => {
-    onChange(`${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    const nextValue = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(nextValue);
+    setInputText(nextValue);
     setIsOpen(false);
   };
 
   return (
     <div ref={rootRef} className="relative w-full min-w-0">
-      <button
-        type="button"
-        onClick={() => {
-          if (!isOpen) {
-            const current = selected ? new Date(Number(selected.slice(0, 4)), Number(selected.slice(5, 7)) - 1, Number(selected.slice(8, 10))) : new Date();
-            setViewYear(current.getFullYear());
-            setViewMonth(current.getMonth());
-          }
-          setIsOpen(open => !open);
-        }}
-        className={`${className} flex items-center justify-between gap-2 text-left`}
-        aria-haspopup="dialog"
-        aria-expanded={isOpen}
-      >
-        <span className={selected ? 'text-[#1F2937]' : 'text-[#94A3B8]'}>{selected || '날짜 선택'}</span>
-        <CalendarDays size={15} className="shrink-0 text-[#64748B]" />
-      </button>
+      <div className="flex min-w-0 items-center gap-1">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={inputText}
+          onChange={(event) => setInputText(event.target.value)}
+          onBlur={commitTypedDate}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitTypedDate(); } }}
+          placeholder="YYYY-MM-DD 직접 입력"
+          aria-label="날짜 직접 입력 (YYYY-MM-DD)"
+          className={`${className} min-w-0 flex-1`}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (!isOpen) {
+              const current = selected ? new Date(Number(selected.slice(0, 4)), Number(selected.slice(5, 7)) - 1, Number(selected.slice(8, 10))) : new Date();
+              setViewYear(current.getFullYear());
+              setViewMonth(current.getMonth());
+            }
+            setIsOpen(open => !open);
+          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B] hover:bg-[#EEF2F7]"
+          aria-label="달력 열기"
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+        >
+          <CalendarDays size={16} />
+        </button>
+      </div>
       {isOpen && (
         <div
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4"
@@ -178,39 +221,57 @@ function CalendarDatePicker({
             aria-modal="true"
             aria-label="날짜 선택"
             onClick={(event) => event.stopPropagation()}
-            className="relative w-[min(304px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
+            className="relative w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
           >
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft size={16} /></button>
-            <div className="text-sm font-bold text-[#243B5A]">{viewYear}년 {viewMonth + 1}월</div>
-            <button type="button" onClick={() => moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight size={16} /></button>
-          </div>
-          <div className="grid grid-cols-7 gap-1 text-center">
-            {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{day}</div>)}
-            {Array.from({ length: firstDay }, (_, index) => <div key={`empty-${index}`} />)}
-            {Array.from({ length: daysInMonth }, (_, index) => {
-              const day = index + 1;
-              const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              const isSelected = dateKey === selected;
-              const isToday = dateKey === today;
-              const weekday = new Date(viewYear, viewMonth, day).getDay();
-              return <button key={dateKey} type="button" onClick={() => chooseDate(day)} aria-pressed={isSelected} className={`h-9 rounded-lg text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white shadow-sm' : isToday ? 'border border-[#243B5A] font-bold text-[#243B5A]' : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`}`}>{day}</button>;
-            })}
-          </div>
-          <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
-            <button type="button" onClick={() => { const now = new Date(); const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); onChange(date); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">오늘</button>
-            <div className="flex items-center gap-1">
-              {selected && <button type="button" onClick={() => { onChange(''); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">날짜 지우기</button>}
-              <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">닫기</button>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft size={16} /></button>
+              <div className="flex min-w-0 items-center gap-1">
+                <select
+                  aria-label="연도 선택"
+                  value={viewYear}
+                  onChange={(event) => setViewYear(Number(event.target.value))}
+                  className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map((year) => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="월 선택"
+                  value={viewMonth}
+                  onChange={(event) => setViewMonth(Number(event.target.value))}
+                  className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: 12 }, (_, month) => <option key={month} value={month}>{month + 1}월</option>)}
+                </select>
+              </div>
+              <button type="button" onClick={() => moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight size={16} /></button>
             </div>
-          </div>
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{day}</div>)}
+              {Array.from({ length: firstDay }, (_, index) => <div key={`empty-${index}`} />)}
+              {Array.from({ length: daysInMonth }, (_, index) => {
+                const day = index + 1;
+                const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = dateKey === selected;
+                const isToday = dateKey === today;
+                const weekday = new Date(viewYear, viewMonth, day).getDay();
+                return <button key={dateKey} type="button" onClick={() => chooseDate(day)} aria-pressed={isSelected} className={`h-9 rounded-lg text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white shadow-sm' : isToday ? 'border border-[#243B5A] font-bold text-[#243B5A]' : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`}`}>{day}</button>;
+              })}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
+              <button type="button" onClick={() => { const now = new Date(); const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); onChange(date); setInputText(date); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">오늘</button>
+              <div className="flex items-center gap-1">
+                {selected && <button type="button" onClick={() => { onChange(''); setInputText(''); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">날짜 지우기</button>}
+                <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">닫기</button>
+              </div>
+            </div>
           </div>
         </div>
       )}
     </div>
   );
 }
-
 
 const NATIONAL_KINDS = ['기능사', '산업기사', '기사', '기술사', 'RI', 'SRI'];
 const DEFAULT_NDT_SUBJECTS = ['LT(BUBBLE)', 'LT(Pressure Change)', 'LT(MST-He)', 'PT'];
