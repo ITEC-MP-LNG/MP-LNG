@@ -98,6 +98,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const [records, setRecords] = useState<CertRecord[]>([]);
   const [category, setCategory] = useState<Category>('YARD');
   const [subTab, setSubTab] = useState('ALL');
+  const [allQualificationListOpen, setAllQualificationListOpen] = useState(false);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -109,7 +110,6 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const [activeAlert, setActiveAlert] = useState<CertRecord[] | null>(null);
   const [alertHidden, setAlertHidden] = useState(false);
   const [renewalSummaryOpen, setRenewalSummaryOpen] = useState(false);
-  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const notify = useCallback((message: string, type: 'success' | 'error' | 'warning' = 'success') => setNotice({ message, type }), []);
   useEffect(() => {
@@ -504,11 +504,15 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         <label className="text-[10px] font-bold text-[#64748B]">이름 · 사번 · 자격명 검색<div className="relative mt-1"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]"/><input className={`${inputClass} pl-8`} value={search} onChange={e => setSearch(e.target.value)} placeholder="이름, 로그인 아이디(사번), 교육명 또는 종목" /></div></label>
       </div>
       {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700"><b>불러오기 실패</b><p className="mt-1 break-words">{loadError}</p><p className="mt-1">먼저 제공된 Supabase SQL을 실행했는지 확인해주세요.</p></div>}
-      {loading ? <div className="py-12 text-center text-xs text-[#64748B]">자격정보를 불러오는 중...</div> : visibleGroups.length === 0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] bg-[#F5F6F8] p-8 text-center text-xs text-[#64748B]">표시할 자격이 없습니다. HRManagement에 등록된 자격이 있으면 새로고침을 눌러 가져올 수 있습니다.</div> : <div className="space-y-2">
+      {loading ? <div className="py-12 text-center text-xs text-[#64748B]">자격정보를 불러오는 중...</div> : visibleGroups.length === 0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] bg-[#F5F6F8] p-8 text-center text-xs text-[#64748B]">표시할 자격이 없습니다. HRManagement에 등록된 자격이 있으면 새로고침을 눌러 가져올 수 있습니다.</div> : <div className="overflow-hidden rounded-lg border border-[#E2E5E9] bg-white">
+        <button type="button" disabled={subTab !== 'ALL'} onClick={() => setAllQualificationListOpen(value => !value)} aria-expanded={subTab !== 'ALL' || allQualificationListOpen} className={`flex w-full items-center gap-2 px-3 py-2 text-left ${subTab === 'ALL' ? 'bg-[#F5F6F8] hover:bg-[#EDF1F5]' : 'cursor-default bg-[#F8FAFC]'}`}>
+          {(subTab !== 'ALL' || allQualificationListOpen) ? <ChevronDown className="h-4 w-4 shrink-0 text-[#64748B]"/> : <ChevronRight className="h-4 w-4 shrink-0 text-[#64748B]"/>}
+          <span className="text-xs font-bold text-[#243B5A]">자격 목록</span>
+          <span className="text-[10px] text-[#64748B]">{subTab === 'ALL' ? '전체 자격' : subTab} · {visibleGroups.length}명</span>
+          <span className="ml-auto text-[10px] text-[#64748B]">{subTab !== 'ALL' ? '선택한 항목 펼침' : allQualificationListOpen ? '접기' : '펼쳐보기'}</span>
+        </button>
+        {(subTab !== 'ALL' || allQualificationListOpen) && <div className="space-y-2 border-t border-[#E2E5E9] bg-white p-2">
         {visibleGroups.map(group => {
-          const key = `person:${group.user_id}`;
-          // 전체 자격은 기본 접힘, 특정 교육명/종목을 선택하면 해당 인원 목록은 기본 펼침(사용자가 다시 접을 수 있음)
-          const isOpen = subTab === 'ALL' ? !!expanded[key] : (expanded[key] ?? true);
           const refreshRecords = group.records;
           const renewalRecords = refreshRecords.filter(record => {
             if (record.category === 'NATIONAL') return false;
@@ -518,11 +522,11 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
             return remaining <= 40;
           });
           return <div key={group.user_id} className="overflow-hidden rounded-lg border border-[#E2E5E9] bg-white">
-            <button type="button" onClick={() => setExpanded(prev => ({ ...prev, [key]: !prev[key] }))} className="flex w-full items-start justify-between gap-3 px-3 py-3 text-left hover:bg-[#F8FAFC]">
-              <span className="flex min-w-0 flex-1 items-start gap-2">{isOpen ? <ChevronDown className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]"/> : <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-[#64748B]"/>}<span className="min-w-0 flex-1"><span className="block text-xs font-bold text-[#243B5A]">{group.person?.name || group.user_id} <span className="font-normal text-[#64748B]">({group.user_id})</span></span><span className="mt-1 flex flex-wrap gap-1.5">{refreshRecords.map(record => <span key={record.id} className="rounded-md border border-[#E2E5E9] bg-[#F5F6F8] px-2 py-1 text-[10px] text-[#1F2937]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</span>)}</span></span></span>
+            <div className="flex items-start justify-between gap-3 px-3 py-3">
+              <span className="flex min-w-0 flex-1 items-start gap-2"><span className="min-w-0 flex-1"><span className="block text-xs font-bold text-[#243B5A]">{group.person?.name || group.user_id} <span className="font-normal text-[#64748B]">({group.user_id})</span></span><span className="mt-1 flex flex-wrap gap-1.5">{refreshRecords.map(record => <span key={record.id} className="rounded-md border border-[#E2E5E9] bg-[#F5F6F8] px-2 py-1 text-[10px] text-[#1F2937]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</span>)}</span></span></span>
               <span className="flex shrink-0 flex-col items-end gap-1 text-right">{renewalRecords.length > 0 && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">자격갱신</span>}<span className="text-[10px] text-[#64748B]">자격 {refreshRecords.length}건</span></span>
-            </button>
-            {isOpen && <div className="space-y-2 border-t border-[#E2E5E9] bg-[#F8FAFC] p-3">
+            </div>
+            <div className="space-y-2 border-t border-[#E2E5E9] bg-[#F8FAFC] p-3">
               {refreshRecords.map(record => {
                 const person = group.person;
                 const expiry = expiryFor(record);
@@ -538,9 +542,10 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
                   <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-[#E2E5E9] pt-3">{canEdit(record) && <button type="button" onClick={() => openEdit(record)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-[11px] font-bold text-[#243B5A]"><Edit3 className="h-3.5 w-3.5"/> 수정</button>}{admin && <button type="button" onClick={() => void removeRecord(record)} className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-2 text-[11px] font-bold text-red-600"><Trash2 className="h-3.5 w-3.5"/> 삭제</button>}</div>
                 </div>;
               })}
-            </div>}
+            </div>
           </div>;
         })}
+        </div>}
       </div>}
     </div>
 
