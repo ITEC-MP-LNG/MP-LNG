@@ -467,8 +467,13 @@ export default function MaterialManagement({
         if (!isNaN(nextCalDate.getTime())) {
           nextCalDate.setHours(0, 0, 0, 0);
           const diffDays = Math.ceil((nextCalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          const isCurrentlyOutForCalibration = inventoryTab !== 'CABIN' && inventoryLogs.some((log: any) =>
+            String(log.inventory_id) === String(item.id) &&
+            String(log.type || '').split(',').map((part: string) => part.trim()).includes('교정') &&
+            !String(log.type || '').includes('반납완료')
+          );
 
-          if (diffDays <= 30) {
+          if (diffDays <= 30 && !isCurrentlyOutForCalibration) {
             upcomingCalibrations.push({
               item,
               daysLeft: diffDays,
@@ -481,7 +486,7 @@ export default function MaterialManagement({
     });
 
     setCalibrationAlertItems(upcomingCalibrations);
-  }, [inventoryList, cabinInventoryList, inventoryTab]);
+  }, [inventoryList, cabinInventoryList, inventoryTab, inventoryLogs]);
 
   const parseCalDates = (subEquipment: string | null | undefined) => {
     if (!subEquipment) return { calDate: '', nextCalDate: '' };
@@ -490,6 +495,12 @@ export default function MaterialManagement({
       return { calDate: parts[0], nextCalDate: parts[1] };
     }
     return { calDate: subEquipment, nextCalDate: '' };
+  };
+
+  const isCalibrationFixedItem = (item: any) => {
+    if (item?.type !== '고정') return false;
+    const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+    return Boolean(calDate || nextCalDate);
   };
 
   const [itemSubCategoryRows, setItemSubCategoryRows] = useState<any[]>([]);
@@ -1007,7 +1018,7 @@ export default function MaterialManagement({
       let currentQty = targetItem.quantity || 0;
       let newQty = currentQty;
 
-      if (logType === '불출' || logType === '소모성 사용') {
+      if (logType === '불출' || logType === '교정' || logType === '소모성 사용') {
         if (currentQty < qtyChange) {
           showCenterToast('현재 보유 재고보다 불출(사용) 수량이 많습니다.');
           return;
@@ -1028,46 +1039,20 @@ export default function MaterialManagement({
 
       let openIssueLogForReturn: any | null = null;
       if (logType === '반납') {
-        const { data: openBatchItem, error: openBatchItemError } = await supabase
-          .from('inventory_batch_items')
-          .select('batch_id, inventory_id, quantity, issued_by, issued_at, memo')
+        // 가장 최근의 미반납 불출/교정 이력을 기준으로 반납 대상을 선택합니다.
+        // 교정 처리는 일괄 불출 배치에 넣지 않으므로, 기존 불출 배치가 있더라도 잘못 연결하지 않습니다.
+        const { data: openIssueLog, error: openIssueLogError } = await supabase
+          .from('inventory_logs')
+          .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
           .eq('inventory_id', targetItem.id)
-          .eq('inventory_type', '고정')
-          .eq('status', 'ISSUED')
-          .order('issued_at', { ascending: false })
+          .in('type', ['불출', '교정'])
+          .not('type', 'ilike', '%반납완료%')
+          .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (openBatchItemError) throw openBatchItemError;
-
-        if (openBatchItem?.batch_id) {
-          const { data: batchLog, error: batchLogError } = await supabase
-            .from('inventory_logs')
-            .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
-            .eq('batch_id', openBatchItem.batch_id)
-            .eq('type', '불출')
-            .not('type', 'ilike', '%반납완료%')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-          if (batchLogError) throw batchLogError;
-          openIssueLogForReturn = batchLog;
-        }
-
-        if (!openIssueLogForReturn) {
-          const { data: openIssueLog, error: openIssueLogError } = await supabase
-            .from('inventory_logs')
-            .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
-            .eq('inventory_id', targetItem.id)
-            .eq('type', '불출')
-            .not('type', 'ilike', '%반납완료%')
-            .order('created_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-          if (openIssueLogError) throw openIssueLogError;
-          openIssueLogForReturn = openIssueLog;
-        }
+        if (openIssueLogError) throw openIssueLogError;
+        openIssueLogForReturn = openIssueLog;
 
         if (!openIssueLogForReturn) {
           showCenterToast('반납 처리할 미반납 불출 이력을 찾을 수 없습니다. 먼저 불출 이력을 확인해주세요.');
@@ -1098,7 +1083,10 @@ export default function MaterialManagement({
 
       let finalLogType = logType === '소모성 사용' ? '소모성 사용' : logType;
       if (logType === '반납') {
-        finalLogType = logHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료';
+        const returnedFromCalibration = String(openIssueLogForReturn?.type || '').split(',').map((part: string) => part.trim()).includes('교정');
+        finalLogType = returnedFromCalibration
+          ? (logHasIssue ? '교정, 반납완료, 이상알림' : '교정, 반납완료')
+          : (logHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료');
 
         const returnMemoText = logMemo.trim()
           ? `${openIssueLogForReturn.memo ? `${openIssueLogForReturn.memo} / ` : ''}반납메모: ${logMemo.trim()}`
@@ -1165,7 +1153,7 @@ export default function MaterialManagement({
             issued_by: currentUser?.name || '작업자',
             returned_by: null,
             memo: logMemo.trim() || null,
-            batch_id: operationBatchId,
+            batch_id: logType === '교정' ? null : operationBatchId,
             is_new: true,
             created_at: operationAt
           }]);
@@ -1797,7 +1785,10 @@ export default function MaterialManagement({
         if (invErr) throw invErr;
       }
 
-      const finalLogType = returnHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료';
+      const returnedFromCalibration = String(targetReturnLog.type || '').split(',').map((part: string) => part.trim()).includes('교정');
+      const finalLogType = returnedFromCalibration
+        ? (returnHasIssue ? '교정, 반납완료, 이상알림' : '교정, 반납완료')
+        : (returnHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료');
       const memoText = returnMemo.trim() ? `반납메모: ${returnMemo.trim()}` : targetReturnLog.memo;
       const returnHistoryIssuedBy = targetReturnLog.issued_by || targetReturnLog.worker_name || '불출자 미기록';
       const returnHistoryItemCode = targetReturnLog.item_code || foundItem.code || foundItem.no || null;
@@ -3290,6 +3281,14 @@ export default function MaterialManagement({
                 <div className="flex items-center space-x-1.5">
                   {!isCabin && (
                     <>
+                      {isCalibrationFixedItem(item) && (
+                        <button
+                          onClick={() => handleOpenLogModal(item, '교정')}
+                          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-medium transition shadow-2xs flex items-center space-x-1"
+                        >
+                          <span>교정</span>
+                        </button>
+                      )}
                       <button
                         onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : '불출')}
                         className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-medium transition shadow-2xs flex items-center space-x-1"
