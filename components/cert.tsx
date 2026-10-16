@@ -27,7 +27,7 @@ type CertRecord = {
   expiry_date: string | null;
   method: string | null;
   level: string | null;
-  cert_no: string | null;
+  cert_no?: string | null;
   sticker_no: string | null;
   education_completed: string | null;
   training_date_1: string | null;
@@ -143,7 +143,10 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       const mergedPeople = parentPeople.map(p => ({ ...propMap.get(p.id), ...p }));
       setPeople(mergedPeople);
 
-      let rows = (recordResult.data || []) as CertRecord[];
+      // Cert No.는 테이블 컬럼 유무와 무관하게 detail JSONB를 기준으로 복원합니다.
+      let rows = ((recordResult.data || []) as CertRecord[]).map((r: any) => ({
+        ...r, cert_no: r.cert_no ?? r.detail?.cert_no ?? null,
+      }));
       const bySourceKey = new Map(rows.filter(r => r.source_key).map(r => [String(r.source_key), r]));
       const inserts: any[] = [];
       const updates: Array<{ id: string; values: any }> = [];
@@ -154,7 +157,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         const base = {
           user_id: person.id, category: cat, source_key: sourceKey,
           title: '', obtained_date: null, expiry_date: null, method: null, level: null,
-          cert_no: null, sticker_no: null, education_completed: null,
+          sticker_no: null, education_completed: null,
           training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null,
           detail: { source: 'hrmanagement', sourceSnapshot: snapshot, localModified: false },
         };
@@ -265,7 +268,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     if (subTab !== 'ALL' && subName !== subTab) return false;
     const q = search.trim().toLocaleLowerCase();
     if (!q) return true;
-    return [p?.name, p?.id, r.title, r.method, r.level, r.cert_no, r.sticker_no, r.detail?.issuer]
+    return [p?.name, p?.id, r.title, r.method, r.level, r.cert_no, r.detail?.cert_no, r.sticker_no, r.detail?.issuer]
       .some(v => text(v).toLocaleLowerCase().includes(q));
   }).sort((a, b) => {
     const nameA = personById.get(String(a.user_id))?.name || '';
@@ -329,7 +332,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       education_completed: form.category === 'YARD' ? (form.education_completed || form.obtained_date || null) : null,
       expiry_date: form.expiry_date || (form.category === 'YARD' ? addYears(form.training_date_4 || form.training_date_3 || form.training_date_2 || form.training_date_1 || form.education_completed || form.obtained_date, 2) : form.category === 'NDT' ? addYears(form.obtained_date, 5) : null),
       sticker_no: form.category === 'YARD' ? (form.sticker_no.trim() || null) : null,
-      cert_no: form.category === 'NDT' ? (form.cert_no.trim() || null) : null,
+      // Cert No.는 아래 detail.cert_no(JSONB)에 저장하므로 별도 cert_no 컬럼에 의존하지 않습니다.
       training_date_1: form.category === 'YARD' ? (form.training_date_1 || null) : null,
       training_date_2: form.category === 'YARD' ? (form.training_date_2 || null) : null,
       training_date_3: form.category === 'YARD' ? (form.training_date_3 || null) : null,
@@ -337,38 +340,21 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       detail: { ...oldDetail, issuer: form.issuer, cert_no: form.category === 'NDT' ? form.cert_no.trim() : null, localModified: true, editedInCert: true },
     };
     try {
-      // 구버전 Supabase 테이블에 cert_no 컬럼이 아직 없더라도,
-      // detail.cert_no(JSONB)에 저장해 입력한 번호가 유실되지 않도록 처리합니다.
-      const isMissingCertNoColumn = (error: any) => {
-        const message = String(error?.message || '').toLowerCase();
-        const details = String(error?.details || '').toLowerCase();
-        const hint = String(error?.hint || '').toLowerCase();
-        const combined = `${message} ${details} ${hint}`;
-        return combined.includes('cert_no') && (
-          combined.includes('column') || combined.includes('schema cache') || combined.includes('could not find')
-        );
-      };
+      // Cert No.는 cert_management_records.detail(JSONB)에 저장합니다.
+      // 따라서 cert_no 별도 컬럼의 존재 여부나 PostgREST 스키마 캐시에 영향을 받지 않습니다.
+      const { cert_no: _unusedCertNo, ...dbValues } = values;
       if (editing) {
-        let result = await supabase.from('cert_management_records')
-          .update({ ...values, cert_no: form.category === 'NDT' ? (form.cert_no.trim() || null) : null })
-          .eq('id', editing.id).select('*').single();
-        if (result.error && isMissingCertNoColumn(result.error)) {
-          const { cert_no: _unusedCertNo, ...fallbackValues } = values;
-          result = await supabase.from('cert_management_records').update(fallbackValues)
-            .eq('id', editing.id).select('*').single();
-        }
-        if (result.error) throw result.error;
-        const savedRecord = { ...(result.data as CertRecord), cert_no: (result.data as any).cert_no ?? (form.cert_no.trim() || null) };
+        const { data, error } = await supabase.from('cert_management_records')
+          .update(dbValues).eq('id', editing.id).select('*').single();
+        if (error) throw error;
+        const savedRecord = { ...(data as CertRecord), cert_no: form.category === 'NDT' ? (form.cert_no.trim() || null) : null };
         setRecords(prev => prev.map(r => r.id === editing.id ? savedRecord : r));
         notify('자격정보를 수정했습니다. HRManagement 원본에는 변경사항을 보내지 않았습니다.');
       } else {
-        let result = await supabase.from('cert_management_records').insert({ ...values, source_key: null }).select('*').single();
-        if (result.error && isMissingCertNoColumn(result.error)) {
-          const { cert_no: _unusedCertNo, ...fallbackValues } = values;
-          result = await supabase.from('cert_management_records').insert({ ...fallbackValues, source_key: null }).select('*').single();
-        }
-        if (result.error) throw result.error;
-        const savedRecord = { ...(result.data as CertRecord), cert_no: (result.data as any).cert_no ?? (form.cert_no.trim() || null) };
+        const { data, error } = await supabase.from('cert_management_records')
+          .insert({ ...dbValues, source_key: null }).select('*').single();
+        if (error) throw error;
+        const savedRecord = { ...(data as CertRecord), cert_no: form.category === 'NDT' ? (form.cert_no.trim() || null) : null };
         setRecords(prev => [...prev, savedRecord]);
         notify('자격정보를 등록했습니다. HRManagement 원본에는 변경사항을 보내지 않았습니다.');
       }
