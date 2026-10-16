@@ -507,7 +507,8 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       {loading ? <div className="py-12 text-center text-xs text-[#64748B]">자격정보를 불러오는 중...</div> : visibleGroups.length === 0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] bg-[#F5F6F8] p-8 text-center text-xs text-[#64748B]">표시할 자격이 없습니다. HRManagement에 등록된 자격이 있으면 새로고침을 눌러 가져올 수 있습니다.</div> : <div className="space-y-2">
         {visibleGroups.map(group => {
           const key = `person:${group.user_id}`;
-          const isOpen = !!expanded[key];
+          // 전체 자격은 기본 접힘, 특정 교육명/종목을 선택하면 해당 인원 목록은 기본 펼침(사용자가 다시 접을 수 있음)
+          const isOpen = subTab === 'ALL' ? !!expanded[key] : (expanded[key] ?? true);
           const refreshRecords = group.records;
           const renewalRecords = refreshRecords.filter(record => {
             if (record.category === 'NATIONAL') return false;
