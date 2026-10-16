@@ -217,8 +217,16 @@ const JOB_TITLE_ORDER_IN_RANK: Record<string, number> = {
 };
 
 
+type StyledDropdownProps = Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange' | 'children'> & {
+  value?: string | number;
+  onChange?: (event: { target: { value: string } }) => void;
+  children?: React.ReactNode;
+  className?: string;
+  disabled?: boolean;
+};
+
 /** 앱 공통 스타일 드롭다운: 브라우저/모바일 기본 option 팝업 대신 동일한 디자인의 선택 목록을 표시합니다. */
-function StyledDropdown({ value, onChange, children, className = '', disabled = false, ...props }: any) {
+function StyledDropdown({ value, onChange, children, className = '', disabled = false, ...props }: StyledDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const options = React.Children.toArray(children).filter((child: any) => React.isValidElement(child) && child.type === 'option') as React.ReactElement<any>[];
