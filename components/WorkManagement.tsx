@@ -27,6 +27,7 @@ export interface Task {
   category?: string;      // 호선
   cargo_hold?: string;    // 화물창
   remarks?: string;
+  remarks_edited_at?: string | null;
   created_at?: string;
   updated_at?: string;
   completed_by_id?: string;
@@ -285,11 +286,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return Number.isFinite(time) ? time : 0;
   }, []);
 
+  // 비고 내용이 실제로 변경된 경우에만 DB에 기록된 표시 시각을 기준으로 표기합니다.
   const wasCompletedHistoryEdited = useCallback((task: Task) => {
-    if (task.status !== 'COMPLETED' || task.completion_pending_review === true || !task.updated_at) return false;
-    const updatedAt = new Date(task.updated_at).getTime();
-    const completedAt = task.completed_at ? new Date(task.completed_at).getTime() : 0;
-    return Number.isFinite(updatedAt) && updatedAt > 0 && updatedAt > completedAt;
+    return task.status === 'COMPLETED'
+      && task.completion_pending_review !== true
+      && Boolean(task.remarks_edited_at);
   }, []);
 
   const isTaskNew = useCallback((task: Task) => {
@@ -339,7 +340,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     lastTasksFetchStartedAtRef.current = Date.now();
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review').order('start_date', { ascending: true });
+      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, remarks_edited_at, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review').order('start_date', { ascending: true });
       if (error) throw error;
 
       if (data) {
@@ -621,21 +622,31 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         return;
       }
       try {
+        const previousRemarks = task.remarks || '';
+        const nextRemarks = remarks || '';
+
+        // 내용이 실제로 달라진 경우에만 수정 표시 시각을 기록합니다.
+        if (previousRemarks === nextRemarks) {
+          setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
+          return;
+        }
+
+        const remarksEditedAt = new Date().toISOString();
         const { error } = await supabase.from('tasks').update({
-          remarks,
-          updated_at: new Date().toISOString(),
+          remarks: nextRemarks,
+          remarks_edited_at: remarksEditedAt,
         }).eq('id', task.id).eq('status', 'COMPLETED');
         if (error) throw error;
 
         setTasks(prev => prev.map(item => item.id === task.id
-          ? { ...item, remarks, updated_at: new Date().toISOString() }
+          ? { ...item, remarks: nextRemarks, remarks_edited_at: remarksEditedAt }
           : item));
         setSelectedTaskForSheet(prev => prev?.id === task.id
-          ? { ...prev, remarks, updated_at: new Date().toISOString() }
+          ? { ...prev, remarks: nextRemarks, remarks_edited_at: remarksEditedAt }
           : prev);
         setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
         await fetchTasks();
-        showCustomAlert('저장 완료', '비고가 수정되었습니다. 업무는 완료이력에 그대로 유지됩니다.');
+        showCustomAlert('저장 완료', '비고 내용이 변경되었습니다. 업무는 완료이력에 그대로 유지됩니다.');
       } catch (err: any) {
         showCustomAlert('오류', `비고 수정 실패: ${err.message}`);
       }
@@ -1472,7 +1483,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <span className="font-mono text-[#64748B]">{formatToShortDate(t.start_date)}</span>
                       {t.time_slot && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[#2563EB]">{formatShortTimeSlot(t.time_slot)}</span>}
                     </div>
-                    <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 내용 수정됨</span>}</div>
+                    <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 수정됨</span>}</div>
                   </div>
                   {isAdmin && dailySubTab === 'HISTORY' && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="mt-1 accent-[#243B5A]" aria-label="업무 선택" />}
                 </div>
@@ -1480,7 +1491,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <div className="mt-2 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
                   {dailySubTab === 'HISTORY' && t.status === 'COMPLETED' && t.completion_pending_review !== true && canEditTaskRemarks(t) && (
-                    <button type="button" onClick={() => setStatusChangeModal({ open: true, task: t, targetStatus: 'COMPLETED', remarks: t.remarks || '' })} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100">비고 수정</button>
                   )}
                   {t.task_type === 'DAILY' && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
                   {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && <button type="button" onClick={() => handleCompleteOtherTask(t)} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800">완료</button>}
@@ -1655,7 +1665,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                             <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[42px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">완료</button>
                           )}
                           {dailySubTab === 'HISTORY' && t.status === 'COMPLETED' && t.completion_pending_review !== true && canEditTaskRemarks(t) && (
-                            <button type="button" onClick={() => setStatusChangeModal({ open: true, task: t, targetStatus: 'COMPLETED', remarks: t.remarks || '' })} className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-1 text-[9px] font-bold text-emerald-800 hover:bg-emerald-100 whitespace-nowrap">비고 수정</button>
                           )}
                           {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
                             <>
@@ -1776,7 +1785,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                 <div className="flex items-center space-x-2">
                                   {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
                                   {t.category && <span className="text-[10px] font-bold text-[#243B5A] bg-blue-50 px-1.5 py-0.5 rounded">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
-                                  <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 내용 수정됨</span>}</div>
+                                  <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 수정됨</span>}</div>
                                   {renderStatusBadge(t)}
                                 </div>
                                 <div className="text-[11px] text-[#64748B]">인원: {t.assigned_names?.join(', ') || '미지정'}</div>
