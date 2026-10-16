@@ -111,6 +111,10 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const [activeAlert, setActiveAlert] = useState<CertRecord[] | null>(null);
   const [alertHidden, setAlertHidden] = useState(false);
   const [renewalSummaryOpen, setRenewalSummaryOpen] = useState(false);
+  
+  // 엑셀 선택 다운로드 관련 상태 추가
+  const [excelModalOpen, setExcelModalOpen] = useState(false);
+  const [selectedExcelSubTabs, setSelectedExcelSubTabs] = useState<Record<string, boolean>>({});
 
   const notify = useCallback((message: string, type: 'success' | 'error' | 'warning' = 'success') => setNotice({ message, type }), []);
   useEffect(() => {
@@ -123,7 +127,6 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     setLoading(true);
     setLoadError('');
     try {
-      // HRManagement의 자격 상세를 읽기만 합니다. 이 컴포넌트에서는 app_users를 수정하지 않습니다.
       const [personResult, recordResult] = await Promise.all([
         supabase.from('app_users').select('id, name, department, position, experience, career_start_date, role, national_cert_details, yard_cert_details, ndt_certificates').order('name', { ascending: true }),
         supabase.from('cert_management_records').select('*').order('category').order('title'),
@@ -138,12 +141,10 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         yard_cert_details: normalizeArray<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>(p.yard_cert_details),
         ndt_certificates: normalizeArray<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>(p.ndt_certificates),
       })) as Person[];
-      // 전달된 HR 목록의 전화번호 등 기타 정보는 건드리지 않고, 자격/경력 데이터는 DB의 부모 원본을 사용합니다.
       const propMap = new Map(users.map(p => [String(p.id), p]));
       const mergedPeople = parentPeople.map(p => ({ ...propMap.get(p.id), ...p }));
       setPeople(mergedPeople);
 
-      // Cert No.는 테이블 컬럼 유무와 무관하게 detail JSONB를 기준으로 복원합니다.
       let rows = ((recordResult.data || []) as CertRecord[]).map((r: any) => ({
         ...r, cert_no: r.cert_no ?? r.detail?.cert_no ?? null,
       }));
@@ -330,10 +331,8 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       level: form.level.trim() || null,
       obtained_date: form.category === 'YARD' ? (form.education_completed || form.obtained_date || null) : (form.obtained_date || null),
       education_completed: form.category === 'YARD' ? (form.education_completed || form.obtained_date || null) : null,
-      // PostgreSQL date 컬럼에는 빈 문자열을 보낼 수 없으므로, 계산 결과까지 포함해 항상 날짜 또는 null로 저장합니다.
       expiry_date: (form.expiry_date || (form.category === 'YARD' ? addYears(form.training_date_4 || form.training_date_3 || form.training_date_2 || form.training_date_1 || form.education_completed || form.obtained_date, 2) : form.category === 'NDT' ? addYears(form.obtained_date, 5) : null)) || null,
       sticker_no: form.category === 'YARD' ? (form.sticker_no.trim() || null) : null,
-      // Cert No.는 아래 detail.cert_no(JSONB)에 저장하므로 별도 cert_no 컬럼에 의존하지 않습니다.
       training_date_1: form.category === 'YARD' ? (form.training_date_1 || null) : null,
       training_date_2: form.category === 'YARD' ? (form.training_date_2 || null) : null,
       training_date_3: form.category === 'YARD' ? (form.training_date_3 || null) : null,
@@ -341,8 +340,6 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       detail: { ...oldDetail, issuer: form.issuer, cert_no: form.category === 'NDT' ? form.cert_no.trim() : null, localModified: true, editedInCert: true },
     };
     try {
-      // Cert No.는 cert_management_records.detail(JSONB)에 저장합니다.
-      // 따라서 cert_no 별도 컬럼의 존재 여부나 PostgREST 스키마 캐시에 영향을 받지 않습니다.
       const { cert_no: _unusedCertNo, ...dbValues } = values;
       if (editing) {
         const { data, error } = await supabase.from('cert_management_records')
@@ -362,7 +359,6 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       if (editing) {
         setModalOpen(false);
       } else {
-        // 등록 화면을 유지해 자격 구분을 바꾸며 연속 등록할 수 있게 합니다.
         setForm(emptyForm(form.category, admin ? form.user_id : String(selfPerson?.id || '')));
       }
     } catch (e: any) {
@@ -373,7 +369,6 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     if (!admin) { notify('삭제는 관리자 계정만 가능합니다.', 'warning'); return; }
     if (!window.confirm(`${personById.get(String(record.user_id))?.name || ''} · ${record.title} 자격을 삭제하시겠습니까?`)) return;
     try {
-      // HRManagement에서 가져온 원본 행은 삭제 표시만 남겨 두어 다음 동기화 때 재생성되지 않게 합니다.
       const detail = { ...(record.detail || {}), deleted: true, deletedAt: new Date().toISOString() };
       const { error } = await supabase.from('cert_management_records').update({ detail }).eq('id', record.id);
       if (error) throw error;
@@ -413,19 +408,40 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     setAlertHidden(true); setActiveAlert(null);
   };
 
-  const exportExcel = () => {
-    const list = activeRecords.filter(r => r.category === category).slice().sort((a, b) => {
+  // 엑셀 다운로드 모달 오픈 함수
+  const openExcelModal = () => {
+    const initialSelection: Record<string, boolean> = {};
+    subTabs.forEach(tab => { initialSelection[tab] = true; });
+    setSelectedExcelSubTabs(initialSelection);
+    setExcelModalOpen(true);
+  };
+
+  // 엑셀 실행 함수 (전체 또는 선택 항목)
+  const executeExcelExport = (mode: 'ALL' | 'SELECTED') => {
+    const list = activeRecords.filter(r => {
+      if (r.category !== category) return false;
+      if (mode === 'SELECTED') {
+        const subName = category === 'NATIONAL' ? (r.method || r.title) : r.title;
+        return selectedExcelSubTabs[subName];
+      }
+      return true;
+    }).slice().sort((a, b) => {
       const aPerson = personById.get(String(a.user_id));
       const bPerson = personById.get(String(b.user_id));
       const byName = (aPerson?.name || '').localeCompare(bPerson?.name || '', 'ko');
       return byName || String(a.user_id).localeCompare(String(b.user_id), 'ko') || a.title.localeCompare(b.title, 'ko');
     });
+
+    if (list.length === 0) {
+      notify('다운로드할 자격 데이터가 없습니다.', 'warning');
+      return;
+    }
+
     const title = category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
     let headers: string[];
     let rows: any[][];
     let nameColumn = 0;
     if (category === 'YARD') {
-      // 요청사항: 성명 다음에 교육명, 동일인의 여러 교육은 성명 셀을 병합합니다.
       headers = ['성명', '교육명', '사번', '교육일', '스티커 번호', '보수교육 1', '보수교육 2', '보수교육 3', '보수교육 4'];
       rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', String(r.user_id), r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '']);
     } else if (category === 'NATIONAL') {
@@ -438,7 +454,6 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     const sheetRows: any[][] = [[title], headers, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(sheetRows);
     ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
-    // 연속된 같은 사번의 이름 셀을 세로 병합합니다. (데이터 시작 행은 Excel 3행)
     let groupStart = 0;
     while (groupStart < list.length) {
       let groupEnd = groupStart + 1;
@@ -469,7 +484,8 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격' : '사내자격 NDT');
-    XLSX.writeFile(wb, `${title}_${todayStr()}.xlsx`);
+    XLSX.writeFile(wb, `${title}_${mode === 'SELECTED' ? '선택항목_' : '전체_'}${todayStr()}.xlsx`);
+    setExcelModalOpen(false);
   };
 
   const selectedPeople = admin ? people : people.filter(p => selfPerson && String(p.id) === String(selfPerson.id));
@@ -501,7 +517,16 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" onClick={() => void loadData()} disabled={loading} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A] disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}/> 새로고침</button>
-        {admin && <button type="button" onClick={exportExcel} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A]"><Download className="h-3.5 w-3.5"/> Excel 저장</button>}
+        {admin && (
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => executeExcelExport('ALL')} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A]">
+              <Download className="h-3.5 w-3.5"/> 전체 Excel 내려받기
+            </button>
+            <button type="button" onClick={openExcelModal} className="flex items-center gap-1 rounded-lg border border-[#243B5A] bg-[#243B5A] px-3 py-2 text-xs font-bold text-white">
+              <Download className="h-3.5 w-3.5"/> 자격별 선택 저장
+            </button>
+          </div>
+        )}
         <button type="button" onClick={openCreate} className="flex items-center gap-1 rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white"><Plus className="h-3.5 w-3.5"/> 자격 등록</button>
       </div>
     </div>
@@ -577,6 +602,49 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
           </div>;
         })}</div>
         <div className="flex justify-end gap-2"><button type="button" onClick={hideAlertForFiveDays} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">5일간 보지 않기</button><button type="button" onClick={() => { setAlertHidden(true); setActiveAlert(null); }} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">닫기</button></div>
+      </div>
+    </div>}
+
+    {/* 선택 저장 모달 */}
+    {excelModalOpen && <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-3">
+      <div className="w-full max-w-md space-y-3 rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
+          <h3 className="text-sm font-bold text-[#243B5A]">저장할 자격(종목) 선택</h3>
+          <button type="button" onClick={() => setExcelModalOpen(false)} aria-label="닫기"><X className="h-4 w-4"/></button>
+        </div>
+        <p className="text-xs text-[#64748B]">다운로드할 항목을 선택해주세요.</p>
+        
+        <div className="flex gap-2 pb-1">
+          <button type="button" onClick={() => {
+            const all: Record<string, boolean> = {};
+            subTabs.forEach(t => { all[t] = true; });
+            setSelectedExcelSubTabs(all);
+          }} className="text-[11px] font-bold text-[#243B5A] underline">전체 선택</button>
+          <button type="button" onClick={() => setSelectedExcelSubTabs({})} className="text-[11px] font-bold text-[#64748B] underline">선택 해제</button>
+        </div>
+
+        <div className="max-h-60 space-y-2 overflow-y-auto rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-3">
+          {subTabs.length === 0 ? (
+            <p className="text-xs text-[#64748B]">선택 가능한 하위 자격 항목이 없습니다.</p>
+          ) : (
+            subTabs.map(tab => (
+              <label key={tab} className="flex items-center gap-2 text-xs font-medium text-[#1F2937] cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={!!selectedExcelSubTabs[tab]} 
+                  onChange={e => setSelectedExcelSubTabs(prev => ({ ...prev, [tab]: e.target.checked }))} 
+                  className="rounded border-[#E2E5E9]"
+                />
+                {tab}
+              </label>
+            ))
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3">
+          <button type="button" onClick={() => setExcelModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">취소</button>
+          <button type="button" onClick={() => executeExcelExport('SELECTED')} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">선택 항목 다운로드</button>
+        </div>
       </div>
     </div>}
 
