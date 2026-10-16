@@ -108,6 +108,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const [form, setForm] = useState<FormData>(emptyForm('YARD'));
   const [activeAlert, setActiveAlert] = useState<CertRecord[] | null>(null);
   const [alertHidden, setAlertHidden] = useState(false);
+  const [renewalSummaryOpen, setRenewalSummaryOpen] = useState(false);
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const notify = useCallback((message: string, type: 'success' | 'error' | 'warning' = 'success') => setNotice({ message, type }), []);
@@ -231,6 +232,13 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     return '';
   };
   const activeRecords = useMemo(() => records.filter(r => !r.detail?.deleted), [records]);
+  const renewalSummaryRecords = useMemo(() => activeRecords
+    .filter(record => record.category === 'YARD' || record.category === 'NDT')
+    .map(record => ({ record, expiry: expiryFor(record) }))
+    .filter(item => !!item.expiry && daysUntil(item.expiry) <= 40)
+    .sort((a, b) => (a.expiry || '').localeCompare(b.expiry || '') || a.record.title.localeCompare(b.record.title, 'ko')),
+    [activeRecords]);
+  const renewalSummaryPeopleCount = useMemo(() => new Set(renewalSummaryRecords.map(item => String(item.record.user_id))).size, [renewalSummaryRecords]);
   const subTabs = useMemo(() => {
     const relevant = activeRecords.filter(r => r.category === category);
     const names = Array.from(new Set(relevant.map(r => category === 'NATIONAL' ? (r.method || r.title) : r.title).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -457,9 +465,29 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
 
   return <div className="space-y-3 text-[#1F2937]">
     {notice && <div className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-xs ${notice.type === 'error' ? 'border-red-200 bg-red-50 text-red-700' : notice.type === 'warning' ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`} role="status"><span>{notice.message}</span><button type="button" onClick={() => setNotice(null)} aria-label="알림 닫기"><X className="h-3.5 w-3.5" /></button></div>}
-    <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#E2E5E9] bg-white p-3">
-      <div className="flex items-center gap-2"><Award className="h-5 w-5 text-[#243B5A]"/><div><h2 className="text-sm font-bold text-[#243B5A]">자격현황 관리</h2><p className="mt-0.5 text-[10px] text-[#64748B]">HRManagement에서 자격을 가져옵니다. Cert에서 변경한 내용은 HRManagement 원본에 반영되지 않습니다.</p></div></div>
-      <div className="flex flex-wrap gap-2">
+    <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2"><Award className="h-5 w-5 text-[#243B5A]"/><div><h2 className="text-sm font-bold text-[#243B5A]">자격현황 관리</h2><p className="mt-0.5 text-[10px] text-[#64748B]">HRManagement에서 자격을 가져옵니다. Cert에서 변경한 내용은 HRManagement 원본에 반영되지 않습니다.</p></div></div>
+      </div>
+      <div className="overflow-hidden rounded-lg border border-red-200 bg-white">
+        <button type="button" onClick={() => setRenewalSummaryOpen(value => !value)} aria-expanded={renewalSummaryOpen} className="flex w-full items-center gap-2 bg-red-50 px-3 py-2 text-left hover:bg-red-100">
+          {renewalSummaryOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-red-600"/> : <ChevronRight className="h-4 w-4 shrink-0 text-red-600"/>}
+          <span className="text-xs font-bold text-red-700">자격갱신 대상</span>
+          <span className="text-[10px] text-red-700">인원 {renewalSummaryPeopleCount}명 · 자격 {renewalSummaryRecords.length}건</span>
+          <span className="ml-auto text-[10px] text-red-600">{renewalSummaryOpen ? '접기' : '펼쳐보기'}</span>
+        </button>
+        {renewalSummaryOpen && <div className="max-h-56 space-y-2 overflow-y-auto p-3">
+          {renewalSummaryRecords.length === 0 ? <p className="text-xs text-[#64748B]">현재 갱신 대상 자격이 없습니다.</p> : renewalSummaryRecords.map(({ record, expiry }) => {
+            const person = personById.get(String(record.user_id));
+            const remaining = daysUntil(expiry!);
+            return <div key={record.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2 text-xs">
+              <div className="min-w-0"><span className="font-bold text-[#243B5A]">{person?.name || record.user_id}</span><span className="ml-1 text-[#64748B]">({record.user_id})</span><div className="mt-1 text-[#1F2937]">{record.category === 'YARD' ? 'YARD 교육' : 'NDT Level'} · {record.title}{record.level ? ` · ${record.level}` : ''}</div></div>
+              <div className="shrink-0 text-right"><div className="font-bold text-red-600">자격갱신</div><div className="mt-1 text-[10px] text-[#64748B]">유효기간 {expiry} · {remaining < 0 ? `${Math.abs(remaining)}일 경과` : remaining === 0 ? '오늘 만료' : `${remaining}일 남음`}</div></div>
+            </div>;
+          })}
+        </div>}
+      </div>
+      <div className="flex flex-wrap justify-end gap-2">
         <button type="button" onClick={() => void loadData()} disabled={loading} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A] disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}/> 새로고침</button>
         {admin && <button type="button" onClick={exportExcel} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A]"><Download className="h-3.5 w-3.5"/> Excel 저장</button>}
         <button type="button" onClick={openCreate} className="flex items-center gap-1 rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white"><Plus className="h-3.5 w-3.5"/> 자격 등록</button>
