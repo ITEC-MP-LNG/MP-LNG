@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { ChevronDown, ChevronRight, Plus, Edit3, Trash2, X, Download, Award, AlertTriangle, Search, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
@@ -112,20 +112,6 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const [alertHidden, setAlertHidden] = useState(false);
   const [renewalSummaryOpen, setRenewalSummaryOpen] = useState(false);
 
-  // 엑셀 드롭다운 메뉴 상태 및 외부 클릭 감지용 Ref
-  const [excelDropdownOpen, setExcelDropdownOpen] = useState(false);
-  const excelDropdownRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (excelDropdownRef.current && !excelDropdownRef.current.contains(event.target as Node)) {
-        setExcelDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const notify = useCallback((message: string, type: 'success' | 'error' | 'warning' = 'success') => setNotice({ message, type }), []);
   useEffect(() => {
     if (!notice) return;
@@ -137,6 +123,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     setLoading(true);
     setLoadError('');
     try {
+      // HRManagement의 자격 상세를 읽기만 합니다. 이 컴포넌트에서는 app_users를 수정하지 않습니다.
       const [personResult, recordResult] = await Promise.all([
         supabase.from('app_users').select('id, name, department, position, experience, career_start_date, role, national_cert_details, yard_cert_details, ndt_certificates').order('name', { ascending: true }),
         supabase.from('cert_management_records').select('*').order('category').order('title'),
@@ -151,16 +138,19 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         yard_cert_details: normalizeArray<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>(p.yard_cert_details),
         ndt_certificates: normalizeArray<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>(p.ndt_certificates),
       })) as Person[];
+      // 전달된 HR 목록의 전화번호 등 기타 정보는 건드리지 않고, 자격/경력 데이터는 DB의 부모 원본을 사용합니다.
       const propMap = new Map(users.map(p => [String(p.id), p]));
       const mergedPeople = parentPeople.map(p => ({ ...propMap.get(p.id), ...p }));
       setPeople(mergedPeople);
 
+      // Cert No.는 테이블 컬럼 유무와 무관하게 detail JSONB를 기준으로 복원합니다.
       let rows = ((recordResult.data || []) as CertRecord[]).map((r: any) => ({
         ...r, cert_no: r.cert_no ?? r.detail?.cert_no ?? null,
       }));
       const bySourceKey = new Map(rows.filter(r => r.source_key).map(r => [String(r.source_key), r]));
       const inserts: any[] = [];
       const updates: Array<{ id: string; values: any }> = [];
+      const validSourceKeys = new Set<string>();
       const sourceSnapshot = (category: Category, personId: string, index: number, payload: any) => JSON.stringify({ category, personId, index, payload });
       const makeSourceRecord = (person: Person, cat: Category, index: number, payload: any) => {
         const sourceKey = `${cat}:${person.id}:${index}`;
@@ -184,7 +174,14 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
           return { ...base, title: text(payload.kind).trim() || '국가 자격', method: text(payload.method).trim() || null,
             detail: { ...base.detail, sourceSnapshot: snapshot } };
         }
-        return { ...base, title: text(payload.subject).trim() || 'NDT', method: text(payload.issuer).trim() || null,
+        const ndtSubject = text(payload.subject).trim();
+        const ltLabels = [
+          { value: 'LT(BUBBLE)', label: 'Bubble', pattern: /LT\s*\(\s*BUBBLE\s*\)/i },
+          { value: 'LT(Pressure Change)', label: 'Pressure Change', pattern: /LT\s*\(\s*Pressure\s+Change\s*\)/i },
+          { value: 'LT(MST-He)', label: 'MST-He', pattern: /LT\s*\(\s*MST-He\s*\)/i },
+        ].filter(item => item.pattern.test(ndtSubject)).map(item => item.label);
+        const ndtTitle = ltLabels.length ? `LT (${ltLabels.join(', ')})` : ndtSubject || 'NDT';
+        return { ...base, title: ndtTitle, method: text(payload.issuer).trim() || null,
           level: text(payload.level).trim() || null, obtained_date: text(payload.issue_date) || null,
           expiry_date: text(payload.expiry_date) || (text(payload.issue_date) ? addYears(text(payload.issue_date), 5) : null),
           detail: { ...base.detail, sourceSnapshot: snapshot, issuer: text(payload.issuer) } };
@@ -199,6 +196,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         for (const sourceList of sourceLists) {
           sourceList.list.forEach((payload, index) => {
             const candidate = makeSourceRecord(person, sourceList.category, index, payload);
+            validSourceKeys.add(candidate.source_key);
             const existing = bySourceKey.get(candidate.source_key);
             if (!existing) {
               inserts.push(candidate);
@@ -218,7 +216,9 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         if (error) throw new Error(`부모 자격 변경 반영 실패: ${error.message}`);
         rows = rows.map(r => r.id === update.id ? { ...r, ...update.values } : r);
       }
-      setRecords(rows);
+      // HRManagement에서 종목을 통합해 더 이상 존재하지 않는 이전 원본 행은 화면에서 제외합니다.
+      // Cert 화면에서 별도 수정(localModified)한 기록은 보존합니다.
+      setRecords(rows.filter((row: any) => !(row.detail?.source === 'hrmanagement' && !row.detail?.localModified && row.source_key && !validSourceKeys.has(String(row.source_key)))));
     } catch (e: any) {
       setLoadError(e?.message || '자격현황을 불러오지 못했습니다. Supabase SQL 설정을 확인해주세요.');
     } finally {
@@ -341,8 +341,10 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       level: form.level.trim() || null,
       obtained_date: form.category === 'YARD' ? (form.education_completed || form.obtained_date || null) : (form.obtained_date || null),
       education_completed: form.category === 'YARD' ? (form.education_completed || form.obtained_date || null) : null,
+      // PostgreSQL date 컬럼에는 빈 문자열을 보낼 수 없으므로, 계산 결과까지 포함해 항상 날짜 또는 null로 저장합니다.
       expiry_date: (form.expiry_date || (form.category === 'YARD' ? addYears(form.training_date_4 || form.training_date_3 || form.training_date_2 || form.training_date_1 || form.education_completed || form.obtained_date, 2) : form.category === 'NDT' ? addYears(form.obtained_date, 5) : null)) || null,
       sticker_no: form.category === 'YARD' ? (form.sticker_no.trim() || null) : null,
+      // Cert No.는 아래 detail.cert_no(JSONB)에 저장하므로 별도 cert_no 컬럼에 의존하지 않습니다.
       training_date_1: form.category === 'YARD' ? (form.training_date_1 || null) : null,
       training_date_2: form.category === 'YARD' ? (form.training_date_2 || null) : null,
       training_date_3: form.category === 'YARD' ? (form.training_date_3 || null) : null,
@@ -350,6 +352,8 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       detail: { ...oldDetail, issuer: form.issuer, cert_no: form.category === 'NDT' ? form.cert_no.trim() : null, localModified: true, editedInCert: true },
     };
     try {
+      // Cert No.는 cert_management_records.detail(JSONB)에 저장합니다.
+      // 따라서 cert_no 별도 컬럼의 존재 여부나 PostgREST 스키마 캐시에 영향을 받지 않습니다.
       const { cert_no: _unusedCertNo, ...dbValues } = values;
       if (editing) {
         const { data, error } = await supabase.from('cert_management_records')
@@ -369,6 +373,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       if (editing) {
         setModalOpen(false);
       } else {
+        // 등록 화면을 유지해 자격 구분을 바꾸며 연속 등록할 수 있게 합니다.
         setForm(emptyForm(form.category, admin ? form.user_id : String(selfPerson?.id || '')));
       }
     } catch (e: any) {
@@ -379,6 +384,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     if (!admin) { notify('삭제는 관리자 계정만 가능합니다.', 'warning'); return; }
     if (!window.confirm(`${personById.get(String(record.user_id))?.name || ''} · ${record.title} 자격을 삭제하시겠습니까?`)) return;
     try {
+      // HRManagement에서 가져온 원본 행은 삭제 표시만 남겨 두어 다음 동기화 때 재생성되지 않게 합니다.
       const detail = { ...(record.detail || {}), deleted: true, deletedAt: new Date().toISOString() };
       const { error } = await supabase.from('cert_management_records').update({ detail }).eq('id', record.id);
       if (error) throw error;
@@ -418,55 +424,56 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     setAlertHidden(true); setActiveAlert(null);
   };
 
-  // 엑셀 내보내기 공통 시트 생성 헬퍼 함수
-  const createCategoryWorksheet = (cat: Category) => {
-    const list = activeRecords.filter(r => r.category === cat).slice().sort((a, b) => {
+  const exportExcel = () => {
+    const list = activeRecords.filter(r => r.category === category).slice().sort((a, b) => {
       const aPerson = personById.get(String(a.user_id));
       const bPerson = personById.get(String(b.user_id));
       const byName = (aPerson?.name || '').localeCompare(bPerson?.name || '', 'ko');
       return byName || String(a.user_id).localeCompare(String(b.user_id), 'ko') || a.title.localeCompare(b.title, 'ko');
     });
-
-    const title = cat === 'YARD' ? 'YARD 자격 현황' : cat === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
+    const title = category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
     let headers: string[];
     let rows: any[][];
     let nameColumn = 0;
-
-    if (cat === 'YARD') {
-      headers = ['성명', '교육명', '사번', '교육일', '스티커 번호', '보수교육 1', '보수교육 2', '보수교육 3', '보수교육 4'];
-      rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', String(r.user_id), r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '']);
-    } else if (cat === 'NATIONAL') {
+    const employeeIdColumn = 1;
+    if (category === 'YARD') {
+      // 요청사항: 성명 다음에 교육명, 동일인의 여러 교육은 성명 셀을 병합합니다.
+      headers = ['성명', '사번', '교육명', '교육일', '스티커 번호', '보수교육 1', '보수교육 2', '보수교육 3', '보수교육 4'];
+      rows = list.map(r => [personById.get(String(r.user_id))?.name || '', String(r.user_id), r.title || '', r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '']);
+    } else if (category === 'NATIONAL') {
       headers = ['성명', '자격종류', '종목', '취득일'];
       rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', r.method || '', r.obtained_date || '']);
     } else {
       headers = ['성명', '경력', '자격종류(Level)', '종목', '취득일', '갱신일'];
       rows = list.map(r => [personById.get(String(r.user_id))?.name || '', personById.get(String(r.user_id))?.experience || '', r.level || '', r.title || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
     }
-
     const sheetRows: any[][] = [[title], headers, ...rows];
     const ws = XLSX.utils.aoa_to_sheet(sheetRows);
     ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
-    
+    // 연속된 같은 사번의 이름 셀을 세로 병합합니다. (데이터 시작 행은 Excel 3행)
     let groupStart = 0;
     while (groupStart < list.length) {
       let groupEnd = groupStart + 1;
       while (groupEnd < list.length && String(list[groupEnd].user_id) === String(list[groupStart].user_id)) groupEnd++;
       if (groupEnd - groupStart > 1) {
         ws['!merges'].push({ s: { r: groupStart + 2, c: nameColumn }, e: { r: groupEnd + 1, c: nameColumn } });
+        if (category === 'YARD') {
+          ws['!merges'].push({ s: { r: groupStart + 2, c: employeeIdColumn }, e: { r: groupEnd + 1, c: employeeIdColumn } });
+        }
       }
       groupStart = groupEnd;
     }
-    
     ws['!rows'] = [{ hpt: 42 }, { hpt: 24 }, ...rows.map(() => ({ hpt: 21 }))];
     ws['!cols'] = headers.map((header, col) => {
-      const maxLength = Math.max(header.length, ...rows.map(row => String(row[col] ?? '').length));
+      const visibleWidth = (value: unknown) => Array.from(String(value ?? '')).reduce((width, char) => width + (char.charCodeAt(0) > 255 ? 2 : 1), 0);
+      const maxLength = Math.max(visibleWidth(header), ...rows.map(row => visibleWidth(row[col])));
+      // YARD 교육명은 한글 폭까지 고려해 가장 긴 교육명에 맞춰 자동 너비를 적용합니다.
+      if (category === 'YARD' && col === 2) return { wch: Math.max(maxLength + 3, 12) };
       return { wch: Math.min(Math.max(maxLength + 3, 12), 42) };
     });
-
     const lastCol = XLSX.utils.encode_col(headers.length - 1);
     const lastRow = Math.max(2, sheetRows.length - 1);
     ws['!autofilter'] = { ref: `A2:${lastCol}${lastRow + 1}` };
-
     for (let r = 0; r < sheetRows.length; r++) {
       for (let c = 0; c < headers.length; c++) {
         const address = XLSX.utils.encode_cell({ r, c });
@@ -478,32 +485,9 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
             : { font: { name: '맑은 고딕', sz: 9 }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { bottom: { style: 'thin', color: { rgb: 'E2E5E9' } } } };
       }
     }
-    return ws;
-  };
-
-  // 엑셀 내보내기 실행 함수 (전체 내려받기 시 각 시트별로 추가, 개별 선택 시 해당 시트만 저장)
-  const executeExcelExport = (target: 'ALL' | Category) => {
-    setExcelDropdownOpen(false);
     const wb = XLSX.utils.book_new();
-
-    if (target === 'ALL') {
-      const yardWs = createCategoryWorksheet('YARD');
-      const nationalWs = createCategoryWorksheet('NATIONAL');
-      const ndtWs = createCategoryWorksheet('NDT');
-
-      XLSX.utils.book_append_sheet(wb, yardWs, 'YARD 자격 현황');
-      XLSX.utils.book_append_sheet(wb, nationalWs, '국가 자격');
-      XLSX.utils.book_append_sheet(wb, ndtWs, '사내자격 NDT');
-
-      XLSX.writeFile(wb, `전체_자격현황_${todayStr()}.xlsx`);
-    } else {
-      const ws = createCategoryWorksheet(target);
-      const sheetName = target === 'YARD' ? 'YARD 자격 현황' : target === 'NATIONAL' ? '국가 자격' : '사내자격 NDT';
-      const fileNameTitle = target === 'YARD' ? 'YARD 자격 현황' : target === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
-
-      XLSX.utils.book_append_sheet(wb, ws, sheetName);
-      XLSX.writeFile(wb, `${fileNameTitle}_${todayStr()}.xlsx`);
-    }
+    XLSX.utils.book_append_sheet(wb, ws, category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격' : '사내자격 NDT');
+    XLSX.writeFile(wb, `${title}_${todayStr()}.xlsx`);
   };
 
   const selectedPeople = admin ? people : people.filter(p => selfPerson && String(p.id) === String(selfPerson.id));
@@ -535,49 +519,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" onClick={() => void loadData()} disabled={loading} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A] disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}/> 새로고침</button>
-        {admin && (
-          <div className="relative" ref={excelDropdownRef}>
-            <button 
-              type="button" 
-              onClick={() => setExcelDropdownOpen(prev => !prev)} 
-              className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F8FAFC]"
-            >
-              <Download className="h-3.5 w-3.5"/> Excel 저장 <ChevronDown className="h-3.5 w-3.5 ml-0.5"/>
-            </button>
-            {excelDropdownOpen && (
-              <div className="absolute right-0 mt-1 w-48 rounded-lg border border-[#E2E5E9] bg-white shadow-lg z-50 py-1">
-                <button 
-                  type="button" 
-                  onClick={() => executeExcelExport('ALL')} 
-                  className="w-full text-left px-3 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8] border-b border-[#E2E5E9]"
-                >
-                  전체 내려받기
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => executeExcelExport('YARD')} 
-                  className="w-full text-left px-3 py-2 text-xs font-medium text-[#1F2937] hover:bg-[#F5F6F8]"
-                >
-                  YARD 자격
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => executeExcelExport('NATIONAL')} 
-                  className="w-full text-left px-3 py-2 text-xs font-medium text-[#1F2937] hover:bg-[#F5F6F8]"
-                >
-                  국가 자격
-                </button>
-                <button 
-                  type="button" 
-                  onClick={() => executeExcelExport('NDT')} 
-                  className="w-full text-left px-3 py-2 text-xs font-medium text-[#1F2937] hover:bg-[#F5F6F8]"
-                >
-                  사내자격 (NDT Level)
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+        {admin && <button type="button" onClick={exportExcel} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A]"><Download className="h-3.5 w-3.5"/> Excel 저장</button>}
         <button type="button" onClick={openCreate} className="flex items-center gap-1 rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white"><Plus className="h-3.5 w-3.5"/> 자격 등록</button>
       </div>
     </div>

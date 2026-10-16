@@ -137,12 +137,52 @@ function getYardCertLabels(user: HRUser): string[] {
   return list.map((cert: any) => String(cert?.name || '').trim()).filter(Boolean);
 }
 
+const LT_SUBJECTS = [
+  { value: 'LT(BUBBLE)', label: 'Bubble', pattern: /LT\s*\(\s*BUBBLE\s*\)/i },
+  { value: 'LT(Pressure Change)', label: 'Pressure Change', pattern: /LT\s*\(\s*Pressure\s+Change\s*\)/i },
+  { value: 'LT(MST-He)', label: 'MST-He', pattern: /LT\s*\(\s*MST-He\s*\)/i },
+];
+
+function isLtCertificateSubject(subject: string): boolean {
+  return LT_SUBJECTS.some(item => item.pattern.test(String(subject || '')));
+}
+
+function getLtSubjects(subject: string): string[] {
+  const raw = String(subject || '');
+  return LT_SUBJECTS.filter(item => item.pattern.test(raw)).map(item => item.value);
+}
+
+// 예전처럼 LT 하위 종목별로 저장된 자료도 편집 화면에서는 하나의 LT 자격으로 묶습니다.
+function normalizeNdtCertificates(list: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }> = []) {
+  const ltRows = list.filter(item => isLtCertificateSubject(item.subject));
+  const otherRows = list.filter(item => !isLtCertificateSubject(item.subject));
+  if (!ltRows.length) return list;
+  const subjects = Array.from(new Set(ltRows.flatMap(item => getLtSubjects(item.subject))));
+  const base = ltRows[0];
+  const combined = {
+    issuer: base.issuer || '사내',
+    subject: subjects.join(', '),
+    level: base.level || 'Level I',
+    issue_date: base.issue_date || ltRows.find(item => item.issue_date)?.issue_date || '',
+    expiry_date: base.expiry_date || ltRows.find(item => item.expiry_date)?.expiry_date || '',
+  };
+  return [...otherRows, combined].sort((a, b) => {
+    const aLt = isLtCertificateSubject(a.subject) ? 0 : 1;
+    const bLt = isLtCertificateSubject(b.subject) ? 0 : 1;
+    return aLt - bLt;
+  });
+}
+
 function getNdtCertLabels(user: HRUser): string[] {
-  return (Array.isArray(user.ndt_certificates) ? user.ndt_certificates : [])
+  return normalizeNdtCertificates(Array.isArray(user.ndt_certificates) ? user.ndt_certificates : [])
     .map((cert) => {
       const subject = String(cert.subject || '').trim();
       const level = String(cert.level || '').trim();
       const issuer = String(cert.issuer || '').trim();
+      if (isLtCertificateSubject(subject)) {
+        const labels = getLtSubjects(subject).map(value => LT_SUBJECTS.find(item => item.value === value)?.label || value);
+        return `LT ${level}${labels.length ? ` (${labels.join(', ')})` : ''}`.trim();
+      }
       const main = [subject, level].filter(Boolean).join(' ');
       return main || issuer;
     })
@@ -270,7 +310,7 @@ export default function HRManagement({
         national_certificates: u.national_certificates || u.certificates || '',
         national_cert_details: Array.isArray(u.national_cert_details) ? u.national_cert_details : [],
         yard_cert_details: Array.isArray(u.yard_cert_details) ? u.yard_cert_details : (u.yard_cert_details?.names ? u.yard_cert_details.names.split(',').map((name: string) => ({ name: name.trim(), education_date: u.yard_cert_details.education_date || '', renewal_count: Number(u.yard_cert_details.renewal_count || 0), renewal_dates: Array.isArray(u.yard_cert_details.renewal_dates) ? u.yard_cert_details.renewal_dates : [] })).filter((item: any) => item.name) : []),
-        ndt_certificates: Array.isArray(u.ndt_certificates) ? u.ndt_certificates : []
+        ndt_certificates: normalizeNdtCertificates(Array.isArray(u.ndt_certificates) ? u.ndt_certificates : [])
       }));
 
       setUsers(formatted);
@@ -421,7 +461,7 @@ export default function HRManagement({
       national_certificates: user.national_certificates || user.certificates || '',
       national_cert_details: Array.isArray(user.national_cert_details) ? user.national_cert_details : [],
       yard_cert_details: Array.isArray(user.yard_cert_details) ? user.yard_cert_details : (user.yard_cert_details && !Array.isArray(user.yard_cert_details) && (user.yard_cert_details as any).names ? (user.yard_cert_details as any).names.split(',').map((name: string) => ({ name: name.trim(), education_date: (user.yard_cert_details as any).education_date || '', renewal_count: Number((user.yard_cert_details as any).renewal_count || 0), renewal_dates: Array.isArray((user.yard_cert_details as any).renewal_dates) ? (user.yard_cert_details as any).renewal_dates : [] })).filter((item: any) => item.name) : []),
-      ndt_certificates: Array.isArray(user.ndt_certificates) ? user.ndt_certificates : [],
+      ndt_certificates: normalizeNdtCertificates(Array.isArray(user.ndt_certificates) ? user.ndt_certificates : []),
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
       birthDate: user.password || '' 
@@ -1506,20 +1546,33 @@ export default function HRManagement({
                 <summary className="cursor-pointer font-bold text-[#243B5A] flex items-center justify-between">사내자격 (NDT Level) <span className="text-[10px] text-[#64748B] font-normal">{formData.ndt_certificates.length}개 · 눌러서 펼치기</span></summary>
                 <div className="pt-3 space-y-2.5">
                   <div className="text-[10px] text-[#64748B]">종목은 드롭다운에서 선택합니다. 발행일 기준 5년 후 유효기간이 자동 입력되며, 자격별 유효일을 확인할 수 있습니다.</div>
-                  {formData.ndt_certificates.map((cert, index) => (
+                  {formData.ndt_certificates.map((cert, index) => {
+                    const isLt = isLtCertificateSubject(cert.subject);
+                    const selectedLtSubjects = isLt ? getLtSubjects(cert.subject) : [];
+                    const updateLt = (nextSubjects: string[], changes: Partial<typeof cert> = {}) => {
+                      setFormData(prev => {
+                        const next = prev.ndt_certificates.slice();
+                        if (nextSubjects.length === 0) return { ...prev, ndt_certificates: next.filter((_, i) => i !== index) };
+                        next[index] = { ...next[index], ...changes, subject: nextSubjects.join(', ') };
+                        return { ...prev, ndt_certificates: next };
+                      });
+                    };
+                    return (
                     <details key={`ndt-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
-                      <summary className="cursor-pointer font-semibold">{cert.subject || '종목 미선택'} · {cert.level || 'Level 선택'} · 유효일 {cert.expiry_date || '미입력'}</summary>
+                      <summary className="cursor-pointer font-semibold">{isLt ? `LT ${cert.level || 'Level 선택'} (${selectedLtSubjects.map(value => LT_SUBJECTS.find(item => item.value === value)?.label || value).join(', ') || '서브종목 미선택'})` : `${cert.subject || '종목 미선택'} · ${cert.level || 'Level 선택'}`} · 유효일 {cert.expiry_date || '미입력'}</summary>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
                         <div><label className="block text-[10px] text-[#64748B] mb-1">발급형태</label><select value={cert.issuer} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issuer: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></select></div>
-                        <div><label className="block text-[10px] text-[#64748B] mb-1">종목</label><select value={cert.subject} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, subject: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="">종목 선택</option>{Array.from(new Set([...ndtSubjectOptions, ...(cert.subject && !ndtSubjectOptions.includes(cert.subject) ? [cert.subject] : [])])).map(subject => <option key={subject} value={subject}>{subject}</option>)}</select></div>
+                        {isLt ? <div className="sm:col-span-2 rounded-lg bg-[#F8FAFC] border border-[#E2E5E9] p-2"><div className="text-[10px] font-bold text-[#64748B] mb-2">LT 서브종목 선택 (복수 선택 가능)</div><div className="grid grid-cols-1 sm:grid-cols-3 gap-2">{LT_SUBJECTS.map(item => <label key={item.value} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={selectedLtSubjects.includes(item.value)} onChange={(e) => { const next = e.target.checked ? [...selectedLtSubjects, item.value] : selectedLtSubjects.filter(value => value !== item.value); updateLt(next); }} />{item.label}</label>)}</div></div> : <div><label className="block text-[10px] text-[#64748B] mb-1">종목</label><select value={cert.subject} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, subject: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="">종목 선택</option>{Array.from(new Set([...ndtSubjectOptions.filter(subject => !isLtCertificateSubject(subject)), ...(cert.subject && !ndtSubjectOptions.includes(cert.subject) ? [cert.subject] : [])])).map(subject => <option key={subject} value={subject}>{subject}</option>)}</select></div>}
                         <div><label className="block text-[10px] text-[#64748B] mb-1">종류</label><select value={cert.level} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, level: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></select></div>
                         <div><label className="block text-[10px] text-[#64748B] mb-1">발행일</label><input type="date" value={cert.issue_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issue_date: date, expiry_date: addYearsToDate(date, 5) } : item) })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
                         <div><label className="block text-[10px] text-[#64748B] mb-1">유효일 (발행일 + 5년)</label><input type="date" value={cert.expiry_date} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, expiry_date: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
                         <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 NDT 자격 삭제</button>
                       </div>
                     </details>
-                  ))}
-                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: [...prev.ndt_certificates, { issuer: '사내', subject: '', level: 'Level I', issue_date: '', expiry_date: '' }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ NDT 자격 추가</button>
+                    );
+                  })}
+                  {!formData.ndt_certificates.some(cert => isLtCertificateSubject(cert.subject)) && <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: [{ issuer: '사내', subject: LT_SUBJECTS[0].value, level: 'Level I', issue_date: '', expiry_date: '' }, ...prev.ndt_certificates] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ LT 자격 추가</button>}
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: [...prev.ndt_certificates, { issuer: '사내', subject: '', level: 'Level I', issue_date: '', expiry_date: '' }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ 기타 NDT 자격 추가</button>
                   {isAdmin && <details className="rounded-lg border border-[#E2E5E9] p-2"><summary className="cursor-pointer font-semibold">종목 목록 관리</summary><div className="pt-2 space-y-2"><div className="flex flex-wrap gap-2">{ndtSubjectOptions.map(subject => <span key={subject} className="inline-flex items-center gap-1 rounded-full bg-[#F5F6F8] border border-[#E2E5E9] px-2 py-1 text-xs">{subject}<button type="button" aria-label={`${subject} 삭제`} onClick={async () => { const { error } = await supabase.from('ndt_subject_options').delete().eq('subject', subject); if (error) { showNotice(`종목 삭제 실패: ${error.message}`, 'error'); return; } setNdtSubjectOptions(prev => prev.filter(item => item !== subject)); showNotice('종목을 삭제했습니다.', 'success'); }} className="text-red-600 font-bold">×</button></span>)}</div><div className="flex gap-2"><input value={newNdtSubject} onChange={e => setNewNdtSubject(e.target.value)} placeholder="추가할 종목명" className="min-w-0 flex-1 p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"/><button type="button" onClick={async () => { const subject = newNdtSubject.trim(); if (!subject) return; if (ndtSubjectOptions.includes(subject)) { showNotice('이미 등록된 종목입니다.', 'warning'); return; } const { error } = await supabase.from('ndt_subject_options').insert({ subject }); if (error) { showNotice(`종목 추가 실패: ${error.message}`, 'error'); return; } setNdtSubjectOptions(prev => [...prev, subject]); setNewNdtSubject(''); showNotice('종목을 추가했습니다.', 'success'); }} className="px-3 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-semibold">추가</button></div></div></details>}
                 </div>
               </details>
