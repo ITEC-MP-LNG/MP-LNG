@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState, useEffect, useCallback } from 'react';
+import React, { Fragment, useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Users, 
   Building2, 
@@ -215,6 +215,80 @@ const JOB_TITLE_ORDER_IN_RANK: Record<string, number> = {
   '팀원': 4,
   '없음': 5
 };
+
+
+/** 앱 공통 스타일 드롭다운: 브라우저/모바일 기본 option 팝업 대신 동일한 디자인의 선택 목록을 표시합니다. */
+function StyledDropdown({ value, onChange, children, className = '', disabled = false, ...props }: any) {
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const options = React.Children.toArray(children).filter((child: any) => React.isValidElement(child) && child.type === 'option') as React.ReactElement<any>[];
+  const selectedOption = options.find((option) => String(option.props.value ?? option.props.children ?? '') === String(value ?? ''));
+  const selectedLabel = selectedOption ? selectedOption.props.children : (value ?? '선택');
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setIsOpen(false);
+    };
+    const handleKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [isOpen]);
+
+  const widthClass = className.includes('w-full') ? 'w-full' : '';
+  const marginClass = className.split(' ').filter((part: string) => part.startsWith('mt-') || part.startsWith('mb-')).join(' ');
+  const handleChoose = (option: React.ReactElement<any>) => {
+    if (option.props.disabled) return;
+    const nextValue = option.props.value ?? option.props.children ?? '';
+    onChange?.({ target: { value: String(nextValue) } });
+    setIsOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className={`relative ${widthClass} ${marginClass}`} {...props}>
+      <button
+        type="button"
+        disabled={disabled}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+        className={`w-full min-h-[34px] flex items-center justify-between gap-2 p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] text-left focus:bg-white focus:border-[#243B5A] focus:outline-none focus:ring-2 focus:ring-[#243B5A]/10 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${className.includes('font-bold') ? 'font-bold' : ''}`}
+      >
+        <span className="min-w-0 flex-1 truncate">{selectedLabel}</span>
+        <ChevronDown className={`h-3.5 w-3.5 shrink-0 text-[#64748B] transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      {isOpen && (
+        <div role="listbox" className="absolute left-0 right-0 top-[calc(100%+4px)] z-[120] max-h-60 overflow-y-auto overscroll-contain rounded-xl border border-[#E2E5E9] bg-white p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+          {options.map((option, index) => {
+            const optionValue = option.props.value ?? option.props.children ?? '';
+            const isSelected = String(optionValue) === String(value ?? '');
+            return (
+              <button
+                type="button"
+                role="option"
+                aria-selected={isSelected}
+                key={option.key ?? `${String(optionValue)}-${index}`}
+                disabled={option.props.disabled}
+                onClick={() => handleChoose(option)}
+                className={`w-full rounded-lg px-3 py-2.5 text-left text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F1F5F9] active:bg-[#E2E8F0]'} ${option.props.disabled ? 'cursor-not-allowed opacity-40' : 'cursor-pointer'}`}
+              >
+                {option.props.children}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function HRManagement({ 
   isAdmin = false, 
@@ -1382,21 +1456,21 @@ export default function HRManagement({
                   <label className="block font-bold text-[#64748B] mb-1 flex items-center gap-1">
                     <Shield className="h-3.5 w-3.5 text-[#243B5A]" /> 시스템 권한 부여
                   </label>
-                  <select
+                  <StyledDropdown
                     value={formData.role}
                     onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                     className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer font-bold"
                   >
                     <option value="USER">일반 사용자 (USER)</option>
                     <option value="ADMIN">관리자 (ADMIN)</option>
-                  </select>
+                  </StyledDropdown>
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">파트 (부서)</label>
-                  <select
+                  <StyledDropdown
                     value={formData.department}
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                     className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
@@ -1407,7 +1481,7 @@ export default function HRManagement({
                     <option value="2팀">2팀</option>
                     <option value="3팀">3팀</option>
                     <option value="4팀">4팀</option>
-                  </select>
+                  </StyledDropdown>
                 </div>
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">직급</label>
@@ -1424,7 +1498,7 @@ export default function HRManagement({
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">직책</label>
-                  <select
+                  <StyledDropdown
                     value={formData.job_title}
                     onChange={(e) => setFormData({ ...formData, job_title: e.target.value })}
                     className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
@@ -1434,11 +1508,11 @@ export default function HRManagement({
                     <option value="팀장">팀장</option>
                     <option value="팀원">팀원</option>
                     <option value="없음">없음</option>
-                  </select>
+                  </StyledDropdown>
                 </div>
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">분야</label>
-                  <select
+                  <StyledDropdown
                     value={formData.field}
                     onChange={(e) => setFormData({ ...formData, field: e.target.value })}
                     className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
@@ -1449,7 +1523,7 @@ export default function HRManagement({
                     <option value="QA">QA</option>
                     <option value="공정 및 스케쥴">공정 및 스케쥴</option>
                     <option value="공정">공정</option>
-                  </select>
+                  </StyledDropdown>
                 </div>
               </div>
 
@@ -1506,9 +1580,9 @@ export default function HRManagement({
                       <summary className="cursor-pointer font-semibold text-[#1F2937]">국가 자격 {index + 1}: {cert.method || '종목 미입력'} · {cert.kind || '종류 선택'}</summary>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
                         <input value={cert.method} placeholder="종목 직접 입력" onChange={(e) => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.map((item, i) => i === index ? { ...item, method: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
-                        <select value={cert.kind} onChange={(e) => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.map((item, i) => i === index ? { ...item, kind: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs">
+                        <StyledDropdown value={cert.kind} onChange={(e) => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.map((item, i) => i === index ? { ...item, kind: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs">
                           <option value="">종류 선택</option>{NATIONAL_KINDS.map(kind => <option key={kind} value={kind}>{kind}</option>)}
-                        </select>
+                        </StyledDropdown>
                         <button type="button" onClick={() => setFormData(prev => ({ ...prev, national_cert_details: prev.national_cert_details.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 국가 자격 삭제</button>
                       </div>
                     </details>
@@ -1531,7 +1605,7 @@ export default function HRManagement({
                         <input type="date" value={yard.education_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, education_date: date, renewal_dates: Array.from({ length: item.renewal_count }, (_, j) => addYearsToDate(date, 2 * (j + 1))) } : item) })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
                         <details className="rounded-lg border border-[#E2E5E9] p-2">
                           <summary className="cursor-pointer font-semibold">보수교육 횟수 선택 (현재 {yard.renewal_count}회)</summary>
-                          <select value={yard.renewal_count} onChange={(e) => { const count = Number(e.target.value); setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_count: count, renewal_dates: Array.from({ length: count }, (_, j) => addYearsToDate(item.education_date, 2 * (j + 1))) } : item) })); }} className="mt-2 w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value={0}>0회</option><option value={1}>1회</option><option value={2}>2회</option><option value={3}>3회</option><option value={4}>4회</option></select>
+                          <StyledDropdown value={yard.renewal_count} onChange={(e) => { const count = Number(e.target.value); setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_count: count, renewal_dates: Array.from({ length: count }, (_, j) => addYearsToDate(item.education_date, 2 * (j + 1))) } : item) })); }} className="mt-2 w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value={0}>0회</option><option value={1}>1회</option><option value={2}>2회</option><option value={3}>3회</option><option value={4}>4회</option></StyledDropdown>
                         </details>
                         {yard.renewal_dates.map((date, renewalIndex) => <div key={`yard-${index}-renewal-${renewalIndex}`} className="space-y-1"><label className="block text-[10px] text-[#64748B]">보수교육일 {renewalIndex + 1}회</label><input type="date" value={date} onChange={(e) => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_dates: item.renewal_dates.map((d, j) => j === renewalIndex ? e.target.value : d) } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>)}
                         <button type="button" onClick={() => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 YARD 교육 삭제</button>
@@ -1561,9 +1635,9 @@ export default function HRManagement({
                     <details key={`ndt-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
                       <summary className="cursor-pointer font-semibold">{isLt ? `LT ${cert.level || 'Level 선택'} (${selectedLtSubjects.map(value => LT_SUBJECTS.find(item => item.value === value)?.label || value).join(', ') || '서브종목 미선택'})` : `${cert.subject || '종목 미선택'} · ${cert.level || 'Level 선택'}`} · 유효일 {cert.expiry_date || '미입력'}</summary>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                        <div><label className="block text-[10px] text-[#64748B] mb-1">발급형태</label><select value={cert.issuer} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issuer: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></select></div>
-                        {isLt ? <div className="sm:col-span-2 rounded-lg bg-[#F8FAFC] border border-[#E2E5E9] p-2"><div className="text-[10px] font-bold text-[#64748B] mb-2">LT 서브종목 선택 (복수 선택 가능)</div><div className="grid grid-cols-1 sm:grid-cols-3 gap-2">{LT_SUBJECTS.map(item => <label key={item.value} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={selectedLtSubjects.includes(item.value)} onChange={(e) => { const next = e.target.checked ? [...selectedLtSubjects, item.value] : selectedLtSubjects.filter(value => value !== item.value); updateLt(next); }} />{item.label}</label>)}</div></div> : <div><label className="block text-[10px] text-[#64748B] mb-1">종목</label><select value={cert.subject} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, subject: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="">종목 선택</option>{Array.from(new Set([...ndtSubjectOptions.filter(subject => !isLtCertificateSubject(subject)), ...(cert.subject && !ndtSubjectOptions.includes(cert.subject) ? [cert.subject] : [])])).map(subject => <option key={subject} value={subject}>{subject}</option>)}</select></div>}
-                        <div><label className="block text-[10px] text-[#64748B] mb-1">종류</label><select value={cert.level} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, level: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></select></div>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">발급형태</label><StyledDropdown value={cert.issuer} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issuer: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></StyledDropdown></div>
+                        {isLt ? <div className="sm:col-span-2 rounded-lg bg-[#F8FAFC] border border-[#E2E5E9] p-2"><div className="text-[10px] font-bold text-[#64748B] mb-2">LT 서브종목 선택 (복수 선택 가능)</div><div className="grid grid-cols-1 sm:grid-cols-3 gap-2">{LT_SUBJECTS.map(item => <label key={item.value} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={selectedLtSubjects.includes(item.value)} onChange={(e) => { const next = e.target.checked ? [...selectedLtSubjects, item.value] : selectedLtSubjects.filter(value => value !== item.value); updateLt(next); }} />{item.label}</label>)}</div></div> : <div><label className="block text-[10px] text-[#64748B] mb-1">종목</label><StyledDropdown value={cert.subject} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, subject: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="">종목 선택</option>{Array.from(new Set([...ndtSubjectOptions.filter(subject => !isLtCertificateSubject(subject)), ...(cert.subject && !ndtSubjectOptions.includes(cert.subject) ? [cert.subject] : [])])).map(subject => <option key={subject} value={subject}>{subject}</option>)}</StyledDropdown></div>}
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">종류</label><StyledDropdown value={cert.level} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, level: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></StyledDropdown></div>
                         <div><label className="block text-[10px] text-[#64748B] mb-1">발행일</label><input type="date" value={cert.issue_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issue_date: date, expiry_date: addYearsToDate(date, 5) } : item) })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
                         <div><label className="block text-[10px] text-[#64748B] mb-1">유효일 (발행일 + 5년)</label><input type="date" value={cert.expiry_date} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, expiry_date: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
                         <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 NDT 자격 삭제</button>
