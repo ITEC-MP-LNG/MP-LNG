@@ -156,7 +156,11 @@ function CalendarDatePicker({
       setInputText('');
       return;
     }
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(trimmed);
+    // YYYYMMDD 또는 YYYY-MM-DD 형식을 모두 허용합니다.
+    const normalizedInput = /^\d{8}$/.test(trimmed)
+      ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
+      : trimmed;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizedInput);
     if (match) {
       const year = Number(match[1]);
       const month = Number(match[2]);
