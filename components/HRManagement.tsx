@@ -19,7 +19,9 @@ import {
   AtSign,
   Network,
   GitCommit,
-  Shield
+  Shield,
+  CalendarDays,
+  ChevronLeft
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
@@ -91,6 +93,113 @@ function addYearsToDate(dateStr: string, years: number) {
   date.setFullYear(date.getFullYear() + years);
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
+
+
+
+/** 앱 공통 디자인을 사용하는 사용자 정의 날짜 선택 달력 */
+function CalendarDatePicker({
+  value,
+  onChange,
+  className = "w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+    : new Date();
+  const [viewYear, setViewYear] = useState(initialDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setIsOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  const moveMonth = (amount: number) => {
+    const next = new Date(viewYear, viewMonth + amount, 1);
+    setViewYear(next.getFullYear());
+    setViewMonth(next.getMonth());
+  };
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const selected = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+  const today = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })();
+  const chooseDate = (day: number) => {
+    onChange(`${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`);
+    setIsOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className="relative w-full min-w-0">
+      <button
+        type="button"
+        onClick={() => {
+          if (!isOpen) {
+            const current = selected ? new Date(Number(selected.slice(0, 4)), Number(selected.slice(5, 7)) - 1, Number(selected.slice(8, 10))) : new Date();
+            setViewYear(current.getFullYear());
+            setViewMonth(current.getMonth());
+          }
+          setIsOpen(open => !open);
+        }}
+        className={`${className} flex items-center justify-between gap-2 text-left`}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+      >
+        <span className={selected ? 'text-[#1F2937]' : 'text-[#94A3B8]'}>{selected || '날짜 선택'}</span>
+        <CalendarDays size={15} className="shrink-0 text-[#64748B]" />
+      </button>
+      {isOpen && (
+        <div role="dialog" aria-label="날짜 선택" className="absolute left-0 top-full z-[100] mt-2 w-[min(304px,calc(100vw-40px))] rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]">
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft size={16} /></button>
+            <div className="text-sm font-bold text-[#243B5A]">{viewYear}년 {viewMonth + 1}월</div>
+            <button type="button" onClick={() => moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight size={16} /></button>
+          </div>
+          <div className="grid grid-cols-7 gap-1 text-center">
+            {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{day}</div>)}
+            {Array.from({ length: firstDay }, (_, index) => <div key={`empty-${index}`} />)}
+            {Array.from({ length: daysInMonth }, (_, index) => {
+              const day = index + 1;
+              const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+              const isSelected = dateKey === selected;
+              const isToday = dateKey === today;
+              const weekday = new Date(viewYear, viewMonth, day).getDay();
+              return <button key={dateKey} type="button" onClick={() => chooseDate(day)} aria-pressed={isSelected} className={`h-9 rounded-lg text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white shadow-sm' : isToday ? 'border border-[#243B5A] font-bold text-[#243B5A]' : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`}`}>{day}</button>;
+            })}
+          </div>
+          <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
+            <button type="button" onClick={() => { const now = new Date(); const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); onChange(date); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">오늘</button>
+            <div className="flex items-center gap-1">
+              {selected && <button type="button" onClick={() => { onChange(''); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">날짜 지우기</button>}
+              <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">닫기</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 const NATIONAL_KINDS = ['기능사', '산업기사', '기사', '기술사', 'RI', 'SRI'];
 const DEFAULT_NDT_SUBJECTS = ['LT(BUBBLE)', 'LT(Pressure Change)', 'LT(MST-He)', 'PT'];
@@ -1561,21 +1670,11 @@ export default function HRManagement({
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">자사 근속 시작일 (입사일)</label>
-                  <input
-                    type="date"
-                    value={formData.join_date}
-                    onChange={(e) => setFormData({ ...formData, join_date: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
-                  />
+                  <CalendarDatePicker value={formData.join_date} onChange={(date) => setFormData(prev => ({ ...prev, join_date: date }))} />
                 </div>
                 <div>
                   <label className="block font-bold text-[#64748B] mb-1">총 경력 시작일</label>
-                  <input
-                    type="date"
-                    value={formData.career_start_date}
-                    onChange={(e) => setFormData({ ...formData, career_start_date: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none"
-                  />
+                  <CalendarDatePicker value={formData.career_start_date} onChange={(date) => setFormData(prev => ({ ...prev, career_start_date: date }))} />
                 </div>
               </div>
 
@@ -1610,12 +1709,12 @@ export default function HRManagement({
                         <label className="block text-[10px] font-bold text-[#64748B]">교육명</label>
                         <input value={yard.name} placeholder="교육명 입력" onChange={(e) => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, name: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
                         <label className="block text-[10px] font-bold text-[#64748B]">교육일</label>
-                        <input type="date" value={yard.education_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, education_date: date, renewal_dates: Array.from({ length: item.renewal_count }, (_, j) => addYearsToDate(date, 2 * (j + 1))) } : item) })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" />
+                        <CalendarDatePicker value={yard.education_date} onChange={(date) => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, education_date: date, renewal_dates: Array.from({ length: item.renewal_count }, (_, j) => addYearsToDate(date, 2 * (j + 1))) } : item) }))} />
                         <details className="rounded-lg border border-[#E2E5E9] p-2">
                           <summary className="cursor-pointer font-semibold">보수교육 횟수 선택 (현재 {yard.renewal_count}회)</summary>
                           <StyledDropdown value={yard.renewal_count} onChange={(e) => { const count = Number(e.target.value); setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_count: count, renewal_dates: Array.from({ length: count }, (_, j) => addYearsToDate(item.education_date, 2 * (j + 1))) } : item) })); }} className="mt-2 w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value={0}>0회</option><option value={1}>1회</option><option value={2}>2회</option><option value={3}>3회</option><option value={4}>4회</option></StyledDropdown>
                         </details>
-                        {yard.renewal_dates.map((date, renewalIndex) => <div key={`yard-${index}-renewal-${renewalIndex}`} className="space-y-1"><label className="block text-[10px] text-[#64748B]">보수교육일 {renewalIndex + 1}회</label><input type="date" value={date} onChange={(e) => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_dates: item.renewal_dates.map((d, j) => j === renewalIndex ? e.target.value : d) } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>)}
+                        {yard.renewal_dates.map((date, renewalIndex) => <div key={`yard-${index}-renewal-${renewalIndex}`} className="space-y-1"><label className="block text-[10px] text-[#64748B]">보수교육일 {renewalIndex + 1}회</label><CalendarDatePicker value={date} onChange={(nextDate) => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_dates: item.renewal_dates.map((d, j) => j === renewalIndex ? nextDate : d) } : item) }))} /></div>)}
                         <button type="button" onClick={() => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 YARD 교육 삭제</button>
                       </div>
                     </details>
@@ -1646,8 +1745,8 @@ export default function HRManagement({
                         <div><label className="block text-[10px] text-[#64748B] mb-1">발급형태</label><StyledDropdown value={cert.issuer} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issuer: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></StyledDropdown></div>
                         {isLt ? <div className="sm:col-span-2 rounded-lg bg-[#F8FAFC] border border-[#E2E5E9] p-2"><div className="text-[10px] font-bold text-[#64748B] mb-2">LT 서브종목 선택 (복수 선택 가능)</div><div className="grid grid-cols-1 sm:grid-cols-3 gap-2">{LT_SUBJECTS.map(item => <label key={item.value} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={selectedLtSubjects.includes(item.value)} onChange={(e) => { const next = e.target.checked ? [...selectedLtSubjects, item.value] : selectedLtSubjects.filter(value => value !== item.value); updateLt(next); }} />{item.label}</label>)}</div></div> : <div><label className="block text-[10px] text-[#64748B] mb-1">종목</label><StyledDropdown value={cert.subject} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, subject: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="">종목 선택</option>{Array.from(new Set([...ndtSubjectOptions.filter(subject => !isLtCertificateSubject(subject)), ...(cert.subject && !ndtSubjectOptions.includes(cert.subject) ? [cert.subject] : [])])).map(subject => <option key={subject} value={subject}>{subject}</option>)}</StyledDropdown></div>}
                         <div><label className="block text-[10px] text-[#64748B] mb-1">종류</label><StyledDropdown value={cert.level} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, level: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></StyledDropdown></div>
-                        <div><label className="block text-[10px] text-[#64748B] mb-1">발행일</label><input type="date" value={cert.issue_date} onChange={(e) => { const date = e.target.value; setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issue_date: date, expiry_date: addYearsToDate(date, 5) } : item) })); }} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
-                        <div><label className="block text-[10px] text-[#64748B] mb-1">유효일 (발행일 + 5년)</label><input type="date" value={cert.expiry_date} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, expiry_date: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs" /></div>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">발행일</label><CalendarDatePicker value={cert.issue_date} onChange={(date) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issue_date: date, expiry_date: addYearsToDate(date, 5) } : item) }))} /></div>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">유효일 (발행일 + 5년)</label><CalendarDatePicker value={cert.expiry_date} onChange={(date) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, expiry_date: date } : item) }))} /></div>
                         <button type="button" onClick={() => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 NDT 자격 삭제</button>
                       </div>
                     </details>
