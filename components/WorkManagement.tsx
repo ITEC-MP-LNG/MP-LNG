@@ -645,7 +645,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           ? { ...prev, remarks: nextRemarks, remarks_edited_at: remarksEditedAt }
           : prev);
         setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
-        await fetchTasks();
+        // tasks 실시간 구독이 변경 이벤트를 받아 목록을 갱신하므로 별도 재조회는 하지 않습니다.
         showCustomAlert('저장 완료', '비고 내용이 변경되었습니다. 업무는 완료이력에 그대로 유지됩니다.');
       } catch (err: any) {
         showCustomAlert('오류', `비고 수정 실패: ${err.message}`);
@@ -1490,8 +1490,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 {t.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-[#64748B]">{t.description}</p>}
                 <div className="mt-2 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
-                  {dailySubTab === 'HISTORY' && t.status === 'COMPLETED' && t.completion_pending_review !== true && canEditTaskRemarks(t) && (
-                  )}
                   {t.task_type === 'DAILY' && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
                   {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && <button type="button" onClick={() => handleCompleteOtherTask(t)} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800">완료</button>}
                 </div>
@@ -1663,8 +1661,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         <div className="flex items-center justify-center gap-1">
                           {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
                             <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[42px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">완료</button>
-                          )}
-                          {dailySubTab === 'HISTORY' && t.status === 'COMPLETED' && t.completion_pending_review !== true && canEditTaskRemarks(t) && (
                           )}
                           {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
                             <>
