@@ -687,7 +687,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) {
       showCustomAlert('오류', `상태 변경 실패: ${err.message}`);
     }
-  }, [statusChangeModal, selectedTaskForSheet, canModifyTaskStatus, fetchTasks, showCustomAlert]);
+  }, [statusChangeModal, selectedTaskForSheet, canModifyTaskStatus, canEditTaskRemarks, fetchTasks, showCustomAlert]);
 
   const renderStatusBadge = useCallback((task: Task) => {
     const statusConfig = {
@@ -1472,13 +1472,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <span className="font-mono text-[#64748B]">{formatToShortDate(t.start_date)}</span>
                       {t.time_slot && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[#2563EB]">{formatShortTimeSlot(t.time_slot)}</span>}
                     </div>
-                    <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">수정됨</span>}</div>
+                    <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 내용 수정됨</span>}</div>
                   </div>
                   {isAdmin && dailySubTab === 'HISTORY' && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="mt-1 accent-[#243B5A]" aria-label="업무 선택" />}
                 </div>
                 {t.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-[#64748B]">{t.description}</p>}
                 <div className="mt-2 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
+                  {dailySubTab === 'HISTORY' && t.status === 'COMPLETED' && t.completion_pending_review !== true && canEditTaskRemarks(t) && (
+                    <button type="button" onClick={() => setStatusChangeModal({ open: true, task: t, targetStatus: 'COMPLETED', remarks: t.remarks || '' })} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100">비고 수정</button>
+                  )}
                   {t.task_type === 'DAILY' && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
                   {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && <button type="button" onClick={() => handleCompleteOtherTask(t)} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800">완료</button>}
                 </div>
@@ -1651,6 +1654,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
                             <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[42px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">완료</button>
                           )}
+                          {dailySubTab === 'HISTORY' && t.status === 'COMPLETED' && t.completion_pending_review !== true && canEditTaskRemarks(t) && (
+                            <button type="button" onClick={() => setStatusChangeModal({ open: true, task: t, targetStatus: 'COMPLETED', remarks: t.remarks || '' })} className="rounded border border-emerald-300 bg-emerald-50 px-1.5 py-1 text-[9px] font-bold text-emerald-800 hover:bg-emerald-100 whitespace-nowrap">비고 수정</button>
+                          )}
                           {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
                             <>
                               <button onClick={() => handleOpenTaskEdit(t)} className="inline-flex items-center justify-center p-1 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3.5 w-3.5" /></button>
@@ -1770,7 +1776,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                 <div className="flex items-center space-x-2">
                                   {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
                                   {t.category && <span className="text-[10px] font-bold text-[#243B5A] bg-blue-50 px-1.5 py-0.5 rounded">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
-                                  <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">수정됨</span>}</div>
+                                  <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 내용 수정됨</span>}</div>
                                   {renderStatusBadge(t)}
                                 </div>
                                 <div className="text-[11px] text-[#64748B]">인원: {t.assigned_names?.join(', ') || '미지정'}</div>
