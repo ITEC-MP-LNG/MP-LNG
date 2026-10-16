@@ -337,15 +337,39 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       detail: { ...oldDetail, issuer: form.issuer, cert_no: form.category === 'NDT' ? form.cert_no.trim() : null, localModified: true, editedInCert: true },
     };
     try {
+      // 구버전 Supabase 테이블에 cert_no 컬럼이 아직 없더라도,
+      // detail.cert_no(JSONB)에 저장해 입력한 번호가 유실되지 않도록 처리합니다.
+      const isMissingCertNoColumn = (error: any) => {
+        const message = String(error?.message || '').toLowerCase();
+        const details = String(error?.details || '').toLowerCase();
+        const hint = String(error?.hint || '').toLowerCase();
+        const combined = `${message} ${details} ${hint}`;
+        return combined.includes('cert_no') && (
+          combined.includes('column') || combined.includes('schema cache') || combined.includes('could not find')
+        );
+      };
       if (editing) {
-        const { data, error } = await supabase.from('cert_management_records').update({ ...values, cert_no: form.category === 'NDT' ? (form.cert_no.trim() || null) : null }).eq('id', editing.id).select('*').single();
-        if (error) throw error;
-        setRecords(prev => prev.map(r => r.id === editing.id ? data as CertRecord : r));
+        let result = await supabase.from('cert_management_records')
+          .update({ ...values, cert_no: form.category === 'NDT' ? (form.cert_no.trim() || null) : null })
+          .eq('id', editing.id).select('*').single();
+        if (result.error && isMissingCertNoColumn(result.error)) {
+          const { cert_no: _unusedCertNo, ...fallbackValues } = values;
+          result = await supabase.from('cert_management_records').update(fallbackValues)
+            .eq('id', editing.id).select('*').single();
+        }
+        if (result.error) throw result.error;
+        const savedRecord = { ...(result.data as CertRecord), cert_no: (result.data as any).cert_no ?? (form.cert_no.trim() || null) };
+        setRecords(prev => prev.map(r => r.id === editing.id ? savedRecord : r));
         notify('자격정보를 수정했습니다. HRManagement 원본에는 변경사항을 보내지 않았습니다.');
       } else {
-        const { data, error } = await supabase.from('cert_management_records').insert({ ...values, source_key: null }).select('*').single();
-        if (error) throw error;
-        setRecords(prev => [...prev, data as CertRecord]);
+        let result = await supabase.from('cert_management_records').insert({ ...values, source_key: null }).select('*').single();
+        if (result.error && isMissingCertNoColumn(result.error)) {
+          const { cert_no: _unusedCertNo, ...fallbackValues } = values;
+          result = await supabase.from('cert_management_records').insert({ ...fallbackValues, source_key: null }).select('*').single();
+        }
+        if (result.error) throw result.error;
+        const savedRecord = { ...(result.data as CertRecord), cert_no: (result.data as any).cert_no ?? (form.cert_no.trim() || null) };
+        setRecords(prev => [...prev, savedRecord]);
         notify('자격정보를 등록했습니다. HRManagement 원본에는 변경사항을 보내지 않았습니다.');
       }
       if (editing) {
