@@ -99,6 +99,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const [category, setCategory] = useState<Category>('YARD');
   const [subTab, setSubTab] = useState('ALL');
   const [allQualificationListOpen, setAllQualificationListOpen] = useState(false);
+  const [expandedPeople, setExpandedPeople] = useState<Record<string, boolean>>({});
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -521,12 +522,13 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
             const remaining = daysUntil(expiry);
             return remaining <= 40;
           });
+          const personOpen = !!expandedPeople[group.user_id];
           return <div key={group.user_id} className="overflow-hidden rounded-lg border border-[#E2E5E9] bg-white">
-            <div className="flex items-start justify-between gap-3 px-3 py-3">
-              <span className="flex min-w-0 flex-1 items-start gap-2"><span className="min-w-0 flex-1"><span className="block text-xs font-bold text-[#243B5A]">{group.person?.name || group.user_id} <span className="font-normal text-[#64748B]">({group.user_id})</span></span><span className="mt-1 flex flex-wrap gap-1.5">{refreshRecords.map(record => <span key={record.id} className="rounded-md border border-[#E2E5E9] bg-[#F5F6F8] px-2 py-1 text-[10px] text-[#1F2937]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</span>)}</span></span></span>
+            <button type="button" onClick={() => setExpandedPeople(current => ({ ...current, [group.user_id]: !current[group.user_id] }))} aria-expanded={personOpen} className="flex w-full items-start justify-between gap-3 px-3 py-3 text-left hover:bg-[#F8FAFC]">
+              <span className="flex min-w-0 flex-1 items-start gap-2"><span className="mt-0.5 shrink-0 text-[#64748B]">{personOpen ? <ChevronDown className="h-4 w-4"/> : <ChevronRight className="h-4 w-4"/>}</span><span className="min-w-0 flex-1"><span className="block text-xs font-bold text-[#243B5A]">{group.person?.name || group.user_id} <span className="font-normal text-[#64748B]">({group.user_id})</span></span><span className="mt-1 flex flex-wrap gap-1.5">{refreshRecords.map(record => <span key={record.id} className="rounded-md border border-[#E2E5E9] bg-[#F5F6F8] px-2 py-1 text-[10px] text-[#1F2937]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</span>)}</span></span></span>
               <span className="flex shrink-0 flex-col items-end gap-1 text-right">{renewalRecords.length > 0 && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">자격갱신</span>}<span className="text-[10px] text-[#64748B]">자격 {refreshRecords.length}건</span></span>
-            </div>
-            <div className="space-y-2 border-t border-[#E2E5E9] bg-[#F8FAFC] p-3">
+            </button>
+            {personOpen && <div className="space-y-2 border-t border-[#E2E5E9] bg-[#F8FAFC] p-3">
               {refreshRecords.map(record => {
                 const person = group.person;
                 const expiry = expiryFor(record);
@@ -542,7 +544,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
                   <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-[#E2E5E9] pt-3">{canEdit(record) && <button type="button" onClick={() => openEdit(record)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-[11px] font-bold text-[#243B5A]"><Edit3 className="h-3.5 w-3.5"/> 수정</button>}{admin && <button type="button" onClick={() => void removeRecord(record)} className="flex items-center gap-1 rounded-lg border border-red-200 bg-white px-3 py-2 text-[11px] font-bold text-red-600"><Trash2 className="h-3.5 w-3.5"/> 삭제</button>}</div>
                 </div>;
               })}
-            </div>
+            </div>}
           </div>;
         })}
         </div>}
