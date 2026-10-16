@@ -330,7 +330,8 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       level: form.level.trim() || null,
       obtained_date: form.category === 'YARD' ? (form.education_completed || form.obtained_date || null) : (form.obtained_date || null),
       education_completed: form.category === 'YARD' ? (form.education_completed || form.obtained_date || null) : null,
-      expiry_date: form.expiry_date || (form.category === 'YARD' ? addYears(form.training_date_4 || form.training_date_3 || form.training_date_2 || form.training_date_1 || form.education_completed || form.obtained_date, 2) : form.category === 'NDT' ? addYears(form.obtained_date, 5) : null),
+      // PostgreSQL date 컬럼에는 빈 문자열을 보낼 수 없으므로, 계산 결과까지 포함해 항상 날짜 또는 null로 저장합니다.
+      expiry_date: (form.expiry_date || (form.category === 'YARD' ? addYears(form.training_date_4 || form.training_date_3 || form.training_date_2 || form.training_date_1 || form.education_completed || form.obtained_date, 2) : form.category === 'NDT' ? addYears(form.obtained_date, 5) : null)) || null,
       sticker_no: form.category === 'YARD' ? (form.sticker_no.trim() || null) : null,
       // Cert No.는 아래 detail.cert_no(JSONB)에 저장하므로 별도 cert_no 컬럼에 의존하지 않습니다.
       training_date_1: form.category === 'YARD' ? (form.training_date_1 || null) : null,
