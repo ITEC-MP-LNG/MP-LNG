@@ -169,7 +169,17 @@ function CalendarDatePicker({
         <CalendarDays size={15} className="shrink-0 text-[#64748B]" />
       </button>
       {isOpen && (
-        <div role="dialog" aria-label="날짜 선택" className="absolute left-0 top-full z-[100] mt-2 w-[min(304px,calc(100vw-40px))] rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]">
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="날짜 선택"
+            onClick={(event) => event.stopPropagation()}
+            className="relative w-[min(304px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
+          >
           <div className="mb-3 flex items-center justify-between gap-2">
             <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft size={16} /></button>
             <div className="text-sm font-bold text-[#243B5A]">{viewYear}년 {viewMonth + 1}월</div>
@@ -193,6 +203,7 @@ function CalendarDatePicker({
               {selected && <button type="button" onClick={() => { onChange(''); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">날짜 지우기</button>}
               <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">닫기</button>
             </div>
+          </div>
           </div>
         </div>
       )}
