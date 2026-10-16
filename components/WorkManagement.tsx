@@ -286,13 +286,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return Number.isFinite(time) ? time : 0;
   }, []);
 
-  // 비고 내용이 실제로 변경된 경우에만 DB에 기록된 표시 시각을 기준으로 표기합니다.
-  const wasCompletedHistoryEdited = useCallback((task: Task) => {
-    return task.status === 'COMPLETED'
-      && task.completion_pending_review !== true
-      && Boolean(task.remarks_edited_at);
-  }, []);
-
   const isTaskNew = useCallback((task: Task) => {
     if (typeof window === 'undefined') return false;
     const changeTime = getTaskChangeTime(task);
@@ -462,16 +455,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return assigned.includes(name) || day.includes(name) || night.includes(name);
   }, [isAdmin, currentUser]);
 
-  // 완료이력에서도 업무 당사자 또는 관리자만 비고를 수정할 수 있습니다.
-  const canEditTaskRemarks = useCallback((task: Task) => {
-    if (isAdmin) return true;
-    if (!currentUser?.name) return false;
-    const name = currentUser.name.trim().toLowerCase();
-    const assigned = (task.assigned_names || []).map(n => n.trim().toLowerCase());
-    const day = (task.day_workers || []).map(n => n.trim().toLowerCase());
-    const night = (task.night_workers || []).map(n => n.trim().toLowerCase());
-    return assigned.includes(name) || day.includes(name) || night.includes(name);
-  }, [isAdmin, currentUser]);
+
+  // 완료이력의 '비고 수정됨' 표시는 실제 비고 변경 시 DB에 저장된 시각으로 판단합니다.
+  const wasCompletedHistoryRemarksEdited = useCallback((task: Task) => (
+    task.status === 'COMPLETED' &&
+    task.completion_pending_review !== true &&
+    Boolean(task.remarks_edited_at)
+  ), []);
 
   const handleAddVessel = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
@@ -614,47 +604,45 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const task = statusChangeModal.task;
     const nextStatus = statusChangeModal.targetStatus;
     const remarks = statusChangeModal.remarks;
-
     const isCompletedHistory = task.status === 'COMPLETED' && task.completion_pending_review !== true;
-    if (isCompletedHistory) {
-      if (!canEditTaskRemarks(task)) {
-        showCustomAlert('권한 없음', '해당 업무의 당사자 또는 관리자만 비고를 수정할 수 있습니다.');
-        return;
-      }
-      try {
-        const previousRemarks = task.remarks || '';
-        const nextRemarks = remarks || '';
-
-        // 내용이 실제로 달라진 경우에만 수정 표시 시각을 기록합니다.
-        if (previousRemarks === nextRemarks) {
-          setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
-          return;
-        }
-
-        const remarksEditedAt = new Date().toISOString();
-        const { error } = await supabase.from('tasks').update({
-          remarks: nextRemarks,
-          remarks_edited_at: remarksEditedAt,
-        }).eq('id', task.id).eq('status', 'COMPLETED');
-        if (error) throw error;
-
-        setTasks(prev => prev.map(item => item.id === task.id
-          ? { ...item, remarks: nextRemarks, remarks_edited_at: remarksEditedAt }
-          : item));
-        setSelectedTaskForSheet(prev => prev?.id === task.id
-          ? { ...prev, remarks: nextRemarks, remarks_edited_at: remarksEditedAt }
-          : prev);
-        setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
-        // tasks 실시간 구독이 변경 이벤트를 받아 목록을 갱신하므로 별도 재조회는 하지 않습니다.
-        showCustomAlert('저장 완료', '비고 내용이 변경되었습니다. 업무는 완료이력에 그대로 유지됩니다.');
-      } catch (err: any) {
-        showCustomAlert('오류', `비고 수정 실패: ${err.message}`);
-      }
-      return;
-    }
 
     if (!canModifyTaskStatus(task)) {
       showCustomAlert('권한 없음', '해당 업무의 당사자 또는 관리자만 변경할 수 있습니다.');
+      return;
+    }
+
+    // 완료이력은 상태를 변경하지 않고, 비고가 실제로 달라진 경우에만 한 번 저장합니다.
+    if (isCompletedHistory) {
+      const previousRemarks = task.remarks || '';
+      const nextRemarks = remarks || '';
+      if (previousRemarks === nextRemarks) {
+        setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
+        return;
+      }
+
+      try {
+        const remarksEditedAt = new Date().toISOString();
+        // 수정과 수정시각을 단일 Supabase 요청으로 저장합니다. 별도 재조회는 하지 않습니다.
+        const { data, error } = await supabase.from('tasks').update({
+          remarks: nextRemarks,
+          remarks_edited_at: remarksEditedAt,
+        }).eq('id', task.id).eq('status', 'COMPLETED')
+          .select('id, remarks_edited_at')
+          .maybeSingle();
+        if (error) throw error;
+        if (!data) throw new Error('저장된 업무를 확인할 수 없습니다. 권한 또는 완료 상태를 확인해 주세요.');
+
+        setTasks(prev => prev.map(item => item.id === task.id
+          ? { ...item, remarks: nextRemarks, remarks_edited_at: data.remarks_edited_at || remarksEditedAt }
+          : item));
+        setSelectedTaskForSheet(prev => prev?.id === task.id
+          ? { ...prev, remarks: nextRemarks, remarks_edited_at: data.remarks_edited_at || remarksEditedAt }
+          : prev);
+        setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
+        showCustomAlert('저장 완료', '비고가 수정되었습니다. 완료이력은 그대로 유지됩니다.');
+      } catch (err: any) {
+        showCustomAlert('오류', `비고 수정 실패: ${err.message}`);
+      }
       return;
     }
 
@@ -698,7 +686,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     } catch (err: any) {
       showCustomAlert('오류', `상태 변경 실패: ${err.message}`);
     }
-  }, [statusChangeModal, selectedTaskForSheet, canModifyTaskStatus, canEditTaskRemarks, fetchTasks, showCustomAlert]);
+  }, [statusChangeModal, selectedTaskForSheet, canModifyTaskStatus, fetchTasks, showCustomAlert]);
 
   const renderStatusBadge = useCallback((task: Task) => {
     const statusConfig = {
@@ -1483,7 +1471,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <span className="font-mono text-[#64748B]">{formatToShortDate(t.start_date)}</span>
                       {t.time_slot && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[#2563EB]">{formatShortTimeSlot(t.time_slot)}</span>}
                     </div>
-                    <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 수정됨</span>}</div>
+                    <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 수정됨</span>}</div>
                   </div>
                   {isAdmin && dailySubTab === 'HISTORY' && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="mt-1 accent-[#243B5A]" aria-label="업무 선택" />}
                 </div>
@@ -1643,6 +1631,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <td className="p-1 text-center truncate border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
+                          {dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 whitespace-nowrap text-[9px] font-bold text-green-600">비고 수정됨</span>}
                           {t.task_type === 'DAILY' && t.completion_pending_review === true && (
                             <span className="px-1 py-0.2 bg-amber-50 text-amber-800 border border-amber-300 rounded text-[9px] font-bold">대기</span>
                           )}
@@ -1781,7 +1770,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                 <div className="flex items-center space-x-2">
                                   {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
                                   {t.category && <span className="text-[10px] font-bold text-[#243B5A] bg-blue-50 px-1.5 py-0.5 rounded">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
-                                  <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 수정됨</span>}</div>
+                                  <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
                                   {renderStatusBadge(t)}
                                 </div>
                                 <div className="text-[11px] text-[#64748B]">인원: {t.assigned_names?.join(', ') || '미지정'}</div>
@@ -2036,17 +2025,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
         {/* 상태 변경 및 비고 입력 모달 */}
         {statusChangeModal.open && statusChangeModal.task && (() => {
-          const isCompletedHistory = statusChangeModal.task.status === 'COMPLETED' && statusChangeModal.task.completion_pending_review !== true;
-          const isAllowedUser = isCompletedHistory
-            ? canEditTaskRemarks(statusChangeModal.task)
-            : canModifyTaskStatus(statusChangeModal.task);
+          const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
           return (
             <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
               <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
                 <div className="flex items-center justify-between border-b pb-3">
                   <div className="flex items-center space-x-2">
                     <FileText className="h-5 w-5 text-[#243B5A]" />
-                    <h3 className="text-sm font-bold text-[#1F2937]">{isCompletedHistory ? '완료이력 비고 수정' : '상세보기 및 상태 변경'}</h3>
+                    <h3 className="text-sm font-bold text-[#1F2937]">상세보기 및 상태 변경</h3>
                   </div>
                   <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
                 </div>
@@ -2061,11 +2047,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택 {isCompletedHistory && <span className="font-normal text-slate-500">(완료이력 상태 유지)</span>}</label>
+                    <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택</label>
                     <div className="grid grid-cols-3 gap-2">
-                      <button type="button" disabled={!isAllowedUser || isCompletedHistory} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-800'}`}>대기</button>
-                      <button type="button" disabled={!isAllowedUser || isCompletedHistory} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-800'}`}>진행중</button>
-                      <button type="button" disabled={!isAllowedUser || isCompletedHistory} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-700'}`}>완료</button>
+                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-800'}`}>대기</button>
+                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-800'}`}>진행중</button>
+                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-700'}`}>완료</button>
                     </div>
                   </div>
 
@@ -2084,7 +2070,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
                 <div className="flex justify-end space-x-2 pt-3 border-t text-xs">
                   <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border rounded-lg">닫기</button>
-                  {isAllowedUser && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold">{isCompletedHistory ? '비고 저장' : '저장'}</button>}
+                  {isAllowedUser && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold">저장</button>}
                 </div>
               </div>
             </div>

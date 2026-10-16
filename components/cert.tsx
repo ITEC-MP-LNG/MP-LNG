@@ -111,6 +111,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const [activeAlert, setActiveAlert] = useState<CertRecord[] | null>(null);
   const [alertHidden, setAlertHidden] = useState(false);
   const [renewalSummaryOpen, setRenewalSummaryOpen] = useState(false);
+  const [excelMenuOpen, setExcelMenuOpen] = useState(false);
 
   const notify = useCallback((message: string, type: 'success' | 'error' | 'warning' = 'success') => setNotice({ message, type }), []);
   useEffect(() => {
@@ -202,6 +203,16 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
               inserts.push(candidate);
             } else if (existing.detail?.source === 'hrmanagement' && !existing.detail?.localModified && existing.detail?.sourceSnapshot !== candidate.detail.sourceSnapshot) {
               updates.push({ id: existing.id, values: { ...candidate, detail: { ...candidate.detail, localModified: false } } });
+            } else if (
+              existing.detail?.source === 'hrmanagement' && existing.detail?.localModified &&
+              sourceList.category === 'NDT' && /^LT\s*\(/i.test(candidate.title) &&
+              existing.detail?.sourceSnapshot !== candidate.detail.sourceSnapshot
+            ) {
+              // CERT에서 별도로 수정한 필드는 보존하되, HRManagement에서 통합한 LT 서브종목 표시는 최신 내용으로 맞춥니다.
+              updates.push({ id: existing.id, values: {
+                title: candidate.title,
+                detail: { ...(existing.detail || {}), sourceSnapshot: candidate.detail.sourceSnapshot, localModified: true },
+              } });
             }
           });
         }
@@ -424,70 +435,81 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     setAlertHidden(true); setActiveAlert(null);
   };
 
-  const exportExcel = () => {
-    const list = activeRecords.filter(r => r.category === category).slice().sort((a, b) => {
-      const aPerson = personById.get(String(a.user_id));
-      const bPerson = personById.get(String(b.user_id));
-      const byName = (aPerson?.name || '').localeCompare(bPerson?.name || '', 'ko');
-      return byName || String(a.user_id).localeCompare(String(b.user_id), 'ko') || a.title.localeCompare(b.title, 'ko');
-    });
-    const title = category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
-    let headers: string[];
-    let rows: any[][];
-    let nameColumn = 0;
-    const employeeIdColumn = 1;
-    if (category === 'YARD') {
-      // 요청사항: 성명 다음에 교육명, 동일인의 여러 교육은 성명 셀을 병합합니다.
-      headers = ['성명', '사번', '교육명', '교육일', '스티커 번호', '보수교육 1', '보수교육 2', '보수교육 3', '보수교육 4'];
-      rows = list.map(r => [personById.get(String(r.user_id))?.name || '', String(r.user_id), r.title || '', r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '']);
-    } else if (category === 'NATIONAL') {
-      headers = ['성명', '자격종류', '종목', '취득일'];
-      rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', r.method || '', r.obtained_date || '']);
-    } else {
-      headers = ['성명', '경력', '자격종류(Level)', '종목', '취득일', '갱신일'];
-      rows = list.map(r => [personById.get(String(r.user_id))?.name || '', personById.get(String(r.user_id))?.experience || '', r.level || '', r.title || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
-    }
-    const sheetRows: any[][] = [[title], headers, ...rows];
-    const ws = XLSX.utils.aoa_to_sheet(sheetRows);
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
-    // 연속된 같은 사번의 이름 셀을 세로 병합합니다. (데이터 시작 행은 Excel 3행)
-    let groupStart = 0;
-    while (groupStart < list.length) {
-      let groupEnd = groupStart + 1;
-      while (groupEnd < list.length && String(list[groupEnd].user_id) === String(list[groupStart].user_id)) groupEnd++;
-      if (groupEnd - groupStart > 1) {
-        ws['!merges'].push({ s: { r: groupStart + 2, c: nameColumn }, e: { r: groupEnd + 1, c: nameColumn } });
-        if (category === 'YARD') {
-          ws['!merges'].push({ s: { r: groupStart + 2, c: employeeIdColumn }, e: { r: groupEnd + 1, c: employeeIdColumn } });
+  const exportExcel = (target: 'ALL' | Category = category) => {
+    const wb = XLSX.utils.book_new();
+    const categoriesToExport: Category[] = target === 'ALL' ? ['YARD', 'NATIONAL', 'NDT'] : [target];
+
+    const makeWorksheet = (sheetCategory: Category) => {
+      const list = activeRecords.filter(r => r.category === sheetCategory).slice().sort((a, b) => {
+        const aPerson = personById.get(String(a.user_id));
+        const bPerson = personById.get(String(b.user_id));
+        const byName = (aPerson?.name || '').localeCompare(bPerson?.name || '', 'ko');
+        return byName || String(a.user_id).localeCompare(String(b.user_id), 'ko') || a.title.localeCompare(b.title, 'ko');
+      });
+      const title = sheetCategory === 'YARD' ? 'YARD 자격 현황' : sheetCategory === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황';
+      let headers: string[];
+      let rows: any[][];
+      const nameColumn = 0;
+      const employeeIdColumn = 1;
+      if (sheetCategory === 'YARD') {
+        headers = ['성명', '사번', '교육명', '교육일', '스티커 번호', '보수교육 1', '보수교육 2', '보수교육 3', '보수교육 4'];
+        rows = list.map(r => [personById.get(String(r.user_id))?.name || '', String(r.user_id), r.title || '', r.education_completed || r.obtained_date || '', r.sticker_no || '', r.training_date_1 || '', r.training_date_2 || '', r.training_date_3 || '', r.training_date_4 || '']);
+      } else if (sheetCategory === 'NATIONAL') {
+        headers = ['성명', '자격종류', '종목', '취득일'];
+        rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', r.method || '', r.obtained_date || '']);
+      } else {
+        headers = ['성명', '경력', '자격종류(Level)', '종목', '취득일', '갱신일'];
+        rows = list.map(r => [personById.get(String(r.user_id))?.name || '', personById.get(String(r.user_id))?.experience || '', r.level || '', r.title || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
+      }
+      const sheetRows: any[][] = [[title], headers, ...rows];
+      const ws = XLSX.utils.aoa_to_sheet(sheetRows);
+      ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
+      // 동일 구성원의 이름 셀은 세로 병합합니다. YARD에서는 사번도 함께 병합합니다.
+      let groupStart = 0;
+      while (groupStart < list.length) {
+        let groupEnd = groupStart + 1;
+        while (groupEnd < list.length && String(list[groupEnd].user_id) === String(list[groupStart].user_id)) groupEnd++;
+        if (groupEnd - groupStart > 1) {
+          ws['!merges'].push({ s: { r: groupStart + 2, c: nameColumn }, e: { r: groupEnd + 1, c: nameColumn } });
+          if (sheetCategory === 'YARD') {
+            ws['!merges'].push({ s: { r: groupStart + 2, c: employeeIdColumn }, e: { r: groupEnd + 1, c: employeeIdColumn } });
+          }
+        }
+        groupStart = groupEnd;
+      }
+      ws['!rows'] = [{ hpt: 42 }, { hpt: 24 }, ...rows.map(() => ({ hpt: 21 }))];
+      ws['!cols'] = headers.map((header, col) => {
+        const visibleWidth = (value: unknown) => Array.from(String(value ?? '')).reduce((width, char) => width + (char.charCodeAt(0) > 255 ? 2 : 1), 0);
+        const maxLength = Math.max(visibleWidth(header), ...rows.map(row => visibleWidth(row[col])));
+        if (sheetCategory === 'YARD' && col === 2) return { wch: Math.max(maxLength + 3, 12) };
+        return { wch: Math.min(Math.max(maxLength + 3, 12), 42) };
+      });
+      const lastCol = XLSX.utils.encode_col(headers.length - 1);
+      const lastRow = Math.max(2, sheetRows.length - 1);
+      ws['!autofilter'] = { ref: `A2:${lastCol}${lastRow + 1}` };
+      for (let r = 0; r < sheetRows.length; r++) {
+        for (let c = 0; c < headers.length; c++) {
+          const address = XLSX.utils.encode_cell({ r, c });
+          if (!ws[address]) ws[address] = { t: 's', v: '' };
+          ws[address].s = r === 0
+            ? { font: { name: 'HY헤드라인M', sz: 20, bold: true }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }
+            : r === 1
+              ? { font: { name: '맑은 고딕', sz: 9, bold: true }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, fill: { fgColor: { rgb: 'E8EDF3' } }, border: { bottom: { style: 'thin', color: { rgb: 'B8C2CC' } } } }
+              : { font: { name: '맑은 고딕', sz: 9 }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { bottom: { style: 'thin', color: { rgb: 'E2E5E9' } } } };
         }
       }
-      groupStart = groupEnd;
+      return ws;
+    };
+
+    for (const sheetCategory of categoriesToExport) {
+      const ws = makeWorksheet(sheetCategory);
+      const sheetName = sheetCategory === 'YARD' ? 'YARD 자격 현황' : sheetCategory === 'NATIONAL' ? '국가 자격' : '사내자격 NDT';
+      XLSX.utils.book_append_sheet(wb, ws, sheetName);
     }
-    ws['!rows'] = [{ hpt: 42 }, { hpt: 24 }, ...rows.map(() => ({ hpt: 21 }))];
-    ws['!cols'] = headers.map((header, col) => {
-      const visibleWidth = (value: unknown) => Array.from(String(value ?? '')).reduce((width, char) => width + (char.charCodeAt(0) > 255 ? 2 : 1), 0);
-      const maxLength = Math.max(visibleWidth(header), ...rows.map(row => visibleWidth(row[col])));
-      // YARD 교육명은 한글 폭까지 고려해 가장 긴 교육명에 맞춰 자동 너비를 적용합니다.
-      if (category === 'YARD' && col === 2) return { wch: Math.max(maxLength + 3, 12) };
-      return { wch: Math.min(Math.max(maxLength + 3, 12), 42) };
-    });
-    const lastCol = XLSX.utils.encode_col(headers.length - 1);
-    const lastRow = Math.max(2, sheetRows.length - 1);
-    ws['!autofilter'] = { ref: `A2:${lastCol}${lastRow + 1}` };
-    for (let r = 0; r < sheetRows.length; r++) {
-      for (let c = 0; c < headers.length; c++) {
-        const address = XLSX.utils.encode_cell({ r, c });
-        if (!ws[address]) ws[address] = { t: 's', v: '' };
-        ws[address].s = r === 0
-          ? { font: { name: 'HY헤드라인M', sz: 20, bold: true }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true } }
-          : r === 1
-            ? { font: { name: '맑은 고딕', sz: 9, bold: true }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, fill: { fgColor: { rgb: 'E8EDF3' } }, border: { bottom: { style: 'thin', color: { rgb: 'B8C2CC' } } } }
-            : { font: { name: '맑은 고딕', sz: 9 }, alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, border: { bottom: { style: 'thin', color: { rgb: 'E2E5E9' } } } };
-      }
-    }
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, category === 'YARD' ? 'YARD 자격 현황' : category === 'NATIONAL' ? '국가 자격' : '사내자격 NDT');
-    XLSX.writeFile(wb, `${title}_${todayStr()}.xlsx`);
+    const filename = target === 'ALL' ? `자격현황_전체_${todayStr()}.xlsx`
+      : `${target === 'YARD' ? 'YARD 자격 현황' : target === 'NATIONAL' ? '국가 자격 취득 현황' : '사내자격 취득 현황'}_${todayStr()}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    setExcelMenuOpen(false);
   };
 
   const selectedPeople = admin ? people : people.filter(p => selfPerson && String(p.id) === String(selfPerson.id));
@@ -519,7 +541,12 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       </div>
       <div className="flex flex-wrap justify-end gap-2">
         <button type="button" onClick={() => void loadData()} disabled={loading} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A] disabled:opacity-50"><RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`}/> 새로고침</button>
-        {admin && <button type="button" onClick={exportExcel} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A]"><Download className="h-3.5 w-3.5"/> Excel 저장</button>}
+        {admin && <div className="relative">
+          <button type="button" onClick={() => setExcelMenuOpen(value => !value)} aria-expanded={excelMenuOpen} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A]"><Download className="h-3.5 w-3.5"/> Excel 저장 <ChevronDown className="h-3.5 w-3.5"/></button>
+          {excelMenuOpen && <div className="absolute right-0 top-full z-50 mt-1 min-w-[190px] overflow-hidden rounded-lg border border-[#E2E5E9] bg-white p-1 shadow-lg">
+            {([{ key: 'ALL', label: '전체 내려받기' }, { key: 'YARD', label: 'YARD 자격' }, { key: 'NATIONAL', label: '국가자격' }, { key: 'NDT', label: '사내자격(NDT Level)' }] as Array<{ key: 'ALL' | Category; label: string }>).map(item => <button key={item.key} type="button" onClick={() => exportExcel(item.key)} className="block w-full rounded-md px-3 py-2 text-left text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">{item.label}</button>)}
+          </div>}
+        </div>}
         <button type="button" onClick={openCreate} className="flex items-center gap-1 rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white"><Plus className="h-3.5 w-3.5"/> 자격 등록</button>
       </div>
     </div>
