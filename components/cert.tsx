@@ -82,6 +82,83 @@ const emptyForm = (category: Category, userId = ''): FormData => ({
 });
 const normalizeArray = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
 
+type StyledSelectOption = { value: string; label: string };
+function AppStyledSelect({
+  value,
+  options,
+  onChange,
+  className = inputClass,
+  placeholder = '선택해주세요',
+  disabled = false,
+  ariaLabel = '항목 선택',
+}: {
+  value: string;
+  options: StyledSelectOption[];
+  onChange: (value: string) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [open]);
+  const selected = options.find(option => option.value === value);
+  return <>
+    <button
+      type="button"
+      className={`${className} flex items-center justify-between gap-2 text-left ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-[#243B5A]'}`}
+      onClick={() => { if (!disabled) setOpen(true); }}
+      aria-label={ariaLabel}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      disabled={disabled}
+    >
+      <span className={`min-w-0 flex-1 truncate ${selected ? 'text-[#1F2937]' : 'text-[#94A3B8]'}`}>{selected?.label || placeholder}</span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+    </button>
+    {open && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/25 p-4" onClick={() => setOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={event => event.stopPropagation()} className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3">
+          <span className="text-sm font-bold text-[#243B5A]">{ariaLabel}</span>
+          <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#E2E8F0]" aria-label="선택 메뉴 닫기"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="max-h-[60dvh] overflow-y-auto p-2">
+          {options.map(option => <button key={option.value} type="button" onClick={() => { onChange(option.value); setOpen(false); }} className={`mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}>
+            <span className="min-w-0 break-words">{option.label}</span>
+            {option.value === value && <span aria-hidden="true" className="shrink-0">✓</span>}
+          </button>)}
+          {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#64748B]">선택 가능한 항목이 없습니다.</p>}
+        </div>
+      </div>
+    </div>}
+  </>;
+}
+
+type RenewalEntry = { record: CertRecord; expiry: string; remaining: number };
+type RenewalGroup = { user_id: string; category: 'YARD' | 'NDT'; entries: RenewalEntry[]; earliestExpiry: string };
+const groupRenewalEntries = (entries: RenewalEntry[]): RenewalGroup[] => {
+  const grouped = new Map<string, RenewalGroup>();
+  for (const entry of entries) {
+    if (entry.record.category !== 'YARD' && entry.record.category !== 'NDT') continue;
+    const category = entry.record.category;
+    const user_id = String(entry.record.user_id);
+    const key = `${user_id}|${category}`;
+    if (!grouped.has(key)) grouped.set(key, { user_id, category, entries: [], earliestExpiry: entry.expiry });
+    const group = grouped.get(key)!;
+    group.entries.push(entry);
+    if (entry.expiry < group.earliestExpiry) group.earliestExpiry = entry.expiry;
+  }
+  return Array.from(grouped.values()).map(group => ({
+    ...group,
+    entries: group.entries.slice().sort((a, b) => a.expiry.localeCompare(b.expiry) || a.record.title.localeCompare(b.record.title, 'ko')),
+  })).sort((a, b) => a.earliestExpiry.localeCompare(b.earliestExpiry) || a.user_id.localeCompare(b.user_id, 'ko') || a.category.localeCompare(b.category));
+};
+
 export default function CertManagement({ users = [], currentUser = null, isAdmin = false }: {
   users?: Person[];
   currentUser?: any;
@@ -264,7 +341,14 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     .filter(item => !!item.expiry && daysUntil(item.expiry) <= 40)
     .sort((a, b) => (a.expiry || '').localeCompare(b.expiry || '') || a.record.title.localeCompare(b.record.title, 'ko')),
     [activeRecords]);
+  const renewalSummaryGroups = useMemo(() => groupRenewalEntries(renewalSummaryRecords.map(item => ({
+    record: item.record, expiry: item.expiry!, remaining: daysUntil(item.expiry!),
+  }))), [renewalSummaryRecords]);
   const renewalSummaryPeopleCount = useMemo(() => new Set(renewalSummaryRecords.map(item => String(item.record.user_id))).size, [renewalSummaryRecords]);
+  const activeAlertGroups = useMemo(() => groupRenewalEntries(
+    (activeAlert || []).map(record => ({ record, expiry: expiryFor(record), remaining: daysUntil(expiryFor(record)) }))
+      .filter(item => !!item.expiry)
+  ), [activeAlert, activeRecords]);
   const subTabs = useMemo(() => {
     const relevant = activeRecords.filter(r => r.category === category);
     const names = Array.from(new Set(relevant.map(r => category === 'NATIONAL' ? (r.method || r.title) : r.title).filter(Boolean))).sort((a, b) => a.localeCompare(b, 'ko'));
@@ -525,16 +609,24 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         <button type="button" onClick={() => setRenewalSummaryOpen(value => !value)} aria-expanded={renewalSummaryOpen} className="flex w-full items-center gap-2 bg-red-50 px-3 py-2 text-left hover:bg-red-100">
           {renewalSummaryOpen ? <ChevronDown className="h-4 w-4 shrink-0 text-red-600"/> : <ChevronRight className="h-4 w-4 shrink-0 text-red-600"/>}
           <span className="text-xs font-bold text-red-700">자격갱신 대상</span>
-          <span className="text-[10px] text-red-700">인원 {renewalSummaryPeopleCount}명 · 자격 {renewalSummaryRecords.length}건</span>
+          <span className="text-[10px] text-red-700">인원 {renewalSummaryPeopleCount}명 · 갱신 항목 {renewalSummaryRecords.length}건</span>
           <span className="ml-auto text-[10px] text-red-600">{renewalSummaryOpen ? '접기' : '펼쳐보기'}</span>
         </button>
-        {renewalSummaryOpen && <div className="max-h-56 space-y-2 overflow-y-auto p-3">
-          {renewalSummaryRecords.length === 0 ? <p className="text-xs text-[#64748B]">현재 갱신 대상 자격이 없습니다.</p> : renewalSummaryRecords.map(({ record, expiry }) => {
-            const person = personById.get(String(record.user_id));
-            const remaining = daysUntil(expiry!);
-            return <div key={record.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2 text-xs">
-              <div className="min-w-0"><span className="font-bold text-[#243B5A]">{person?.name || record.user_id}</span><span className="ml-1 text-[#64748B]">({record.user_id})</span><div className="mt-1 text-[#1F2937]">{record.category === 'YARD' ? 'YARD 교육' : 'NDT Level'} · {record.title}{record.level ? ` · ${record.level}` : ''}</div></div>
-              <div className="shrink-0 text-right"><div className="font-bold text-red-600">자격갱신</div><div className="mt-1 text-[10px] text-[#64748B]">유효기간 {expiry} · {remaining < 0 ? `${Math.abs(remaining)}일 경과` : remaining === 0 ? '오늘 만료' : `${remaining}일 남음`}</div></div>
+        {renewalSummaryOpen && <div className="max-h-72 space-y-2 overflow-y-auto p-3">
+          {renewalSummaryGroups.length === 0 ? <p className="text-xs text-[#64748B]">현재 갱신 대상 자격이 없습니다.</p> : renewalSummaryGroups.map(group => {
+            const person = personById.get(String(group.user_id));
+            return <div key={`${group.user_id}-${group.category}`} className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2.5 text-xs">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-bold text-[#243B5A]">{person?.name || group.user_id}</span>
+                <span className="text-[#64748B]">({group.user_id})</span>
+                <span className={`ml-auto rounded-md px-2 py-1 text-[10px] font-bold ${group.category === 'YARD' ? 'bg-blue-50 text-blue-700' : 'bg-violet-50 text-violet-700'}`}>{group.category === 'YARD' ? 'YARD 자격' : 'NDT Level'}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {group.entries.map(({ record, expiry, remaining }) => <div key={record.id} className="max-w-full rounded-md border border-red-100 bg-white px-2 py-1.5">
+                  <div className="break-words font-semibold text-[#1F2937]">{record.title}{record.category === 'NDT' && record.level ? ` · ${record.level}` : ''}</div>
+                  <div className="mt-0.5 text-[10px] text-[#64748B]">유효기간 {expiry} · {remaining < 0 ? `${Math.abs(remaining)}일 경과` : remaining === 0 ? '오늘 만료' : `${remaining}일 남음`}</div>
+                </div>)}
+              </div>
             </div>;
           })}
         </div>}
@@ -557,7 +649,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
 
     <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(180px,1fr)_minmax(180px,2fr)]">
-        <label className="text-[10px] font-bold text-[#64748B]">교육명 / 종목 서브탭<select className={`${inputClass} mt-1`} value={subTab} onChange={e => setSubTab(e.target.value)}><option value="ALL">전체 자격</option>{subTabs.map(name => <option key={name} value={name}>{name}</option>)}</select><span className="mt-1 block text-[11px] font-bold text-[#243B5A]">{subTab === 'ALL' ? '전체' : subTab} 인원: {selectedSubtabPeopleCount}명</span></label>
+        <label className="block text-[10px] font-bold text-[#64748B]">교육명 / 종목 서브탭<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="교육명 / 종목 선택" value={subTab} onChange={setSubTab} options={[{ value: 'ALL', label: '전체 자격' }, ...subTabs.map(name => ({ value: name, label: name }))]} /><span className="mt-1 block text-[11px] font-bold text-[#243B5A]">{subTab === 'ALL' ? '전체' : subTab} 인원: {selectedSubtabPeopleCount}명</span></label>
         <label className="text-[10px] font-bold text-[#64748B]">이름 · 사번 · 자격명 검색<div className="relative mt-1"><Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#64748B]"/><input className={`${inputClass} pl-8`} value={search} onChange={e => setSearch(e.target.value)} placeholder="이름, 로그인 아이디(사번), 교육명 또는 종목" /></div></label>
       </div>
       {loadError && <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700"><b>불러오기 실패</b><p className="mt-1 break-words">{loadError}</p><p className="mt-1">먼저 제공된 Supabase SQL을 실행했는지 확인해주세요.</p></div>}
@@ -611,14 +703,11 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       <div className="w-full max-w-xl space-y-3 rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
         <div className="flex items-center gap-2 border-b border-[#E2E5E9] pb-2"><AlertTriangle className="h-5 w-5 text-red-600"/><h3 className="text-sm font-bold text-[#243B5A]">자격갱신 알림</h3><span className="ml-auto rounded-full bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">{activeAlert.length}건</span></div>
         <p className="text-xs text-[#64748B]">YARD 및 사내자격(NDT Level)의 유효기간이 40일 이내이거나 이미 지난 자격입니다. 알림은 5일 간격으로 표시됩니다.</p>
-        <div className="max-h-[55vh] space-y-2 overflow-y-auto rounded-lg bg-[#F5F6F8] p-2">{activeAlert.map(record => {
-          const expiry = expiryFor(record);
-          const remaining = expiry ? daysUntil(expiry) : null;
-          const person = personById.get(String(record.user_id));
-          const categoryLabel = record.category === 'YARD' ? 'YARD' : 'NDT Level';
-          return <div key={record.id} className="rounded-lg border border-[#E2E5E9] bg-white p-3 text-xs">
-            <div className="flex flex-wrap items-start justify-between gap-2"><div><b className="text-[#243B5A]">{person?.name || record.user_id}</b><span className="ml-1 text-[#64748B]">({record.user_id})</span><div className="mt-1 font-semibold">{categoryLabel} · {record.title}{record.level ? ` · ${record.level}` : ''}</div></div><span className="rounded-md bg-red-50 px-2 py-1 font-bold text-red-600">자격갱신</span></div>
-            <div className="mt-2 text-[#64748B]">유효기간: {expiry || '미입력'} · {remaining === null ? '기간 확인 필요' : remaining < 0 ? `${Math.abs(remaining)}일 경과` : remaining === 0 ? '오늘 만료' : `${remaining}일 남음`}</div>
+        <div className="max-h-[55vh] space-y-2 overflow-y-auto rounded-lg bg-[#F5F6F8] p-2">{activeAlertGroups.map(group => {
+          const person = personById.get(String(group.user_id));
+          return <div key={`${group.user_id}-${group.category}`} className="rounded-lg border border-[#E2E5E9] bg-white p-3 text-xs">
+            <div className="flex flex-wrap items-center gap-2"><div><b className="text-[#243B5A]">{person?.name || group.user_id}</b><span className="ml-1 text-[#64748B]">({group.user_id})</span></div><span className={`rounded-md px-2 py-1 font-bold ${group.category === 'YARD' ? 'bg-blue-50 text-blue-700' : 'bg-violet-50 text-violet-700'}`}>{group.category === 'YARD' ? 'YARD 자격' : 'NDT Level'}</span><span className="ml-auto rounded-md bg-red-50 px-2 py-1 font-bold text-red-600">자격갱신</span></div>
+            <div className="mt-2 flex flex-wrap gap-1.5">{group.entries.map(({ record, expiry, remaining }) => <div key={record.id} className="rounded-md border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5"><div className="font-semibold text-[#1F2937]">{record.title}{record.category === 'NDT' && record.level ? ` · ${record.level}` : ''}</div><div className="mt-0.5 text-[10px] text-[#64748B]">유효기간 {expiry} · {remaining < 0 ? `${Math.abs(remaining)}일 경과` : remaining === 0 ? '오늘 만료' : `${remaining}일 남음`}</div></div>)}</div>
           </div>;
         })}</div>
         <div className="flex justify-end gap-2"><button type="button" onClick={hideAlertForFiveDays} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">5일간 보지 않기</button><button type="button" onClick={() => { setAlertHidden(true); setActiveAlert(null); }} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">닫기</button></div>
@@ -628,11 +717,11 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     {modalOpen && <div className="fixed inset-0 z-[130] flex items-center justify-center bg-slate-900/40 p-3">
       <form onSubmit={save} className="max-h-[92vh] w-full max-w-2xl space-y-3 overflow-y-auto rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2"><h3 className="text-sm font-bold text-[#243B5A]">{editing ? '자격정보 수정' : `${categories.find(c => c.key === category)?.label} 등록`}</h3><button type="button" onClick={() => setModalOpen(false)} aria-label="닫기"><X className="h-4 w-4"/></button></div>
-        {!editing && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="text-[11px] font-bold text-[#64748B]">자격 구분<select className={`${inputClass} mt-1`} value={form.category} onChange={e => { const next = e.target.value as Category; setForm(emptyForm(next, admin ? form.user_id : String(selfPerson?.id || ''))); setCategory(next); setSubTab('ALL'); }}><option value="YARD">YARD 자격</option><option value="NATIONAL">국가 자격</option><option value="NDT">사내자격 (NDT Level)</option></select></label><label className="text-[11px] font-bold text-[#64748B]">성명 / 사번<select className={`${inputClass} mt-1`} value={form.user_id} onChange={e => setField('user_id', e.target.value)} required disabled={!admin}><option value="">구성원 선택</option>{selectedPeople.map(p => <option key={p.id} value={String(p.id)}>{p.name} ({p.id})</option>)}</select></label></div>}
+        {!editing && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">자격 구분<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="자격 구분 선택" value={form.category} onChange={value => { const next = value as Category; setForm(emptyForm(next, admin ? form.user_id : String(selfPerson?.id || ''))); setCategory(next); setSubTab('ALL'); }} options={[{ value: 'YARD', label: 'YARD 자격' }, { value: 'NATIONAL', label: '국가 자격' }, { value: 'NDT', label: '사내자격 (NDT Level)' }]} /></label><label className="block text-[11px] font-bold text-[#64748B]">성명 / 사번<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="구성원 선택" value={form.user_id} onChange={value => setField('user_id', value)} placeholder="구성원 선택" disabled={!admin} options={[{ value: '', label: '구성원 선택' }, ...selectedPeople.map(p => ({ value: String(p.id), label: `${p.name} (${p.id})` }))]} /></label></div>}
         {editing && <div className="rounded-lg bg-[#F5F6F8] p-2 text-[11px] text-[#64748B]">대상: {personById.get(String(form.user_id))?.name || form.user_id} ({form.user_id}) · {form.category}</div>}
         {form.category === 'YARD' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="text-[11px] font-bold text-[#64748B]">교육명 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} required /></label><label className="text-[11px] font-bold text-[#64748B]">교육일<input type="date" className={`${inputClass} mt-1`} value={form.education_completed || form.obtained_date} onChange={e => { setField('education_completed', e.target.value); }} /></label><label className="text-[11px] font-bold text-[#64748B]">스티커 번호<input className={`${inputClass} mt-1`} value={form.sticker_no} onChange={e => setField('sticker_no', e.target.value)} /></label>{[1,2,3,4].map(n => <label key={n} className="text-[11px] font-bold text-[#64748B]">보수교육 {n}<input type="date" className={`${inputClass} mt-1`} value={(form as any)[`training_date_${n}`]} onChange={e => setField((`training_date_${n}`) as keyof FormData, e.target.value)} /></label>)}<label className="text-[11px] font-bold text-[#64748B]">유효기간<input type="date" className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.training_date_4 || form.training_date_3 || form.training_date_2 || form.training_date_1 || form.education_completed, 2)} onChange={e => setField('expiry_date', e.target.value)} /></label></div>}
-        {form.category === 'NATIONAL' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="text-[11px] font-bold text-[#64748B]">자격종류 *<select className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} required><option value="">선택</option>{['기사','산업기사','기능사','기술사','RI','SRI'].map(v => <option key={v}>{v}</option>)}</select></label><label className="text-[11px] font-bold text-[#64748B]">종목<input className={`${inputClass} mt-1`} value={form.method} onChange={e => setField('method', e.target.value)} placeholder="예: UT 기능사, 지게차 등" /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={`${inputClass} mt-1`} value={form.obtained_date} onChange={e => setField('obtained_date', e.target.value)} /></label></div>}
-        {form.category === 'NDT' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="text-[11px] font-bold text-[#64748B]">발급형태<select className={`${inputClass} mt-1`} value={form.issuer} onChange={e => setField('issuer', e.target.value)}><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></select></label><label className="text-[11px] font-bold text-[#64748B]">종목 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} placeholder="예: LT(BUBBLE), PT" required /></label><label className="text-[11px] font-bold text-[#64748B]">자격종류(Level)<select className={`${inputClass} mt-1`} value={form.level} onChange={e => setField('level', e.target.value)}><option value="">선택</option><option>Level I</option><option>Level II</option><option>Level III</option></select></label><label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={`${inputClass} mt-1`} value={form.obtained_date} onChange={e => setField('obtained_date', e.target.value)} /></label><label className="text-[11px] font-bold text-[#64748B]">갱신일 / 유효일<input type="date" className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.obtained_date, 5)} onChange={e => setField('expiry_date', e.target.value)} /></label><label className="text-[11px] font-bold text-[#64748B]">Cert No.<input className={`${inputClass} mt-1`} value={form.cert_no} onChange={e => setField('cert_no', e.target.value)} /></label></div>}
+        {form.category === 'NATIONAL' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">자격종류 *<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="국가자격 종류 선택" value={form.title} onChange={value => setField('title', value)} placeholder="선택" options={[{ value: '', label: '선택' }, ...['기사','산업기사','기능사','기술사','RI','SRI'].map(v => ({ value: v, label: v }))]} /></label><label className="text-[11px] font-bold text-[#64748B]">종목<input className={`${inputClass} mt-1`} value={form.method} onChange={e => setField('method', e.target.value)} placeholder="예: UT 기능사, 지게차 등" /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={`${inputClass} mt-1`} value={form.obtained_date} onChange={e => setField('obtained_date', e.target.value)} /></label></div>}
+        {form.category === 'NDT' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">발급형태<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="발급형태 선택" value={form.issuer} onChange={value => setField('issuer', value)} options={[{ value: '사내', label: '사내' }, { value: 'ASNT/ISO', label: 'ASNT/ISO' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">종목 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} placeholder="예: LT(BUBBLE), PT" required /></label><label className="block text-[11px] font-bold text-[#64748B]">자격종류(Level)<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="NDT Level 선택" value={form.level} onChange={value => setField('level', value)} placeholder="선택" options={[{ value: '', label: '선택' }, { value: 'Level I', label: 'Level I' }, { value: 'Level II', label: 'Level II' }, { value: 'Level III', label: 'Level III' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={`${inputClass} mt-1`} value={form.obtained_date} onChange={e => setField('obtained_date', e.target.value)} /></label><label className="text-[11px] font-bold text-[#64748B]">갱신일 / 유효일<input type="date" className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.obtained_date, 5)} onChange={e => setField('expiry_date', e.target.value)} /></label><label className="text-[11px] font-bold text-[#64748B]">Cert No.<input className={`${inputClass} mt-1`} value={form.cert_no} onChange={e => setField('cert_no', e.target.value)} /></label></div>}
         <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button></div>
       </form>
     </div>}
