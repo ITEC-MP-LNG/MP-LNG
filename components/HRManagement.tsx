@@ -51,6 +51,7 @@ export interface HRUser {
   pos_x?: number;              
   pos_y?: number;              
   photo_url?: string | null;
+  work_status?: '근무중' | '휴무' | string;
 }
 
 interface HRManagementProps {
@@ -59,6 +60,7 @@ interface HRManagementProps {
   currentUser?: any;
   initialAction?: 'self-edit' | 'my-team' | null;
   onInitialActionHandled?: () => void;
+  onCurrentUserStatusChange?: (status: '근무중' | '휴무') => void;
 }
 
 // 변경 여부를 비교할 때 객체 키 순서 차이와 undefined/null 차이로 불필요한 UPDATE가 발생하지 않게 합니다.
@@ -513,7 +515,8 @@ export default function HRManagement({
   currentUserRole = '',
   currentUser = null,
   initialAction = null,
-  onInitialActionHandled
+  onInitialActionHandled,
+  onCurrentUserStatusChange
 }: HRManagementProps) {
   const [users, setUsers] = useState<HRUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -542,6 +545,7 @@ export default function HRManagement({
     job_title: '팀원',
     field: '안전',
     role: 'USER',
+    work_status: '근무중' as '근무중' | '휴무',
     phone: '',
     address: '',
     experience: '',
@@ -594,7 +598,7 @@ export default function HRManagement({
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, national_cert_details, yard_cert_details, ndt_certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y')
+        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, national_cert_details, yard_cert_details, ndt_certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y, work_status')
         .order('name', { ascending: true });
 
       if (error) throw error;
@@ -748,6 +752,7 @@ export default function HRManagement({
       job_title: '팀원',
       field: '안전',
       role: 'USER',
+      work_status: '근무중',
       phone: '',
       address: '',
       experience: '',
@@ -780,6 +785,7 @@ export default function HRManagement({
       job_title: user.job_title || '팀원',
       field: user.field || '안전',
       role: user.role || 'USER',
+      work_status: user.work_status === '휴무' ? '휴무' : '근무중',
       phone: user.phone || '',
       address: user.address || '',
       experience: user.experience || '',
@@ -878,6 +884,7 @@ export default function HRManagement({
         department: formData.department,
         position: formData.position,
         job_title: formData.job_title,
+        work_status: formData.work_status,
         field: formData.field,
         phone: formData.phone,
         address: formData.address,
@@ -977,8 +984,12 @@ export default function HRManagement({
         national_certificates: payload.national_certificates || payload.certificates || selectedUser?.national_certificates || '',
         national_cert_details: formData.national_cert_details,
         yard_cert_details: formData.yard_cert_details,
-        ndt_certificates: formData.ndt_certificates
+        ndt_certificates: formData.ndt_certificates,
+        work_status: formData.work_status === '휴무' ? '휴무' : '근무중'
       };
+      if (isSelf(savedUser)) {
+        onCurrentUserStatusChange?.(savedUser.work_status === '휴무' ? '휴무' : '근무중');
+      }
       setUsers(prev => {
         const next = selectedUser
           ? prev.filter(item => item.id !== selectedUser.id).concat(savedUser)
@@ -1726,6 +1737,15 @@ export default function HRManagement({
                   </StyledDropdown>
                 </div>
               )}
+
+              <div>
+                <label className="block font-bold text-[#64748B] mb-2">근무 상태</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, work_status: '근무중' }))} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${formData.work_status === '근무중' ? 'border-emerald-300 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, work_status: '휴무' }))} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${formData.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
+                </div>
+                <p className="mt-1 text-[10px] text-[#64748B]">별도 상태가 등록되지 않은 구성원은 근무중으로 표시됩니다.</p>
+              </div>
 
               <div className="grid grid-cols-2 gap-2.5">
                 <div>
