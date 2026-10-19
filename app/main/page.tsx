@@ -472,6 +472,52 @@ export default function MainPage() {
     window.history.pushState(null, '', window.location.href);
   };
 
+  const handleOwnWorkStatusChange = async (status: '근무중' | '휴무') => {
+    if (!currentUser) return;
+
+    const currentStatus = currentUser.work_status === '휴무' ? '휴무' : '근무중';
+    if (currentStatus === status) {
+      setAccountMenuOpen(false);
+      return;
+    }
+
+    try {
+      // 현재 로그인 사용자의 app_users 행만 업데이트합니다.
+      let updateQuery = supabase
+        .from('app_users')
+        .update({ work_status: status })
+        .eq('id', currentUser.id);
+
+      const { data, error } = await updateQuery.select('id, work_status').maybeSingle();
+      if (error) throw error;
+
+      // RLS 또는 ID 불일치로 업데이트된 행이 없다면 이메일로 한 번만 재시도합니다.
+      if (!data && currentUser.email) {
+        const retry = await supabase
+          .from('app_users')
+          .update({ work_status: status })
+          .eq('email', currentUser.email)
+          .select('id, work_status')
+          .maybeSingle();
+        if (retry.error) throw retry.error;
+        if (!retry.data) {
+          throw new Error('업데이트된 구성원 행을 찾을 수 없습니다.');
+        }
+      }
+
+      setCurrentUser((prev) => {
+        if (!prev) return prev;
+        const updated = { ...prev, work_status: status };
+        localStorage.setItem('currentUser', JSON.stringify(updated));
+        return updated;
+      });
+      setAccountMenuOpen(false);
+    } catch (error: any) {
+      console.error('근무 상태 변경 실패:', error?.message || error);
+      window.alert(`근무 상태를 저장하지 못했습니다.\n${error?.message || 'app_users 권한 및 work_status 컬럼을 확인해주세요.'}`);
+    }
+  };
+
   if (!currentUser) return null;
 
   const companyCareer = calculateCareerDetails(currentUser.join_date);
@@ -541,10 +587,17 @@ export default function MainPage() {
               </button>
               {accountMenuOpen && <>
                 <button type="button" aria-label="계정 메뉴 닫기" className="fixed inset-0 z-[80] cursor-default" onClick={() => setAccountMenuOpen(false)} />
-                <div role="menu" className="absolute right-0 top-[calc(100%+6px)] z-[90] w-44 rounded-xl border border-[#E2E5E9] bg-white p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+                <div role="menu" className="absolute right-0 top-[calc(100%+6px)] z-[90] w-52 rounded-xl border border-[#E2E5E9] bg-white p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-[#64748B]">내 근무 상태 변경</div>
+                  <div className="grid grid-cols-2 gap-1 px-1 pb-2">
+                    <button type="button" role="menuitem" onClick={() => handleOwnWorkStatusChange('근무중')} className={`min-h-10 rounded-lg border px-2 py-2 text-[11px] font-bold ${currentUser.work_status !== '휴무' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
+                    <button type="button" role="menuitem" onClick={() => handleOwnWorkStatusChange('휴무')} className={`min-h-10 rounded-lg border px-2 py-2 text-[11px] font-bold ${currentUser.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
+                  </div>
+                  <div className="border-t border-[#E2E5E9] pt-1">
                   <button type="button" role="menuitem" onClick={handleLogout} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#DC2626] hover:bg-red-50"><LogOut className="h-4 w-4" /> 로그아웃</button>
                   <button type="button" role="menuitem" onClick={() => openHrAction('self-edit')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><UserRoundPen className="h-4 w-4 text-[#243B5A]" /> 개인정보 수정</button>
                   {String((currentUser as any).job_title || '').includes('팀장') && <button type="button" role="menuitem" onClick={() => openHrAction('my-team')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><Users className="h-4 w-4 text-[#243B5A]" /> 팀원 관리</button>}
+                  </div>
                 </div>
               </>}
             </div>
