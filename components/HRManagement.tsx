@@ -593,6 +593,31 @@ export default function HRManagement({
     return isAdmin || isSelf(targetUser);
   };
 
+  const handleQuickStatusChange = async (targetUser: HRUser, status: '근무중' | '휴무') => {
+    const currentStatus = targetUser.work_status === '휴무' ? '휴무' : '근무중';
+    if (currentStatus === status) return;
+    if (!canEditUser(targetUser)) {
+      showNotice('본인 상태 또는 수정 권한이 있는 구성원만 변경할 수 있습니다.', 'warning');
+      return;
+    }
+    try {
+      const { error } = await supabase
+        .from('app_users')
+        .update({ work_status: status })
+        .eq('id', targetUser.id);
+      if (error) throw error;
+
+      const updatedUser = { ...targetUser, work_status: status };
+      setUsers(prev => prev.map(user => user.id === targetUser.id ? updatedUser : user));
+      setDetailUser(prev => prev?.id === targetUser.id ? updatedUser : prev);
+      if (isSelf(targetUser)) onCurrentUserStatusChange?.(status);
+      showNotice(`${targetUser.name}님의 상태가 '${status}'(으)로 변경되었습니다.`, 'success');
+    } catch (error: any) {
+      console.error('근무 상태 변경 실패:', error?.message || error);
+      showNotice('근무 상태 저장에 실패했습니다. 권한과 work_status 컬럼을 확인해주세요.', 'error');
+    }
+  };
+
   const fetchUsers = useCallback(async () => {
     setLoading(true);
     try {
@@ -1451,6 +1476,7 @@ export default function HRManagement({
                       <td className="p-3 font-bold text-[#1F2937]">
                         <div className="flex items-center gap-1.5 flex-wrap">
                           <span>{u.name}</span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${u.work_status === '휴무' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{u.work_status === '휴무' ? '휴무' : '근무중'}</span>
                           {age && <span className="text-xs text-[#243B5A] font-bold">({age}세)</span>}
                           {u.id && <span className="text-[10px] text-[#64748B] font-mono font-normal">({u.id})</span>}
                           {isSelf(u) && (
@@ -1550,6 +1576,7 @@ export default function HRManagement({
                   <p className="text-[11px] text-[#64748B] font-medium">
                     {detailUser.department || '미지정 파트'} · {detailUser.position || '사원'} {detailUser.job_title && detailUser.job_title !== '없음' ? `(${detailUser.job_title}${detailUser.field ? `/${detailUser.field}` : ''})` : ''}
                   </p>
+                  <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${detailUser.work_status === '휴무' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{detailUser.work_status === '휴무' ? '휴무' : '근무중'}</span>
                 </div>
               </div>
               <button 
@@ -1591,6 +1618,16 @@ export default function HRManagement({
                   <span className="font-medium text-right text-[#1F2937]">{detailUser.address || '미등록'}</span>
                 </div>
               </div>
+
+              {canEditUser(detailUser) && (
+                <div className="rounded-lg border border-[#E2E5E9] p-2.5 space-y-2">
+                  <div className="text-[11px] font-bold text-[#475569]">근무 상태 변경</div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => handleQuickStatusChange(detailUser, '근무중')} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${detailUser.work_status !== '휴무' ? 'border-emerald-300 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
+                    <button type="button" onClick={() => handleQuickStatusChange(detailUser, '휴무')} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${detailUser.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
+                  </div>
+                </div>
+              )}
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9]">
@@ -2065,6 +2102,7 @@ function renderMemberCard(
           <div className="truncate">
             <div className="flex items-center space-x-1.5 flex-wrap">
               <span className="font-bold text-xs text-[#1F2937] group-hover:text-[#243B5A] transition-colors">{member.name}</span>
+              <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${member.work_status === '휴무' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{member.work_status === '휴무' ? '휴무' : '근무중'}</span>
               {age && <span className="text-[10px] text-[#243B5A] font-bold">({age}세)</span>}
               {isSelf(member) && (
                 <span className="text-[9px] bg-[#243B5A] text-white font-bold px-1">
