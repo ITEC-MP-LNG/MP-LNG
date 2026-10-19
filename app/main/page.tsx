@@ -66,6 +66,7 @@ function calculateCareerDetails(startDateStr?: string) {
 interface ExtendedAppUser extends AppUser {
   join_date?: string;
   career_start_date?: string;
+  work_status?: '근무중' | '휴무' | string;
 }
 
 export default function MainPage() {
@@ -326,7 +327,10 @@ export default function MainPage() {
               role: String(appUserData.role || localUser?.role || 'USER').trim().toUpperCase(),
               email: appUserData.email || authUser?.email,
               join_date: appUserData.join_date,
-              career_start_date: appUserData.career_start_date
+              career_start_date: appUserData.career_start_date,
+              work_status: appUserData.work_status === '휴무' ? '휴무' : '근무중',
+              department: appUserData.department,
+              job_title: appUserData.job_title
             } as ExtendedAppUser;
             
             localStorage.setItem('currentUser', JSON.stringify(targetUser));
@@ -532,7 +536,7 @@ export default function MainPage() {
               <button type="button" onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} aria-haspopup="menu" className="flex items-center space-x-1.5 sm:space-x-2 bg-[#F5F6F8] px-2 sm:px-3 py-1.5 rounded-lg border border-[#E2E5E9] max-w-[170px] sm:max-w-none hover:bg-[#E9EDF2] transition">
                 <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#243B5A] shrink-0" />
                 <span className="text-xs font-semibold text-[#1F2937] truncate">{currentUser.name}</span>
-                <span className={`text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold shrink-0 ${isAdmin ? 'bg-[#243B5A] text-white' : 'bg-[#E2E5E9] text-[#1F2937]'}`}>{isAdmin ? 'ADMIN' : 'USER'}</span>
+                <span className={`text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold shrink-0 ${currentUser.work_status === '휴무' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{currentUser.work_status === '휴무' ? '휴무' : '근무중'}</span>
                 <ChevronDown className={`h-3.5 w-3.5 text-[#64748B] transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
               </button>
               {accountMenuOpen && <>
@@ -632,6 +636,14 @@ export default function MainPage() {
               currentUser={currentUser}
               initialAction={hrLaunchAction}
               onInitialActionHandled={() => setHrLaunchAction(null)}
+              onCurrentUserStatusChange={(status) => {
+                setCurrentUser((prev) => {
+                  if (!prev) return prev;
+                  const updated = { ...prev, work_status: status };
+                  localStorage.setItem('currentUser', JSON.stringify(updated));
+                  return updated;
+                });
+              }}
             />
           )}
         </main>
