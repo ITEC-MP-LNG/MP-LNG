@@ -4,7 +4,9 @@ import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   LogOut, 
-  ShieldCheck, 
+  ShieldCheck,
+  ChevronDown,
+  UserRoundPen, 
   ListTodo, 
   Package, 
   GraduationCap,
@@ -100,6 +102,8 @@ export default function MainPage() {
   const hasLoadedEducationRef = useRef(false);
 
   const [showExitModal, setShowExitModal] = useState(false);
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [hrLaunchAction, setHrLaunchAction] = useState<'self-edit' | 'my-team' | null>(null);
 
   // 모바일 종 모양 버튼 색상 제어용 (읽지 않은 새 공지 유무)
   const [hasUnreadNotice, setHasUnreadNotice] = useState(false);
@@ -350,99 +354,6 @@ export default function MainPage() {
     initAuthAndData();
   }, [router, checkUnreadNotices, fetchTasks]);
 
-  // 비활동 30분 자동 로그아웃
-  // 활동 시간은 브라우저 내부에서만 공유하며, 활동 감지를 위해 Supabase를 호출하지 않습니다.
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const IDLE_LIMIT_MS = 30 * 60 * 1000;
-    const ACTIVITY_STORAGE_KEY = `app_last_activity_${currentUser.id || currentUser.email || 'guest'}`;
-    const LOGOUT_EVENT_KEY = `app_logout_event_${currentUser.id || currentUser.email || 'guest'}`;
-    const ACTIVITY_WRITE_INTERVAL_MS = 5000;
-
-    let lastActivityWrite = 0;
-    let logoutInProgress = false;
-    let checkTimer: ReturnType<typeof setInterval> | null = null;
-
-    const readLastActivity = () => {
-      const stored = Number(localStorage.getItem(ACTIVITY_STORAGE_KEY));
-      return Number.isFinite(stored) && stored > 0 ? stored : Date.now();
-    };
-
-    // 기록이 없거나 이미 만료되었다면 새 로그인 세션의 시간을 지금부터 측정합니다.
-    const storedActivity = Number(localStorage.getItem(ACTIVITY_STORAGE_KEY));
-    if (!Number.isFinite(storedActivity) || storedActivity <= 0 || Date.now() - storedActivity >= IDLE_LIMIT_MS) {
-      localStorage.setItem(ACTIVITY_STORAGE_KEY, String(Date.now()));
-    }
-
-    const logoutForIdle = async () => {
-      if (logoutInProgress) return;
-      logoutInProgress = true;
-
-      // 다른 탭에 로그아웃을 알립니다. 각 탭에서 signOut을 반복 호출하지 않습니다.
-      localStorage.setItem(LOGOUT_EVENT_KEY, String(Date.now()));
-      localStorage.removeItem('currentUser');
-      localStorage.removeItem('login_timestamp');
-
-      try {
-        await supabase.auth.signOut();
-      } catch (error) {
-        console.error('자동 로그아웃 처리 실패:', error);
-      } finally {
-        router.replace('/login');
-      }
-    };
-
-    const checkIdleTime = () => {
-      if (Date.now() - readLastActivity() >= IDLE_LIMIT_MS) {
-        void logoutForIdle();
-      }
-    };
-
-    const recordActivity = () => {
-      if (logoutInProgress) return;
-      const now = Date.now();
-      // 연속 이벤트가 많아도 브라우저 저장소 기록은 최대 5초에 한 번입니다.
-      if (now - lastActivityWrite >= ACTIVITY_WRITE_INTERVAL_MS) {
-        lastActivityWrite = now;
-        localStorage.setItem(ACTIVITY_STORAGE_KEY, String(now));
-      }
-    };
-
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === LOGOUT_EVENT_KEY && event.newValue) {
-        localStorage.removeItem('currentUser');
-        localStorage.removeItem('login_timestamp');
-        router.replace('/login');
-        return;
-      }
-      if (event.key === ACTIVITY_STORAGE_KEY) checkIdleTime();
-    };
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden) checkIdleTime();
-    };
-
-    const activityEvents: Array<keyof WindowEventMap> = [
-      'pointerdown', 'pointermove', 'keydown', 'scroll', 'touchstart', 'click',
-    ];
-    activityEvents.forEach((eventName) => {
-      window.addEventListener(eventName, recordActivity, { passive: true });
-    });
-    window.addEventListener('storage', handleStorage);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    // 브라우저가 백그라운드에서 타이머를 지연시켜도 복귀 시 경과 시간을 확인합니다.
-    checkTimer = setInterval(checkIdleTime, 15 * 1000);
-
-    return () => {
-      activityEvents.forEach((eventName) => window.removeEventListener(eventName, recordActivity));
-      window.removeEventListener('storage', handleStorage);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      if (checkTimer) clearInterval(checkTimer);
-    };
-  }, [currentUser, router]);
-
   // 탭 변경 시 필요한 데이터만 최초 1회 지연 로딩 (Lazy Loading)
   useEffect(() => {
     if (!currentUser) return;
@@ -530,7 +441,14 @@ export default function MainPage() {
     setNavNewFlags((prev) => ({ ...prev, [tabId]: false }));
   };
 
+  const openHrAction = (action: 'self-edit' | 'my-team') => {
+    setAccountMenuOpen(false);
+    setHrLaunchAction(action);
+    setMainTab('HR');
+  };
+
   const handleLogout = async () => {
+    setAccountMenuOpen(false);
     await supabase.auth.signOut();
     localStorage.removeItem('currentUser');
     localStorage.removeItem('login_timestamp');
@@ -610,23 +528,22 @@ export default function MainPage() {
               <Bell className="h-4 w-4" />
             </button>
 
-            <div className="flex items-center space-x-1.5 sm:space-x-2 bg-[#F5F6F8] px-2 sm:px-3 py-1 rounded-lg border border-[#E2E5E9] max-w-[130px] sm:max-w-none shrink">
-              <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#243B5A] shrink-0" />
-              <span className="text-xs font-semibold text-[#1F2937] truncate">{currentUser.name}</span>
-              <span className={`text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold shrink-0 ${
-                isAdmin ? 'bg-[#243B5A] text-white' : 'bg-[#E2E5E9] text-[#1F2937]'
-              }`}>
-                {isAdmin ? 'ADMIN' : 'USER'}
-              </span>
+            <div className="relative shrink-0">
+              <button type="button" onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} aria-haspopup="menu" className="flex items-center space-x-1.5 sm:space-x-2 bg-[#F5F6F8] px-2 sm:px-3 py-1.5 rounded-lg border border-[#E2E5E9] max-w-[170px] sm:max-w-none hover:bg-[#E9EDF2] transition">
+                <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#243B5A] shrink-0" />
+                <span className="text-xs font-semibold text-[#1F2937] truncate">{currentUser.name}</span>
+                <span className={`text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold shrink-0 ${isAdmin ? 'bg-[#243B5A] text-white' : 'bg-[#E2E5E9] text-[#1F2937]'}`}>{isAdmin ? 'ADMIN' : 'USER'}</span>
+                <ChevronDown className={`h-3.5 w-3.5 text-[#64748B] transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+              {accountMenuOpen && <>
+                <button type="button" aria-label="계정 메뉴 닫기" className="fixed inset-0 z-[80] cursor-default" onClick={() => setAccountMenuOpen(false)} />
+                <div role="menu" className="absolute right-0 top-[calc(100%+6px)] z-[90] w-44 rounded-xl border border-[#E2E5E9] bg-white p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+                  <button type="button" role="menuitem" onClick={handleLogout} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#DC2626] hover:bg-red-50"><LogOut className="h-4 w-4" /> 로그아웃</button>
+                  <button type="button" role="menuitem" onClick={() => openHrAction('self-edit')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><UserRoundPen className="h-4 w-4 text-[#243B5A]" /> 개인정보 수정</button>
+                  {String((currentUser as any).job_title || '').includes('팀장') && <button type="button" role="menuitem" onClick={() => openHrAction('my-team')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><Users className="h-4 w-4 text-[#243B5A]" /> 팀원 관리</button>}
+                </div>
+              </>}
             </div>
-            
-            <button
-              onClick={handleLogout}
-              className="p-1.5 text-[#64748B] hover:text-[#DC2626] hover:bg-red-50 rounded-lg transition border border-transparent hover:border-red-200 cursor-pointer shrink-0"
-              title="로그아웃"
-            >
-              <LogOut className="h-4 w-4 sm:h-5 sm:w-5" />
-            </button>
           </div>
         </div>
       </header>
@@ -713,6 +630,8 @@ export default function MainPage() {
               isAdmin={isAdmin} 
               currentUserRole={currentUser.role}
               currentUser={currentUser}
+              initialAction={hrLaunchAction}
+              onInitialActionHandled={() => setHrLaunchAction(null)}
             />
           )}
         </main>
@@ -743,7 +662,7 @@ export default function MainPage() {
       </nav>
 
       {showExitModal && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/50 p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-xl border border-[#E2E5E9] space-y-4">
             <div className="flex items-center space-x-3">
               <div className="p-2.5 bg-[#243B5A]/10 rounded-xl text-[#243B5A]">
