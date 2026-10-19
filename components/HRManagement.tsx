@@ -59,6 +59,23 @@ interface HRManagementProps {
   currentUser?: any;
 }
 
+// 변경 여부를 비교할 때 객체 키 순서 차이와 undefined/null 차이로 불필요한 UPDATE가 발생하지 않게 합니다.
+function normalizeForCompare(value: any): any {
+  if (value === undefined || value === null) return null;
+  if (Array.isArray(value)) return value.map(normalizeForCompare);
+  if (typeof value === 'object') {
+    return Object.keys(value).sort().reduce((result: Record<string, any>, key) => {
+      result[key] = normalizeForCompare(value[key]);
+      return result;
+    }, {});
+  }
+  return value;
+}
+
+function valuesEqualForSave(left: any, right: any): boolean {
+  return JSON.stringify(normalizeForCompare(left)) === JSON.stringify(normalizeForCompare(right));
+}
+
 function calculateCareerDetails(startDateStr?: string) {
   if (!startDateStr) return null;
 
@@ -339,8 +356,14 @@ function getLtSubjects(subject: string): string[] {
 
 // 예전처럼 LT 하위 종목별로 저장된 자료도 편집 화면에서는 하나의 LT 자격으로 묶습니다.
 function normalizeNdtCertificates(list: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }> = []) {
-  const ltRows = list.filter(item => isLtCertificateSubject(item.subject));
-  const otherRows = list.filter(item => !isLtCertificateSubject(item.subject));
+  // 이전 저장 형식의 취득일/유효일 키도 읽어서 현재 UI의 표준 키로 맞춥니다.
+  const normalizedList = (Array.isArray(list) ? list : []).map((item: any) => ({
+    ...item,
+    issue_date: String(item?.issue_date || item?.obtained_date || item?.acquisition_date || item?.certification_date || item?.issued_at || ''),
+    expiry_date: String(item?.expiry_date || item?.valid_date || item?.renewal_date || item?.valid_until || item?.expiration_date || ''),
+  }));
+  const ltRows = normalizedList.filter(item => isLtCertificateSubject(item.subject));
+  const otherRows = normalizedList.filter(item => !isLtCertificateSubject(item.subject));
   if (!ltRows.length) return list;
   const subjects = Array.from(new Set(ltRows.flatMap(item => getLtSubjects(item.subject))));
   const base = ltRows[0];
@@ -845,12 +868,20 @@ export default function HRManagement({
       }
 
       if (selectedUser) {
-        const { error } = await supabase
-          .from('app_users')
-          .update(payload)
-          .eq('id', selectedUser.id);
+        // 실제 변경된 컬럼만 전송합니다. 변경 사항이 없으면 app_users UPDATE를 생략합니다.
+        const changedPayload = Object.fromEntries(
+          Object.entries(payload).filter(([key, value]) =>
+            key !== 'id' && !valuesEqualForSave((selectedUser as any)[key], value)
+          )
+        );
 
-        if (error) throw error;
+        if (Object.keys(changedPayload).length > 0) {
+          const { error } = await supabase
+            .from('app_users')
+            .update(changedPayload)
+            .eq('id', selectedUser.id);
+          if (error) throw error;
+        }
 
         if (photoFile) {
           try {

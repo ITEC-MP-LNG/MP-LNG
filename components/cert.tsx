@@ -355,6 +355,9 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   const admin = isAdmin || ['ADMIN', 'SUPER_ADMIN', 'WORK_ADMIN'].includes(role);
   const [people, setPeople] = useState<Person[]>(users);
   const [records, setRecords] = useState<CertRecord[]>([]);
+  // HRManagement의 사용자 정보가 바뀔 때마다 자격 테이블을 다시 SELECT하지 않도록 메모리에 유지합니다.
+  const recordsRef = useRef<CertRecord[]>([]);
+  const recordsLoadedRef = useRef(false);
   const [category, setCategory] = useState<Category>('YARD');
   const [subTab, setSubTab] = useState('ALL');
   const [allQualificationListOpen, setAllQualificationListOpen] = useState(false);
@@ -379,14 +382,24 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
     return () => window.clearTimeout(timer);
   }, [notice]);
 
+  useEffect(() => {
+    recordsRef.current = records;
+  }, [records]);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     setLoadError('');
     try {
       // HRManagement의 자격 상세를 읽기만 합니다. 이 컴포넌트에서는 app_users를 수정하지 않습니다.
+      // HRManagement에서 사용자 목록을 전달받았다면 app_users를 중복 조회하지 않습니다.
+      // 독립 렌더링 등으로 목록이 비어 있는 경우에만 DB에서 사용자 정보를 가져옵니다.
       const [personResult, recordResult] = await Promise.all([
-        supabase.from('app_users').select('id, name, department, position, experience, career_start_date, role, national_cert_details, yard_cert_details, ndt_certificates').order('name', { ascending: true }),
-        supabase.from('cert_management_records').select('*').order('category').order('title'),
+        users.length
+          ? Promise.resolve({ data: users as any[], error: null })
+          : supabase.from('app_users').select('id, name, department, position, experience, career_start_date, role, national_cert_details, yard_cert_details, ndt_certificates').order('name', { ascending: true }),
+        recordsLoadedRef.current
+          ? Promise.resolve({ data: recordsRef.current, error: null })
+          : supabase.from('cert_management_records').select('*').order('category').order('title'),
       ]);
       if (personResult.error) throw new Error(`HRManagement 자격정보 조회 실패: ${personResult.error.message}`);
       if (recordResult.error) throw new Error(`Cert 자격정보 조회 실패: ${recordResult.error.message}`);
@@ -407,6 +420,8 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       let rows = ((recordResult.data || []) as CertRecord[]).map((r: any) => ({
         ...r, cert_no: r.cert_no ?? r.detail?.cert_no ?? null,
       }));
+      recordsLoadedRef.current = true;
+      recordsRef.current = rows;
       const bySourceKey = new Map(rows.filter(r => r.source_key).map(r => [String(r.source_key), r]));
       const inserts: any[] = [];
       const updates: Array<{ id: string; values: any }> = [];
@@ -435,6 +450,9 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
             detail: { ...base.detail, sourceSnapshot: snapshot } };
         }
         const ndtSubject = text(payload.subject).trim();
+        // 이전 버전에서 날짜 키가 다르게 저장된 자료도 자격현황에 표시합니다.
+        const issueDate = text(payload.issue_date || payload.obtained_date || payload.acquisition_date || payload.certification_date || payload.issued_at);
+        const validDate = text(payload.expiry_date || payload.valid_date || payload.renewal_date || payload.valid_until || payload.expiration_date);
         const ltLabels = [
           { value: 'LT(BUBBLE)', label: 'Bubble', pattern: /LT\s*\(\s*BUBBLE\s*\)/i },
           { value: 'LT(Pressure Change)', label: 'Pressure Change', pattern: /LT\s*\(\s*Pressure\s+Change\s*\)/i },
@@ -442,8 +460,8 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         ].filter(item => item.pattern.test(ndtSubject)).map(item => item.label);
         const ndtTitle = ltLabels.length ? `LT (${ltLabels.join(', ')})` : ndtSubject || 'NDT';
         return { ...base, title: ndtTitle, method: text(payload.issuer).trim() || null,
-          level: text(payload.level).trim() || null, obtained_date: text(payload.issue_date) || null,
-          expiry_date: text(payload.expiry_date) || (text(payload.issue_date) ? addYears(text(payload.issue_date), 5) : null),
+          level: text(payload.level).trim() || null, obtained_date: issueDate || null,
+          expiry_date: validDate || (issueDate ? addYears(issueDate, 5) : null),
           detail: { ...base.detail, sourceSnapshot: snapshot, issuer: text(payload.issuer) } };
       };
 
@@ -460,35 +478,47 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
             const existing = bySourceKey.get(candidate.source_key);
             if (!existing) {
               inserts.push(candidate);
-            } else if (existing.detail?.source === 'hrmanagement' && !existing.detail?.localModified && existing.detail?.sourceSnapshot !== candidate.detail.sourceSnapshot) {
-              updates.push({ id: existing.id, values: { ...candidate, detail: { ...candidate.detail, localModified: false } } });
-            } else if (
-              existing.detail?.source === 'hrmanagement' && existing.detail?.localModified &&
-              sourceList.category === 'NDT' && /^LT\s*\(/i.test(candidate.title) &&
-              existing.detail?.sourceSnapshot !== candidate.detail.sourceSnapshot
-            ) {
-              // CERT에서 별도로 수정한 필드는 보존하되, HRManagement에서 통합한 LT 서브종목 표시는 최신 내용으로 맞춥니다.
+            } else if (existing.detail?.source === 'hrmanagement' && existing.detail?.sourceSnapshot !== candidate.detail.sourceSnapshot) {
+              // HRManagement가 자격 원본입니다. CERT에서 한 번 수정한 이력이 있어도
+              // HRManagement의 취득일/유효일 변경이 막히지 않도록 원본값을 다시 반영합니다.
+              // CERT에만 있는 Cert No. 등 추가 detail 값은 유지합니다.
               updates.push({ id: existing.id, values: {
-                title: candidate.title,
-                detail: { ...(existing.detail || {}), sourceSnapshot: candidate.detail.sourceSnapshot, localModified: true },
+                ...candidate,
+                detail: { ...(existing.detail || {}), ...candidate.detail,
+                  cert_no: existing.detail?.cert_no ?? null,
+                  sourceSnapshot: candidate.detail.sourceSnapshot,
+                  localModified: false,
+                },
               } });
             }
           });
         }
       }
-      if (inserts.length) {
-        const { data, error } = await supabase.from('cert_management_records').insert(inserts).select('*');
-        if (error) throw new Error(`HRManagement 자격 가져오기 실패: ${error.message}`);
-        rows = [...rows, ...((data || []) as CertRecord[])];
-      }
-      for (const update of updates) {
-        const { error } = await supabase.from('cert_management_records').update(update.values).eq('id', update.id);
-        if (error) throw new Error(`부모 자격 변경 반영 실패: ${error.message}`);
-        rows = rows.map(r => r.id === update.id ? { ...r, ...update.values } : r);
+      // 신규 등록과 변경된 기존 기록을 한 번의 요청으로 저장해 자격별 UPDATE 반복을 방지합니다.
+      // 기존 기록은 id를 포함해 upsert하므로, 변경이 감지된 행만 전송됩니다.
+      const syncWrites = [
+        ...inserts,
+        ...updates.map(update => ({ ...update.values, id: update.id })),
+      ];
+      if (syncWrites.length) {
+        const { data, error } = await supabase
+          .from('cert_management_records')
+          .upsert(syncWrites, { onConflict: 'id' })
+          .select('*');
+        if (error) throw new Error(`HRManagement 자격 동기화 실패: ${error.message}`);
+        const savedRows = (data || []) as CertRecord[];
+        const savedById = new Map(savedRows.filter(r => r.id).map(r => [String(r.id), r]));
+        const insertedRows = savedRows.filter(r => !rows.some(old => String(old.id) === String(r.id)));
+        rows = [
+          ...rows.map(old => savedById.has(String(old.id)) ? { ...old, ...savedById.get(String(old.id)) } : old),
+          ...insertedRows,
+        ];
       }
       // HRManagement에서 종목을 통합해 더 이상 존재하지 않는 이전 원본 행은 화면에서 제외합니다.
       // Cert 화면에서 별도 수정(localModified)한 기록은 보존합니다.
-      setRecords(rows.filter((row: any) => !(row.detail?.source === 'hrmanagement' && !row.detail?.localModified && row.source_key && !validSourceKeys.has(String(row.source_key)))));
+      const visibleRows = rows.filter((row: any) => !(row.detail?.source === 'hrmanagement' && !row.detail?.localModified && row.source_key && !validSourceKeys.has(String(row.source_key))));
+      recordsRef.current = visibleRows;
+      setRecords(visibleRows);
     } catch (e: any) {
       setLoadError(e?.message || '자격현황을 불러오지 못했습니다. Supabase SQL 설정을 확인해주세요.');
     } finally {
@@ -724,7 +754,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         headers = ['성명', '자격종류', '종목', '취득일'];
         rows = list.map(r => [personById.get(String(r.user_id))?.name || '', r.title || '', r.method || '', r.obtained_date || '']);
       } else {
-        headers = ['성명', '경력', '자격종류(Level)', '종목', '취득일', '갱신일'];
+        headers = ['성명', '경력', '자격종류(Level)', '종목', '취득일', '유효일'];
         rows = list.map(r => [personById.get(String(r.user_id))?.name || '', personById.get(String(r.user_id))?.experience || '', r.level || '', r.title || '', r.obtained_date || '', r.expiry_date || (r.obtained_date ? addYears(r.obtained_date, 5) : '')]);
       }
       const sheetRows: any[][] = [[title], headers, ...rows];
@@ -865,7 +895,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
                 const remaining = expiry ? daysUntil(expiry) : null;
                 const needsRenewal = record.category !== 'NATIONAL' && remaining !== null && remaining <= 40;
                 return <div key={record.id} className="rounded-lg border border-[#E2E5E9] bg-white p-3">
-                  <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-bold text-[#243B5A]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</div><div className="mt-1 text-[10px] text-[#64748B]">{category === 'YARD' ? `교육일 ${record.education_completed || record.obtained_date || '미입력'} · 유효기간 ${expiry || '미입력'}` : category === 'NATIONAL' ? `취득일 ${record.obtained_date || '미입력'}` : `취득일 ${record.obtained_date || '미입력'} · 갱신일 ${expiry || '미입력'}`}</div></div>{needsRenewal && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">자격갱신{remaining !== null ? (remaining < 0 ? ` · ${Math.abs(remaining)}일 경과` : remaining === 0 ? ' · 오늘 만료' : ` · ${remaining}일 남음`) : ''}</span>}</div>
+                  <div className="flex flex-wrap items-start justify-between gap-2"><div><div className="text-xs font-bold text-[#243B5A]">{category === 'NDT' ? `${record.title}${record.level ? ` · ${record.level}` : ''}` : category === 'NATIONAL' ? `${record.title}${record.method ? ` · ${record.method}` : ''}` : record.title}</div><div className="mt-1 text-[10px] text-[#64748B]">{category === 'YARD' ? `교육일 ${record.education_completed || record.obtained_date || '미입력'} · 유효기간 ${expiry || '미입력'}` : category === 'NATIONAL' ? `취득일 ${record.obtained_date || '미입력'}` : `취득일 ${record.obtained_date || '미입력'} · 유효일 ${expiry || '미입력'}`}</div></div>{needsRenewal && <span className="rounded-md bg-red-50 px-2 py-1 text-[10px] font-bold text-red-600">자격갱신{remaining !== null ? (remaining < 0 ? ` · ${Math.abs(remaining)}일 경과` : remaining === 0 ? ' · 오늘 만료' : ` · ${remaining}일 남음`) : ''}</span>}</div>
                   <div className="mt-3 grid grid-cols-1 gap-2 text-[11px] sm:grid-cols-2 lg:grid-cols-3">
                     {category === 'YARD' && <><div><span className="font-bold text-[#64748B]">스티커 번호</span><p className="mt-1">{record.sticker_no || '-'}</p></div>{[1,2,3,4].map(n => <div key={n}><span className="font-bold text-[#64748B]">보수교육 {n}</span><p className="mt-1">{(record as any)[`training_date_${n}`] || '-'}</p></div>)} </>}
                     {category === 'NATIONAL' && <><div><span className="font-bold text-[#64748B]">자격종류</span><p className="mt-1">{record.title || '-'}</p></div><div><span className="font-bold text-[#64748B]">종목</span><p className="mt-1">{record.method || '-'}</p></div></>}
@@ -903,7 +933,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         {editing && <div className="rounded-lg bg-[#F5F6F8] p-2 text-[11px] text-[#64748B]">대상: {personById.get(String(form.user_id))?.name || form.user_id} ({form.user_id}) · {form.category}</div>}
         {form.category === 'YARD' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="text-[11px] font-bold text-[#64748B]">교육명 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} required /></label><label className="text-[11px] font-bold text-[#64748B]">교육일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.education_completed || form.obtained_date || ''} onChange={date => { setField('education_completed', date); }} /></label><label className="text-[11px] font-bold text-[#64748B]">스티커 번호<input className={`${inputClass} mt-1`} value={form.sticker_no} onChange={e => setField('sticker_no', e.target.value)} /></label>{[1,2,3,4].map(n => <label key={n} className="text-[11px] font-bold text-[#64748B]">보수교육 {n}<CalendarDatePicker className={`${inputClass} mt-1`} value={(form as any)[`training_date_${n}`] || ''} onChange={date => setField((`training_date_${n}`) as keyof FormData, date)} /></label>)}<label className="text-[11px] font-bold text-[#64748B]">유효기간<CalendarDatePicker className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.training_date_4 || form.training_date_3 || form.training_date_2 || form.training_date_1 || form.education_completed, 2)} onChange={date => setField('expiry_date', date)} /></label></div>}
         {form.category === 'NATIONAL' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">자격종류 *<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="국가자격 종류 선택" value={form.title} onChange={value => setField('title', value)} placeholder="선택" options={[{ value: '', label: '선택' }, ...['기사','산업기사','기능사','기술사','RI','SRI'].map(v => ({ value: v, label: v }))]} /></label><label className="text-[11px] font-bold text-[#64748B]">종목<input className={`${inputClass} mt-1`} value={form.method} onChange={e => setField('method', e.target.value)} placeholder="예: UT 기능사, 지게차 등" /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.obtained_date || ''} onChange={date => setField('obtained_date', date)} /></label></div>}
-        {form.category === 'NDT' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">발급형태<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="발급형태 선택" value={form.issuer} onChange={value => setField('issuer', value)} options={[{ value: '사내', label: '사내' }, { value: 'ASNT/ISO', label: 'ASNT/ISO' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">종목 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} placeholder="예: LT(BUBBLE), PT" required /></label><label className="block text-[11px] font-bold text-[#64748B]">자격종류(Level)<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="NDT Level 선택" value={form.level} onChange={value => setField('level', value)} placeholder="선택" options={[{ value: '', label: '선택' }, { value: 'Level I', label: 'Level I' }, { value: 'Level II', label: 'Level II' }, { value: 'Level III', label: 'Level III' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.obtained_date || ''} onChange={date => setField('obtained_date', date)} /></label><label className="text-[11px] font-bold text-[#64748B]">갱신일 / 유효일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.obtained_date, 5)} onChange={date => setField('expiry_date', date)} /></label><label className="text-[11px] font-bold text-[#64748B]">Cert No.<input className={`${inputClass} mt-1`} value={form.cert_no} onChange={e => setField('cert_no', e.target.value)} /></label></div>}
+        {form.category === 'NDT' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">발급형태<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="발급형태 선택" value={form.issuer} onChange={value => setField('issuer', value)} options={[{ value: '사내', label: '사내' }, { value: 'ASNT/ISO', label: 'ASNT/ISO' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">종목 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} placeholder="예: LT(BUBBLE), PT" required /></label><label className="block text-[11px] font-bold text-[#64748B]">자격종류(Level)<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="NDT Level 선택" value={form.level} onChange={value => setField('level', value)} placeholder="선택" options={[{ value: '', label: '선택' }, { value: 'Level I', label: 'Level I' }, { value: 'Level II', label: 'Level II' }, { value: 'Level III', label: 'Level III' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.obtained_date || ''} onChange={date => setField('obtained_date', date)} /></label><label className="text-[11px] font-bold text-[#64748B]">유효일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.obtained_date, 5)} onChange={date => setField('expiry_date', date)} /></label><label className="text-[11px] font-bold text-[#64748B]">Cert No.<input className={`${inputClass} mt-1`} value={form.cert_no} onChange={e => setField('cert_no', e.target.value)} /></label></div>}
         <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button></div>
       </form>
     </div>}
