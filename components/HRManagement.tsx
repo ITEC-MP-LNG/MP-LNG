@@ -1,6 +1,7 @@
 'use client';
 
 import React, { Fragment, useState, useEffect, useCallback, useRef } from 'react';
+import * as XLSX from 'xlsx';
 import { 
   Users, 
   Building2, 
@@ -568,7 +569,15 @@ export default function HRManagement({
   const [activeTab, setActiveTab] = useState<'ORG' | 'LIST' | 'CERT'>('ORG');
   const [searchTerm, setSearchTerm] = useState('');
 
-  const [subGroupType, setSubGroupType] = useState<'DEPT' | 'POS'>('DEPT');
+  const [subGroupType, setSubGroupType] = useState<'DEPT' | 'POS' | 'DORM'>('DEPT');
+  const [dormitoryLocations, setDormitoryLocations] = useState<string[]>([]);
+  const [dormitoryLocationOptions, setDormitoryLocationOptions] = useState<Array<{ id: number; name: string }>>([]);
+  const [dormitoryRows, setDormitoryRows] = useState<any[]>([]);
+  const [dormitoryLoading, setDormitoryLoading] = useState(false);
+  const [dormitoryFilter, setDormitoryFilter] = useState('전체 보기');
+  const [dormitoryEditing, setDormitoryEditing] = useState<any | null>(null);
+  const [dormitoryForm, setDormitoryForm] = useState({ user_id: '', dormitory_name: '', room: '', move_in_date: '', management_fee_date: '', gas_fee_date: '' });
+  const [newDormitoryName, setNewDormitoryName] = useState('');
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('ALL');
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
@@ -743,6 +752,169 @@ export default function HRManagement({
     } finally {
       setDetailAbsenceDatesSaving(false);
     }
+  };
+
+  const canManageDormitories = isAdmin || isSuperAdmin;
+  const canEditDormitoryRecord = (row: any) => canManageDormitories || (!!currentUser && String(row.user_id) === String(currentUser.id));
+
+  const loadDormitoryData = useCallback(async () => {
+    setDormitoryLoading(true);
+    try {
+      const [locationsResult, recordsResult] = await Promise.all([
+        supabase.from('dormitory_locations').select('id,name,is_active').order('name', { ascending: true }),
+        supabase.from('dormitory_records').select('id,user_id,location_id,move_in_date,management_fee_due_date,gas_fee_due_date,note,created_by,updated_at').order('move_in_date', { ascending: true })
+      ]);
+      if (locationsResult.error) throw locationsResult.error;
+      if (recordsResult.error) throw recordsResult.error;
+      const activeLocations = (locationsResult.data || []).filter((x: any) => x.is_active !== false);
+      setDormitoryLocationOptions(activeLocations.map((x: any) => ({ id: Number(x.id), name: String(x.name) })));
+      setDormitoryLocations(activeLocations.map((x: any) => String(x.name)).filter(Boolean));
+      const locationNameById = new Map((locationsResult.data || []).map((x: any) => [String(x.id), String(x.name)]));
+      setDormitoryRows((recordsResult.data || []).map((row: any) => ({
+        ...row,
+        dormitory_name: locationNameById.get(String(row.location_id)) || '',
+        room: row.note || '',
+        management_fee_date: row.management_fee_due_date || '',
+        gas_fee_date: row.gas_fee_due_date || '',
+        updated_by: row.created_by || ''
+      })));
+    } catch (error: any) {
+      console.error('기숙사 현황 조회 실패:', error?.message || error);
+      showNotice('기숙사 현황을 불러오지 못했습니다. 기숙사 테이블 생성 SQL을 먼저 실행했는지 확인해주세요.', 'error');
+    } finally {
+      setDormitoryLoading(false);
+    }
+  }, [isAdmin, isSuperAdmin]);
+
+  useEffect(() => {
+    if (activeTab === 'ORG' && subGroupType === 'DORM') void loadDormitoryData();
+  }, [activeTab, subGroupType, loadDormitoryData]);
+
+  const openDormitoryEditor = (row?: any) => {
+    const fallbackUser = row?.user_id || (currentUser?.id ? String(currentUser.id) : '');
+    setDormitoryEditing(row || {});
+    setDormitoryForm({
+      user_id: fallbackUser,
+      dormitory_name: row?.dormitory_name || dormitoryLocations[0] || '',
+      room: row?.room || row?.note || '',
+      move_in_date: row?.move_in_date || '',
+      management_fee_date: row?.management_fee_due_date || row?.management_fee_date || '',
+      gas_fee_date: row?.gas_fee_due_date || row?.gas_fee_date || ''
+    });
+  };
+
+  const saveDormitoryRecord = async () => {
+    const targetUser = users.find((u) => String(u.id) === String(dormitoryForm.user_id));
+    if (!targetUser) { showNotice('구성원을 선택해주세요.', 'warning'); return; }
+    if (!canManageDormitories && !isSelf(targetUser)) { showNotice('본인 정보 또는 관리자만 등록·수정할 수 있습니다.', 'warning'); return; }
+    if (!dormitoryForm.dormitory_name.trim()) { showNotice('기숙사명을 선택해주세요.', 'warning'); return; }
+    const selectedLocation = dormitoryLocationOptions.find((location) => location.name === dormitoryForm.dormitory_name.trim());
+    if (!selectedLocation) { showNotice('선택한 기숙사명을 찾을 수 없습니다. 기숙사 목록을 새로고침해주세요.', 'warning'); return; }
+    const payload = {
+      user_id: String(targetUser.id),
+      location_id: selectedLocation.id,
+      move_in_date: dormitoryForm.move_in_date || null,
+      management_fee_due_date: dormitoryForm.management_fee_date || null,
+      gas_fee_due_date: dormitoryForm.gas_fee_date || null,
+      note: dormitoryForm.room.trim() || null,
+      created_by: currentUser?.id ? String(currentUser.id) : null
+    };
+    try {
+      if (dormitoryEditing?.id) {
+        const { error } = await supabase.from('dormitory_records').update(payload).eq('id', dormitoryEditing.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('dormitory_records').insert(payload);
+        if (error) throw error;
+      }
+      setDormitoryEditing(null);
+      showNotice('기숙사 현황을 저장했습니다.', 'success');
+      await loadDormitoryData();
+    } catch (error: any) {
+      console.error('기숙사 현황 저장 실패:', error?.message || error);
+      showNotice('기숙사 현황 저장에 실패했습니다. 테이블 권한과 RLS 정책을 확인해주세요.', 'error');
+    }
+  };
+
+  const deleteDormitoryRecord = async (row: any) => {
+    if (!canEditDormitoryRecord(row)) { showNotice('본인 정보 또는 관리자만 삭제할 수 있습니다.', 'warning'); return; }
+    if (!window.confirm('해당 기숙사 현황을 삭제하시겠습니까?')) return;
+    try {
+      const { error } = await supabase.from('dormitory_records').delete().eq('id', row.id);
+      if (error) throw error;
+      showNotice('기숙사 현황을 삭제했습니다.', 'success');
+      await loadDormitoryData();
+    } catch (error: any) {
+      console.error('기숙사 현황 삭제 실패:', error?.message || error);
+      showNotice('기숙사 현황 삭제에 실패했습니다.', 'error');
+    }
+  };
+
+  const addDormitoryLocation = async () => {
+    const name = newDormitoryName.trim();
+    if (!name) { showNotice('추가할 기숙사명을 입력해주세요.', 'warning'); return; }
+    if (!canManageDormitories) { showNotice('관리자만 기숙사명을 추가할 수 있습니다.', 'warning'); return; }
+    try {
+      const { error } = await supabase.from('dormitory_locations').insert({ name, is_active: true });
+      if (error) throw error;
+      setNewDormitoryName('');
+      showNotice('기숙사명을 추가했습니다.', 'success');
+      await loadDormitoryData();
+    } catch (error: any) {
+      console.error('기숙사명 추가 실패:', error?.message || error);
+      showNotice('기숙사명 추가에 실패했습니다. 중복 이름인지 확인해주세요.', 'error');
+    }
+  };
+
+  const deleteDormitoryLocation = async (name: string) => {
+    if (!canManageDormitories) return;
+    if (dormitoryRows.some((row) => row.dormitory_name === name)) { showNotice('사용 중인 기숙사명은 먼저 해당 현황을 변경하거나 삭제해야 합니다.', 'warning'); return; }
+    if (!window.confirm(`기숙사명 '${name}'을 삭제하시겠습니까?`)) return;
+    try {
+      const { error } = await supabase.from('dormitory_locations').update({ is_active: false }).eq('name', name);
+      if (error) throw error;
+      showNotice('기숙사명을 삭제했습니다.', 'success');
+      await loadDormitoryData();
+    } catch (error: any) {
+      console.error('기숙사명 삭제 실패:', error?.message || error);
+      showNotice('기숙사명 삭제에 실패했습니다.', 'error');
+    }
+  };
+
+  const exportDormitoryExcel = () => {
+    const filtered = dormitoryRows.filter((row) => dormitoryFilter === '전체 보기' || row.dormitory_name === dormitoryFilter);
+    const rows: any[][] = [
+      ['기숙사 현황', '', '', '', '', ''],
+      ['인원', '기숙사명', '호실', '입주날짜', '공과금 납부현황', ''],
+      ['', '', '', '', '관리비', '가스비']
+    ];
+    filtered.forEach((row) => {
+      const person = users.find((u) => String(u.id) === String(row.user_id));
+      rows.push([person?.name || row.user_id || '', row.dormitory_name || '', row.room || '', row.move_in_date ? String(row.move_in_date).slice(2,10).replace(/-/g,'/') : '', row.management_fee_date ? String(row.management_fee_date).slice(2,10).replace(/-/g,'/') : '', row.gas_fee_date ? String(row.gas_fee_date).slice(2,10).replace(/-/g,'/') : '']);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    ws['!merges'] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+      { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } },
+      { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } },
+      { s: { r: 1, c: 2 }, e: { r: 2, c: 2 } },
+      { s: { r: 1, c: 3 }, e: { r: 2, c: 3 } },
+      { s: { r: 1, c: 4 }, e: { r: 1, c: 5 } }
+    ];
+    ws['!rows'] = [{ hpx: 56 }, { hpx: 26 }, { hpx: 24 }];
+    ws['!cols'] = Array.from({ length: 6 }, (_, c) => ({ wch: Math.min(30, Math.max(10, ...rows.map((row) => String(row[c] || '').length + 2))) }));
+    ws['!autofilter'] = { ref: `A3:F${Math.max(3, rows.length)}` };
+    // 표의 전체 셀을 가운데 정렬하는 스타일 메타데이터입니다. 실제 서식 저장은 xlsx 패키지 버전에 따라 제한될 수 있습니다.
+    for (let r = 0; r < rows.length; r++) {
+      for (let c = 0; c < 6; c++) {
+        const address = XLSX.utils.encode_cell({ r, c });
+        if (ws[address]) (ws[address] as any).s = { alignment: { horizontal: 'center', vertical: 'center' }, font: { name: r === 0 ? 'HY헤드라인M' : '맑은 고딕', sz: r === 0 ? 20 : 9, bold: r < 3 } };
+      }
+    }
+    // xlsx community edition supports merges, row/column sizing, and filters. Font/cell styling is best-effort; full style persistence requires xlsx-js-style.
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '기숙사 현황');
+    XLSX.writeFile(wb, '기숙사_현황.xlsx');
   };
 
   const fetchUsers = useCallback(async () => {
@@ -1351,9 +1523,20 @@ export default function HRManagement({
                 <Briefcase className="h-3.5 w-3.5" />
                 <span>직급별 조직도</span>
               </button>
+              <button
+                onClick={() => setSubGroupType('DORM')}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition border ${
+                  subGroupType === 'DORM'
+                    ? 'bg-[#243B5A] text-white border-[#243B5A] shadow-xs'
+                    : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
+                }`}
+              >
+                <Building2 className="h-3.5 w-3.5" />
+                <span>기숙사 현황</span>
+              </button>
             </div>
 
-            <div className="flex items-center space-x-2 text-xs">
+            {subGroupType !== 'DORM' && <div className="flex items-center space-x-2 text-xs">
               <button
                 onClick={() => toggleAllGroups(false)}
                 className="px-2 py-1 text-[#64748B] bg-[#F5F6F8] hover:bg-[#E2E5E9] border border-[#E2E5E9] rounded-lg font-medium transition text-[11px]"
@@ -1366,10 +1549,10 @@ export default function HRManagement({
               >
                 모두 접기
               </button>
-            </div>
+            </div>}
           </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none">
+          {subGroupType !== 'DORM' && <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none">
             <span className="text-xs font-bold text-[#64748B] shrink-0 flex items-center gap-0.5">
               <ChevronRight className="h-3.5 w-3.5" />
             </span>
@@ -1406,13 +1589,38 @@ export default function HRManagement({
                 </button>
               );
             })}
-          </div>
+          </div>}
         </div>
       )}
 
       {loading ? (
         <div className="bg-white rounded-xl border border-[#E2E5E9] text-center py-16 text-xs text-[#64748B]">인사 정보를 불러오는 중...</div>
       ) : activeTab === 'ORG' ? (
+        subGroupType === 'DORM' ? (
+          <div className="space-y-3 rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <h2 className="text-sm font-extrabold text-[#243B5A]">기숙사 현황</h2>
+                <select value={dormitoryFilter} onChange={(e) => setDormitoryFilter(e.target.value)} className="rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 py-2 text-xs">
+                  <option value="전체 보기">전체 보기</option>
+                  {dormitoryLocations.map((name) => <option key={name} value={name}>{name}</option>)}
+                </select>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={exportDormitoryExcel} className="rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8]">Excel 저장</button>
+                <button type="button" onClick={() => openDormitoryEditor()} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white hover:bg-[#1d3049]">현황 등록</button>
+              </div>
+            </div>
+            {canManageDormitories && <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#F5F6F8] p-2.5">
+              <span className="text-xs font-bold text-[#475569]">기숙사명 관리</span>
+              <input value={newDormitoryName} onChange={(e) => setNewDormitoryName(e.target.value)} placeholder="기숙사명 입력" className="min-w-[150px] flex-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs" />
+              <button type="button" onClick={addDormitoryLocation} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white">추가</button>
+              {dormitoryLocations.map((name) => <span key={name} className="inline-flex items-center gap-1 rounded-full border border-[#E2E5E9] bg-white px-2 py-1 text-[11px]">{name}<button type="button" onClick={() => deleteDormitoryLocation(name)} className="font-bold text-red-600" aria-label={`${name} 삭제`}>×</button></span>)}
+            </div>}
+            {dormitoryLoading ? <div className="py-8 text-center text-xs text-[#64748B]">기숙사 현황을 불러오는 중...</div> : <div className="overflow-x-auto rounded-lg border border-[#E2E5E9]"><table className="w-full min-w-[760px] border-collapse text-center text-xs"><thead className="bg-[#F5F6F8] text-[#243B5A]"><tr><th rowSpan={2} className="border border-[#CBD5E1] p-2">인원</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">기숙사명</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">호실</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">입주날짜</th><th colSpan={2} className="border border-[#CBD5E1] p-2">공과금 납부현황</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">관리</th></tr><tr><th className="border border-[#CBD5E1] p-2">관리비</th><th className="border border-[#CBD5E1] p-2">가스비</th></tr></thead><tbody>{dormitoryRows.filter((row) => dormitoryFilter === '전체 보기' || row.dormitory_name === dormitoryFilter).map((row) => { const person = users.find((u) => String(u.id) === String(row.user_id)); return <tr key={row.id} className="hover:bg-blue-50/40"><td className="border border-[#E2E5E9] p-2">{person?.name || row.user_id}</td><td className="border border-[#E2E5E9] p-2">{row.dormitory_name || '-'}</td><td className="border border-[#E2E5E9] p-2">{row.room || '-'}</td><td className="border border-[#E2E5E9] p-2">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2"><div className="flex justify-center gap-1">{canEditDormitoryRecord(row) && <><button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 font-bold text-[#243B5A]">수정</button><button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 font-bold text-red-600">삭제</button></>}</div></td></tr>; })}{dormitoryRows.filter((row) => dormitoryFilter === '전체 보기' || row.dormitory_name === dormitoryFilter).length === 0 && <tr><td colSpan={7} className="p-8 text-[#64748B]">등록된 기숙사 현황이 없습니다.</td></tr>}</tbody></table></div>}
+            {dormitoryEditing !== null && <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 p-3"><div role="dialog" aria-modal="true" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-extrabold text-[#243B5A]">기숙사 현황 {dormitoryEditing?.id ? '수정' : '등록'}</h3><button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg p-1 text-[#64748B] hover:bg-[#F5F6F8]">✕</button></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-[#475569]">구성원<select value={dormitoryForm.user_id} onChange={(e) => setDormitoryForm((f) => ({...f,user_id:e.target.value}))} disabled={!canManageDormitories} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal"><option value="">구성원 선택</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select></label><label className="text-xs font-bold text-[#475569]">기숙사명<select value={dormitoryForm.dormitory_name} onChange={(e) => setDormitoryForm((f) => ({...f,dormitory_name:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal"><option value="">기숙사 선택</option>{dormitoryLocations.map((name) => <option key={name} value={name}>{name}</option>)}</select></label><label className="text-xs font-bold text-[#475569]">호실<input value={dormitoryForm.room} onChange={(e) => setDormitoryForm((f) => ({...f,room:e.target.value}))} placeholder="예: 302호" className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">입주날짜<input type="date" value={dormitoryForm.move_in_date} onChange={(e) => setDormitoryForm((f) => ({...f,move_in_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">관리비 납부일<input type="date" value={dormitoryForm.management_fee_date} onChange={(e) => setDormitoryForm((f) => ({...f,management_fee_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">가스비 납부일<input type="date" value={dormitoryForm.gas_fee_date} onChange={(e) => setDormitoryForm((f) => ({...f,gas_fee_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label></div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg border border-[#E2E5E9] px-4 py-2 text-xs font-bold text-[#64748B]">취소</button><button type="button" onClick={() => void saveDormitoryRecord()} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">저장</button></div></div></div>}
+          </div>
+        ) : (
         <div className="space-y-3">
           {displayedCategories.map((catName) => {
             const groupMembers = filteredUsers.filter((u) =>
@@ -1508,6 +1716,7 @@ export default function HRManagement({
             );
           })}
         </div>
+        )
       ) : (
         <div>
           <div className="block md:hidden space-y-2.5">
