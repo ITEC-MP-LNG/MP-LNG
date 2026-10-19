@@ -876,10 +876,16 @@ export default function HRManagement({
     setAbsenceDatesLoading(true);
     supabase.from('user_day_status').select('status_date').eq('user_id', user.id).eq('status', '휴무').order('status_date', { ascending: true })
       .then(({ data, error }) => {
-        if (error) { console.warn('휴무 날짜 조회 실패:', error.message); return; }
-        setFormData(prev => ({ ...prev, absence_dates: (data || []).map((row: any) => String(row.status_date)).filter(Boolean) }));
-      })
-      .finally(() => setAbsenceDatesLoading(false));
+        if (error) {
+          console.warn('휴무 날짜 조회 실패:', error.message);
+        } else {
+          setFormData(prev => ({ ...prev, absence_dates: (data || []).map((row: any) => String(row.status_date)).filter(Boolean) }));
+        }
+        setAbsenceDatesLoading(false);
+      }, (error) => {
+        console.warn('휴무 날짜 조회 실패:', error);
+        setAbsenceDatesLoading(false);
+      });
   };
 
   const handleConfirmDelete = async () => {
