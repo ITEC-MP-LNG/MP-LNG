@@ -57,6 +57,8 @@ interface HRManagementProps {
   isAdmin?: boolean;
   currentUserRole?: string;
   currentUser?: any;
+  initialAction?: 'self-edit' | 'my-team' | null;
+  onInitialActionHandled?: () => void;
 }
 
 // 변경 여부를 비교할 때 객체 키 순서 차이와 undefined/null 차이로 불필요한 UPDATE가 발생하지 않게 합니다.
@@ -509,7 +511,9 @@ function StyledDropdown({ value, onChange, children, className = '', disabled = 
 export default function HRManagement({ 
   isAdmin = false, 
   currentUserRole = '',
-  currentUser = null 
+  currentUser = null,
+  initialAction = null,
+  onInitialActionHandled
 }: HRManagementProps) {
   const [users, setUsers] = useState<HRUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -614,6 +618,38 @@ export default function HRManagement({
   useEffect(() => {
     fetchUsers();
   }, [fetchUsers]);
+
+  const handledInitialActionRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!initialAction || loading || users.length === 0) return;
+    if (handledInitialActionRef.current === initialAction) return;
+    handledInitialActionRef.current = initialAction;
+
+    if (initialAction === 'self-edit') {
+      const self = users.find((user) =>
+        (currentUser?.id && user.id === currentUser.id) ||
+        (currentUser?.email && user.email?.toLowerCase() === String(currentUser.email).toLowerCase()) ||
+        (currentUser?.name && user.name?.trim() === String(currentUser.name).trim())
+      );
+      setActiveTab('ORG');
+      setSubGroupType('DEPT');
+      setSelectedSubCategory('ALL');
+      if (self) handleOpenEditModal(self);
+      else showNotice('로그인한 계정의 구성원 정보를 찾지 못했습니다.', 'warning');
+    } else if (initialAction === 'my-team') {
+      const myDepartment = String(currentUser?.department || '').trim();
+      setActiveTab('ORG');
+      setSubGroupType('DEPT');
+      if (myDepartment && users.some((user) => (user.department || '미지정 파트') === myDepartment)) {
+        setSelectedSubCategory(myDepartment);
+        setSearchTerm('');
+      } else {
+        setSelectedSubCategory('ALL');
+        showNotice('소속 파트를 확인하지 못해 전체 파트 조직도를 표시합니다.', 'warning');
+      }
+    }
+    onInitialActionHandled?.();
+  }, [initialAction, loading, users, currentUser, onInitialActionHandled]);
 
   useEffect(() => {
     let cancelled = false;
