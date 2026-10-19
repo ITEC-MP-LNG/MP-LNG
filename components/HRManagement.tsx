@@ -575,6 +575,10 @@ export default function HRManagement({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [detailUser, setDetailUser] = useState<HRUser | null>(null);
+  const [detailAbsenceDates, setDetailAbsenceDates] = useState<string[]>([]);
+  const [detailAbsenceDatesOriginal, setDetailAbsenceDatesOriginal] = useState<string[]>([]);
+  const [detailAbsenceDatesLoading, setDetailAbsenceDatesLoading] = useState(false);
+  const [detailAbsenceDatesSaving, setDetailAbsenceDatesSaving] = useState(false);
   const [selectedUser, setSelectedUser] = useState<HRUser | null>(null);
   const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -662,6 +666,82 @@ export default function HRManagement({
     } catch (error: any) {
       console.error('근무 상태 변경 실패:', error?.message || error);
       showNotice('근무 상태 저장에 실패했습니다. 권한과 work_status 컬럼을 확인해주세요.', 'error');
+    }
+  };
+
+  // 구성원 상세정보(간단히 표시되는 팝업)를 열었을 때 해당 구성원의 휴무 날짜를 조회합니다.
+  useEffect(() => {
+    let cancelled = false;
+    const loadDetailAbsenceDates = async () => {
+      if (!detailUser?.id) {
+        setDetailAbsenceDates([]);
+        setDetailAbsenceDatesOriginal([]);
+        return;
+      }
+      setDetailAbsenceDatesLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('user_day_status')
+          .select('status_date')
+          .eq('user_id', detailUser.id)
+          .eq('status', '휴무')
+          .order('status_date', { ascending: true });
+        if (error) throw error;
+        if (cancelled) return;
+        const dates = (data || []).map((row: any) => String(row.status_date)).filter(Boolean);
+        setDetailAbsenceDates(dates);
+        setDetailAbsenceDatesOriginal(dates);
+      } catch (error: any) {
+        if (!cancelled) {
+          console.warn('상세정보 창 휴무 날짜 조회 실패:', error?.message || error);
+          setDetailAbsenceDates([]);
+          setDetailAbsenceDatesOriginal([]);
+        }
+      } finally {
+        if (!cancelled) setDetailAbsenceDatesLoading(false);
+      }
+    };
+    loadDetailAbsenceDates();
+    return () => { cancelled = true; };
+  }, [detailUser?.id]);
+
+  const handleSaveDetailAbsenceDates = async () => {
+    if (!detailUser?.id || !canEditUser(detailUser)) {
+      showNotice('본인의 정보 또는 관리자 권한이 있는 경우에만 휴무 날짜를 수정할 수 있습니다.', 'warning');
+      return;
+    }
+    const selectedDates = Array.from(new Set(detailAbsenceDates)).sort();
+    const originalDates = Array.from(new Set(detailAbsenceDatesOriginal)).sort();
+    if (valuesEqualForSave(selectedDates, originalDates)) {
+      showNotice('휴무 날짜에 변경 사항이 없습니다.', 'info');
+      return;
+    }
+    setDetailAbsenceDatesSaving(true);
+    try {
+      const { data: existingRows, error: readError } = await supabase
+        .from('user_day_status')
+        .select('status_date')
+        .eq('user_id', detailUser.id)
+        .eq('status', '휴무');
+      if (readError) throw readError;
+      const existingDates = (existingRows || []).map((row: any) => String(row.status_date)).filter(Boolean);
+      const toAdd = selectedDates.filter(date => !existingDates.includes(date)).map(status_date => ({ user_id: detailUser.id, status_date, status: '휴무' }));
+      const toRemove = existingDates.filter(date => !selectedDates.includes(date));
+      if (toAdd.length) {
+        const { error } = await supabase.from('user_day_status').upsert(toAdd, { onConflict: 'user_id,status_date' });
+        if (error) throw error;
+      }
+      if (toRemove.length) {
+        const { error } = await supabase.from('user_day_status').delete().eq('user_id', detailUser.id).eq('status', '휴무').in('status_date', toRemove);
+        if (error) throw error;
+      }
+      setDetailAbsenceDatesOriginal(selectedDates);
+      showNotice(`${detailUser.name}님의 휴무 날짜가 저장되었습니다.`, 'success');
+    } catch (error: any) {
+      console.error('상세정보 창 휴무 날짜 저장 실패:', error?.message || error);
+      showNotice('휴무 날짜 저장에 실패했습니다. 권한과 user_day_status 테이블을 확인해주세요.', 'error');
+    } finally {
+      setDetailAbsenceDatesSaving(false);
     }
   };
 
@@ -1697,6 +1777,31 @@ export default function HRManagement({
                   <div className="grid grid-cols-2 gap-2">
                     <button type="button" onClick={() => handleQuickStatusChange(detailUser, '근무중')} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${detailUser.work_status !== '휴무' ? 'border-emerald-300 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
                     <button type="button" onClick={() => handleQuickStatusChange(detailUser, '휴무')} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${detailUser.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
+                  </div>
+                </div>
+              )}
+
+              {canEditUser(detailUser) && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50/50 p-2.5 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-bold text-[#243B5A]">휴무 날짜 관리</div>
+                    <div className="text-[10px] text-[#64748B]">여러 날짜 선택 가능</div>
+                  </div>
+                  {detailAbsenceDatesLoading ? (
+                    <div className="text-[11px] text-blue-700">등록된 휴무 날짜를 불러오는 중...</div>
+                  ) : (
+                    <MultiDateCalendar value={detailAbsenceDates} onChange={setDetailAbsenceDates} />
+                  )}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[10px] text-[#64748B]">저장 전까지 변경 내용은 반영되지 않습니다.</span>
+                    <button
+                      type="button"
+                      onClick={handleSaveDetailAbsenceDates}
+                      disabled={detailAbsenceDatesLoading || detailAbsenceDatesSaving || valuesEqualForSave(detailAbsenceDates, detailAbsenceDatesOriginal)}
+                      className="shrink-0 rounded-lg bg-[#243B5A] px-3 py-2 text-[11px] font-bold text-white transition hover:bg-[#1d3049] disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {detailAbsenceDatesSaving ? '저장 중...' : '휴무 날짜 저장'}
+                    </button>
                   </div>
                 </div>
               )}
