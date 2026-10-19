@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { ChevronDown, ChevronRight, Plus, Edit3, Trash2, X, Download, Award, AlertTriangle, Search, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, ChevronLeft, CalendarDays, Plus, Edit3, Trash2, X, Download, Award, AlertTriangle, Search, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx-js-style';
 
 type Category = 'YARD' | 'NATIONAL' | 'NDT';
@@ -81,6 +81,188 @@ const emptyForm = (category: Category, userId = ''): FormData => ({
   training_date_3: '', training_date_4: '', issuer: '사내',
 });
 const normalizeArray = <T,>(value: unknown): T[] => Array.isArray(value) ? value as T[] : [];
+
+/** 앱 공통 디자인을 사용하는 사용자 정의 날짜 선택 달력 */
+function CalendarDatePicker({
+  value,
+  onChange,
+  className = "w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+    : new Date();
+  const [viewYear, setViewYear] = useState(initialDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+  const [inputText, setInputText] = useState(value || '');
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setInputText(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setIsOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  const moveMonth = (amount: number) => {
+    const next = new Date(viewYear, viewMonth + amount, 1);
+    setViewYear(next.getFullYear());
+    setViewMonth(next.getMonth());
+  };
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const selected = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+  const today = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })();
+  const commitTypedDate = () => {
+    const trimmed = inputText.trim();
+    if (!trimmed) {
+      onChange('');
+      setInputText('');
+      return;
+    }
+    // YYYYMMDD 또는 YYYY-MM-DD 형식을 모두 허용합니다.
+    const normalizedInput = /^\d{8}$/.test(trimmed)
+      ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
+      : trimmed;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizedInput);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const candidate = new Date(year, month - 1, day);
+      if (candidate.getFullYear() === year && candidate.getMonth() === month - 1 && candidate.getDate() === day) {
+        const normalized = `${match[1]}-${match[2]}-${match[3]}`;
+        onChange(normalized);
+        setInputText(normalized);
+        return;
+      }
+    }
+    // 입력 중인 값이 유효한 YYYY-MM-DD 형식이 아니면 기존 저장값으로 되돌립니다.
+    setInputText(value || '');
+  };
+  const chooseDate = (day: number) => {
+    const nextValue = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(nextValue);
+    setInputText(nextValue);
+    setIsOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className="relative w-full min-w-0">
+      <div className="flex min-w-0 items-center gap-1">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={inputText}
+          onChange={(event) => setInputText(event.target.value)}
+          onBlur={commitTypedDate}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitTypedDate(); } }}
+          placeholder="YYYY-MM-DD 직접 입력"
+          aria-label="날짜 직접 입력 (YYYY-MM-DD)"
+          className={`${className} min-w-0 flex-1`}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (!isOpen) {
+              const current = selected ? new Date(Number(selected.slice(0, 4)), Number(selected.slice(5, 7)) - 1, Number(selected.slice(8, 10))) : new Date();
+              setViewYear(current.getFullYear());
+              setViewMonth(current.getMonth());
+            }
+            setIsOpen(open => !open);
+          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B] hover:bg-[#EEF2F7]"
+          aria-label="달력 열기"
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+        >
+          <CalendarDays size={16} />
+        </button>
+      </div>
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="날짜 선택"
+            onClick={(event) => event.stopPropagation()}
+            className="relative w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft size={16} /></button>
+              <div className="flex min-w-0 items-center gap-1">
+                <select
+                  aria-label="연도 선택"
+                  value={viewYear}
+                  onChange={(event) => setViewYear(Number(event.target.value))}
+                  className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map((year) => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="월 선택"
+                  value={viewMonth}
+                  onChange={(event) => setViewMonth(Number(event.target.value))}
+                  className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: 12 }, (_, month) => <option key={month} value={month}>{month + 1}월</option>)}
+                </select>
+              </div>
+              <button type="button" onClick={() => moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight size={16} /></button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{day}</div>)}
+              {Array.from({ length: firstDay }, (_, index) => <div key={`empty-${index}`} />)}
+              {Array.from({ length: daysInMonth }, (_, index) => {
+                const day = index + 1;
+                const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = dateKey === selected;
+                const isToday = dateKey === today;
+                const weekday = new Date(viewYear, viewMonth, day).getDay();
+                return <button key={dateKey} type="button" onClick={() => chooseDate(day)} aria-pressed={isSelected} className={`h-9 rounded-lg text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white shadow-sm' : isToday ? 'border border-[#243B5A] font-bold text-[#243B5A]' : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`}`}>{day}</button>;
+              })}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
+              <button type="button" onClick={() => { const now = new Date(); const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); onChange(date); setInputText(date); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">오늘</button>
+              <div className="flex items-center gap-1">
+                {selected && <button type="button" onClick={() => { onChange(''); setInputText(''); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">날짜 지우기</button>}
+                <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">닫기</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 type StyledSelectOption = { value: string; label: string };
 function AppStyledSelect({
@@ -719,9 +901,9 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2"><h3 className="text-sm font-bold text-[#243B5A]">{editing ? '자격정보 수정' : `${categories.find(c => c.key === category)?.label} 등록`}</h3><button type="button" onClick={() => setModalOpen(false)} aria-label="닫기"><X className="h-4 w-4"/></button></div>
         {!editing && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">자격 구분<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="자격 구분 선택" value={form.category} onChange={value => { const next = value as Category; setForm(emptyForm(next, admin ? form.user_id : String(selfPerson?.id || ''))); setCategory(next); setSubTab('ALL'); }} options={[{ value: 'YARD', label: 'YARD 자격' }, { value: 'NATIONAL', label: '국가 자격' }, { value: 'NDT', label: '사내자격 (NDT Level)' }]} /></label><label className="block text-[11px] font-bold text-[#64748B]">성명 / 사번<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="구성원 선택" value={form.user_id} onChange={value => setField('user_id', value)} placeholder="구성원 선택" disabled={!admin} options={[{ value: '', label: '구성원 선택' }, ...selectedPeople.map(p => ({ value: String(p.id), label: `${p.name} (${p.id})` }))]} /></label></div>}
         {editing && <div className="rounded-lg bg-[#F5F6F8] p-2 text-[11px] text-[#64748B]">대상: {personById.get(String(form.user_id))?.name || form.user_id} ({form.user_id}) · {form.category}</div>}
-        {form.category === 'YARD' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="text-[11px] font-bold text-[#64748B]">교육명 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} required /></label><label className="text-[11px] font-bold text-[#64748B]">교육일<input type="date" className={`${inputClass} mt-1`} value={form.education_completed || form.obtained_date} onChange={e => { setField('education_completed', e.target.value); }} /></label><label className="text-[11px] font-bold text-[#64748B]">스티커 번호<input className={`${inputClass} mt-1`} value={form.sticker_no} onChange={e => setField('sticker_no', e.target.value)} /></label>{[1,2,3,4].map(n => <label key={n} className="text-[11px] font-bold text-[#64748B]">보수교육 {n}<input type="date" className={`${inputClass} mt-1`} value={(form as any)[`training_date_${n}`]} onChange={e => setField((`training_date_${n}`) as keyof FormData, e.target.value)} /></label>)}<label className="text-[11px] font-bold text-[#64748B]">유효기간<input type="date" className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.training_date_4 || form.training_date_3 || form.training_date_2 || form.training_date_1 || form.education_completed, 2)} onChange={e => setField('expiry_date', e.target.value)} /></label></div>}
-        {form.category === 'NATIONAL' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">자격종류 *<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="국가자격 종류 선택" value={form.title} onChange={value => setField('title', value)} placeholder="선택" options={[{ value: '', label: '선택' }, ...['기사','산업기사','기능사','기술사','RI','SRI'].map(v => ({ value: v, label: v }))]} /></label><label className="text-[11px] font-bold text-[#64748B]">종목<input className={`${inputClass} mt-1`} value={form.method} onChange={e => setField('method', e.target.value)} placeholder="예: UT 기능사, 지게차 등" /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={`${inputClass} mt-1`} value={form.obtained_date} onChange={e => setField('obtained_date', e.target.value)} /></label></div>}
-        {form.category === 'NDT' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">발급형태<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="발급형태 선택" value={form.issuer} onChange={value => setField('issuer', value)} options={[{ value: '사내', label: '사내' }, { value: 'ASNT/ISO', label: 'ASNT/ISO' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">종목 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} placeholder="예: LT(BUBBLE), PT" required /></label><label className="block text-[11px] font-bold text-[#64748B]">자격종류(Level)<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="NDT Level 선택" value={form.level} onChange={value => setField('level', value)} placeholder="선택" options={[{ value: '', label: '선택' }, { value: 'Level I', label: 'Level I' }, { value: 'Level II', label: 'Level II' }, { value: 'Level III', label: 'Level III' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<input type="date" className={`${inputClass} mt-1`} value={form.obtained_date} onChange={e => setField('obtained_date', e.target.value)} /></label><label className="text-[11px] font-bold text-[#64748B]">갱신일 / 유효일<input type="date" className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.obtained_date, 5)} onChange={e => setField('expiry_date', e.target.value)} /></label><label className="text-[11px] font-bold text-[#64748B]">Cert No.<input className={`${inputClass} mt-1`} value={form.cert_no} onChange={e => setField('cert_no', e.target.value)} /></label></div>}
+        {form.category === 'YARD' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="text-[11px] font-bold text-[#64748B]">교육명 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} required /></label><label className="text-[11px] font-bold text-[#64748B]">교육일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.education_completed || form.obtained_date || ''} onChange={date => { setField('education_completed', date); }} /></label><label className="text-[11px] font-bold text-[#64748B]">스티커 번호<input className={`${inputClass} mt-1`} value={form.sticker_no} onChange={e => setField('sticker_no', e.target.value)} /></label>{[1,2,3,4].map(n => <label key={n} className="text-[11px] font-bold text-[#64748B]">보수교육 {n}<CalendarDatePicker className={`${inputClass} mt-1`} value={(form as any)[`training_date_${n}`] || ''} onChange={date => setField((`training_date_${n}`) as keyof FormData, date)} /></label>)}<label className="text-[11px] font-bold text-[#64748B]">유효기간<CalendarDatePicker className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.training_date_4 || form.training_date_3 || form.training_date_2 || form.training_date_1 || form.education_completed, 2)} onChange={date => setField('expiry_date', date)} /></label></div>}
+        {form.category === 'NATIONAL' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">자격종류 *<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="국가자격 종류 선택" value={form.title} onChange={value => setField('title', value)} placeholder="선택" options={[{ value: '', label: '선택' }, ...['기사','산업기사','기능사','기술사','RI','SRI'].map(v => ({ value: v, label: v }))]} /></label><label className="text-[11px] font-bold text-[#64748B]">종목<input className={`${inputClass} mt-1`} value={form.method} onChange={e => setField('method', e.target.value)} placeholder="예: UT 기능사, 지게차 등" /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.obtained_date || ''} onChange={date => setField('obtained_date', date)} /></label></div>}
+        {form.category === 'NDT' && <div className="grid grid-cols-1 gap-2 sm:grid-cols-2"><label className="block text-[11px] font-bold text-[#64748B]">발급형태<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="발급형태 선택" value={form.issuer} onChange={value => setField('issuer', value)} options={[{ value: '사내', label: '사내' }, { value: 'ASNT/ISO', label: 'ASNT/ISO' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">종목 *<input className={`${inputClass} mt-1`} value={form.title} onChange={e => setField('title', e.target.value)} placeholder="예: LT(BUBBLE), PT" required /></label><label className="block text-[11px] font-bold text-[#64748B]">자격종류(Level)<AppStyledSelect className={`${inputClass} mt-1`} ariaLabel="NDT Level 선택" value={form.level} onChange={value => setField('level', value)} placeholder="선택" options={[{ value: '', label: '선택' }, { value: 'Level I', label: 'Level I' }, { value: 'Level II', label: 'Level II' }, { value: 'Level III', label: 'Level III' }]} /></label><label className="text-[11px] font-bold text-[#64748B]">취득일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.obtained_date || ''} onChange={date => setField('obtained_date', date)} /></label><label className="text-[11px] font-bold text-[#64748B]">갱신일 / 유효일<CalendarDatePicker className={`${inputClass} mt-1`} value={form.expiry_date || addYears(form.obtained_date, 5)} onChange={date => setField('expiry_date', date)} /></label><label className="text-[11px] font-bold text-[#64748B]">Cert No.<input className={`${inputClass} mt-1`} value={form.cert_no} onChange={e => setField('cert_no', e.target.value)} /></label></div>}
         <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={() => setModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-bold text-[#64748B]">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving ? '저장 중...' : '저장'}</button></div>
       </form>
     </div>}
