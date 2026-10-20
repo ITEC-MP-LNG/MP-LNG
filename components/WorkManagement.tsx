@@ -1364,7 +1364,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         {(() => {
           const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
           const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
-          const offUsers = activeUsers.filter(u => u.work_status === '휴무');
+          const offUsers = appUsers.filter(u => u.work_status === '휴무');
           
           // 현재 활성화된(완료되지 않은) Cabin 업무들에서 주간/야간 인원 수집
           const activeCabinTasks = tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED');
@@ -1382,23 +1382,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <Users className="h-3.5 w-3.5" /> 인원 현황:
                 </span>
                 <span>전체(퇴사자 제외): <strong className="text-[#1F2937]">{activeUsers.length}명</strong></span>
-                <span>근무중: <strong className="text-emerald-600">{workingUsers.length}명</strong></span>
+                <span>근무중: <strong className="text-emerald-600">{workingUsers.length}명 (Cabin 주간: {cabinDayWorkers.length}명, Cabin 야간: {cabinNightWorkers.length}명, 공정: {processWorkers.length}명)</strong></span>
                 <span>휴무: <strong className="text-blue-600">{offUsers.length}명</strong></span>
               </div>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-[#E2E5E9] text-[11px]">
-                <div className="bg-white p-1.5 rounded border border-slate-200">
-                  <span className="font-bold text-blue-700">Cabin 주간 ({cabinDayWorkers.length}명):</span> <span className="text-[#1F2937]">{cabinDayWorkers.length > 0 ? cabinDayWorkers.join(', ') : '없음'}</span>
-                </div>
-                <div className="bg-white p-1.5 rounded border border-slate-200">
-                  <span className="font-bold text-violet-700">Cabin 야간 ({cabinNightWorkers.length}명):</span> <span className="text-[#1F2937]">{cabinNightWorkers.length > 0 ? cabinNightWorkers.join(', ') : '없음'}</span>
-                </div>
-                <div className="bg-white p-1.5 rounded border border-slate-200">
-                  <span className="font-bold text-emerald-700">공정 ({processWorkers.length}명):</span> <span className="text-[#1F2937]">{processWorkers.length > 0 ? processWorkers.map(u => u.name).join(', ') : '없음'}</span>
-                </div>
-              </div>
 
-              <div className="text-[11px] text-[#64748B] flex items-center gap-1 flex-wrap pt-0.5">
+              <div className="text-[11px] text-[#64748B] flex items-center gap-1 flex-wrap pt-0.5 border-t border-[#E2E5E9]">
                 <span className="font-semibold text-[#1F2937]">휴무자 명단:</span>
                 {offUsers.length > 0 ? (
                   <span className="text-blue-700 font-medium">{offUsers.map(u => u.name).join(', ')}</span>
