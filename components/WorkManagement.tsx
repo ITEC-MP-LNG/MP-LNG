@@ -124,50 +124,79 @@ type VehicleUsageRow = {
 type VehicleDriver = { id: string; name: string; yard_cert_details?: Array<{ name?: string }> };
 
 function VehicleCalendarPicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
-  const [open, setOpen] = useState(false);
-  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(Number(value.slice(0,4)), Number(value.slice(5,7))-1, Number(value.slice(8,10))) : new Date();
-  const [year, setYear] = useState(parsed.getFullYear());
-  const [month, setMonth] = useState(parsed.getMonth());
+  const [isOpen, setIsOpen] = useState(false);
+  const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+    : new Date();
+  const [viewYear, setViewYear] = useState(initialDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+  const [inputText, setInputText] = useState(value || '');
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => { setInputText(value || ''); }, [value]);
   useEffect(() => {
-    if (!open) return;
-    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
-    document.addEventListener('keydown', close);
-    return () => document.removeEventListener('keydown', close);
-  }, [open]);
-  const days = new Date(year, month + 1, 0).getDate();
-  const first = new Date(year, month, 1).getDay();
+    if (!isOpen) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setIsOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setIsOpen(false); };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  const moveMonth = (amount: number) => {
+    const next = new Date(viewYear, viewMonth + amount, 1);
+    setViewYear(next.getFullYear()); setViewMonth(next.getMonth());
+  };
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const selected = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
   const today = formatDateToYYYYMMDD(new Date());
-  return <div className="space-y-1">
+  const commitTypedDate = () => {
+    const trimmed = inputText.trim();
+    if (!trimmed) { onChange(''); setInputText(''); return; }
+    const normalizedInput = /^\d{8}$/.test(trimmed) ? `${trimmed.slice(0,4)}-${trimmed.slice(4,6)}-${trimmed.slice(6,8)}` : trimmed;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizedInput);
+    if (match) {
+      const y=Number(match[1]), m=Number(match[2]), d=Number(match[3]);
+      const candidate = new Date(y,m-1,d);
+      if (candidate.getFullYear()===y && candidate.getMonth()===m-1 && candidate.getDate()===d) {
+        onChange(normalizedInput); setInputText(normalizedInput); return;
+      }
+    }
+    setInputText(value || '');
+  };
+  const chooseDate = (day: number) => {
+    const nextValue = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+    onChange(nextValue); setInputText(nextValue); setIsOpen(false);
+  };
+  return <div ref={rootRef} className="relative w-full min-w-0 space-y-1">
     <label className="block text-[11px] font-semibold text-[#1F2937]">{label}</label>
-    <div className="flex gap-1">
-      <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder="YYYY-MM-DD" className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:bg-white" />
-      <button type="button" onClick={() => {
-        const d = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(Number(value.slice(0,4)), Number(value.slice(5,7))-1, Number(value.slice(8,10))) : new Date();
-        setYear(d.getFullYear()); setMonth(d.getMonth()); setOpen(true);
-      }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B]" aria-label={`${label} 달력 열기`}><CalendarIcon className="h-4 w-4" /></button>
+    <div className="flex min-w-0 items-center gap-1">
+      <input type="text" inputMode="numeric" value={inputText} onChange={e=>setInputText(e.target.value)} onBlur={commitTypedDate} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();commitTypedDate();}}} placeholder="YYYY-MM-DD 직접 입력" aria-label={`${label} 날짜 직접 입력`} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white" />
+      <button type="button" onClick={()=>{if(!isOpen){const current=selected?new Date(Number(selected.slice(0,4)),Number(selected.slice(5,7))-1,Number(selected.slice(8,10))):new Date();setViewYear(current.getFullYear());setViewMonth(current.getMonth());}setIsOpen(open=>!open);}} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B] hover:bg-[#EEF2F7]" aria-label={`${label} 달력 열기`} aria-haspopup="dialog" aria-expanded={isOpen}><CalendarIcon className="h-4 w-4" /></button>
     </div>
-    {open && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 p-4" onClick={() => setOpen(false)}>
-      <div role="dialog" aria-modal="true" aria-label={`${label} 날짜 선택`} onClick={e => e.stopPropagation()} className="w-[min(320px,calc(100vw-32px))] rounded-2xl border border-[#E2E5E9] bg-white p-3 text-[#1F2937] shadow-2xl">
+    {isOpen && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4" onClick={()=>setIsOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label={`${label} 날짜 선택`} onClick={e=>e.stopPropagation()} className="relative max-h-[calc(100dvh-32px)] w-[min(320px,calc(100vw-32px))] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 text-[#1F2937] shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <button type="button" onClick={() => { const d = new Date(year, month-1, 1); setYear(d.getFullYear()); setMonth(d.getMonth()); }} className="rounded-lg border p-2 text-[#243B5A]"><ChevronLeft className="h-4 w-4"/></button>
-          <div className="flex gap-1">
-            <select value={year} onChange={e => setYear(Number(e.target.value))} className="rounded-lg border bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold">{Array.from({length: 81}, (_,i)=>1960+i).map(y=><option key={y} value={y}>{y}년</option>)}</select>
-            <select value={month} onChange={e => setMonth(Number(e.target.value))} className="rounded-lg border bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold">{Array.from({length:12},(_,i)=><option key={i} value={i}>{i+1}월</option>)}</select>
+          <button type="button" onClick={()=>moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft className="h-4 w-4" /></button>
+          <div className="flex min-w-0 items-center gap-1">
+            <select aria-label="연도 선택" value={viewYear} onChange={e=>setViewYear(Number(e.target.value))} className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]">{Array.from({length:Math.max(80,new Date().getFullYear()-1960+21)},(_,i)=>1960+i).map(y=><option key={y} value={y}>{y}년</option>)}</select>
+            <select aria-label="월 선택" value={viewMonth} onChange={e=>setViewMonth(Number(e.target.value))} className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A]">{Array.from({length:12},(_,i)=><option key={i} value={i}>{i+1}월</option>)}</select>
           </div>
-          <button type="button" onClick={() => { const d = new Date(year, month+1, 1); setYear(d.getFullYear()); setMonth(d.getMonth()); }} className="rounded-lg border p-2 text-[#243B5A]"><ChevronRight className="h-4 w-4"/></button>
+          <button type="button" onClick={()=>moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight className="h-4 w-4" /></button>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center">
-          {['일','월','화','수','목','금','토'].map((d,i)=><div key={d} className={`py-1 text-[11px] font-semibold ${i===0?'text-red-600':i===6?'text-blue-600':'text-[#64748B]'}`}>{d}</div>)}
-          {Array.from({length:first},(_,i)=><div key={`blank-${i}`}/>)}
-          {Array.from({length:days},(_,i)=>{
-            const day=i+1; const date=`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-            return <button key={date} type="button" onClick={()=>{onChange(date);setOpen(false);}} className={`h-9 rounded-lg text-xs ${value===date?'bg-[#243B5A] font-bold text-white':date===today?'border border-[#243B5A] font-bold text-[#243B5A]':'hover:bg-[#EEF2F7]'}`}>{day}</button>;
-          })}
+        <div className="grid grid-cols-7 gap-1 text-center">{['일','월','화','수','목','금','토'].map((d,i)=><div key={d} className={`py-1 text-[11px] font-semibold ${i===0?'text-red-600':i===6?'text-blue-600':'text-[#64748B]'}`}>{d}</div>)}
+          {Array.from({length:firstDay},(_,i)=><div key={`blank-${i}`} />)}
+          {Array.from({length:daysInMonth},(_,i)=>{const day=i+1;const date=`${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;return <button key={date} type="button" onClick={()=>chooseDate(day)} className={`h-9 rounded-lg text-xs ${selected===date?'bg-[#243B5A] font-bold text-white':date===today?'border border-[#243B5A] font-bold text-[#243B5A]':'hover:bg-[#EEF2F7]'}`}>{day}</button>;})}
         </div>
-        <div className="mt-3 flex justify-between border-t pt-2">
-          <button type="button" onClick={()=>{onChange(today);setOpen(false);}} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A]">오늘</button>
-          <button type="button" onClick={()=>setOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white">닫기</button>
-        </div>
+        <div className="mt-3 flex justify-between border-t border-[#E2E5E9] pt-2"><button type="button" onClick={()=>{onChange(today);setInputText(today);setIsOpen(false);}} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A]">오늘</button><button type="button" onClick={()=>setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white">닫기</button></div>
       </div>
     </div>}
   </div>;
@@ -271,7 +300,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
   };
 
   const openUsage = () => {
-    if (!selectedVehicle) { showCustomAlert('차량 선택','먼저 차량번호를 선택해주세요.'); return; }
+    if (vehicles.length === 0) { showCustomAlert('차량 선택','먼저 관리자에게 차량 등록을 요청해주세요.'); return; }
     if (!currentIsEligible) { showCustomAlert('차량 사용 제한','CERT의 YARD 자격에 작업용차량운전자교육이 등록된 인원만 차량을 사용할 수 있습니다.'); return; }
     if (!currentName) { showCustomAlert('사용자 확인','로그인 사용자 이름을 확인할 수 없습니다.'); return; }
     const now = new Date();
@@ -281,12 +310,13 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
 
   const saveUsage = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!selectedVehicle || !currentUser) return;
+    if (!selectedVehicle || !currentUser) { notify('사용창에서 차량번호를 선택해주세요.','warning'); return; }
     if (!currentIsEligible) { showCustomAlert('차량 사용 제한','작업용차량운전자교육 자격이 확인되지 않습니다.'); return; }
     if (!usageForm.used_at || !usageForm.destination.trim() || !usageForm.purpose.trim()) { notify('사용시간, 이동장소, 사용목적을 입력해주세요.','warning'); return; }
     const maintenance = /정비|수리/.test(usageForm.purpose);
-    if (maintenance && (!usageForm.maintenance_start_date || !usageForm.maintenance_end_date)) { notify('정비 또는 수리인 경우 기간 시작일과 종료일을 입력해주세요.','warning'); return; }
-    if (maintenance && usageForm.maintenance_end_date < usageForm.maintenance_start_date) { notify('기간 종료일은 시작일보다 빠를 수 없습니다.','warning'); return; }
+    const hasAnyPeriod = !!(usageForm.maintenance_start_date || usageForm.maintenance_end_date);
+    if ((maintenance || hasAnyPeriod) && (!usageForm.maintenance_start_date || !usageForm.maintenance_end_date)) { notify('기간을 입력할 경우 시작일과 종료일을 모두 선택해주세요. 정비 또는 수리 목적이면 기간 입력이 필수입니다.','warning'); return; }
+    if (usageForm.maintenance_start_date && usageForm.maintenance_end_date && usageForm.maintenance_end_date < usageForm.maintenance_start_date) { notify('기간 종료일은 시작일보다 빠를 수 없습니다.','warning'); return; }
     setSaving(true);
     try {
       const payload = {
@@ -295,8 +325,8 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
         used_at:new Date(usageForm.used_at).toISOString(),
         mileage:usageForm.mileage.trim()===''?null:Number(usageForm.mileage),
         destination:usageForm.destination.trim(), purpose:usageForm.purpose.trim(),
-        maintenance_start_date:maintenance?usageForm.maintenance_start_date:null,
-        maintenance_end_date:maintenance?usageForm.maintenance_end_date:null,
+        maintenance_start_date:usageForm.maintenance_start_date || null,
+        maintenance_end_date:usageForm.maintenance_end_date || null,
         is_parked:false, parking_remarks:null
       };
       const {data,error} = await supabase.from('work_vehicle_usage').insert(payload).select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, created_at').single();
@@ -386,14 +416,15 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
       </div>
     </div>}
 
-    {usageModalOpen && selectedVehicle && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setUsageModalOpen(false)}>
+    {usageModalOpen && vehicles.length > 0 && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setUsageModalOpen(false)}>
       <form onSubmit={saveUsage} onClick={e=>e.stopPropagation()} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-1 text-[11px] text-[#64748B]">{selectedVehicle.vehicle_number} · 사용자 {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-1 text-[11px] text-[#64748B]">사용자 {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">차량번호 선택</label><select value={activeVehicleId} onChange={e=>setActiveVehicleId(e.target.value)} required className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:bg-white"><option value="">차량을 선택해주세요</option>{vehicles.map(vehicle=><option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}</select></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">사용시간</label><input type="datetime-local" value={usageForm.used_at} onChange={e=>setUsageForm(p=>({...p,used_at:e.target.value}))} required className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
-        {/정비|수리/.test(usageForm.purpose) && <div className="grid grid-cols-1 gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3 sm:grid-cols-2"><VehicleCalendarPicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><VehicleCalendarPicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-amber-800 sm:col-span-2">정비 또는 수리 목적이면 기간을 반드시 입력해야 합니다.</p></div>}
+        <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#E2E5E9] bg-[#FCFCFD] p-3 sm:grid-cols-2"><VehicleCalendarPicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><VehicleCalendarPicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-[#64748B] sm:col-span-2">기간은 선택 입력입니다. 사용목적에 정비 또는 수리가 포함되면 반드시 입력해야 합니다.</p></div>
         <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving?'저장 중...':'사용 등록'}</button></div>
       </form>
     </div>}
