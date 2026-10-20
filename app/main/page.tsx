@@ -482,7 +482,6 @@ export default function MainPage() {
     }
 
     try {
-      // 현재 로그인 사용자의 app_users 행만 업데이트합니다.
       let updateQuery = supabase
         .from('app_users')
         .update({ work_status: status })
@@ -491,7 +490,6 @@ export default function MainPage() {
       const { data, error } = await updateQuery.select('id, work_status').maybeSingle();
       if (error) throw error;
 
-      // RLS 또는 ID 불일치로 업데이트된 행이 없다면 이메일로 한 번만 재시도합니다.
       if (!data && currentUser.email) {
         const retry = await supabase
           .from('app_users')
