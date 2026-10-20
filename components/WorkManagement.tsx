@@ -2270,9 +2270,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   );
                 })}
               </div>
-            )}
+ )}
           </div>
-        ) : taskTab === 'CABIN' && (
+        )}
+
         {taskTab === 'CABIN' && (
           <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -2318,6 +2319,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
           </div>
         )}
+      </div>
 
       {/* 업무 생성/수정 모달 */}
       {isModalOpen && (
