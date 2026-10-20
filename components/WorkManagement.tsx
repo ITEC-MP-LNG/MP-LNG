@@ -1365,8 +1365,18 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
           const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
           const offUsers = activeUsers.filter(u => u.work_status === '휴무');
+          
+          // 현재 활성화된(완료되지 않은) Cabin 업무들에서 주간/야간 인원 수집
+          const activeCabinTasks = tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED');
+          const cabinDayWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.day_workers || [])));
+          const cabinNightWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.night_workers || [])));
+          
+          // 공정 인원: 근무중 인원 중 Cabin 주간/야간에 속하지 않는 인원
+          const cabinAllSet = new Set([...cabinDayWorkers, ...cabinNightWorkers].map(n => n.trim().toLowerCase()));
+          const processWorkers = workingUsers.filter(u => !cabinAllSet.has((u.name || '').trim().toLowerCase()));
+
           return (
-            <div className="bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
+            <div className="bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl p-2.5 space-y-2 text-xs shadow-2xs">
               <div className="flex items-center space-x-3 flex-wrap gap-y-1">
                 <span className="font-bold text-[#243B5A] flex items-center gap-1">
                   <Users className="h-3.5 w-3.5" /> 인원 현황:
@@ -1375,42 +1385,26 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <span>근무중: <strong className="text-emerald-600">{workingUsers.length}명</strong></span>
                 <span>휴무: <strong className="text-blue-600">{offUsers.length}명</strong></span>
               </div>
-              <div className="text-[11px] text-[#64748B] flex items-center gap-1 flex-wrap">
+              
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1 border-t border-[#E2E5E9] text-[11px]">
+                <div className="bg-white p-1.5 rounded border border-slate-200">
+                  <span className="font-bold text-blue-700">Cabin 주간 ({cabinDayWorkers.length}명):</span> <span className="text-[#1F2937]">{cabinDayWorkers.length > 0 ? cabinDayWorkers.join(', ') : '없음'}</span>
+                </div>
+                <div className="bg-white p-1.5 rounded border border-slate-200">
+                  <span className="font-bold text-violet-700">Cabin 야간 ({cabinNightWorkers.length}명):</span> <span className="text-[#1F2937]">{cabinNightWorkers.length > 0 ? cabinNightWorkers.join(', ') : '없음'}</span>
+                </div>
+                <div className="bg-white p-1.5 rounded border border-slate-200">
+                  <span className="font-bold text-emerald-700">공정 ({processWorkers.length}명):</span> <span className="text-[#1F2937]">{processWorkers.length > 0 ? processWorkers.map(u => u.name).join(', ') : '없음'}</span>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-[#64748B] flex items-center gap-1 flex-wrap pt-0.5">
                 <span className="font-semibold text-[#1F2937]">휴무자 명단:</span>
                 {offUsers.length > 0 ? (
                   <span className="text-blue-700 font-medium">{offUsers.map(u => u.name).join(', ')}</span>
                 ) : (
                   <span>없음</span>
                 )}
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* CABIN 탭인 경우 근무중 인원의 주간/야간 배치 명단 표시 배너 */}
-        {taskTab === 'CABIN' && (() => {
-          const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
-          const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
-          
-          // 현재 활성화된(완료되지 않은) Cabin 업무들에서 주간/야간 인원 수집
-          const activeCabinTasks = tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED');
-          const cabinDayWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.day_workers || [])));
-          const cabinNightWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.night_workers || [])));
-          
-          return (
-            <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-2.5 text-xs space-y-1">
-              <div className="font-bold text-[#243B5A] flex items-center gap-1">
-                <Users className="h-3.5 w-3.5" /> CABIN 근무 인원 배치 현황 (근무중 총 {workingUsers.length}명 중)
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                <div className="bg-white p-2 rounded-lg border border-blue-100 flex items-start gap-2">
-                  <span className="font-bold text-blue-700 shrink-0 flex items-center gap-0.5"><Sun className="h-3 w-3" /> 주간 근무 ({cabinDayWorkers.length}명):</span>
-                  <span className="text-[#1F2937] break-all">{cabinDayWorkers.length > 0 ? cabinDayWorkers.join(', ') : '배정된 인원 없음'}</span>
-                </div>
-                <div className="bg-white p-2 rounded-lg border border-violet-100 flex items-start gap-2">
-                  <span className="font-bold text-violet-700 shrink-0 flex items-center gap-0.5"><Moon className="h-3 w-3" /> 야간 근무 ({cabinNightWorkers.length}명):</span>
-                  <span className="text-[#1F2937] break-all">{cabinNightWorkers.length > 0 ? cabinNightWorkers.join(', ') : '배정된 인원 없음'}</span>
-                </div>
               </div>
             </div>
           );
