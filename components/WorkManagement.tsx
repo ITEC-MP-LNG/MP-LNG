@@ -2271,8 +2271,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   })}
                 </div>
               </div>
-            )}
-          </div>
+            </div>
         )}
 
         {taskTab === 'CABIN' && (
