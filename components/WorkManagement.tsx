@@ -2832,7 +2832,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         </div>
       )}
 
-      {/* 업무 상세 보기 시트 (모달) */}
+    {/* 업무 상세 보기 시트 (모달) */}
       {selectedTaskForSheet && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedTaskForSheet(null)}>
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
@@ -2891,7 +2891,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 </div>
               </div>
 
-         <div className="flex items-center justify-end gap-2 pt-3 border-t">
+              <div className="flex items-center justify-end gap-2 pt-3 border-t">
                 {canModifyTaskStatus(selectedTaskForSheet) && (
                   <button onClick={() => { const task = selectedTaskForSheet; setSelectedTaskForSheet(null); setStatusChangeModal({ open: true, task, targetStatus: task.status, remarks: task.remarks || '' }); }} className="px-3 py-1.5 bg-[#243B5A] text-white font-bold rounded-lg text-xs">상태/비고 변경</button>
                 )}
@@ -2902,7 +2902,5 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         </div>
       )}
     </div>
-  );
-}
   );
 }
