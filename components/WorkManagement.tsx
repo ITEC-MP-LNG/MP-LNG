@@ -5,7 +5,7 @@ import {
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, AlertCircle, PlayCircle, PlusCircle,
-  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown, CalendarDays
+  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
@@ -41,24 +41,6 @@ export interface CabinVessel {
   name: string;
 }
 
-export interface VehicleItem {
-  id: string;
-  vehicle_no: string;
-}
-
-export interface VehicleUsage {
-  id: string;
-  vehicle_no: string;
-  driver_name: string;
-  driver_id?: string;
-  time_str?: string;
-  destination?: string;
-  purpose?: string;
-  start_date?: string;
-  end_date?: string;
-  created_at?: string;
-}
-
 export interface PresetTeam {
   id: string;
   name: string;
@@ -75,7 +57,6 @@ export interface AppUser {
   field?: string;
   phone?: string;
   work_status?: '근무중' | '휴무' | string;
-  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>;
 }
 
 const formatDateToYYYYMMDD = (d: Date) => {
@@ -116,196 +97,14 @@ function isFormerEmployee(user: AppUser): boolean {
   return values.some(value => /퇴사|퇴직|퇴사자|퇴직자/.test(value));
 }
 
-function CalendarDatePicker({
-  value,
-  onChange,
-  className = "w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none",
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-  const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
-    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
-    : new Date();
-  const [viewYear, setViewYear] = useState(initialDate.getFullYear());
-  const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
-  const [inputText, setInputText] = useState(value || '');
-  const rootRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setInputText(value || '');
-  }, [value]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleOutside = (event: MouseEvent | TouchEvent) => {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setIsOpen(false);
-    };
-    const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setIsOpen(false);
-    };
-    document.addEventListener('mousedown', handleOutside);
-    document.addEventListener('touchstart', handleOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleOutside);
-      document.removeEventListener('touchstart', handleOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [isOpen]);
-
-  const moveMonth = (amount: number) => {
-    const next = new Date(viewYear, viewMonth + amount, 1);
-    setViewYear(next.getFullYear());
-    setViewMonth(next.getMonth());
-  };
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
-  const selected = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
-  const today = (() => {
-    const now = new Date();
-    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-  })();
-  const commitTypedDate = () => {
-    const trimmed = inputText.trim();
-    if (!trimmed) {
-      onChange('');
-      setInputText('');
-      return;
-    }
-    const normalizedInput = /^\d{8}$/.test(trimmed)
-      ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
-      : trimmed;
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizedInput);
-    if (match) {
-      const year = Number(match[1]);
-      const month = Number(match[2]);
-      const day = Number(match[3]);
-      const candidate = new Date(year, month - 1, day);
-      if (candidate.getFullYear() === year && candidate.getMonth() === month - 1 && candidate.getDate() === day) {
-        const normalized = `${match[1]}-${match[2]}-${match[3]}`;
-        onChange(normalized);
-        setInputText(normalized);
-        return;
-      }
-    }
-    setInputText(value || '');
-  };
-  const chooseDate = (day: number) => {
-    const nextValue = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    onChange(nextValue);
-    setInputText(nextValue);
-    setIsOpen(false);
-  };
-
-  return (
-    <div ref={rootRef} className="relative w-full min-w-0">
-      <div className="flex min-w-0 items-center gap-1">
-        <input
-          type="text"
-          inputMode="numeric"
-          value={inputText}
-          onChange={(event) => setInputText(event.target.value)}
-          onBlur={commitTypedDate}
-          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitTypedDate(); } }}
-          placeholder="YYYY-MM-DD 직접 입력"
-          aria-label="날짜 직접 입력 (YYYY-MM-DD)"
-          className={`${className} min-w-0 flex-1`}
-        />
-        <button
-          type="button"
-          onClick={() => {
-            if (!isOpen) {
-              const current = selected ? new Date(Number(selected.slice(0, 4)), Number(selected.slice(5, 7)) - 1, Number(selected.slice(8, 10))) : new Date();
-              setViewYear(current.getFullYear());
-              setViewMonth(current.getMonth());
-            }
-            setIsOpen(open => !open);
-          }}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B] hover:bg-[#EEF2F7]"
-          aria-label="달력 열기"
-          aria-haspopup="dialog"
-          aria-expanded={isOpen}
-        >
-          <CalendarDays size={16} />
-        </button>
-      </div>
-      {isOpen && (
-        <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4"
-          onClick={() => setIsOpen(false)}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="날짜 선택"
-            onClick={(event) => event.stopPropagation()}
-            className="relative w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
-          >
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft size={16} /></button>
-              <div className="flex min-w-0 items-center gap-1">
-                <select
-                  aria-label="연도 선택"
-                  value={viewYear}
-                  onChange={(event) => setViewYear(Number(event.target.value))}
-                  className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
-                >
-                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map((year) => (
-                    <option key={year} value={year}>{year}년</option>
-                  ))}
-                </select>
-                <select
-                  aria-label="월 선택"
-                  value={viewMonth}
-                  onChange={(event) => setViewMonth(Number(event.target.value))}
-                  className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
-                >
-                  {Array.from({ length: 12 }, (_, month) => <option key={month} value={month}>{month + 1}월</option>)}
-                </select>
-              </div>
-              <button type="button" onClick={() => moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight size={16} /></button>
-            </div>
-            <div className="grid grid-cols-7 gap-1 text-center">
-              {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{day}</div>)}
-              {Array.from({ length: firstDay }, (_, index) => <div key={`empty-${index}`} />)}
-              {Array.from({ length: daysInMonth }, (_, index) => {
-                const day = index + 1;
-                const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                const isSelected = dateKey === selected;
-                const isToday = dateKey === today;
-                const weekday = new Date(viewYear, viewMonth, day).getDay();
-                return <button key={dateKey} type="button" onClick={() => chooseDate(day)} aria-pressed={isSelected} className={`h-9 rounded-lg text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white shadow-sm' : isToday ? 'border border-[#243B5A] font-bold text-[#243B5A]' : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`}`}>{day}</button>;
-              })}
-            </div>
-            <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
-              <button type="button" onClick={() => { const now = new Date(); const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); onChange(date); setInputText(date); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">오늘</button>
-              <div className="flex items-center gap-1">
-                {selected && <button type="button" onClick={() => { onChange(''); setInputText(''); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">날짜 지우기</button>}
-                <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">닫기</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function WorkManagement({ currentUser }: { currentUser?: { id: string; name: string; role: string } | null }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [vessels, setVessels] = useState<CabinVessel[]>([]);
-  const [vehicles, setVehicles] = useState<VehicleItem[]>([]);
-  const [vehicleUsages, setVehicleUsages] = useState<VehicleUsage[]>([]);
   const [presetTeams, setPresetTeams] = useState<PresetTeam[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
   const [validUserNames, setValidUserNames] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  const [selectedVehicleUsageIds, setSelectedVehicleUsageIds] = useState<string[]>([]);
 
   const isAdmin = useMemo(() => {
     const role = String(currentUser?.role || '').trim().toUpperCase();
@@ -321,26 +120,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return Boolean(task.created_by_name && currentUser.name && task.created_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase());
   }, [isAdmin, currentUser]);
 
-  const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN' | 'VEHICLE'>('DAILY');
+  const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN'>('DAILY');
   const [dailySubTab, setDailySubTab] = useState<'ACTIVE' | 'OTHER' | 'HISTORY'>('ACTIVE'); 
   const [cabinSubTab, setCabinSubTab] = useState<string>('ALL');
   const [cabinStatusSubTab, setCabinStatusSubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
-  
-  const [vehicleSubTab, setVehicleSubTab] = useState<string>('ALL');
-  const [isVehicleManagerOpen, setIsVehicleManagerOpen] = useState(false);
-  const [newVehicleNo, setNewVehicleNo] = useState('');
-  const [editingVehicle, setEditingVehicle] = useState<VehicleItem | null>(null);
-
-  const [isVehicleUsageModalOpen, setIsVehicleUsageModalOpen] = useState(false);
-  const [targetVehicleForUsage, setTargetVehicleForUsage] = useState<string>('');
-  const [vehicleUsageForm, setVehicleUsageForm] = useState({
-    time_str: '',
-    destination: '',
-    purpose: '',
-    start_date: formatDateToYYYYMMDD(new Date()),
-    end_date: formatDateToYYYYMMDD(new Date()),
-  });
-
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   const [tableFilterVessel, setTableFilterVessel] = useState<string>('ALL');
@@ -438,7 +221,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const fetchAppUsers = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('app_users').select('id, name, department, position, job_title, field, phone, work_status, yard_cert_details');
+      const { data, error } = await supabase.from('app_users').select('name, department, position, job_title, field, phone, work_status');
       if (error) throw error;
       if (data) {
         setAppUsers(data);
@@ -467,30 +250,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }
     } catch (err) {
       console.error('vessels 로드 실패:', err);
-    }
-  }, []);
-
-  const fetchVehicles = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.from('vehicles').select('id, vehicle_no, created_at').order('created_at', { ascending: true });
-      if (error) throw error;
-      if (data) {
-        setVehicles(data);
-      }
-    } catch (err) {
-      console.error('vehicles 로드 실패:', err);
-    }
-  }, []);
-
-  const fetchVehicleUsages = useCallback(async () => {
-    try {
-      const { data, error } = await supabase.from('vehicle_usages').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      if (data) {
-        setVehicleUsages(data);
-      }
-    } catch (err) {
-      console.error('vehicle_usages 로드 실패:', err);
     }
   }, []);
 
@@ -640,10 +399,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   useEffect(() => {
     fetchAppUsers();
     fetchVessels();
-    fetchVehicles();
-    fetchVehicleUsages();
     fetchTeams();
-  }, [fetchAppUsers, fetchVessels, fetchVehicles, fetchVehicleUsages, fetchTeams]);
+  }, [fetchAppUsers, fetchVessels, fetchTeams]);
 
   useEffect(() => {
     fetchTasks();
@@ -746,93 +503,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       } catch (err: any) { showCustomAlert('오류', `호선 삭제 실패: ${err.message}`); }
     });
   }, [isAdmin, showCustomConfirm, fetchVessels, showCustomAlert, vessels, cabinSubTab, tableFilterVessel]);
-
-  const handleAddVehicle = useCallback(async () => {
-    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
-    if (!newVehicleNo.trim()) return;
-    try {
-      const { error } = await supabase.from('vehicles').insert([{ vehicle_no: newVehicleNo.trim() }]);
-      if (error) throw error;
-      setNewVehicleNo('');
-      fetchVehicles();
-      showCustomAlert('성공', '차량이 등록되었습니다.');
-    } catch (err: any) { showCustomAlert('오류', `차량 등록 실패: ${err.message}`); }
-  }, [isAdmin, newVehicleNo, fetchVehicles, showCustomAlert]);
-
-  const handleUpdateVehicle = useCallback(async (id: string, vehicleNo: string) => {
-    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
-    if (!vehicleNo.trim()) return;
-    try {
-      const { error } = await supabase.from('vehicles').update({ vehicle_no: vehicleNo.trim() }).eq('id', id);
-      if (error) throw error;
-      setEditingVehicle(null);
-      fetchVehicles();
-      showCustomAlert('성공', '차량 정보가 수정되었습니다.');
-    } catch (err: any) { showCustomAlert('오류', `차량 수정 실패: ${err.message}`); }
-  }, [isAdmin, fetchVehicles, showCustomAlert]);
-
-  const handleDeleteVehicle = useCallback(async (id: string) => {
-    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
-    showCustomConfirm('차량 삭제', '이 차량을 삭제하시겠습니까?', async () => {
-      try {
-        const vehicleToDelete = vehicles.find((v) => v.id === id);
-        const { error } = await supabase.from('vehicles').delete().eq('id', id);
-        if (error) throw error;
-        if (vehicleToDelete && vehicleSubTab === vehicleToDelete.vehicle_no) setVehicleSubTab('ALL');
-        await fetchVehicles();
-        showCustomAlert('완료', '차량이 삭제되었습니다.');
-      } catch (err: any) { showCustomAlert('오류', `차량 삭제 실패: ${err.message}`); }
-    });
-  }, [isAdmin, showCustomConfirm, fetchVehicles, showCustomAlert, vehicles, vehicleSubTab]);
-
-  const handleOpenVehicleUsageModal = useCallback((vehicleNo: string) => {
-    if (!currentUser) {
-      showCustomAlert('알림', '로그인 후 이용 가능합니다.');
-      return;
-    }
-    const currentUserObj = appUsers.find(u => u.name?.trim().toLowerCase() === currentUser.name?.trim().toLowerCase());
-    const yardCerts = currentUserObj?.yard_cert_details || [];
-    const hasDrivingCert = yardCerts.some(c => (c.name || '').includes('작업용차량운전자'));
-
-    if (!hasDrivingCert) {
-      showCustomAlert('알림', '교육이수가 되지 않은 인원입니다');
-      return;
-    }
-
-    setTargetVehicleForUsage(vehicleNo);
-    setVehicleUsageForm({
-      time_str: '08:00',
-      destination: '',
-      purpose: '',
-      start_date: formatDateToYYYYMMDD(new Date()),
-      end_date: formatDateToYYYYMMDD(new Date()),
-    });
-    setIsVehicleUsageModalOpen(true);
-  }, [currentUser, appUsers, showCustomAlert]);
-
-  const handleSaveVehicleUsage = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!currentUser?.name) return;
-    try {
-      const payload = {
-        vehicle_no: targetVehicleForUsage,
-        driver_name: currentUser.name,
-        driver_id: currentUser.id || null,
-        time_str: vehicleUsageForm.time_str,
-        destination: vehicleUsageForm.destination.trim(),
-        purpose: vehicleUsageForm.purpose.trim(),
-        start_date: vehicleUsageForm.start_date,
-        end_date: vehicleUsageForm.end_date,
-      };
-      const { error } = await supabase.from('vehicle_usages').insert([payload]);
-      if (error) throw error;
-      setIsVehicleUsageModalOpen(false);
-      fetchVehicleUsages();
-      showCustomAlert('성공', '차량 사용 신청이 등록되었습니다.');
-    } catch (err: any) {
-      showCustomAlert('오류', `차량 사용 등록 실패: ${err.message}`);
-    }
-  }, [currentUser, targetVehicleForUsage, vehicleUsageForm, fetchVehicleUsages, showCustomAlert]);
 
   const handleAddTeam = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
@@ -1033,7 +703,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [handleNextStatus]);
 
   const handleOpenCreateModal = useCallback((defaultDate?: string, defaultType?: 'DAILY' | 'DAILY_OTHER' | 'WEEKLY' | 'CABIN', defaultCategory?: string) => {
-    const requestedType = defaultType || (taskTab === 'VEHICLE' ? 'DAILY' : taskTab);
+    const requestedType = defaultType || taskTab;
     if (!isAdmin && requestedType !== 'DAILY_OTHER') { showCustomAlert('권한 제한', '관리자만 해당 업무를 등록할 수 있습니다.'); return; }
     if (requestedType === 'DAILY_OTHER' && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
     setEditingTask(null);
@@ -1082,12 +752,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (!singleWorkerInput.trim()) return;
     const name = singleWorkerInput.trim();
     
+    // 휴무 인원 검증
     const foundUser = appUsers.find(u => u.name?.trim().toLowerCase() === name.toLowerCase());
     if (foundUser && foundUser.work_status === '휴무') {
       showCustomAlert('업무 등록 제한', `${foundUser.name} 휴무입니다.`);
       return;
     }
 
+    // 일일 업무 등록 시 CABIN에 등록된 인원인지 체크
     if (formData.task_type === 'DAILY' && target === 'ASSIGNED') {
       for (const t of tasks) {
         if (t.task_type === 'CABIN' && t.status !== 'COMPLETED') {
@@ -1128,6 +800,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (isDailyOther && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
     if (!formData.title.trim()) { showCustomAlert('입력 확인', '업무명을 입력해 주세요.'); return; }
 
+    // 휴무 인원 등록 검증 (전체 대상)
     const workersToCheck = formData.task_type === 'CABIN'
       ? [...dayWorkerList, ...nightWorkerList]
       : isDailyOther
@@ -1141,6 +814,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         return;
       }
       
+      // 일일 업무 등록 시 CABIN 배치 여부 검증
       if (formData.task_type === 'DAILY') {
         for (const t of tasks) {
           if (t.task_type === 'CABIN' && t.status !== 'COMPLETED' && (!editingTask || t.id !== editingTask.id)) {
@@ -1528,8 +1202,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (cabinSubTab !== 'ALL' && t.category !== cabinSubTab) return false;
         if (cabinStatusSubTab === 'ACTIVE' && t.status === 'COMPLETED') return false;
         if (cabinStatusSubTab === 'HISTORY' && t.status !== 'COMPLETED') return false;
-      } else if (taskTab === 'VEHICLE') {
-        return false;
       }
 
       if (tableFilterVessel !== 'ALL' && t.category !== tableFilterVessel) return false;
@@ -1591,7 +1263,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   }, [filteredTasks]);
 
-  const handleBulkDeleteTasks = useCallback(async () => {
+  const handleBulkDeleteTasks = useCallback(() => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 업무를 삭제할 수 있습니다.'); return; }
     const ids = selectedTaskIds.filter((id) => filteredTasks.some((task) => task.id === id));
     if (ids.length === 0) { showCustomAlert('선택 항목 없음', '삭제할 업무를 먼저 선택해 주세요.'); return; }
@@ -1621,7 +1293,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
               <div>
                 <h2 className="text-sm sm:text-base font-bold">운영 및 근무 관리 시스템</h2>
-                <p className="text-[11px] sm:text-xs text-[#64748B]">일일, 주간, CABIN 및 차량 운영 관리</p>
+                <p className="text-[11px] sm:text-xs text-[#64748B]">일일, 주간 및 CABIN 업무 편성</p>
               </div>
             </div>
 
@@ -1639,7 +1311,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 </button>
               )}
 
-              {(isAdmin || (taskTab === 'DAILY' && dailySubTab === 'OTHER')) && taskTab !== 'VEHICLE' && (
+              {(isAdmin || (taskTab === 'DAILY' && dailySubTab === 'OTHER')) && (
                 <button
                   onClick={() => handleOpenCreateModal(undefined, taskTab === 'DAILY' && dailySubTab === 'OTHER' ? 'DAILY_OTHER' : undefined)}
                   className="flex items-center space-x-1 bg-[#243B5A] text-white px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-semibold shadow-xs shrink-0"
@@ -1664,7 +1336,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <span className="truncate">미완료 알림 ({myAssignedTasks.length})</span>
             </button>
 
-            <div className="col-span-2 sm:col-span-auto bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] grid grid-cols-4 gap-1 h-8 items-center shrink-0">
+            <div className="col-span-2 sm:col-span-auto bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] grid grid-cols-3 gap-1 h-8 items-center shrink-0">
               <button
                 onClick={() => { setTaskTab('DAILY'); setSelectedTaskIds([]); }}
                 className={`px-2.5 py-0.5 text-xs font-semibold rounded-md text-center transition ${taskTab === 'DAILY' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
@@ -1684,26 +1356,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <Home className="h-3 w-3 shrink-0" />
                 <span>CABIN</span>
               </button>
-              <button
-                onClick={() => { setTaskTab('VEHICLE'); setSelectedTaskIds([]); }}
-                className={`px-2.5 py-0.5 text-xs font-semibold rounded-md flex items-center justify-center gap-1 transition ${taskTab === 'VEHICLE' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
-              >
-                <span>차량</span>
-              </button>
             </div>
           </div>
         </div>
 
         {/* 인원 현황 요약 배너 */}
-        {taskTab !== 'VEHICLE' && (() => {
+        {(() => {
           const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
           const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
           const offUsers = appUsers.filter(u => u.work_status === '휴무');
           
+          // 현재 활성화된(완료되지 않은) Cabin 업무들에서 주간/야간 인원 수집
           const activeCabinTasks = tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED');
           const cabinDayWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.day_workers || [])));
           const cabinNightWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.night_workers || [])));
           
+          // 공정 인원: 근무중 인원 중 Cabin 주간/야간에 속하지 않는 인원
           const cabinAllSet = new Set([...cabinDayWorkers, ...cabinNightWorkers].map(n => n.trim().toLowerCase()));
           const processWorkers = workingUsers.filter(u => !cabinAllSet.has((u.name || '').trim().toLowerCase()));
 
@@ -1713,7 +1381,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <span className="font-bold text-[#243B5A] flex items-center gap-1">
                   <Users className="h-3.5 w-3.5" /> 인원 현황:
                 </span>
-                <span>전체: <strong className="text-[#1F2937]">{activeUsers.length}명</strong></span>
+                <span>전체(퇴사자 제외): <strong className="text-[#1F2937]">{activeUsers.length}명</strong></span>
                 <span>근무중: <strong className="text-emerald-600">{workingUsers.length}명 (Cabin 주간: {cabinDayWorkers.length}명, Cabin 야간: {cabinNightWorkers.length}명, 공정: {processWorkers.length}명)</strong></span>
                 <span>휴무: <strong className="text-blue-600">{offUsers.length}명</strong></span>
               </div>
@@ -1729,43 +1397,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
           );
         })()}
-
-        {/* 차량 탭 서브탭 및 차량 등록 관리 */}
-        {taskTab === 'VEHICLE' && (
-          <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
-            <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0 [&::-webkit-scrollbar]:h-1">
-              <Tag className="h-3.5 w-3.5 text-[#64748B] ml-1 shrink-0" />
-              <span className="text-xs font-bold text-[#1F2937] mr-1 shrink-0">차량:</span>
-              <button
-                onClick={() => setVehicleSubTab('ALL')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg shrink-0 ${vehicleSubTab === 'ALL' ? 'bg-white border text-[#243B5A] font-bold shadow-2xs' : 'text-[#64748B]'}`}
-              >
-                전체
-              </button>
-              {vehicles.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => setVehicleSubTab(v.vehicle_no)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg shrink-0 flex items-center gap-1 transition ${
-                    vehicleSubTab === v.vehicle_no ? 'bg-[#243B5A] text-white font-bold shadow-2xs' : 'bg-white border text-[#243B5A] hover:bg-slate-100'
-                  }`}
-                >
-                  <span>{v.vehicle_no}</span>
-                </button>
-              ))}
-            </div>
-
-            {isAdmin && (
-              <button
-                onClick={() => setIsVehicleManagerOpen(true)}
-                className="flex items-center space-x-1 text-xs text-[#243B5A] font-semibold bg-white border px-2 py-1 rounded-lg shrink-0 hover:bg-slate-50 ml-1"
-              >
-                <Settings className="h-3 w-3" />
-                <span className="hidden sm:inline">차량 등록/관리</span>
-              </button>
-            )}
-          </div>
-        )}
 
         {/* 일일 업무 서브탭 */}
         {taskTab === 'DAILY' && (
@@ -1859,396 +1490,280 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-       {isLoading ? (
+        {isLoading ? (
           <div className="text-center py-16 text-xs text-[#64748B]">로딩 중...</div>
-        ) : taskTab === 'VEHICLE' ? (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between bg-white p-3 rounded-xl border shadow-2xs">
-              <div>
-                <h3 className="text-sm font-bold text-[#243B5A]">차량 운영 및 사용 관리</h3>
-                <p className="text-[11px] text-[#64748B]">등록된 차량을 선택하고 '차량 사용' 버튼을 통해 사용 신청을 할 수 있습니다. (작업용차량운전자 교육 이수자 필수)</p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {(vehicleSubTab === 'ALL' ? vehicles : vehicles.filter(v => v.vehicle_no === vehicleSubTab)).map((v) => {
-                const usages = vehicleUsages.filter(u => u.vehicle_no === v.vehicle_no);
-                const isAllSelected = usages.length > 0 && usages.every(u => selectedVehicleUsageIds.includes(u.id));
-
-                return (
-                  <div key={v.id} className="bg-white border rounded-xl p-4 shadow-2xs space-y-3 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between border-b pb-2 mb-2">
-                        <span className="font-bold text-sm text-[#243B5A]">🚗 차량번호: {v.vehicle_no}</span>
-                        <button
-                          onClick={() => handleOpenVehicleUsageModal(v.vehicle_no)}
-                          className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-bold rounded-lg hover:bg-[#1B2F49] transition shadow-xs"
-                        >
-                          차량 사용
-                        </button>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-[#64748B]">사용 내역 ({usages.length}건)</span>
-                          {isAdmin && usages.length > 0 && (
-                            <div className="flex items-center gap-2">
-                              <label className="flex items-center gap-1 text-[11px] font-semibold text-[#243B5A] cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={isAllSelected}
-                                  onChange={(e) => {
-                                    const ids = usages.map(u => u.id);
-                                    if (e.target.checked) {
-                                      setSelectedVehicleUsageIds(prev => Array.from(new Set([...prev, ...ids])));
-                                    } else {
-                                      setSelectedVehicleUsageIds(prev => prev.filter(id => !ids.includes(id)));
-                                    }
-                                  }}
-                                  className="accent-[#243B5A]"
-                                />
-                                전체선택
-                              </label>
-                              <button
-                                onClick={async () => {
-                                  const targetIds = selectedVehicleUsageIds.filter(id => usages.some(u => u.id === id));
-                                  if (targetIds.length === 0) {
-                                    showCustomAlert('알림', '삭제할 사용 내역을 체크해주세요.');
-                                    return;
-                                  }
-                                  showCustomConfirm('사용 내역 삭제', `선택한 ${targetIds.length}건의 사용 내역을 삭제하시겠습니까?`, async () => {
-                                    try {
-                                      const { error } = await supabase.from('vehicle_usages').delete().in('id', targetIds);
-                                      if (error) throw error;
-                                      setSelectedVehicleUsageIds(prev => prev.filter(id => !targetIds.includes(id)));
-                                      await fetchVehicleUsages();
-                                      showCustomAlert('완료', '선택한 사용 내역이 삭제되었습니다.');
-                                    } catch (err: any) {
-                                      showCustomAlert('오류', `삭제 실패: ${err.message}`);
-                                    }
-                                  });
-                                }}
-                                className="px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded text-[10px] font-bold hover:bg-red-100"
-                              >
-                                선택삭제
-                              </button>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
-                          {usages.length === 0 ? (
-                            <div className="text-[11px] text-[#94A3B8] py-2 text-center">사용 내역이 없습니다.</div>
-                          ) : (
-                            usages.map((u) => {
-                              const isChecked = selectedVehicleUsageIds.includes(u.id);
-                              return (
-                                <div key={u.id} className="bg-[#F5F6F8] p-2 rounded-lg text-[11px] space-y-0.5 border flex items-start gap-2">
-                                  {isAdmin && (
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={(e) => {
-                                        if (e.target.checked) {
-                                          setSelectedVehicleUsageIds(prev => [...prev, u.id]);
-                                        } else {
-                                          setSelectedVehicleUsageIds(prev => prev.filter(id => id !== u.id));
-                                        }
-                                      }}
-                                      className="mt-0.5 accent-[#243B5A]"
-                                    />
-                                  )}
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex justify-between font-bold text-[#1F2937]">
-                                      <span>운전자: {u.driver_name}</span>
-                                      <span className="font-mono text-[#64748B]">{u.time_str || ''}</span>
-                                    </div>
-                                    <div>목적지: {u.destination || '-'} / 목적: {u.purpose || '-'}</div>
-                                    {u.start_date && <div className="text-[10px] text-[#64748B] font-mono">기간: {u.start_date} ~ {u.end_date || u.start_date}</div>}
-                                  </div>
-                                </div>
-                              );
-                            })
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-              {vehicles.length === 0 && (
-                <div className="col-span-full py-12 text-center text-xs text-[#64748B] bg-white rounded-xl border">
-                  등록된 차량이 없습니다. 관리자 계정에서 '차량 등록/관리'를 통해 차량을 등록해 주세요.
-                </div>
-              )}
-            </div>
-          </div>
         ) : taskTab === 'DAILY' ? (
           <>
-            <div className="md:hidden space-y-2">
-              <div className="relative grid grid-cols-2 gap-2 rounded-xl border border-[#E2E5E9] bg-white p-2">
-                <button
-                  type="button"
-                  onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'mobile-vessel' ? null : 'mobile-vessel')}
-                  className={`flex min-w-0 items-center justify-between gap-1 rounded-lg bg-[#243B5A] px-2.5 py-2 text-left text-xs font-bold text-white ${dailySubTab === 'HISTORY' ? 'col-span-2' : ''}`}
-                >
-                  <span className="truncate">▶ 호선 선택: {tableFilterVessel === 'ALL' ? '전체' : tableFilterVessel}</span>
-                  <ChevronDown className="h-4 w-4 shrink-0"/>
-                </button>
-                {dailySubTab !== 'HISTORY' && <button
-                  type="button"
-                  onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'mobile-date' ? null : 'mobile-date')}
-                  className="flex min-w-0 items-center justify-between gap-1 rounded-lg bg-[#243B5A] px-2.5 py-2 text-left text-xs font-bold text-white"
-                >
-                  <span className="truncate">▶ 일자 선택: {tableFilterDate === 'ALL' ? '전체' : formatToShortDate(tableFilterDate)}</span>
-                  <ChevronDown className="h-4 w-4 shrink-0"/>
-                </button>}
-                {activeFilterDropdown === 'mobile-vessel' && (
-                  <div className="absolute left-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
-                    <button type="button" onClick={() => { setTableFilterVessel('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 호선</button>
-                    {vessels.map(v => <button key={v.id} type="button" onClick={() => { setTableFilterVessel(v.name); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-slate-100">{v.name}</button>)}
-                  </div>
-                )}
-                {dailySubTab !== 'HISTORY' && activeFilterDropdown === 'mobile-date' && (
-                  <div className="absolute right-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
-                    <button type="button" onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 날짜</button>
-                    {Array.from(new Set(tasks.filter(t => (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && Boolean(t.start_date) && t.start_date >= formatDateToYYYYMMDD(new Date())).map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
-                      <button key={dStr} type="button" onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-slate-100">{formatToShortDate(dStr)}</button>
-                    ))}
-                  </div>
-                )}
-                {((dailySubTab !== 'HISTORY' && tableFilterDate !== 'ALL') || tableFilterVessel !== 'ALL') && <button type="button" onClick={() => { setTableFilterDate('ALL'); setTableFilterVessel('ALL'); }} className="col-span-2 rounded-lg border px-2 py-1.5 text-xs text-[#64748B]">필터 전체 해제</button>}
-              </div>
-              {filteredTasks.length === 0 ? (
-                <div className="rounded-xl border bg-white py-10 text-center text-xs text-[#64748B]">
-                  {dailySubTab === 'ACTIVE' ? '등록된 진행중/대기 일일 업무가 없습니다.' : dailySubTab === 'OTHER' ? '등록된 야간업무진행가 없습니다.' : '완료 이력이 없습니다.'}
+          <div className="md:hidden space-y-2">
+            <div className="relative grid grid-cols-2 gap-2 rounded-xl border border-[#E2E5E9] bg-white p-2">
+              <button
+                type="button"
+                onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'mobile-vessel' ? null : 'mobile-vessel')}
+                className={`flex min-w-0 items-center justify-between gap-1 rounded-lg bg-[#243B5A] px-2.5 py-2 text-left text-xs font-bold text-white ${dailySubTab === 'HISTORY' ? 'col-span-2' : ''}`}
+              >
+                <span className="truncate">▶ 호선 선택: {tableFilterVessel === 'ALL' ? '전체' : tableFilterVessel}</span>
+                <ChevronDown className="h-4 w-4 shrink-0" />
+              </button>
+              {dailySubTab !== 'HISTORY' && <button
+                type="button"
+                onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'mobile-date' ? null : 'mobile-date')}
+                className="flex min-w-0 items-center justify-between gap-1 rounded-lg bg-[#243B5A] px-2.5 py-2 text-left text-xs font-bold text-white"
+              >
+                <span className="truncate">▶ 일자 선택: {tableFilterDate === 'ALL' ? '전체' : formatToShortDate(tableFilterDate)}</span>
+                <ChevronDown className="h-4 w-4 shrink-0" />
+              </button>}
+              {activeFilterDropdown === 'mobile-vessel' && (
+                <div className="absolute left-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
+                  <button type="button" onClick={() => { setTableFilterVessel('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 호선</button>
+                  {vessels.map(v => <button key={v.id} type="button" onClick={() => { setTableFilterVessel(v.name); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs hover:bg-slate-100">{v.name}</button>)}
                 </div>
-              ) : filteredTasks.map((t) => (
-                <div key={`mobile-${t.id}`} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-2xs" onClick={() => handleOpenTaskDetail(t)}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px]">
-                        <span className="font-bold text-[#243B5A]">{t.category || '호선 미지정'}</span>
-                        {t.cargo_hold && <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-700">{t.cargo_hold}</span>}
-                        <span className="font-mono text-[#64748B]">{formatToShortDate(t.start_date)}</span>
-                        {t.time_slot && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[#2563EB]">{formatShortTimeSlot(t.time_slot)}</span>}
-                      </div>
-                      <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 수정됨</span>}</div>
-                    </div>
-                    {isAdmin && dailySubTab === 'HISTORY' && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="mt-1 accent-[#243B5A]" aria-label="업무 선택" />}
-                  </div>
-                  {t.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-[#64748B]">{t.description}</p>}
-                  <div className="mt-2 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                    {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
-                    {t.task_type === 'DAILY' && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
-                    {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && <button type="button" onClick={() => handleCompleteOtherTask(t)} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800">완료</button>}
-                  </div>
-                  <div className="mt-3 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
-                    <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 ({t.assigned_names?.length || 0}명)</div>
-                    {t.assigned_names?.length ? (
-                      <div className="flex flex-wrap gap-1.5">
-                        {t.assigned_names.map((name) => <button key={`${t.id}-mobile-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-blue-100"><span>📞</span><span>{name}</span></button>)}
-                      </div>
-                    ) : <div className="text-xs text-[#94A3B8]">미지정</div>}
-                  </div>
-                  <div className="mt-2 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                    {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && <button type="button" onClick={() => handleFinalizeDailyTask(t)} className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white">최종 완료</button>}
-                    {t.task_type === 'DAILY_OTHER' && canManageTask(t) && <><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2 py-1.5 text-xs font-semibold text-[#243B5A]"><Pencil className="mr-1 inline h-3 w-3"/>수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3"/>삭제</button></>}
-                    {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && <button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3"/>삭제</button>}
-                  </div>
+              )}
+              {dailySubTab !== 'HISTORY' && activeFilterDropdown === 'mobile-date' && (
+                <div className="absolute right-2 top-full z-50 mt-1 max-h-60 w-[calc(50%-0.5rem)] overflow-y-auto rounded-lg border bg-white p-1.5 text-[#1F2937] shadow-xl">
+                  <button type="button" onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left text-xs font-semibold hover:bg-slate-100">전체 날짜</button>
+                  {Array.from(new Set(tasks.filter(t => (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && Boolean(t.start_date) && t.start_date >= formatDateToYYYYMMDD(new Date())).map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
+                    <button key={dStr} type="button" onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full rounded px-3 py-2 text-left font-mono text-xs hover:bg-slate-100">{formatToShortDate(dStr)}</button>
+                  ))}
                 </div>
-              ))}
+              )}
+              {((dailySubTab !== 'HISTORY' && tableFilterDate !== 'ALL') || tableFilterVessel !== 'ALL') && <button type="button" onClick={() => { setTableFilterDate('ALL'); setTableFilterVessel('ALL'); }} className="col-span-2 rounded-lg border px-2 py-1.5 text-xs text-[#64748B]">필터 전체 해제</button>}
             </div>
+            {filteredTasks.length === 0 ? (
+              <div className="rounded-xl border bg-white py-10 text-center text-xs text-[#64748B]">
+                {dailySubTab === 'ACTIVE' ? '등록된 진행중/대기 일일 업무가 없습니다.' : dailySubTab === 'OTHER' ? '등록된 야간업무진행가 없습니다.' : '완료 이력이 없습니다.'}
+              </div>
+            ) : filteredTasks.map((t) => (
+              <div key={`mobile-${t.id}`} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-2xs" onClick={() => handleOpenTaskDetail(t)}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px]">
+                      <span className="font-bold text-[#243B5A]">{t.category || '호선 미지정'}</span>
+                      {t.cargo_hold && <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-700">{t.cargo_hold}</span>}
+                      <span className="font-mono text-[#64748B]">{formatToShortDate(t.start_date)}</span>
+                      {t.time_slot && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[#2563EB]">{formatShortTimeSlot(t.time_slot)}</span>}
+                    </div>
+                    <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 수정됨</span>}</div>
+                  </div>
+                  {isAdmin && dailySubTab === 'HISTORY' && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="mt-1 accent-[#243B5A]" aria-label="업무 선택" />}
+                </div>
+                {t.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-[#64748B]">{t.description}</p>}
+                <div className="mt-2 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
+                  {t.task_type === 'DAILY' && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
+                  {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && <button type="button" onClick={() => handleCompleteOtherTask(t)} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800">완료</button>}
+                </div>
+                <div className="mt-3 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
+                  <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 ({t.assigned_names?.length || 0}명)</div>
+                  {t.assigned_names?.length ? (
+                    <div className="flex flex-wrap gap-1.5">
+                      {t.assigned_names.map((name) => <button key={`${t.id}-mobile-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-blue-100"><span>📞</span><span>{name}</span></button>)}
+                    </div>
+                  ) : <div className="text-xs text-[#94A3B8]">미지정</div>}
+                </div>
+                <div className="mt-2 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                  {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && <button type="button" onClick={() => handleFinalizeDailyTask(t)} className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white">최종 완료</button>}
+                  {t.task_type === 'DAILY_OTHER' && canManageTask(t) && <><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2 py-1.5 text-xs font-semibold text-[#243B5A]"><Pencil className="mr-1 inline h-3 w-3" />수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button></>}
+                  {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && <button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button>}
+                </div>
+              </div>
+            ))}
+          </div>
 
-            <div className="hidden md:block w-full rounded-xl border bg-white shadow-2xs overflow-visible">
-              <table className="w-full text-left border-collapse text-[10px] sm:text-[11px] table-fixed">
-                <thead>
-                  <tr className="bg-[#243B5A] text-white">
-                    {isAdmin && dailySubTab === 'HISTORY' && (
-                      <th className="p-1.5 w-6 text-center border-r border-white/20 last:border-r-0">
-                        <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
-                      </th>
+          <div className="hidden md:block w-full rounded-xl border bg-white shadow-2xs overflow-visible">
+            <table className="w-full text-left border-collapse text-[10px] sm:text-[11px] table-fixed">
+              <thead>
+                <tr className="bg-[#243B5A] text-white">
+                  {isAdmin && dailySubTab === 'HISTORY' && (
+                    <th className="p-1.5 w-6 text-center border-r border-white/20 last:border-r-0">
+                      <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
+                    </th>
+                  )}
+                  
+                  <th className="p-1 font-bold text-center w-[14%] relative border-r border-white/20 last:border-r-0">
+                    <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'vessel' ? null : 'vessel')}>
+                      <span className="truncate">호선{tableFilterVessel !== 'ALL' ? `(${tableFilterVessel})` : ''}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                    </div>
+                    {activeFilterDropdown === 'vessel' && (
+                      <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[100px] space-y-1">
+                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">호선 선택</div>
+                        <button onClick={() => { setTableFilterVessel('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                        {vessels.map(v => (
+                          <button key={v.id} onClick={() => { setTableFilterVessel(v.name); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] truncate">{v.name}</button>
+                        ))}
+                      </div>
                     )}
-                    <th className="p-1 font-bold text-center w-[14%] relative border-r border-white/20 last:border-r-0">
-                      <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'vessel' ? null : 'vessel')}>
-                        <span className="truncate">호선{tableFilterVessel !== 'ALL' ? `(${tableFilterVessel})` : ''}</span>
-                        <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                  </th>
+
+                  <th className="p-1 font-bold text-center w-[10%] relative border-r border-white/20 last:border-r-0">
+                    <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'cargo' ? null : 'cargo')}>
+                      <span className="truncate">화물창{tableFilterCargoHold !== 'ALL' ? `(${tableFilterCargoHold})` : ''}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                    </div>
+                    {activeFilterDropdown === 'cargo' && (
+                      <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[100px] space-y-1">
+                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">화물창 선택</div>
+                        <button onClick={() => { setTableFilterCargoHold('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                        {Array.from(new Set(tasks.map(t => t.cargo_hold).filter(Boolean))).map(hold => (
+                          <button key={hold} onClick={() => { setTableFilterCargoHold(hold!); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] truncate">{hold}</button>
+                        ))}
                       </div>
-                      {activeFilterDropdown === 'vessel' && (
-                        <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[100px] space-y-1">
-                          <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">호선 선택</div>
-                          <button onClick={() => { setTableFilterVessel('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                          {vessels.map(v => (
-                            <button key={v.id} onClick={() => { setTableFilterVessel(v.name); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] truncate">{v.name}</button>
-                          ))}
+                    )}
+                  </th>
+
+                  <th className={`p-1 font-bold text-center w-[10%] ${dailySubTab === 'HISTORY' ? '' : 'relative'}`}>
+                    {dailySubTab === 'HISTORY' ? (
+                      <span>일자</span>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'date' ? null : 'date')}>
+                          <span className="truncate">일자{tableFilterDate !== 'ALL' ? `(${formatToShortDate(tableFilterDate)})` : ''}</span>
+                          <span className="text-[10px] text-blue-200 font-bold">▶</span>
                         </div>
-                      )}
-                    </th>
-                    <th className="p-1 font-bold text-center w-[10%] relative border-r border-white/20 last:border-r-0">
-                      <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'cargo' ? null : 'cargo')}>
-                        <span className="truncate">화물창{tableFilterCargoHold !== 'ALL' ? `(${tableFilterCargoHold})` : ''}</span>
-                        <span className="text-[10px] text-blue-200 font-bold">▶</span>
-                      </div>
-                      {activeFilterDropdown === 'cargo' && (
-                        <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[100px] space-y-1">
-                          <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">화물창 선택</div>
-                          <button onClick={() => { setTableFilterCargoHold('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                          {Array.from(new Set(tasks.map(t => t.cargo_hold).filter(Boolean))).map(hold => (
-                            <button key={hold} onClick={() => { setTableFilterCargoHold(hold!); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] truncate">{hold}</button>
-                          ))}
-                        </div>
-                      )}
-                    </th>
-                    <th className={`p-1 font-bold text-center w-[10%] ${dailySubTab === 'HISTORY' ? '' : 'relative'}`}>
-                      {dailySubTab === 'HISTORY' ? (
-                        <span>일자</span>
-                      ) : (
-                        <>
-                          <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'date' ? null : 'date')}>
-                            <span className="truncate">일자{tableFilterDate !== 'ALL' ? `(${formatToShortDate(tableFilterDate)})` : ''}</span>
-                            <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                        {activeFilterDropdown === 'date' && (
+                          <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] max-h-60 overflow-y-auto space-y-1">
+                            <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
+                            <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                            {Array.from(new Set(tasks.filter(t => (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && Boolean(t.start_date) && t.start_date >= formatDateToYYYYMMDD(new Date())).map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
+                              <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
+                            ))}
                           </div>
-                          {activeFilterDropdown === 'date' && (
-                            <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[110px] max-h-60 overflow-y-auto space-y-1">
-                              <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">일자 선택</div>
-                              <button onClick={() => { setTableFilterDate('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                              {Array.from(new Set(tasks.filter(t => (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && Boolean(t.start_date) && t.start_date >= formatDateToYYYYMMDD(new Date())).map(t => t.start_date).filter((d): d is string => Boolean(d)))).sort((a, b) => b.localeCompare(a)).map(dStr => (
-                                <button key={dStr} onClick={() => { setTableFilterDate(dStr); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px] font-mono">{formatToShortDate(dStr)}</button>
-                              ))}
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </th>
-                    <th className="p-1 font-bold text-center w-[9%] relative border-r border-white/20 last:border-r-0">
-                      <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'timeslot' ? null : 'timeslot')}>
-                        <span className="truncate">시간대{tableFilterTimeSlot !== 'ALL' ? `(${tableFilterTimeSlot})` : ''}</span>
-                        <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                        )}
+                      </>
+                    )}
+                  </th>
+
+                  <th className="p-1 font-bold text-center w-[9%] relative border-r border-white/20 last:border-r-0">
+                    <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'timeslot' ? null : 'timeslot')}>
+                      <span className="truncate">시간대{tableFilterTimeSlot !== 'ALL' ? `(${tableFilterTimeSlot})` : ''}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                    </div>
+                    {activeFilterDropdown === 'timeslot' && (
+                      <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[90px] space-y-1">
+                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">시간대 선택</div>
+                        <button onClick={() => { setTableFilterTimeSlot('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                        <button onClick={() => { setTableFilterTimeSlot('오전'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">오전</button>
+                        <button onClick={() => { setTableFilterTimeSlot('오후'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">오후</button>
+                        <button onClick={() => { setTableFilterTimeSlot('종일'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">종일</button>
                       </div>
-                      {activeFilterDropdown === 'timeslot' && (
-                        <div className="absolute top-full left-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[90px] space-y-1">
-                          <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">시간대 선택</div>
-                          <button onClick={() => { setTableFilterTimeSlot('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                          <button onClick={() => { setTableFilterTimeSlot('오전'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">오전</button>
-                          <button onClick={() => { setTableFilterTimeSlot('오후'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">오후</button>
-                          <button onClick={() => { setTableFilterTimeSlot('종일'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">종일</button>
-                        </div>
-                      )}
-                    </th>
-                    <th className="p-1 font-bold text-center w-[12%] relative border-r border-white/20 last:border-r-0">
-                      <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
-                        <span className="truncate">상태버튼{tableFilterStatus !== 'ALL' ? `(${tableFilterStatus === 'PENDING' ? '대기' : tableFilterStatus === 'IN_PROGRESS' ? '진행중' : '완료'})` : ''}</span>
-                        <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                    )}
+                  </th>
+
+                  <th className="p-1 font-bold text-center w-[12%] relative border-r border-white/20 last:border-r-0">
+                    <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
+                      <span className="truncate">상태버튼{tableFilterStatus !== 'ALL' ? `(${tableFilterStatus === 'PENDING' ? '대기' : tableFilterStatus === 'IN_PROGRESS' ? '진행중' : '완료'})` : ''}</span>
+                      <span className="text-[10px] text-blue-200 font-bold">▶</span>
+                    </div>
+                    {activeFilterDropdown === 'status' && (
+                      <div className="absolute top-full right-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[90px] space-y-1">
+                        <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">상태 선택</div>
+                        <button onClick={() => { setTableFilterStatus('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
+                        <button onClick={() => { setTableFilterStatus('PENDING'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">대기</button>
+                        <button onClick={() => { setTableFilterStatus('IN_PROGRESS'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">진행중</button>
+                        <button onClick={() => { setTableFilterStatus('COMPLETED'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">완료</button>
                       </div>
-                      {activeFilterDropdown === 'status' && (
-                        <div className="absolute top-full right-0 z-50 bg-white text-[#1F2937] border shadow-lg rounded-lg p-1.5 mt-1 min-w-[90px] space-y-1">
-                          <div className="font-bold text-[10px] text-[#64748B] border-b pb-1">상태 선택</div>
-                          <button onClick={() => { setTableFilterStatus('ALL'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">전체</button>
-                          <button onClick={() => { setTableFilterStatus('PENDING'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">대기</button>
-                          <button onClick={() => { setTableFilterStatus('IN_PROGRESS'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">진행중</button>
-                          <button onClick={() => { setTableFilterStatus('COMPLETED'); setActiveFilterDropdown(null); }} className="block w-full text-left px-2 py-1 hover:bg-slate-100 rounded text-[11px]">완료</button>
-                        </div>
-                      )}
-                    </th>
-                    <th className="p-1 font-bold text-center w-[9%] border-r border-white/20 last:border-r-0">관리</th>
-                    <th className="p-1 font-bold w-[36%] border-r border-white/20 last:border-r-0">인원</th>
+                    )}
+                  </th>
+
+                  <th className="p-1 font-bold text-center w-[9%] border-r border-white/20 last:border-r-0">관리</th>
+                  <th className="p-1 font-bold w-[36%] border-r border-white/20 last:border-r-0">인원</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="text-center py-12 text-[#64748B]">
+                      {dailySubTab === 'ACTIVE' ? '등록된 진행중/대기 일일 업무가 없습니다.' : dailySubTab === 'OTHER' ? '등록된 야간업무진행가 없습니다.' : '완료 이력이 없습니다.'}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {filteredTasks.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="text-center py-12 text-[#64748B]">
-                        {dailySubTab === 'ACTIVE' ? '등록된 진행중/대기 일일 업무가 없습니다.' : dailySubTab === 'OTHER' ? '등록된 야간업무진행가 없습니다.' : '완료 이력이 없습니다.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredTasks.map((t, rowIndex) => {
-                      const dateChanged = rowIndex === 0 || filteredTasks[rowIndex - 1]?.start_date !== t.start_date;
-                      const dateGroupIndex = filteredTasks.slice(0, rowIndex + 1).reduce((count, item, index, arr) => {
-                        return index === 0 || item.start_date !== arr[index - 1]?.start_date ? count + 1 : count;
-                      }, 0) - 1;
-                      const dateGroupBackground = dateGroupIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50';
-                      return (
-                        <tr key={t.id} className={`${dateGroupBackground} hover:bg-blue-50 transition cursor-pointer ${dateChanged && rowIndex > 0 ? 'border-t-[3px] border-double border-slate-400' : 'border-t border-[#E2E5E9]'}`} onClick={() => handleOpenTaskDetail(t)}>
-                          {isAdmin && dailySubTab === 'HISTORY' && (
-                            <td className="p-1.5 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
-                              <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
-                            </td>
+                ) : (
+                  filteredTasks.map((t, rowIndex) => {
+                    const dateChanged = rowIndex === 0 || filteredTasks[rowIndex - 1]?.start_date !== t.start_date;
+                    const dateGroupIndex = filteredTasks.slice(0, rowIndex + 1).reduce((count, item, index, arr) => {
+                      return index === 0 || item.start_date !== arr[index - 1]?.start_date ? count + 1 : count;
+                    }, 0) - 1;
+                    const dateGroupBackground = dateGroupIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50';
+                    return (
+                    <tr key={t.id} className={`${dateGroupBackground} hover:bg-blue-50 transition cursor-pointer ${dateChanged && rowIndex > 0 ? 'border-t-[3px] border-double border-slate-400' : 'border-t border-[#E2E5E9]'}`} onClick={() => handleOpenTaskDetail(t)}>
+                      {isAdmin && dailySubTab === 'HISTORY' && (
+                        <td className="p-1.5 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
+                        </td>
+                      )}
+                      <td className="p-1 font-bold text-[#243B5A] text-center truncate border-r border-slate-200 last:border-r-0" title={t.category || '-'}>{t.category || '-'}</td>
+                      <td className="p-1 font-semibold text-indigo-700 text-center truncate border-r border-slate-200 last:border-r-0" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
+                      <td className="p-1 font-mono text-[#64748B] text-center truncate border-r border-slate-200 last:border-r-0" title={formatToShortDate(t.start_date)}>{formatToShortDate(t.start_date)}</td>
+                      <td className="p-1 font-mono text-[#2563EB] text-center truncate border-r border-slate-200 last:border-r-0" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>
+                      <td className="p-1 text-center truncate border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
+                          {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
+                          {dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 whitespace-nowrap text-[9px] font-bold text-green-600">비고 수정됨</span>}
+                          {t.task_type === 'DAILY' && t.completion_pending_review === true && (
+                            <span className="px-1 py-0.2 bg-amber-50 text-amber-800 border border-amber-300 rounded text-[9px] font-bold">대기</span>
                           )}
-                          <td className="p-1 font-bold text-[#243B5A] text-center truncate border-r border-slate-200 last:border-r-0" title={t.category || '-'}>{t.category || '-'}</td>
-                          <td className="p-1 font-semibold text-indigo-700 text-center truncate border-r border-slate-200 last:border-r-0" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
-                          <td className="p-1 font-mono text-[#64748B] text-center truncate border-r border-slate-200 last:border-r-0" title={formatToShortDate(t.start_date)}>{formatToShortDate(t.start_date)}</td>
-                          <td className="p-1 font-mono text-[#2563EB] text-center truncate border-r border-slate-200 last:border-r-0" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>
-                          <td className="p-1 text-center truncate border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-center gap-1">
-                              {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
-                              {dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 whitespace-nowrap text-[9px] font-bold text-green-600">비고 수정됨</span>}
-                              {t.task_type === 'DAILY' && t.completion_pending_review === true && (
-                                <span className="px-1 py-0.2 bg-amber-50 text-amber-800 border border-amber-300 rounded text-[9px] font-bold">대기</span>
-                              )}
-                              {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && (
+                          {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && (
+                            <button
+                              type="button"
+                              onClick={() => handleCompleteOtherTask(t)}
+                              className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded text-[9px] font-bold hover:bg-emerald-100"
+                            >
+                              완료
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-1 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
+                          {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
+                            <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[42px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">완료</button>
+                          )}
+                          {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
+                            <>
+                              <button onClick={() => handleOpenTaskEdit(t)} className="inline-flex items-center justify-center p-1 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3.5 w-3.5" /></button>
+                              <button onClick={() => handleDeleteTask(t.id)} className="inline-flex items-center justify-center p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
+                            </>
+                          )}
+                          {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && (
+                            <button onClick={() => handleDeleteTask(t.id)} className="inline-flex items-center justify-center p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-1 text-[#64748B] align-top whitespace-normal border-r border-slate-200 last:border-r-0" title={t.assigned_names?.join(', ') || '미지정'}>
+                        <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 {t.assigned_names?.length || 0}명</div>
+                        {t.assigned_names?.length ? (
+                          <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-4">
+                            {t.assigned_names.map((name, idx) => (
+                              <span key={`${t.id}-${name}`} className="whitespace-nowrap">
                                 <button
                                   type="button"
-                                  onClick={() => handleCompleteOtherTask(t)}
-                                  className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded text-[9px] font-bold hover:bg-emerald-100"
+                                  onClick={(e) => { e.stopPropagation(); handleCallWorker(name); }}
+                                  className="font-medium text-[#1F2937] hover:text-[#2563EB] hover:underline"
+                                  title="클릭 시 전화 연결"
                                 >
-                                  완료
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-1 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center justify-center gap-1">
-                              {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
-                                <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[42px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">완료</button>
-                              )}
-                              {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
-                                <>
-                                  <button onClick={() => handleOpenTaskEdit(t)} className="inline-flex items-center justify-center p-1 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3.5 w-3.5"/></button>
-                                  <button onClick={() => handleDeleteTask(t.id)} className="inline-flex items-center justify-center p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5"/></button>
-                                </>
-                              )}
-                              {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && (
-                                <button onClick={() => handleDeleteTask(t.id)} className="inline-flex items-center justify-center p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5"/></button>
-                              )}
-                            </div>
-                          </td>
-                          <td className="p-1 text-[#64748B] align-top whitespace-normal border-r border-slate-200 last:border-r-0" title={t.assigned_names?.join(', ') || '미지정'}>
-                            <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 {t.assigned_names?.length || 0}명</div>
-                            {t.assigned_names?.length ? (
-                              <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px] leading-4">
-                                {t.assigned_names.map((name, idx) => (
-                                  <span key={`${t.id}-${name}`} className="whitespace-nowrap">
-                                    <button
-                                      type="button"
-                                      onClick={(e) => { e.stopPropagation(); handleCallWorker(name); }}
-                                      className="font-medium text-[#1F2937] hover:text-[#2563EB] hover:underline"
-                                      title="클릭 시 전화 연결"
-                                    >
-                                      {name}
-                                    </button>{idx < (t.assigned_names?.length || 0) - 1 ? ',' : ''}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-[11px]">미지정</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                                  {name}
+                                </button>{idx < (t.assigned_names?.length || 0) - 1 ? ',' : ''}
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-[11px]">미지정</span>
+                        )}
+                      </td>
+                    </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
           </>
         ) : taskTab === 'WEEKLY' ? (
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row items-center justify-between pb-2.5 border-b gap-2">
               <div className="flex items-center space-x-2">
-                <button onClick={() => changeWeek('prev')} className="p-1.5 border rounded-lg"><ChevronLeft className="h-4 w-4"/></button>
+                <button onClick={() => changeWeek('prev')} className="p-1.5 border rounded-lg"><ChevronLeft className="h-4 w-4" /></button>
                 <span className="text-xs sm:text-sm font-bold font-mono">{weekDays[0].displayDate} ~ {weekDays[6].displayDate} 일정</span>
-                <button onClick={() => changeWeek('next')} className="p-1.5 border rounded-lg"><ChevronRight className="h-4 w-4"/></button>
+                <button onClick={() => changeWeek('next')} className="p-1.5 border rounded-lg"><ChevronRight className="h-4 w-4" /></button>
                 <button onClick={() => { setCurrentWeekMonday(getMonday(new Date())); setSelectedTaskIds([]); }} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2">오늘</button>
               </div>
 
@@ -2256,13 +1771,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 {isAdmin && (
                   <>
                     <input type="month" value={selectedExportMonth} onChange={(e) => setSelectedExportMonth(e.target.value)} className="px-2 py-1 text-xs border rounded-lg font-mono" />
-                    <button onClick={() => { void handleExportWeeklyExcel(); }} className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><FileSpreadsheet className="h-3.5 w-3.5"/><span>엑셀 저장</span></button>
-                    <button onClick={handleRequestMonthlyWeeklyDelete} className="flex items-center space-x-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><Trash2 className="h-3.5 w-3.5"/><span>월 삭제</span></button>
+                    <button onClick={() => { void handleExportWeeklyExcel(); }} className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><FileSpreadsheet className="h-3.5 w-3.5" /><span>엑셀 저장</span></button>
+                    <button onClick={handleRequestMonthlyWeeklyDelete} className="flex items-center space-x-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><Trash2 className="h-3.5 w-3.5" /><span>월 삭제</span></button>
                   </>
                 )}
                 <div className="bg-[#F5F6F8] p-1 rounded-lg border flex space-x-1">
-                  <button onClick={() => setWeeklyViewMode('GRID')} className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1 ${weeklyViewMode === 'GRID' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}><LayoutGrid className="h-3.5 w-3.5"/><span className="hidden sm:inline">가로</span></button>
-                  <button onClick={() => setWeeklyViewMode('LIST')} className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1 ${weeklyViewMode === 'LIST' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}><List className="h-3.5 w-3.5"/><span className="hidden sm:inline">세로</span></button>
+                  <button onClick={() => setWeeklyViewMode('GRID')} className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1 ${weeklyViewMode === 'GRID' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}><LayoutGrid className="h-3.5 w-3.5" /><span className="hidden sm:inline">가로</span></button>
+                  <button onClick={() => setWeeklyViewMode('LIST')} className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1 ${weeklyViewMode === 'LIST' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}><List className="h-3.5 w-3.5" /><span className="hidden sm:inline">세로</span></button>
                 </div>
               </div>
             </div>
@@ -2277,7 +1792,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b">
                           <span className="font-bold text-xs">{day.label} <span className="text-[10px] text-[#64748B] font-mono">{day.displayDate}</span></span>
                           {isAdmin && (
-                            <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="p-0.5 text-[#243B5A] hover:bg-slate-200 rounded"><Plus className="h-3.5 w-3.5"/></button>
+                            <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="p-0.5 text-[#243B5A] hover:bg-slate-200 rounded"><Plus className="h-3.5 w-3.5" /></button>
                           )}
                         </div>
                         <div className="space-y-2 flex-1 overflow-y-auto">
@@ -2303,673 +1818,642 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 {weekDays.map((day) => {
                   const dayTasks = filteredTasks.filter((t) => t.start_date === day.dateStr);
                   return (
-                    <div key={day.dateStr} className={`rounded-xl border p-3 bg-white ${day.isToday ? 'border-[#243B5A]' : 'border-[#E2E5E9]'}`}>
+                    <div key={day.dateStr} className={`border rounded-xl p-3 ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
                       <div className="flex items-center justify-between pb-2 mb-2 border-b">
-                        <span className="font-bold text-xs text-[#243B5A]">{day.label} <span className="text-[10px] text-[#64748B] font-mono">{day.displayDate}</span></span>
+                        <span className="font-bold text-xs">{day.label} ({day.displayDate})</span>
                         {isAdmin && (
-                          <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="px-2 py-1 bg-[#243B5A] text-white text-[10px] font-bold rounded">등록</button>
+                          <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="flex items-center gap-1 text-xs text-[#243B5A] font-semibold"><Plus className="h-3.5 w-3.5" /><span>추가</span></button>
                         )}
                       </div>
-                      <div className="space-y-2">
-                        {dayTasks.length === 0 ? (
-                          <div className="text-[11px] text-[#94A3B8] py-1">등록된 업무가 없습니다.</div>
-                        ) : (
-                          dayTasks.map((t) => (
-                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="bg-[#F5F6F8] border rounded-lg p-2.5 text-xs space-y-1.5 cursor-pointer hover:border-[#243B5A]">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-1.5">
+                      {dayTasks.length === 0 ? (
+                        <div className="text-xs text-[#64748B] py-1">등록된 일정이 없습니다.</div>
+                      ) : (
+                        <div className="space-y-2">
+                          {dayTasks.map((t) => (
+                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="flex items-center justify-between bg-white border rounded-lg p-2.5 text-xs cursor-pointer hover:border-[#243B5A]">
+                              <div className="space-y-1">
+                                <div className="flex items-center space-x-2">
                                   {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
-                                  {t.category && <span className="text-[10px] font-bold text-[#243B5A] bg-white px-1.5 py-0.5 rounded border">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
+                                  {t.category && <span className="text-[10px] font-bold text-[#243B5A] bg-blue-50 px-1.5 py-0.5 rounded">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
+                                  <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
+                                  {renderStatusBadge(t)}
                                 </div>
-                                {renderStatusBadge(t)}
+                                <div className="text-[11px] text-[#64748B]">인원: {t.assigned_names?.join(', ') || '미지정'}</div>
                               </div>
-                              <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
-                              <div className="text-[11px] text-[#64748B]">담당: {t.assigned_names?.join(', ') || '미지정'}</div>
+                              <Eye className="h-4 w-4 text-[#64748B]" />
                             </div>
-                          ))
-                        )}
-                      </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
-        ) : taskTab === 'CABIN' ? (
-          <div className="space-y-3">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredTasks.map((t) => (
-                <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="bg-white border rounded-xl p-4 shadow-2xs space-y-3 cursor-pointer hover:border-[#243B5A] flex flex-col justify-between">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between border-b pb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-bold text-xs bg-[#243B5A] text-white px-2 py-0.5 rounded">{t.category || '호선 미지정'}</span>
-                        <span className="font-mono text-xs text-[#64748B]">{t.start_date} ~ {t.end_date || t.start_date}</span>
+        ) : (
+          <>
+          <div className="md:hidden space-y-2">
+            {filteredTasks.length === 0 ? (
+              <div className="rounded-xl border bg-white py-10 text-center text-xs text-[#64748B]">등록된 CABIN 편성이 없습니다.</div>
+            ) : filteredTasks.map((t) => {
+              return (
+                <div key={`cabin-mobile-${t.id}`} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-2xs" onClick={() => handleOpenTaskDetail(t)}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px]">
+                        <span className="font-bold text-[#243B5A]">{t.category || '호선 미지정'}</span>
+                        {t.cargo_hold && <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-700">{t.cargo_hold}</span>}
+                        <span className="font-mono text-[#64748B]">{formatToShortDate(t.start_date)}{t.end_date && t.end_date !== t.start_date ? ` ~ ${formatToShortDate(t.end_date)}` : ''}</span>
                       </div>
-                      {renderStatusBadge(t)}
+                      <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
                     </div>
-
-                    <div className="font-bold text-sm text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
-                    {t.description && <p className="text-xs text-[#64748B] whitespace-pre-wrap">{t.description}</p>}
-
-                    <div className="space-y-1.5 pt-2 border-t text-xs">
-                      <div className="flex items-center justify-between bg-blue-50 p-2 rounded-lg">
-                        <span className="font-bold text-[#2563EB] flex items-center gap-1"><Sun className="h-3.5 w-3.5"/> 주간 인원 ({t.day_workers?.length || 0}명)</span>
-                        <span className="font-medium text-[#1F2937]">{t.day_workers?.join(', ') || '없음'}</span>
-                      </div>
-                      <div className="flex items-center justify-between bg-indigo-50 p-2 rounded-lg">
-                        <span className="font-bold text-indigo-700 flex items-center gap-1"><Moon className="h-3.5 w-3.5"/> 야간 인원 ({t.night_workers?.length || 0}명)</span>
-                        <span className="font-medium text-[#1F2937]">{t.night_workers?.join(', ') || '없음'}</span>
-                      </div>
-                    </div>
+                    {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="mt-1 accent-[#243B5A]" aria-label="CABIN 업무 선택" />}
                   </div>
+                  <div className="mt-2" onClick={(e) => e.stopPropagation()}>{renderStatusBadge(t)}</div>
+                  <div className="mt-3 space-y-2 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
+                    <div>
+                      <div className="mb-1 text-[10px] font-bold text-[#64748B]">주간 인원 ({t.day_workers?.length || 0}명)</div>
+                      {t.day_workers?.length ? <div className="flex flex-wrap gap-1.5">{t.day_workers.map((name) => <button key={`${t.id}-day-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A]"><span>📞</span><span>{name}</span></button>)}</div> : <div className="text-xs text-[#94A3B8]">미지정</div>}
+                    </div>
+                    <div>
+                      <div className="mb-1 text-[10px] font-bold text-[#64748B]">야간 인원 ({t.night_workers?.length || 0}명)</div>
+                      {t.night_workers?.length ? <div className="flex flex-wrap gap-1.5">{t.night_workers.map((name) => <button key={`${t.id}-night-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A]"><span>📞</span><span>{name}</span></button>)}</div> : <div className="text-xs text-[#94A3B8]">미지정</div>}
+                    </div>
+                    {!t.day_workers?.length && !t.night_workers?.length && <div className="text-xs text-[#94A3B8]">등록된 인원이 없습니다.</div>}
+                  </div>
+                  {isAdmin && <div className="mt-3 flex justify-end gap-2 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2.5 py-1.5 text-xs font-semibold text-[#243B5A]"><Pencil className="mr-1 inline h-3 w-3" />수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button></div>}
+                </div>
+              );
+            })}
+          </div>
 
+          <div className="hidden md:block w-full rounded-xl border bg-white shadow-2xs overflow-hidden">
+            <table className="w-full text-left border-collapse text-[11px] sm:text-xs table-fixed">
+              <thead>
+                <tr className="bg-[#243B5A] text-white">
                   {isAdmin && (
-                    <div className="flex items-center justify-end gap-1.5 pt-2 border-t mt-2" onClick={(e) => e.stopPropagation()}>
-                      <button onClick={() => handleOpenTaskEdit(t)} className="px-2.5 py-1 text-xs border rounded-lg font-semibold text-[#243B5A] hover:bg-slate-50"><Pencil className="h-3 w-3 inline mr-1"/>수정</button>
-                      <button onClick={() => handleDeleteTask(t.id)} className="px-2.5 py-1 text-xs border border-red-200 text-red-600 rounded-lg font-semibold hover:bg-red-50"><Trash2 className="h-3 w-3 inline mr-1"/>삭제</button>
-                    </div>
+                    <th className="p-1.5 w-6 text-center">
+                      <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
+                    </th>
                   )}
-                </div>
-              ))}
-              {filteredTasks.length === 0 && (
-                <div className="col-span-full py-16 text-center text-xs text-[#64748B] bg-white rounded-xl border">
-                  등록된 CABIN 업무가 없습니다.
-                </div>
-              )}
-            </div>
-          </div>
-        ) : null}
-
-      {/* 업무 생성/수정 모달 */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setIsModalOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-lg p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-sm font-bold text-[#243B5A]">
-                {editingTask ? '업무 수정' : formData.task_type === 'DAILY_OTHER' ? '야간업무진행 등록' : formData.task_type === 'WEEKLY' ? '주간업무 등록' : formData.task_type === 'CABIN' ? 'CABIN 업무 등록' : '일일업무 등록'}
-              </h3>
-              <button onClick={() => setIsModalOpen(false)} className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100"><X className="h-4 w-4" /></button>
-            </div>
-
-            <form onSubmit={handleSubmitTask} className="space-y-3 text-xs">
-              {formData.task_type !== 'WEEKLY' && formData.task_type !== 'CABIN' && (
-                <div>
-                  <label className="block font-semibold mb-1 text-[#64748B]">호선 선택</label>
-                  <div className="flex gap-1.5">
-                    <select
-                      value={formData.category}
-                      onChange={(e) => {
-                        if (e.target.value === '__ADD_NEW__') {
-                          setIsQuickVesselInputOpen(true);
-                        } else {
-                          setFormData({ ...formData, category: e.target.value });
-                        }
-                      }}
-                      className="flex-1 p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs font-semibold text-[#1F2937] outline-none"
-                    >
-                      <option value="">호선 선택</option>
-                      {vessels.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
-                      {isAdmin && <option value="__ADD_NEW__">+ 새 호선 직접 추가</option>}
-                    </select>
-                  </div>
-                  {isQuickVesselInputOpen && (
-                    <div className="flex gap-1 mt-1.5">
-                      <input
-                        type="text"
-                        placeholder="새 호선명 입력"
-                        value={quickVesselName}
-                        onChange={(e) => setQuickVesselName(e.target.value)}
-                        className="flex-1 p-2 border rounded-lg text-xs"
-                      />
-                      <button type="button" onClick={handleQuickAddVessel} className="px-3 bg-[#243B5A] text-white rounded-lg text-xs font-bold">추가</button>
-                      <button type="button" onClick={() => setIsQuickVesselInputOpen(false)} className="px-2 border rounded-lg text-xs">취소</button>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {formData.task_type === 'CABIN' && (
-                <div>
-                  <label className="block font-semibold mb-1 text-[#64748B]">CABIN 호선</label>
-                  <select
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs font-semibold text-[#1F2937]"
-                  >
-                    {vessels.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
-                  </select>
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold mb-1 text-[#64748B]">화물창</label>
-                  <input
-                    type="text"
-                    placeholder="예: 1호기, C/H 2"
-                    value={formData.cargo_hold}
-                    onChange={(e) => setFormData({ ...formData, cargo_hold: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1 text-[#64748B]">시간대</label>
-                  <select
-                    value={formData.time_slot}
-                    onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
-                    className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs font-semibold"
-                  >
-                    <option value="오전(08:00~12:00)">오전 (08:00~12:00)</option>
-                    <option value="오후(13:00~17:00)">오후 (13:00~17:00)</option>
-                    <option value="종일(08:00~17:00)">종일 (08:00~17:00)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold mb-1 text-[#64748B]">{formData.task_type === 'CABIN' ? '시작일자' : '일자'}</label>
-                  <CalendarDatePicker value={formData.start_date} onChange={(val) => setFormData({ ...formData, start_date: val })} />
-                </div>
-                {formData.task_type === 'CABIN' && (
-                  <div>
-                    <label className="block font-semibold mb-1 text-[#64748B]">종료일자</label>
-                    <CalendarDatePicker value={formData.end_date} onChange={(val) => setFormData({ ...formData, end_date: val })} />
-                  </div>
+                  <th className="p-1.5 font-bold w-[12%]">호선</th>
+                  <th className="p-1.5 font-bold w-[9%]">화물창</th>
+                  <th className="p-1.5 font-bold w-[17%]">근무명</th>
+                  <th className="p-1.5 font-bold w-[22%]">주간 근무자</th>
+                  <th className="p-1.5 font-bold w-[22%]">야간 근무자</th>
+                  <th className="p-1.5 font-bold w-[10%]">상태</th>
+                  <th className="p-1.5 font-bold text-right w-[8%]">관리</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredTasks.length === 0 ? (
+                  <tr>
+                    <td colSpan={isAdmin ? 8 : 7} className="text-center py-12 text-[#64748B]">
+                      등록된 CABIN 편성이 없습니다.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredTasks.map((t) => (
+                    <tr key={t.id} className="hover:bg-slate-50 transition cursor-pointer" onClick={() => handleOpenTaskDetail(t)}>
+                      {isAdmin && (
+                        <td className="p-1.5 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
+                        </td>
+                      )}
+                      <td className="p-1.5 font-bold text-[#243B5A] truncate" title={t.category || '-'}>{t.category || '-'}</td>
+                      <td className="p-1.5 font-semibold text-indigo-700 truncate" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
+                      <td className="p-1.5 font-bold text-[#1F2937] break-words" title={t.title}>{t.title}{renderTaskNewBadge(t)}</td>
+                      <td className="p-1.5 align-top" onClick={(e) => e.stopPropagation()}>
+                        <div className="mb-1 text-[10px] font-bold text-[#64748B]">주간 ({t.day_workers?.length || 0}명)</div>
+                        {t.day_workers?.length ? <div className="flex flex-wrap gap-1">{t.day_workers.map((name) => <button key={`${t.id}-desktop-day-${name}`} type="button" onClick={() => handleCallWorker(name)} className="rounded-full border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#243B5A] hover:bg-blue-100" title={`${name} 전화 연결`}>📞 {name}</button>)}</div> : <span className="text-[10px] text-[#94A3B8]">미지정</span>}
+                      </td>
+                      <td className="p-1.5 align-top" onClick={(e) => e.stopPropagation()}>
+                        <div className="mb-1 text-[10px] font-bold text-[#64748B]">야간 ({t.night_workers?.length || 0}명)</div>
+                        {t.night_workers?.length ? <div className="flex flex-wrap gap-1">{t.night_workers.map((name) => <button key={`${t.id}-desktop-night-${name}`} type="button" onClick={() => handleCallWorker(name)} className="rounded-full border border-violet-100 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#243B5A] hover:bg-violet-100" title={`${name} 전화 연결`}>📞 {name}</button>)}</div> : <span className="text-[10px] text-[#94A3B8]">미지정</span>}
+                      </td>
+                      <td className="p-1.5 text-center" onClick={(e) => e.stopPropagation()}>{renderStatusBadge(t)}</td>
+                      <td className="p-1.5 text-right" onClick={(e) => e.stopPropagation()}>
+                        {isAdmin && (
+                          <div className="flex items-center justify-end gap-0.5">
+                            <button onClick={() => handleOpenTaskEdit(t)} className="p-0.5 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3 w-3" /></button>
+                            <button onClick={() => handleDeleteTask(t.id)} className="p-0.5 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3 w-3" /></button>
+                          </div>
+                        )}
+                      </td>
+                    </tr>
+                  ))
                 )}
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-1 text-[#64748B]">업무명</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="업무 제목을 입력해 주세요"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs font-semibold"
-                />
-              </div>
-
-              <div>
-                <label className="block font-semibold mb-1 text-[#64748B]">상세 내용</label>
-                <textarea
-                  rows={3}
-                  placeholder="상세 내용을 입력해 주세요"
-                  value={formData.description}
-                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                  className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs resize-none"
-                />
-              </div>
-
-              {formData.task_type === 'CABIN' ? (
-                <div className="space-y-3 pt-2 border-t">
-                  <div>
-                    <label className="block font-semibold mb-1 text-[#2563EB]">주간 근무 인원</label>
-                    <div className="flex gap-1 mb-1.5">
-                      <input
-                        type="text"
-                        list="app-users-list"
-                        placeholder="이름 직접 입력 또는 선택"
-                        value={singleWorkerInput}
-                        onChange={(e) => setSingleWorkerInput(e.target.value)}
-                        className="flex-1 p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"
-                      />
-                      <button type="button" onClick={() => handleAddWorkerSingle('DAY')} className="px-3 bg-blue-600 text-white rounded-lg text-xs font-bold">추가</button>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {dayWorkerList.map((name) => (
-                        <span key={name} className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-1 rounded-lg text-xs font-semibold">
-                          <span>{name}</span>
-                          <button type="button" onClick={() => handleRemoveWorker(name, 'DAY')} className="hover:text-red-600"><X className="h-3 w-3" /></button>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block font-semibold mb-1 text-indigo-700">야간 근무 인원</label>
-                    <div className="flex gap-1 mb-1.5">
-                      <input
-                        type="text"
-                        list="app-users-list"
-                        placeholder="이름 직접 입력 또는 선택"
-                        value={singleWorkerInput}
-                        onChange={(e) => setSingleWorkerInput(e.target.value)}
-                        className="flex-1 p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"
-                      />
-                      <button type="button" onClick={() => handleAddWorkerSingle('NIGHT')} className="px-3 bg-indigo-600 text-white rounded-lg text-xs font-bold">추가</button>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {nightWorkerList.map((name) => (
-                        <span key={name} className="inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg text-xs font-semibold">
-                          <span>{name}</span>
-                          <button type="button" onClick={() => handleRemoveWorker(name, 'NIGHT')} className="hover:text-red-600"><X className="h-3 w-3" /></button>
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : formData.task_type !== 'DAILY_OTHER' && (
-                <div className="space-y-2 pt-2 border-t">
-                  <div className="flex items-center justify-between">
-                    <label className="font-semibold text-[#64748B]">담당 인원</label>
-                    {presetTeams.length > 0 && (
-                      <select
-                        onChange={(e) => {
-                          const team = presetTeams.find(p => p.id === e.target.value);
-                          if (team && team.members) {
-                            setAssignedList(Array.from(new Set([...assignedList, ...team.members])));
-                          }
-                          e.target.value = '';
-                        }}
-                        className="p-1 bg-[#F5F6F8] border border-[#E2E5E9] rounded text-[11px] font-semibold text-[#243B5A]"
-                      >
-                        <option value="">+ 프리셋 팀 불러오기</option>
-                        {presetTeams.map(p => <option key={p.id} value={p.id}>{p.name} ({p.members?.length || 0}명)</option>)}
-                      </select>
-                    )}
-                  </div>
-                  <div className="flex gap-1">
-                    <input
-                      type="text"
-                      list="app-users-list"
-                      placeholder="인원 이름 검색 또는 입력"
-                      value={singleWorkerInput}
-                      onChange={(e) => setSingleWorkerInput(e.target.value)}
-                      className="flex-1 p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"
-                    />
-                    <button type="button" onClick={() => handleAddWorkerSingle('ASSIGNED')} className="px-3 bg-[#243B5A] text-white rounded-lg text-xs font-bold">추가</button>
-                  </div>
-                  <datalist id="app-users-list">
-                    {validUserNames.map((name) => <option key={name} value={name} />)}
-                  </datalist>
-                  <div className="flex flex-wrap gap-1 pt-1">
-                    {assignedList.map((name) => (
-                      <span key={name} className="inline-flex items-center gap-1 bg-slate-100 text-[#1F2937] px-2 py-1 rounded-lg text-xs font-semibold">
-                        <span>{name}</span>
-                        <button type="button" onClick={() => handleRemoveWorker(name, 'ASSIGNED')} className="hover:text-red-600"><X className="h-3 w-3" /></button>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="px-4 py-2 border rounded-lg text-xs font-semibold text-[#64748B]">취소</button>
-                <button type="submit" className="px-4 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-bold">저장하기</button>
-              </div>
-            </form>
+              </tbody>
+            </table>
           </div>
-        </div>
-      )}
+          </>
+        )}
 
-    {/* 차량 사용 신청 모달 */}
-      {isVehicleUsageModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setIsVehicleUsageModalOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-sm font-bold text-[#243B5A]">차량 사용 신청 ({targetVehicleForUsage})</h3>
-              <button onClick={() => setIsVehicleUsageModalOpen(false)} className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100"><X className="h-4 w-4" /></button>
-            </div>
-
-            <form onSubmit={handleSaveVehicleUsage} className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold mb-1 text-[#64748B]">신청자</label>
-                <input type="text" disabled value={currentUser?.name || ''} className="w-full p-2 bg-[#F5F6F8] border rounded-lg text-xs font-bold text-[#1F2937]" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold mb-1 text-[#64748B]">시작일자</label>
-                  <CalendarDatePicker value={vehicleUsageForm.start_date} onChange={(val) => setVehicleUsageForm({ ...vehicleUsageForm, start_date: val })} />
-                </div>
-                <div>
-                  <label className="block font-semibold mb-1 text-[#64748B]">종료일자</label>
-                  <CalendarDatePicker value={vehicleUsageForm.end_date} onChange={(val) => setVehicleUsageForm({ ...vehicleUsageForm, end_date: val })} />
-                </div>
-              </div>
-              <div>
-                <label className="block font-semibold mb-1 text-[#64748B]">시간</label>
-                <input type="text" placeholder="예: 08:30" value={vehicleUsageForm.time_str} onChange={(e) => setVehicleUsageForm({ ...vehicleUsageForm, time_str: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border rounded-lg text-xs" />
-              </div>
-              <div>
-                <label className="block font-semibold mb-1 text-[#64748B]">목적지</label>
-                <input type="text" required placeholder="예: 본관, 자재창고" value={vehicleUsageForm.destination} onChange={(e) => setVehicleUsageForm({ ...vehicleUsageForm, destination: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border rounded-lg text-xs" />
-              </div>
-              <div>
-                <label className="block font-semibold mb-1 text-[#64748B]">사용 목적</label>
-                <input type="text" required placeholder="예: 자재 운반 및 이동" value={vehicleUsageForm.purpose} onChange={(e) => setVehicleUsageForm({ ...vehicleUsageForm, purpose: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border rounded-lg text-xs" />
-              </div>
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button type="button" onClick={() => setIsVehicleUsageModalOpen(false)} className="px-4 py-2 border rounded-lg text-xs font-semibold">취소</button>
-                <button type="submit" className="px-4 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-bold">신청하기</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 상태 변경 및 비고 입력 모달 */}
-      {statusChangeModal.open && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })}>
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-sm font-bold text-[#243B5A]">업무 상태 및 비고란 변경</h3>
-              <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100"><X className="h-4 w-4" /></button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              {!(statusChangeModal.task?.status === 'COMPLETED' && statusChangeModal.task?.completion_pending_review !== true) && (
-                <div>
-                  <label className="block font-semibold mb-1 text-[#64748B]">상태 선택</label>
-                  <div className="grid grid-cols-3 gap-1.5">
-                    <button type="button" onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`p-2 rounded-lg border font-bold ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-100 border-amber-400 text-amber-900' : 'bg-slate-50 text-[#64748B]'}`}>대기</button>
-                    <button type="button" onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`p-2 rounded-lg border font-bold ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-500 border-emerald-600 text-white' : 'bg-slate-50 text-[#64748B]'}`}>진행중</button>
-                    <button type="button" onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`p-2 rounded-lg border font-bold ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 border-slate-800 text-white' : 'bg-slate-50 text-[#64748B]'}`}>완료</button>
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="block font-semibold mb-1 text-[#64748B]">비고란 (특이사항)</label>
-                <textarea rows={3} placeholder="특이사항이나 비고 내용을 입력하세요" value={statusChangeModal.remarks} onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })} className="w-full p-2 bg-[#F5F6F8] border rounded-lg text-xs resize-none" />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button type="button" onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-4 py-2 border rounded-lg text-xs font-semibold">취소</button>
-                <button type="button" onClick={handleConfirmStatusChange} className="px-4 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-bold">저장하기</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 차량 관리자 모달 */}
-      {isVehicleManagerOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setIsVehicleManagerOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-sm font-bold text-[#243B5A]">차량 등록 및 관리</h3>
-              <button onClick={() => setIsVehicleManagerOpen(false)} className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100"><X className="h-4 w-4" /></button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="flex gap-2">
-                <input type="text" placeholder="새 차량번호 입력 (예: 1234)" value={newVehicleNo} onChange={(e) => setNewVehicleNo(e.target.value)} className="flex-1 p-2 bg-[#F5F6F8] border rounded-lg text-xs" />
-                <button type="button" onClick={handleAddVehicle} className="px-4 bg-[#243B5A] text-white rounded-lg text-xs font-bold">등록</button>
-              </div>
-
-              <div className="space-y-1.5 pt-2 border-t">
-                {vehicles.map((v) => (
-                  <div key={v.id} className="flex items-center justify-between bg-[#F5F6F8] p-2 rounded-lg">
-                    {editingVehicle?.id === v.id ? (
-                      <input type="text" value={editingVehicle.vehicle_no} onChange={(e) => setEditingVehicle({ ...editingVehicle, vehicle_no: e.target.value })} className="p-1 bg-white border rounded text-xs flex-1 mr-2" />
-                    ) : (
-                      <span className="font-bold text-[#1F2937]">{v.vehicle_no}</span>
-                    )}
-
-                    <div className="flex items-center gap-1">
-                      {editingVehicle?.id === v.id ? (
-                        <>
-                          <button onClick={() => handleUpdateVehicle(v.id, editingVehicle.vehicle_no)} className="px-2 py-1 bg-emerald-600 text-white rounded text-[11px] font-bold">저장</button>
-                          <button onClick={() => setEditingVehicle(null)} className="px-2 py-1 border rounded text-[11px]">취소</button>
-                        </>
-                      ) : (
-                        <>
-                          <button onClick={() => setEditingVehicle(v)} className="p-1 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => handleDeleteVehicle(v.id)} className="p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 호선 관리 모달 */}
-      {isVesselManagerOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setIsVesselManagerOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-sm font-bold text-[#243B5A]">호선 관리</h3>
-              <button onClick={() => setIsVesselManagerOpen(false)} className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100"><X className="h-4 w-4" /></button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div className="flex gap-2">
-                <input type="text" placeholder="새 호선명 입력" value={newVesselName} onChange={(e) => setNewVesselName(e.target.value)} className="flex-1 p-2 bg-[#F5F6F8] border rounded-lg text-xs" />
-                <button type="button" onClick={handleAddVessel} className="px-4 bg-[#243B5A] text-white rounded-lg text-xs font-bold">추가</button>
-              </div>
-
-              <div className="space-y-1.5 pt-2 border-t">
-                {vessels.map((v) => (
-                  <div key={v.id} className="flex items-center justify-between bg-[#F5F6F8] p-2 rounded-lg">
-                    {editingVessel?.id === v.id ? (
-                      <input type="text" value={editingVessel.name} onChange={(e) => setEditingVessel({ ...editingVessel, name: e.target.value })} className="p-1 bg-white border rounded text-xs flex-1 mr-2" />
-                    ) : (
-                      <span className="font-bold text-[#1F2937]">{v.name}</span>
-                    )}
-
-                    <div className="flex items-center gap-1">
-                      {editingVessel?.id === v.id ? (
-                        <>
-                          <button onClick={() => handleUpdateVessel(v.id, editingVessel.name)} className="px-2 py-1 bg-emerald-600 text-white rounded text-[11px] font-bold">저장</button>
-                          <button onClick={() => setEditingVessel(null)} className="px-2 py-1 border rounded text-[11px]">취소</button>
-                        </>
-                      ) : (
-                        <>
-                          <button onClick={() => setEditingVessel(v)} className="p-1 text-[#243B5A] hover:bg-slate-200 rounded"><Pencil className="h-3.5 w-3.5" /></button>
-                          <button onClick={() => handleDeleteVessel(v.id)} className="p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 주간업무 불러오기 모달 */}
-      {isWeeklyImportModalOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setIsWeeklyImportModalOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-sm font-bold text-[#243B5A]">주간업무를 일일업무로 불러오기</h3>
-              <button onClick={() => setIsWeeklyImportModalOpen(false)} className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100"><X className="h-4 w-4" /></button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <label className="block font-semibold mb-1 text-[#64748B]">적용할 일일업무 일자</label>
-                <CalendarDatePicker value={importTargetDate} onChange={(val) => setImportTargetDate(val)} />
+        {isWeeklyImportModalOpen && isAdmin && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b pb-3">
+                <h3 className="text-sm font-bold text-[#243B5A]">주간업무에서 일일업무로 불러오기</h3>
+                <button onClick={() => setIsWeeklyImportModalOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
               </div>
 
               <div className="space-y-1.5">
-                <div className="flex items-center justify-between font-bold text-[#64748B] border-b pb-1">
-                  <span>이번 주 주간업무 목록</span>
-                  <label className="flex items-center gap-1">
-                    <input
-                      type="checkbox"
-                      checked={tasks.filter(t => t.task_type === 'WEEKLY').length > 0 && selectedWeeklyIdsToImport.length === tasks.filter(t => t.task_type === 'WEEKLY').length}
-                      onChange={(e) => {
-                        const weeklyTasks = tasks.filter(t => t.task_type === 'WEEKLY');
-                        setSelectedWeeklyIdsToImport(e.target.checked ? weeklyTasks.map(t => t.id) : []);
-                      }}
-                      className="accent-[#243B5A]"
-                    />
-                    전체 선택
-                  </label>
-                </div>
-                <div className="max-h-60 overflow-y-auto space-y-1">
-                  {tasks.filter(t => t.task_type === 'WEEKLY').map((t) => (
-                    <label key={t.id} className="flex items-center justify-between bg-[#F5F6F8] p-2 rounded-lg cursor-pointer hover:bg-slate-100">
+                <label className="block text-xs font-bold text-[#1F2937]">불러올 일자 선택 (해당일)</label>
+                <input
+                  type="date"
+                  value={importTargetDate}
+                  onChange={(e) => { setImportTargetDate(e.target.value); setSelectedWeeklyIdsToImport([]); }}
+                  className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono bg-white"
+                />
+                <p className="text-[10px] text-[#64748B]">선택한 날짜에 해당하는 주간업무 항목들을 일일업무로 등록합니다.</p>
+              </div>
+
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] text-[#64748B]">
+                  선택 {selectedWeeklyIdsToImport.filter(id => tasks.some(t => t.id === id && t.task_type === 'WEEKLY' && t.start_date === importTargetDate)).length}개
+                  / 전체 {tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).length}개
+                </span>
+                {tasks.some(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const availableIds = tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).map(t => t.id);
+                      const allSelected = availableIds.length > 0 && availableIds.every(id => selectedWeeklyIdsToImport.includes(id));
+                      setSelectedWeeklyIdsToImport(prev => allSelected ? prev.filter(id => !availableIds.includes(id)) : Array.from(new Set([...prev, ...availableIds])));
+                    }}
+                    className="px-3 py-1.5 border border-[#243B5A] rounded-lg text-xs font-semibold text-[#243B5A] hover:bg-blue-50"
+                  >
+                    {tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).every(t => selectedWeeklyIdsToImport.includes(t.id)) ? '전체 해제' : '전체 선택'}
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-60 overflow-y-auto space-y-2 border p-2 rounded-lg bg-[#F5F6F8]">
+                {tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).length === 0 ? (
+                  <div className="text-center py-6 text-xs text-[#64748B]">선택한 일자({importTargetDate})에 등록된 주간업무가 없습니다.</div>
+                ) : (
+                  tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).map(wt => (
+                    <label key={wt.id} className="flex items-center justify-between p-2 bg-white rounded border text-xs hover:border-[#243B5A] cursor-pointer">
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={selectedWeeklyIdsToImport.includes(t.id)}
+                          checked={selectedWeeklyIdsToImport.includes(wt.id)}
                           onChange={(e) => {
-                            setSelectedWeeklyIdsToImport(prev => e.target.checked ? [...prev, t.id] : prev.filter(id => id !== t.id));
+                            if (e.target.checked) setSelectedWeeklyIdsToImport([...selectedWeeklyIdsToImport, wt.id]);
+                            else setSelectedWeeklyIdsToImport(selectedWeeklyIdsToImport.filter(id => id !== wt.id));
                           }}
                           className="accent-[#243B5A]"
                         />
                         <div>
-                          <div className="font-bold text-[#1F2937]">{t.title}</div>
-                          <div className="text-[10px] text-[#64748B]">{t.category || ''} {t.start_date}</div>
+                          <div className="font-bold text-[#1F2937]">{wt.title}</div>
+                          <div className="text-[10px] text-[#64748B]">{wt.start_date} {wt.category ? `[${wt.category}]` : ''}</div>
                         </div>
                       </div>
                     </label>
+                  ))
+                )}
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-2 border-t text-xs">
+                <button onClick={() => setIsWeeklyImportModalOpen(false)} className="px-3 py-1.5 border rounded-lg">취소</button>
+                <button onClick={handleImportWeeklyToDaily} className="px-4 py-1.5 bg-[#243B5A] text-white font-semibold rounded-lg">선택 업무 일일등록</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {customAlert.open && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-sm w-full p-4 shadow-2xl space-y-3 border">
+              <div className="flex items-center justify-between border-b pb-2">
+                <h3 className="text-sm font-bold text-[#243B5A]">{customAlert.title}</h3>
+                <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+              </div>
+              <p className="text-xs text-[#1F2937] leading-relaxed">{customAlert.message}</p>
+              <div className="flex justify-end space-x-2 pt-2 border-t text-xs">
+                {customAlert.type === 'monthlyDelete' ? (
+                  <>
+                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">취소</button>
+                    <button onClick={() => { if (customAlert.onDownload) customAlert.onDownload(); }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-semibold">내려받기</button>
+                    <button onClick={() => { const confirmAction = customAlert.onConfirm; setCustomAlert({ ...customAlert, open: false }); if (confirmAction) confirmAction(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold">확인</button>
+                  </>
+                ) : customAlert.type === 'confirm' ? (
+                  <>
+                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">취소</button>
+                    <button onClick={() => { const confirmAction = customAlert.onConfirm; setCustomAlert({ ...customAlert, open: false }); if (confirmAction) confirmAction(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold">확인</button>
+                  </>
+                ) : (
+                  <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold">확인</button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isAlertOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center space-x-2 text-[#243B5A]">
+                  <Bell className="h-5 w-5 text-amber-500 animate-bounce" />
+                  <h3 className="text-sm font-bold">배정된 미완료 알림 안내</h3>
+                </div>
+                <button onClick={() => setIsAlertOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+              </div>
+              <p className="text-xs text-[#64748B]">현재 미완료 상태인 업무가 총 <span className="font-bold text-red-600">{myAssignedTasks.length}건</span> 있습니다.</p>
+              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                {myAssignedTasks.length === 0 ? (
+                  <div className="text-center py-6 text-xs text-[#64748B]">미완료된 업무가 없습니다!</div>
+                ) : (
+                  myAssignedTasks.map((t) => (
+                    <div key={t.id} className="p-2.5 bg-[#F5F6F8] rounded-lg text-xs space-y-1 border flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
+                        <div className="text-[11px] text-[#64748B] font-mono">{t.start_date} ({formatShortTimeSlot(t.time_slot)})</div>
+                      </div>
+                      {renderStatusBadge(t)}
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="flex justify-end pt-3 border-t text-xs">
+                <button onClick={() => setIsAlertOpen(false)} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold">닫기</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {statusChangeModal.open && statusChangeModal.task && (() => {
+          const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
+          return (
+            <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+              <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
+                <div className="flex items-center justify-between border-b pb-3">
+                  <div className="flex items-center space-x-2">
+                    <FileText className="h-5 w-5 text-[#243B5A]" />
+                    <h3 className="text-sm font-bold text-[#1F2937]">상세보기 및 상태 변경</h3>
+                  </div>
+                  <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div className="p-3 bg-[#F5F6F8] rounded-lg border space-y-2">
+                    <div className="font-bold text-sm text-[#1F2937]">{statusChangeModal.task.title}</div>
+                    <div className="text-[#64748B] font-mono">
+                      일시: {statusChangeModal.task.start_date} {statusChangeModal.task.time_slot ? `(${formatShortTimeSlot(statusChangeModal.task.time_slot)})` : ''}
+                    </div>
+                    {statusChangeModal.task.category && <div className="text-[#64748B]">호선/화물창: {statusChangeModal.task.category} {statusChangeModal.task.cargo_hold ? `(${statusChangeModal.task.cargo_hold})` : ''}</div>}
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-800'}`}>대기</button>
+                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-800'}`}>진행중</button>
+                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-700'}`}>완료</button>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-[#1F2937] mb-1">비고란 (최대 10줄 이상 스크롤)</label>
+                    <textarea
+                      rows={10}
+                      disabled={!isAllowedUser}
+                      placeholder="비고 사항을 입력해주세요..."
+                      value={statusChangeModal.remarks}
+                      onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
+                      className={`w-full px-3 py-2 border rounded-lg text-xs resize-y max-h-64 ${!isAllowedUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#243B5A]'}`}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-3 border-t text-xs">
+                  <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border rounded-lg">닫기</button>
+                  {isAllowedUser && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold">저장</button>}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {selectedTaskForSheet && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 backdrop-blur-xs">
+            <div className="bg-white rounded-t-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl space-y-4 border-t">
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded font-mono">
+                    {selectedTaskForSheet.start_date} {selectedTaskForSheet.time_slot ? `(${formatShortTimeSlot(selectedTaskForSheet.time_slot)})` : ''}
+                  </span>
+                  {renderStatusBadge(selectedTaskForSheet)}
+                </div>
+                <button onClick={() => setSelectedTaskForSheet(null)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-5 w-5" /></button>
+              </div>
+
+              <div className="space-y-2">
+                <h3 className="text-base font-bold text-[#1F2937]">{selectedTaskForSheet.title}{renderTaskNewBadge(selectedTaskForSheet)}</h3>
+                {selectedTaskForSheet.category && (
+                  <div className="text-xs text-[#243B5A] font-semibold">호선: {selectedTaskForSheet.category} {selectedTaskForSheet.cargo_hold ? `(화물창: ${selectedTaskForSheet.cargo_hold})` : ''}</div>
+                )}
+                {selectedTaskForSheet.description && (
+                  <p className="text-xs text-[#64748B] bg-[#F5F6F8] p-3 rounded-lg border">{selectedTaskForSheet.description}</p>
+                )}
+                {selectedTaskForSheet.remarks && (
+                  <div className="text-xs text-[#1F2937] bg-amber-50/50 p-2.5 rounded-lg border border-amber-200">
+                    <span className="font-bold text-amber-900">비고: </span>{selectedTaskForSheet.remarks}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-1 text-xs">
+                <div className="font-bold text-[#1F2937]">인원 목록:</div>
+                <div className="text-[#64748B]">
+                  {selectedTaskForSheet.assigned_names?.map((name) => (
+                    <button
+                      key={`sheet-${name}`}
+                      type="button"
+                      onClick={() => handleCallWorker(name)}
+                      className="text-[#2563EB] hover:underline font-medium mr-2 inline-block bg-blue-50 px-1.5 py-0.5 rounded my-0.5"
+                    >
+                      📞 {name}
+                    </button>
+                  )) || 
+                   [...(selectedTaskForSheet.day_workers || []), ...(selectedTaskForSheet.night_workers || [])].join(', ') || 
+                   '지정 안됨'}
+                </div>
+              </div>
+
+              {canManageTask(selectedTaskForSheet) && (
+                <div className="flex items-center justify-end space-x-2 pt-3 border-t">
+                  <button onClick={() => { handleOpenTaskEdit(selectedTaskForSheet); setSelectedTaskForSheet(null); }} className="px-3 py-1.5 text-xs font-semibold border rounded-lg text-[#243B5A]">수정</button>
+                  <button onClick={() => handleDeleteTask(selectedTaskForSheet.id)} className="px-3 py-1.5 text-xs font-semibold border rounded-lg text-red-600 border-red-200">삭제</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {isVesselManagerOpen && isAdmin && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
+              <div className="flex items-center justify-between border-b pb-3">
+                <h3 className="text-sm font-bold text-[#243B5A]">호선 추가 / 수정 / 삭제</h3>
+                <button onClick={() => setIsVesselManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="flex space-x-2">
+                <input type="text" placeholder="신규 호선명 입력" value={newVesselName} onChange={(e) => setNewVesselName(e.target.value)} className="flex-1 px-3 py-1.5 border rounded-lg text-xs" />
+                <button onClick={handleAddVessel} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg shrink-0">추가</button>
+              </div>
+              <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                {vessels.map((v) => (
+                  <div key={v.id} className="flex items-center justify-between p-2.5 border rounded-lg text-xs">
+                    {editingVessel?.id === v.id ? (
+                      <input type="text" defaultValue={v.name} onBlur={(e) => handleUpdateVessel(v.id, e.target.value)} className="px-2 py-0.5 border rounded text-xs" autoFocus />
+                    ) : (
+                      <span className="font-bold text-[#1F2937]">{v.name}</span>
+                    )}
+                    <div className="flex items-center space-x-1.5">
+                      <button onClick={() => setEditingVessel(v)} className="p-1 text-[#64748B] hover:text-[#243B5A]"><Pencil className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => handleDeleteVessel(v.id)} className="p-1 text-[#64748B] hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {isTeamManagerOpen && isAdmin && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b pb-3">
+                <div className="flex items-center space-x-1.5 text-[#243B5A]">
+                  <Layers className="h-4 w-4" />
+                  <h3 className="text-sm font-bold">Team 그룹 관리</h3>
+                </div>
+                <button onClick={() => setIsTeamManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+              </div>
+
+              <div className="space-y-2 bg-[#F5F6F8] p-3 rounded-lg border">
+                <span className="text-xs font-bold text-[#243B5A]">신규 Team 추가</span>
+                <input type="text" placeholder="Team 이름" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white" />
+                <select value={newTeamDept} onChange={(e) => handleSelectDepartmentUsersToNewTeam(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white">
+                  <option value="">-- 부서 선택 (인원 자동입력) --</option>
+                  {departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+                </select>
+                <input type="text" placeholder="구성원 이름 (쉼표 구분)" value={newTeamMembersText} onChange={(e) => setNewTeamMembersText(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white" />
+                <button onClick={handleAddTeam} className="w-full py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg">Team 생성</button>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-xs font-bold text-[#1F2937]">등록된 Team 목록</span>
+                <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                  {presetTeams.map((team) => (
+                    <div key={team.id} className="p-2.5 border rounded-lg text-xs bg-white flex items-center justify-between">
+                      <div>
+                        <div className="font-bold text-[#243B5A]">{team.name}</div>
+                        <div className="text-[11px] text-[#64748B]">{team.members?.join(', ')}</div>
+                      </div>
+                      <button onClick={() => handleDeleteTeam(team.id)} className="p-1 text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
                   ))}
                 </div>
               </div>
-
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button type="button" onClick={() => setIsWeeklyImportModalOpen(false)} className="px-4 py-2 border rounded-lg text-xs font-semibold">취소</button>
-                <button type="button" onClick={handleImportWeeklyToDaily} className="px-4 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-bold">불러오기</button>
-              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* 커스텀 알림/확인 모달 */}
-      {customAlert.open && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 p-4" onClick={() => setCustomAlert({ ...customAlert, open: false })}>
-          <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-[#243B5A]">{customAlert.title}</h3>
-              <p className="text-xs text-[#64748B] whitespace-pre-wrap">{customAlert.message}</p>
-            </div>
+        {isModalOpen && (isAdmin || formData.task_type === 'DAILY_OTHER') && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b pb-3">
+                <h3 className="text-sm font-bold">
+                  {formData.task_type === 'CABIN' ? `CABIN 근무 등록/수정 (${formData.category || '호선미정'})` : '업무 등록/수정'}
+                </h3>
+                <button onClick={() => setIsModalOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+              </div>
 
-            <div className="flex justify-end gap-2 pt-2 border-t">
-              {customAlert.type === 'confirm' ? (
-                <>
-                  <button type="button" onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-4 py-2 border rounded-lg text-xs font-semibold">취소</button>
-                  <button type="button" onClick={() => { const cb = customAlert.onConfirm; setCustomAlert({ ...customAlert, open: false }); if (cb) cb(); }} className="px-4 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-bold">확인</button>
-                </>
-              ) : customAlert.type === 'monthlyDelete' ? (
-                <div className="flex items-center justify-between w-full">
-                  {customAlert.onDownload && (
-                    <button type="button" onClick={() => { if (customAlert.onDownload) customAlert.onDownload(); }} className="px-3 py-2 bg-emerald-600 text-white rounded-lg text-xs font-bold">엑셀 먼저 다운로드</button>
-                  )}
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-2 border rounded-lg text-xs font-semibold">취소</button>
-                    <button type="button" onClick={() => { const cb = customAlert.onConfirm; setCustomAlert({ ...customAlert, open: false }); if (cb) cb(); }} className="px-3 py-2 bg-red-600 text-white rounded-lg text-xs font-bold">삭제 진행</button>
+              <form onSubmit={handleSubmitTask} className="space-y-3.5">
+                {formData.task_type !== 'DAILY_OTHER' && (
+                <div>
+                  <label className="block text-[11px] font-semibold mb-1">구분</label>
+                  <div className="grid grid-cols-3 gap-1.5 bg-[#F5F6F8] p-1 rounded-lg border">
+                    <button type="button" onClick={() => setFormData({ ...formData, task_type: 'DAILY' })} className={`py-1 text-xs font-semibold rounded-md ${formData.task_type === 'DAILY' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}>일일 업무</button>
+                    <button type="button" onClick={() => setFormData({ ...formData, task_type: 'WEEKLY' })} className={`py-1 text-xs font-semibold rounded-md ${formData.task_type === 'WEEKLY' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}>주간 업무</button>
+                    <button type="button" onClick={() => setFormData({ ...formData, task_type: 'CABIN' })} className={`py-1 text-xs font-semibold rounded-md ${formData.task_type === 'CABIN' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}>CABIN</button>
                   </div>
                 </div>
-              ) : (
-                <button type="button" onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-4 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-bold">확인</button>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 미완료 업무 알림 팝업 (모달) */}
-      {isAlertOpen && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setIsAlertOpen(false)}>
-          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="text-sm font-bold text-amber-800 flex items-center gap-1.5"><Bell className="h-4 w-4 animate-bounce" /> 미완료 업무 알림 ({myAssignedTasks.length}건)</h3>
-              <button onClick={() => setIsAlertOpen(false)} className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100"><X className="h-4 w-4" /></button>
-            </div>
-            <div className="space-y-2">
-              {myAssignedTasks.length === 0 ? (
-                <div className="text-xs text-[#64748B] py-6 text-center">확인해야 할 미완료 업무가 없습니다.</div>
-              ) : (
-                myAssignedTasks.map((t) => (
-                  <div key={t.id} onClick={() => { setIsAlertOpen(false); handleOpenTaskDetail(t); }} className="bg-amber-50/60 border border-amber-200 p-3 rounded-xl text-xs space-y-1 cursor-pointer hover:bg-amber-100/60">
-                    <div className="flex items-center justify-between font-bold text-amber-900">
-                      <span>{t.category || '일반'} {t.cargo_hold ? `(${t.cargo_hold})` : ''}</span>
-                      <span className="font-mono text-[10px] text-amber-700">{formatToShortDate(t.start_date)}</span>
-                    </div>
-                    <div className="font-bold text-[#1F2937]">{t.title}</div>
-                    <div className="text-[11px] text-[#64748B]">담당: {t.assigned_names?.join(', ') || '미지정'}</div>
-                  </div>
-                ))
-              )}
-            </div>
-            <div className="flex justify-end pt-2 border-t">
-              <button onClick={() => setIsAlertOpen(false)} className="px-4 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-bold">확인</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 업무 상세 보기 시트 (모달) */}
-      {selectedTaskForSheet && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedTaskForSheet(null)}>
-          <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b pb-3">
-              <div className="flex items-center gap-1.5">
-                <span className="px-2 py-0.5 bg-[#243B5A] text-white font-bold rounded text-xs">{selectedTaskForSheet.category || '호선 미지정'}</span>
-                {selectedTaskForSheet.cargo_hold && <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded text-xs">{selectedTaskForSheet.cargo_hold}</span>}
-              </div>
-              <button onClick={() => setSelectedTaskForSheet(null)} className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100"><X className="h-4 w-4" /></button>
-            </div>
-
-            <div className="space-y-3 text-xs">
-              <div>
-                <div className="text-[10px] font-bold text-[#64748B] uppercase">업무명</div>
-                <div className="text-sm font-bold text-[#1F2937] mt-0.5">{selectedTaskForSheet.title}</div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 bg-[#F5F6F8] p-2.5 rounded-xl">
-                <div>
-                  <span className="text-[10px] text-[#64748B] block">일자</span>
-                  <span className="font-mono font-bold text-[#1F2937]">{formatToShortDate(selectedTaskForSheet.start_date)}</span>
-                </div>
-                <div>
-                  <span className="text-[10px] text-[#64748B] block">시간대</span>
-                  <span className="font-semibold text-[#2563EB]">{formatShortTimeSlot(selectedTaskForSheet.time_slot) || '-'}</span>
-                </div>
-              </div>
-
-              {selectedTaskForSheet.description && (
-                <div>
-                  <div className="text-[10px] font-bold text-[#64748B] uppercase">상세 내용</div>
-                  <div className="bg-[#F5F6F8] p-3 rounded-xl mt-1 text-[#1F2937] whitespace-pre-wrap">{selectedTaskForSheet.description}</div>
-                </div>
-              )}
-
-              {selectedTaskForSheet.remarks && (
-                <div>
-                  <div className="text-[10px] font-bold text-[#64748B] uppercase">비고란 (특이사항)</div>
-                  <div className="bg-amber-50/60 border border-amber-200 p-3 rounded-xl mt-1 text-amber-900 whitespace-pre-wrap">{selectedTaskForSheet.remarks}</div>
-                </div>
-              )}
-
-              <div>
-                <div className="text-[10px] font-bold text-[#64748B] uppercase mb-1">담당 인원 ({selectedTaskForSheet.assigned_names?.length || 0}명)</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {selectedTaskForSheet.assigned_names?.length ? (
-                    selectedTaskForSheet.assigned_names.map((name) => (
-                      <button key={name} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 bg-blue-50 border border-blue-100 text-[#243B5A] px-2.5 py-1.5 rounded-lg text-xs font-semibold hover:bg-blue-100">
-                        <span>📞</span>
-                        <span>{name}</span>
-                      </button>
-                    ))
-                  ) : (
-                    <span className="text-[#94A3B8]">미지정</span>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center justify-end gap-2 pt-3 border-t">
-                {canModifyTaskStatus(selectedTaskForSheet) && (
-                  <button onClick={() => { const task = selectedTaskForSheet; setSelectedTaskForSheet(null); setStatusChangeModal({ open: true, task, targetStatus: task.status, remarks: task.remarks || '' }); }} className="px-3 py-1.5 bg-[#243B5A] text-white font-bold rounded-lg text-xs">상태/비고 변경</button>
                 )}
-                <button onClick={() => setSelectedTaskForSheet(null)} className="px-3 py-1.5 border rounded-lg font-semibold text-xs text-[#64748B]">닫기</button>
-              </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="block text-[11px] font-semibold">호선</label>
+                      {isAdmin && (
+                        <div className="flex items-center gap-2">
+                          <button type="button" onClick={() => setIsVesselManagerOpen(true)} className="text-[10px] text-red-600 hover:underline font-semibold">호선 삭제/관리</button>
+                          <button
+                            type="button"
+                            onClick={() => setIsQuickVesselInputOpen(!isQuickVesselInputOpen)}
+                            className="text-[10px] text-[#2563EB] hover:underline font-semibold"
+                          >
+                            {isQuickVesselInputOpen ? '닫기' : '+ 호선 추가'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {isQuickVesselInputOpen ? (
+                      <div className="flex gap-1.5 mb-1">
+                        <input
+                          type="text"
+                          placeholder="신규 호선명 입력"
+                          value={quickVesselName}
+                          onChange={(e) => setQuickVesselName(e.target.value)}
+                          className="flex-1 px-2.5 py-1.5 border rounded-lg text-xs bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={handleQuickAddVessel}
+                          className="px-2.5 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg shrink-0"
+                        >
+                          등록
+                        </button>
+                      </div>
+                    ) : null}
+
+                    <select
+                      value={formData.category}
+                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                      className="w-full px-3 py-1.5 border rounded-lg text-xs font-bold text-[#243B5A] bg-white"
+                    >
+                      <option value="">호선 선택</option>
+                      {vessels.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-semibold mb-1">화물창</label>
+                    <input
+                      type="text"
+                      placeholder="예) Cargo Hold #1"
+                      value={formData.cargo_hold}
+                      onChange={(e) => setFormData({ ...formData, cargo_hold: e.target.value })}
+                      className="w-full px-3 py-1.5 border rounded-lg text-xs"
+                    />
+                  </div>
+                </div>
+
+                {formData.task_type === 'CABIN' ? (
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-semibold mb-1">근무/점검명</label>
+                      <input type="text" required placeholder="예) 메인 캐빈 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">시작일</label>
+                        <input type="date" required value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">종료일</label>
+                        <input type="date" required value={formData.end_date} onChange={(e) => setFormData({ ...formData, end_date: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono" />
+                      </div>
+                    </div>
+                    <div className="space-y-3 rounded-lg border bg-slate-50 p-3">
+                      <div className="space-y-1.5">
+                        <label className="block text-[11px] font-semibold">주간 근무자 ({dayWorkerList.length}명)</label>
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="주간 근무자 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('DAY'); } }} className="flex-1 px-3 py-1.5 border rounded-lg text-xs bg-white" />
+                          <button type="button" onClick={() => handleAddWorkerSingle('DAY')} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg">추가</button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 pt-1">{dayWorkerList.length ? dayWorkerList.map(name => <span key={`day-${name}`} className="bg-blue-50 text-[#1F2937] border border-blue-100 text-[11px] px-2 py-1 rounded-full flex items-center gap-1">{name}<button type="button" onClick={() => handleRemoveWorker(name, 'DAY')} aria-label={`${name} 주간 근무자 삭제`}><X className="h-3 w-3" /></button></span>) : <span className="text-[11px] text-[#64748B]">주간 근무자가 지정되지 않았습니다.</span>}</div>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="block text-[11px] font-semibold">야간 근무자 ({nightWorkerList.length}명)</label>
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="야간 근무자 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('NIGHT'); } }} className="flex-1 px-3 py-1.5 border rounded-lg text-xs bg-white" />
+                          <button type="button" onClick={() => handleAddWorkerSingle('NIGHT')} className="px-3 py-1.5 bg-violet-700 text-white text-xs font-semibold rounded-lg">추가</button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 pt-1">{nightWorkerList.length ? nightWorkerList.map(name => <span key={`night-${name}`} className="bg-violet-50 text-[#1F2937] border border-violet-100 text-[11px] px-2 py-1 rounded-full flex items-center gap-1">{name}<button type="button" onClick={() => handleRemoveWorker(name, 'NIGHT')} aria-label={`${name} 야간 근무자 삭제`}><X className="h-3 w-3" /></button></span>) : <span className="text-[11px] text-[#64748B]">야간 근무자가 지정되지 않았습니다.</span>}</div>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div>
+                      <label className="block text-[11px] font-semibold mb-1">업무명</label>
+                      <input type="text" required placeholder="예) 시설 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs" />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">일자</label>
+                        <input type="date" required value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold mb-1">시간대</label>
+                        <select
+                          value={formData.time_slot}
+                          onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
+                          className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono bg-white"
+                        >
+                          <option value="오전(08:00~12:00)">오전</option>
+                          <option value="오후(13:00~17:00)">오후</option>
+                          <option value="종일(08:00~)">종일</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {formData.task_type === 'DAILY_OTHER' ? (
+                      <div className="space-y-1.5">
+                        <label className="block text-[11px] font-semibold">인원 (작성자 본인)</label>
+                        <div className="inline-flex items-center gap-2 bg-slate-100 text-[#243B5A] border border-slate-200 text-xs font-semibold px-3 py-2 rounded-lg">
+                          <User className="h-3.5 w-3.5" /> {editingTask?.created_by_name || currentUser?.name || '로그인 사용자'}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center">
+                          <label className="block text-[11px] font-semibold">인원 추가</label>
+                          <button type="button" onClick={() => setIsTeamManagerOpen(true)} className="text-[10px] text-[#243B5A] hover:underline font-semibold">Team 관리</button>
+                        </div>
+                        <div className="flex gap-2">
+                          <input type="text" placeholder="인원 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} className="flex-1 px-3 py-1.5 border rounded-lg text-xs" />
+                          <button type="button" onClick={() => handleAddWorkerSingle('ASSIGNED')} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg">추가</button>
+                        </div>
+                        <div className="flex flex-wrap gap-1 pt-1">
+                          {assignedList.length === 0 ? (
+                            <span className="text-[11px] text-[#64748B]">지정된 인원이 없습니다.</span>
+                          ) : (
+                            assignedList.map(name => (
+                              <span key={name} className="bg-slate-100 text-[#1F2937] border text-[11px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                                {name}
+                                <button type="button" onClick={() => handleRemoveWorker(name, 'ASSIGNED')}><X className="h-3 w-3" /></button>
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div>
+                  <label className="block text-[11px] font-semibold mb-1">상세 설명 / 업무 내용</label>
+                  <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs resize-none" />
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-3 border-t">
+                  <button type="button" onClick={() => setIsModalOpen(false)} className="px-3.5 py-1.5 text-xs border rounded-lg">취소</button>
+                  <button type="submit" className="px-4 py-1.5 text-xs bg-[#243B5A] text-white rounded-lg font-semibold">저장</button>
+                </div>
+              </form>
             </div>
           </div>
-        </div>
-      )}
+        )}
+
+      </div>
     </div>
   );
 }
