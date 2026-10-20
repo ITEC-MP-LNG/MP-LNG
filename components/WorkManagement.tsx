@@ -97,6 +97,318 @@ function isFormerEmployee(user: AppUser): boolean {
   return values.some(value => /퇴사|퇴직|퇴사자|퇴직자/.test(value));
 }
 
+
+type VehicleRow = {
+  id: string;
+  vehicle_number: string;
+  created_at?: string;
+};
+type VehicleUsageRow = {
+  id: string;
+  vehicle_id: string;
+  vehicle_number: string;
+  user_id: string | null;
+  user_name: string;
+  used_at: string;
+  mileage: number | null;
+  destination: string;
+  purpose: string;
+  maintenance_start_date: string | null;
+  maintenance_end_date: string | null;
+  is_parked: boolean;
+  parking_remarks: string | null;
+  parking_updated_by_id?: string | null;
+  parking_updated_by_name?: string | null;
+  created_at?: string;
+};
+type VehicleDriver = { id: string; name: string; yard_cert_details?: Array<{ name?: string }> };
+
+function VehicleCalendarPicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+  const [open, setOpen] = useState(false);
+  const parsed = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(Number(value.slice(0,4)), Number(value.slice(5,7))-1, Number(value.slice(8,10))) : new Date();
+  const [year, setYear] = useState(parsed.getFullYear());
+  const [month, setMonth] = useState(parsed.getMonth());
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [open]);
+  const days = new Date(year, month + 1, 0).getDate();
+  const first = new Date(year, month, 1).getDay();
+  const today = formatDateToYYYYMMDD(new Date());
+  return <div className="space-y-1">
+    <label className="block text-[11px] font-semibold text-[#1F2937]">{label}</label>
+    <div className="flex gap-1">
+      <input type="text" value={value} onChange={e => onChange(e.target.value)} placeholder="YYYY-MM-DD" className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:bg-white" />
+      <button type="button" onClick={() => {
+        const d = /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(Number(value.slice(0,4)), Number(value.slice(5,7))-1, Number(value.slice(8,10))) : new Date();
+        setYear(d.getFullYear()); setMonth(d.getMonth()); setOpen(true);
+      }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B]" aria-label={`${label} 달력 열기`}><CalendarIcon className="h-4 w-4" /></button>
+    </div>
+    {open && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/20 p-4" onClick={() => setOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label={`${label} 날짜 선택`} onClick={e => e.stopPropagation()} className="w-[min(320px,calc(100vw-32px))] rounded-2xl border border-[#E2E5E9] bg-white p-3 text-[#1F2937] shadow-2xl">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <button type="button" onClick={() => { const d = new Date(year, month-1, 1); setYear(d.getFullYear()); setMonth(d.getMonth()); }} className="rounded-lg border p-2 text-[#243B5A]"><ChevronLeft className="h-4 w-4"/></button>
+          <div className="flex gap-1">
+            <select value={year} onChange={e => setYear(Number(e.target.value))} className="rounded-lg border bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold">{Array.from({length: 81}, (_,i)=>1960+i).map(y=><option key={y} value={y}>{y}년</option>)}</select>
+            <select value={month} onChange={e => setMonth(Number(e.target.value))} className="rounded-lg border bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold">{Array.from({length:12},(_,i)=><option key={i} value={i}>{i+1}월</option>)}</select>
+          </div>
+          <button type="button" onClick={() => { const d = new Date(year, month+1, 1); setYear(d.getFullYear()); setMonth(d.getMonth()); }} className="rounded-lg border p-2 text-[#243B5A]"><ChevronRight className="h-4 w-4"/></button>
+        </div>
+        <div className="grid grid-cols-7 gap-1 text-center">
+          {['일','월','화','수','목','금','토'].map((d,i)=><div key={d} className={`py-1 text-[11px] font-semibold ${i===0?'text-red-600':i===6?'text-blue-600':'text-[#64748B]'}`}>{d}</div>)}
+          {Array.from({length:first},(_,i)=><div key={`blank-${i}`}/>)}
+          {Array.from({length:days},(_,i)=>{
+            const day=i+1; const date=`${year}-${String(month+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+            return <button key={date} type="button" onClick={()=>{onChange(date);setOpen(false);}} className={`h-9 rounded-lg text-xs ${value===date?'bg-[#243B5A] font-bold text-white':date===today?'border border-[#243B5A] font-bold text-[#243B5A]':'hover:bg-[#EEF2F7]'}`}>{day}</button>;
+          })}
+        </div>
+        <div className="mt-3 flex justify-between border-t pt-2">
+          <button type="button" onClick={()=>{onChange(today);setOpen(false);}} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A]">오늘</button>
+          <button type="button" onClick={()=>setOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white">닫기</button>
+        </div>
+      </div>
+    </div>}
+  </div>;
+}
+
+function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCustomConfirm }: {
+  currentUser?: { id: string; name: string; role: string } | null;
+  isAdmin: boolean;
+  showCustomAlert: (title: string, message: string) => void;
+  showCustomConfirm: (title: string, message: string, onConfirm: () => void) => void;
+}) {
+  const [vehicles, setVehicles] = useState<VehicleRow[]>([]);
+  const [usageRows, setUsageRows] = useState<VehicleUsageRow[]>([]);
+  const [drivers, setDrivers] = useState<VehicleDriver[]>([]);
+  const [activeVehicleId, setActiveVehicleId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [selectedUsageIds, setSelectedUsageIds] = useState<string[]>([]);
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [vehicleInput, setVehicleInput] = useState('');
+  const [editingVehicleId, setEditingVehicleId] = useState('');
+  const [usageModalOpen, setUsageModalOpen] = useState(false);
+  const [parkingRow, setParkingRow] = useState<VehicleUsageRow | null>(null);
+  const [parkingRemarks, setParkingRemarks] = useState('');
+  const [notice, setNotice] = useState<{type:'success'|'error'|'warning'; message:string}|null>(null);
+  const [usageForm, setUsageForm] = useState({
+    used_at: `${formatDateToYYYYMMDD(new Date())}T${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`,
+    mileage: '', destination: '', purpose: '', maintenance_start_date: '', maintenance_end_date: ''
+  });
+  const currentId = String(currentUser?.id || '');
+  const currentName = String(currentUser?.name || '').trim();
+  const notify = useCallback((message: string, type: 'success'|'error'|'warning' = 'success') => setNotice({message,type}), []);
+  useEffect(() => {
+    if (!notice) return;
+    const timer = window.setTimeout(() => setNotice(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [notice]);
+
+  const loadVehicleData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [vehicleResult, usageResult, driverResult] = await Promise.all([
+        supabase.from('work_vehicles').select('id, vehicle_number, created_at').order('vehicle_number', {ascending:true}),
+        supabase.from('work_vehicle_usage').select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, created_at').order('used_at', {ascending:false}),
+        supabase.from('app_users').select('id, name, yard_cert_details')
+      ]);
+      if (vehicleResult.error) throw vehicleResult.error;
+      if (usageResult.error) throw usageResult.error;
+      if (driverResult.error) throw driverResult.error;
+      const vehicleList = (vehicleResult.data || []) as VehicleRow[];
+      setVehicles(vehicleList);
+      setUsageRows((usageResult.data || []) as VehicleUsageRow[]);
+      setDrivers(((driverResult.data || []) as any[]).map(d => ({...d, id:String(d.id), name:String(d.name || ''), yard_cert_details:Array.isArray(d.yard_cert_details) ? d.yard_cert_details : []})));
+      setActiveVehicleId(prev => vehicleList.some(v => v.id === prev) ? prev : (vehicleList[0]?.id || ''));
+    } catch (error: any) {
+      showCustomAlert('차량 정보 조회 오류', `차량 정보를 불러오지 못했습니다. Supabase SQL 및 권한을 확인해주세요.\n${error?.message || ''}`);
+    } finally { setLoading(false); }
+  }, [showCustomAlert]);
+
+  useEffect(() => { void loadVehicleData(); }, [loadVehicleData]);
+
+  const selectedVehicle = vehicles.find(v => v.id === activeVehicleId);
+  const visibleUsage = useMemo(() => usageRows.filter(row => row.vehicle_id === activeVehicleId).sort((a,b)=>String(b.used_at).localeCompare(String(a.used_at))), [usageRows, activeVehicleId]);
+  const eligibleDrivers = useMemo(() => drivers.filter(d => (d.yard_cert_details || []).some(cert => String(cert?.name || '').replace(/\s/g,'').includes('작업용차량운전자교육'))), [drivers]);
+  const currentIsEligible = eligibleDrivers.some(d => (currentId && d.id === currentId) || (currentName && d.name.trim() === currentName));
+  const canEditParking = useCallback((row: VehicleUsageRow) => isAdmin || (!!currentName && row.user_name.trim() === currentName) || (!!currentId && String(row.user_id || '') === currentId), [isAdmin, currentName, currentId]);
+
+  const saveVehicle = async () => {
+    if (!isAdmin) { showCustomAlert('권한 제한','관리자만 차량을 등록하거나 수정할 수 있습니다.'); return; }
+    const number = vehicleInput.trim().toUpperCase();
+    if (!number) { notify('차량번호를 입력해주세요.','warning'); return; }
+    setSaving(true);
+    try {
+      if (editingVehicleId) {
+        const {data,error} = await supabase.from('work_vehicles').update({vehicle_number:number,updated_at:new Date().toISOString()}).eq('id',editingVehicleId).select('id,vehicle_number,created_at').single();
+        if (error) throw error;
+        setVehicles(prev=>prev.map(v=>v.id===editingVehicleId?data as VehicleRow:v).sort((a,b)=>a.vehicle_number.localeCompare(b.vehicle_number,'ko')));
+        setEditingVehicleId(''); notify('차량번호를 수정했습니다.');
+      } else {
+        const {data,error} = await supabase.from('work_vehicles').insert({vehicle_number:number}).select('id,vehicle_number,created_at').single();
+        if (error) throw error;
+        setVehicles(prev=>[...prev,data as VehicleRow].sort((a,b)=>a.vehicle_number.localeCompare(b.vehicle_number,'ko')));
+        setActiveVehicleId((data as VehicleRow).id); notify('차량을 등록했습니다.');
+      }
+      setVehicleInput('');
+    } catch (error:any) { showCustomAlert('차량 저장 오류', `차량 저장에 실패했습니다.\n${error?.message || ''}`); }
+    finally { setSaving(false); }
+  };
+
+  const deleteVehicle = (vehicle: VehicleRow) => {
+    if (!isAdmin) { showCustomAlert('권한 제한','관리자만 차량을 삭제할 수 있습니다.'); return; }
+    if (usageRows.some(row=>row.vehicle_id===vehicle.id)) { showCustomAlert('차량 삭제 제한','이 차량의 사용 이력이 남아 있습니다. 이력 삭제 후 차량을 삭제할 수 있습니다.'); return; }
+    showCustomConfirm('차량 삭제', `${vehicle.vehicle_number} 차량을 삭제하시겠습니까?`, async () => {
+      const {error} = await supabase.from('work_vehicles').delete().eq('id',vehicle.id);
+      if (error) { showCustomAlert('삭제 오류',error.message); return; }
+      setVehicles(prev=>prev.filter(v=>v.id!==vehicle.id));
+      setActiveVehicleId(prev=>prev===vehicle.id?'':prev);
+      notify('차량을 삭제했습니다.');
+    });
+  };
+
+  const openUsage = () => {
+    if (!selectedVehicle) { showCustomAlert('차량 선택','먼저 차량번호를 선택해주세요.'); return; }
+    if (!currentIsEligible) { showCustomAlert('차량 사용 제한','CERT의 YARD 자격에 작업용차량운전자교육이 등록된 인원만 차량을 사용할 수 있습니다.'); return; }
+    if (!currentName) { showCustomAlert('사용자 확인','로그인 사용자 이름을 확인할 수 없습니다.'); return; }
+    const now = new Date();
+    setUsageForm({used_at:`${formatDateToYYYYMMDD(now)}T${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`,mileage:'',destination:'',purpose:'',maintenance_start_date:'',maintenance_end_date:''});
+    setUsageModalOpen(true);
+  };
+
+  const saveUsage = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedVehicle || !currentUser) return;
+    if (!currentIsEligible) { showCustomAlert('차량 사용 제한','작업용차량운전자교육 자격이 확인되지 않습니다.'); return; }
+    if (!usageForm.used_at || !usageForm.destination.trim() || !usageForm.purpose.trim()) { notify('사용시간, 이동장소, 사용목적을 입력해주세요.','warning'); return; }
+    const maintenance = /정비|수리/.test(usageForm.purpose);
+    if (maintenance && (!usageForm.maintenance_start_date || !usageForm.maintenance_end_date)) { notify('정비 또는 수리인 경우 기간 시작일과 종료일을 입력해주세요.','warning'); return; }
+    if (maintenance && usageForm.maintenance_end_date < usageForm.maintenance_start_date) { notify('기간 종료일은 시작일보다 빠를 수 없습니다.','warning'); return; }
+    setSaving(true);
+    try {
+      const payload = {
+        vehicle_id:selectedVehicle.id, vehicle_number:selectedVehicle.vehicle_number,
+        user_id:currentId || null, user_name:currentName,
+        used_at:new Date(usageForm.used_at).toISOString(),
+        mileage:usageForm.mileage.trim()===''?null:Number(usageForm.mileage),
+        destination:usageForm.destination.trim(), purpose:usageForm.purpose.trim(),
+        maintenance_start_date:maintenance?usageForm.maintenance_start_date:null,
+        maintenance_end_date:maintenance?usageForm.maintenance_end_date:null,
+        is_parked:false, parking_remarks:null
+      };
+      const {data,error} = await supabase.from('work_vehicle_usage').insert(payload).select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, created_at').single();
+      if (error) throw error;
+      setUsageRows(prev=>[data as VehicleUsageRow,...prev]);
+      setUsageModalOpen(false); notify('차량 사용 내역을 등록했습니다.');
+    } catch (error:any) { showCustomAlert('차량 사용 등록 오류',`저장에 실패했습니다.\n${error?.message || ''}`); }
+    finally { setSaving(false); }
+  };
+
+  const deleteUsageSelected = () => {
+    if (!isAdmin) { showCustomAlert('권한 제한','관리자만 사용 이력을 삭제할 수 있습니다.'); return; }
+    const ids = visibleUsage.filter(row=>selectedUsageIds.includes(row.id)).map(row=>row.id);
+    if (!ids.length) { notify('삭제할 사용 이력을 선택해주세요.','warning'); return; }
+    showCustomConfirm('사용 이력 일괄 삭제',`선택한 ${ids.length}건의 차량 사용 이력을 삭제하시겠습니까?`,async()=>{
+      const {error} = await supabase.from('work_vehicle_usage').delete().in('id',ids);
+      if (error) {showCustomAlert('이력 삭제 오류',error.message);return;}
+      setUsageRows(prev=>prev.filter(row=>!ids.includes(row.id))); setSelectedUsageIds(prev=>prev.filter(id=>!ids.includes(id)));
+      notify(`선택한 ${ids.length}건을 삭제했습니다.`);
+    });
+  };
+
+  const saveParking = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!parkingRow) return;
+    if (!canEditParking(parkingRow)) { showCustomAlert('권한 제한','해당 차량 사용 당사자 또는 관리자만 주차 비고를 등록·수정할 수 있습니다.'); return; }
+    setSaving(true);
+    try {
+      const patch = {is_parked:true, parking_remarks:parkingRemarks.trim() || null, parking_updated_by_id:currentId || null, parking_updated_by_name:currentName || null, updated_at:new Date().toISOString()};
+      const {data,error} = await supabase.from('work_vehicle_usage').update(patch).eq('id',parkingRow.id).select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, created_at').single();
+      if (error) throw error;
+      setUsageRows(prev=>prev.map(row=>row.id===parkingRow.id?data as VehicleUsageRow:row));
+      setParkingRow(null); setParkingRemarks(''); notify('주차 상태와 비고를 저장했습니다.');
+    } catch (error:any) {showCustomAlert('주차 비고 저장 오류',`저장에 실패했습니다.\n${error?.message || ''}`);}
+    finally {setSaving(false);}
+  };
+
+  return <div className="space-y-3 p-2 sm:p-3">
+    {notice && <div role="status" className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-xs ${notice.type==='error'?'border-red-200 bg-red-50 text-red-700':notice.type==='warning'?'border-amber-200 bg-amber-50 text-amber-800':'border-emerald-200 bg-emerald-50 text-emerald-700'}`}><span className="whitespace-pre-wrap">{notice.message}</span><button type="button" onClick={()=>setNotice(null)} aria-label="알림 닫기"><X className="h-3.5 w-3.5"/></button></div>}
+    <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><h3 className="text-sm font-bold text-[#243B5A]">차량 관리</h3><p className="mt-0.5 text-[11px] text-[#64748B]">차량번호별 사용 이력과 주차 비고를 관리합니다.</p></div>
+        {isAdmin && <button type="button" onClick={()=>setManagerOpen(true)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A]"><Settings className="h-3.5 w-3.5"/> 차량 등록·수정·삭제</button>}
+      </div>
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-2">
+        <span className="shrink-0 text-xs font-bold text-[#64748B]">차량번호</span>
+        {vehicles.map(vehicle=><button key={vehicle.id} type="button" onClick={()=>{setActiveVehicleId(vehicle.id);setSelectedUsageIds([]);}} className={`rounded-lg border px-3 py-2 text-xs font-bold ${activeVehicleId===vehicle.id?'border-[#243B5A] bg-[#243B5A] text-white':'border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-slate-100'}`}>{vehicle.vehicle_number}</button>)}
+        {vehicles.length===0 && <span className="text-xs text-[#64748B]">등록된 차량이 없습니다. 관리자에게 차량 등록을 요청해주세요.</span>}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <button type="button" disabled={!selectedVehicle || !currentIsEligible || saving} onClick={openUsage} className="flex items-center gap-1.5 rounded-lg bg-[#243B5A] px-3.5 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-3.5 w-3.5"/> 차량 사용</button>
+        <span className={`text-[11px] ${currentIsEligible?'text-emerald-700':'text-[#64748B]'}`}>{currentIsEligible?'작업용차량운전자교육 확인됨':'CERT YARD 자격에 작업용차량운전자교육이 있어야 사용 가능'}</span>
+        <button type="button" onClick={()=>void loadVehicleData()} disabled={loading} className="ml-auto rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] disabled:opacity-50"><span className="inline-flex items-center gap-1"><CalendarIcon className="h-3.5 w-3.5"/> {loading?'조회 중':'새로고침'}</span></button>
+      </div>
+    </div>
+    <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div><h3 className="text-sm font-bold text-[#243B5A]">최근 사용 내역 {selectedVehicle?`· ${selectedVehicle.vehicle_number}`:''}</h3><p className="text-[11px] text-[#64748B]">주차 버튼을 누르면 비고를 등록할 수 있습니다.</p></div>
+        {isAdmin && <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-1.5 text-xs font-semibold text-[#243B5A]"><input type="checkbox" checked={visibleUsage.length>0 && visibleUsage.every(row=>selectedUsageIds.includes(row.id))} onChange={e=>setSelectedUsageIds(prev=>e.target.checked?Array.from(new Set([...prev,...visibleUsage.map(r=>r.id)])):prev.filter(id=>!visibleUsage.some(r=>r.id===id)))} className="accent-[#243B5A]"/> 전체 선택</label><span className="text-xs text-[#64748B]">{selectedUsageIds.filter(id=>visibleUsage.some(r=>r.id===id)).length}건 선택</span><button type="button" onClick={deleteUsageSelected} className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"><Trash2 className="h-3.5 w-3.5"/> 선택 삭제</button></div>}
+      </div>
+      {loading ? <div className="py-10 text-center text-xs text-[#64748B]">차량 정보를 불러오는 중...</div> : !selectedVehicle ? <div className="py-10 text-center text-xs text-[#64748B]">차량번호를 선택해주세요.</div> : visibleUsage.length===0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] py-10 text-center text-xs text-[#64748B]">최근 사용 내역이 없습니다.</div> :
+        <div className="space-y-2">
+          {visibleUsage.map(row=><div key={row.id} className="rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3">
+            <div className="flex items-start gap-2">
+              {isAdmin && <input type="checkbox" checked={selectedUsageIds.includes(row.id)} onChange={e=>setSelectedUsageIds(prev=>e.target.checked?[...prev,row.id]:prev.filter(id=>id!==row.id))} className="mt-1 accent-[#243B5A]" aria-label={`${row.user_name} 사용 이력 선택`}/>}
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold text-[#243B5A]">{row.user_name}</span><span className="text-[11px] text-[#64748B]">{new Date(row.used_at).toLocaleString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${row.is_parked?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-800'}`}>{row.is_parked?'주차 등록':'주차 미등록'}</span></div>
+                <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+                  <div><span className="text-[#64748B]">이동장소: </span><span className="font-medium">{row.destination}</span></div>
+                  <div><span className="text-[#64748B]">사용목적: </span><span className="font-medium">{row.purpose}</span></div>
+                  <div><span className="text-[#64748B]">운행거리: </span><span>{row.mileage==null?'미입력':`${row.mileage} km`}</span></div>
+                  {(row.maintenance_start_date || row.maintenance_end_date) && <div><span className="text-[#64748B]">정비/수리 기간: </span><span>{row.maintenance_start_date || '-'} ~ {row.maintenance_end_date || '-'}</span></div>}
+                </div>
+                {row.parking_remarks && <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-xs"><span className="font-bold text-amber-900">주차 비고: </span><span className="whitespace-pre-wrap break-words">{row.parking_remarks}</span>{row.parking_updated_by_name && <div className="mt-1 text-[10px] text-amber-800">작성: {row.parking_updated_by_name}</div>}</div>}
+              </div>
+              <button type="button" onClick={()=>{setParkingRow(row);setParkingRemarks(row.parking_remarks||'');}} disabled={!canEditParking(row)} className="shrink-0 rounded-lg border border-[#E2E5E9] bg-white px-2.5 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8] disabled:cursor-not-allowed disabled:opacity-40">주차 / 비고</button>
+            </div>
+          </div>)}
+        </div>}
+    </div>
+
+    {managerOpen && isAdmin && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setManagerOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label="차량 관리" onClick={e=>e.stopPropagation()} className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl space-y-4">
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><h3 className="text-sm font-bold text-[#243B5A]">차량 등록 · 수정 · 삭제</h3><button type="button" onClick={()=>setManagerOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
+        <div className="flex gap-2"><input value={vehicleInput} onChange={e=>setVehicleInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void saveVehicle();}}} placeholder="차량번호 입력 (예: 12가3456)" className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs outline-none focus:border-[#243B5A]"/><button type="button" disabled={saving} onClick={()=>void saveVehicle()} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{editingVehicleId?'수정 저장':'차량 추가'}</button>{editingVehicleId && <button type="button" onClick={()=>{setEditingVehicleId('');setVehicleInput('');}} className="rounded-lg border px-3 py-2 text-xs">취소</button>}</div>
+        <div className="space-y-2">{vehicles.map(vehicle=><div key={vehicle.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E5E9] px-3 py-2"><span className="text-xs font-bold text-[#1F2937]">{vehicle.vehicle_number}</span><div className="flex gap-1"><button type="button" onClick={()=>{setEditingVehicleId(vehicle.id);setVehicleInput(vehicle.vehicle_number);}} className="rounded-lg border border-[#E2E5E9] p-2 text-[#243B5A]" aria-label={`${vehicle.vehicle_number} 수정`}><Pencil className="h-3.5 w-3.5"/></button><button type="button" onClick={()=>deleteVehicle(vehicle)} className="rounded-lg border border-red-200 p-2 text-red-600" aria-label={`${vehicle.vehicle_number} 삭제`}><Trash2 className="h-3.5 w-3.5"/></button></div></div>)}</div>
+      </div>
+    </div>}
+
+    {usageModalOpen && selectedVehicle && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setUsageModalOpen(false)}>
+      <form onSubmit={saveUsage} onClick={e=>e.stopPropagation()} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-1 text-[11px] text-[#64748B]">{selectedVehicle.vehicle_number} · 사용자 {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">사용시간</label><input type="datetime-local" value={usageForm.used_at} onChange={e=>setUsageForm(p=>({...p,used_at:e.target.value}))} required className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
+        {/정비|수리/.test(usageForm.purpose) && <div className="grid grid-cols-1 gap-3 rounded-lg border border-amber-200 bg-amber-50/50 p-3 sm:grid-cols-2"><VehicleCalendarPicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><VehicleCalendarPicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-amber-800 sm:col-span-2">정비 또는 수리 목적이면 기간을 반드시 입력해야 합니다.</p></div>}
+        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving?'저장 중...':'사용 등록'}</button></div>
+      </form>
+    </div>}
+
+    {parkingRow && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setParkingRow(null)}>
+      <form onSubmit={saveParking} onClick={e=>e.stopPropagation()} className="w-full max-w-md space-y-4 rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">주차 상태 및 비고</h3><p className="mt-1 text-[11px] text-[#64748B]">{parkingRow.vehicle_number} · {parkingRow.user_name}</p></div><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
+        <div className="rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-3 text-xs"><span className="font-bold text-[#243B5A]">사용 일시: </span>{new Date(parkingRow.used_at).toLocaleString('ko-KR')}</div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">주차 비고</label><textarea rows={4} value={parkingRemarks} onChange={e=>setParkingRemarks(e.target.value)} placeholder="주차 위치, 차량 상태 등 비고를 입력해주세요." className="w-full resize-y rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:bg-white"/></div>
+        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold">취소</button><button type="submit" disabled={saving || !canEditParking(parkingRow)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving?'저장 중...':'주차 비고 저장'}</button></div>
+      </form>
+    </div>}
+  </div>;
+}
+
+
 export default function WorkManagement({ currentUser }: { currentUser?: { id: string; name: string; role: string } | null }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [vessels, setVessels] = useState<CabinVessel[]>([]);
@@ -120,7 +432,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return Boolean(task.created_by_name && currentUser.name && task.created_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase());
   }, [isAdmin, currentUser]);
 
-  const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN'>('DAILY');
+  const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN' | 'VEHICLE'>('DAILY');
   const [dailySubTab, setDailySubTab] = useState<'ACTIVE' | 'OTHER' | 'HISTORY'>('ACTIVE'); 
   const [cabinSubTab, setCabinSubTab] = useState<string>('ALL');
   const [cabinStatusSubTab, setCabinStatusSubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
@@ -1293,7 +1605,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
               <div>
                 <h2 className="text-sm sm:text-base font-bold">운영 및 근무 관리 시스템</h2>
-                <p className="text-[11px] sm:text-xs text-[#64748B]">일일, 주간 및 CABIN 업무 편성</p>
+                <p className="text-[11px] sm:text-xs text-[#64748B]">일일 · 주간 · CABIN 업무 및 차량 관리</p>
               </div>
             </div>
 
@@ -1311,7 +1623,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 </button>
               )}
 
-              {(isAdmin || (taskTab === 'DAILY' && dailySubTab === 'OTHER')) && (
+              {taskTab !== 'VEHICLE' && (isAdmin || (taskTab === 'DAILY' && dailySubTab === 'OTHER')) && (
                 <button
                   onClick={() => handleOpenCreateModal(undefined, taskTab === 'DAILY' && dailySubTab === 'OTHER' ? 'DAILY_OTHER' : undefined)}
                   className="flex items-center space-x-1 bg-[#243B5A] text-white px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-semibold shadow-xs shrink-0"
@@ -1336,7 +1648,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <span className="truncate">미완료 알림 ({myAssignedTasks.length})</span>
             </button>
 
-            <div className="col-span-2 sm:col-span-auto bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] grid grid-cols-3 gap-1 h-8 items-center shrink-0">
+            <div className="col-span-2 sm:col-span-auto bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] grid grid-cols-4 gap-1 h-8 items-center shrink-0">
               <button
                 onClick={() => { setTaskTab('DAILY'); setSelectedTaskIds([]); }}
                 className={`px-2.5 py-0.5 text-xs font-semibold rounded-md text-center transition ${taskTab === 'DAILY' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
@@ -1356,10 +1668,20 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <Home className="h-3 w-3 shrink-0" />
                 <span>CABIN</span>
               </button>
+              <button
+                onClick={() => { setTaskTab('VEHICLE'); setSelectedTaskIds([]); }}
+                className={`px-2.5 py-0.5 text-xs font-semibold rounded-md flex items-center justify-center gap-1 transition ${taskTab === 'VEHICLE' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
+              >
+                <span>차량</span>
+              </button>
             </div>
           </div>
         </div>
 
+        {taskTab === 'VEHICLE' ? (
+          <VehicleManagementPanel currentUser={currentUser} isAdmin={isAdmin} showCustomAlert={showCustomAlert} showCustomConfirm={showCustomConfirm} />
+        ) : (
+          <>
         {/* 인원 현황 요약 배너 */}
         {(() => {
           const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
@@ -1947,6 +2269,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </tbody>
             </table>
           </div>
+          </>
+        )}
+
           </>
         )}
 
