@@ -230,7 +230,8 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
   useEffect(() => { void loadVehicleData(); }, [loadVehicleData]);
 
   const selectedVehicle = vehicles.find(v => v.id === activeVehicleId);
-  const visibleUsage = useMemo(() => usageRows.filter(row => row.vehicle_id === activeVehicleId).sort((a,b)=>String(b.used_at).localeCompare(String(a.used_at))), [usageRows, activeVehicleId]);
+  // 사용 이력은 선택한 차량에 종속하지 않고 모든 차량을 하나의 목록으로 표시합니다.
+  const visibleUsage = useMemo(() => [...usageRows].sort((a,b)=>String(b.used_at).localeCompare(String(a.used_at))), [usageRows]);
   const eligibleDrivers = useMemo(() => drivers.filter(d => (d.yard_cert_details || []).some(cert => String(cert?.name || '').replace(/\s/g,'').includes('작업용차량운전자교육'))), [drivers]);
   const currentIsEligible = eligibleDrivers.some(d => (currentId && d.id === currentId) || (currentName && d.name.trim() === currentName));
   const canEditParking = useCallback((row: VehicleUsageRow) => isAdmin || (!!currentName && row.user_name.trim() === currentName) || (!!currentId && String(row.user_id || '') === currentId), [isAdmin, currentName, currentId]);
@@ -353,16 +354,16 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
     </div>
     <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><h3 className="text-sm font-bold text-[#243B5A]">최근 사용 내역 {selectedVehicle?`· ${selectedVehicle.vehicle_number}`:''}</h3><p className="text-[11px] text-[#64748B]">주차 버튼을 누르면 비고를 등록할 수 있습니다.</p></div>
+        <div><h3 className="text-sm font-bold text-[#243B5A]">최근 사용 내역 · 전체 차량</h3><p className="text-[11px] text-[#64748B]">모든 차량의 사용 내역을 날짜순으로 함께 표시합니다. 주차 버튼을 누르면 비고를 등록할 수 있습니다.</p></div>
         {isAdmin && <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-1.5 text-xs font-semibold text-[#243B5A]"><input type="checkbox" checked={visibleUsage.length>0 && visibleUsage.every(row=>selectedUsageIds.includes(row.id))} onChange={e=>setSelectedUsageIds(prev=>e.target.checked?Array.from(new Set([...prev,...visibleUsage.map(r=>r.id)])):prev.filter(id=>!visibleUsage.some(r=>r.id===id)))} className="accent-[#243B5A]"/> 전체 선택</label><span className="text-xs text-[#64748B]">{selectedUsageIds.filter(id=>visibleUsage.some(r=>r.id===id)).length}건 선택</span><button type="button" onClick={deleteUsageSelected} className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"><Trash2 className="h-3.5 w-3.5"/> 선택 삭제</button></div>}
       </div>
-      {loading ? <div className="py-10 text-center text-xs text-[#64748B]">차량 정보를 불러오는 중...</div> : !selectedVehicle ? <div className="py-10 text-center text-xs text-[#64748B]">차량번호를 선택해주세요.</div> : visibleUsage.length===0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] py-10 text-center text-xs text-[#64748B]">최근 사용 내역이 없습니다.</div> :
+      {loading ? <div className="py-10 text-center text-xs text-[#64748B]">차량 정보를 불러오는 중...</div> : visibleUsage.length===0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] py-10 text-center text-xs text-[#64748B]">최근 사용 내역이 없습니다.</div> :
         <div className="space-y-2">
           {visibleUsage.map(row=><div key={row.id} className="rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3">
             <div className="flex items-start gap-2">
               {isAdmin && <input type="checkbox" checked={selectedUsageIds.includes(row.id)} onChange={e=>setSelectedUsageIds(prev=>e.target.checked?[...prev,row.id]:prev.filter(id=>id!==row.id))} className="mt-1 accent-[#243B5A]" aria-label={`${row.user_name} 사용 이력 선택`}/>}
               <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><span className="text-xs font-bold text-[#243B5A]">{row.user_name}</span><span className="text-[11px] text-[#64748B]">{new Date(row.used_at).toLocaleString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${row.is_parked?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-800'}`}>{row.is_parked?'주차 등록':'주차 미등록'}</span></div>
+                <div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-[#EEF2F7] px-2 py-0.5 text-[10px] font-bold text-[#243B5A]">{row.vehicle_number}</span><span className="text-xs font-bold text-[#243B5A]">{row.user_name}</span><span className="text-[11px] text-[#64748B]">{new Date(row.used_at).toLocaleString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${row.is_parked?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-800'}`}>{row.is_parked?'주차 등록':'주차 미등록'}</span></div>
                 <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
                   <div><span className="text-[#64748B]">이동장소: </span><span className="font-medium">{row.destination}</span></div>
                   <div><span className="text-[#64748B]">사용목적: </span><span className="font-medium">{row.purpose}</span></div>
