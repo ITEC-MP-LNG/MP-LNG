@@ -52,7 +52,11 @@ export interface AppUser {
   id?: string;
   name: string;
   department?: string;
+  position?: string;
+  job_title?: string;
+  field?: string;
   phone?: string;
+  work_status?: '근무중' | '휴무' | string;
 }
 
 const formatDateToYYYYMMDD = (d: Date) => {
@@ -62,7 +66,6 @@ const formatDateToYYYYMMDD = (d: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-// yy/mm/dd 변환 헬퍼 함수
 const formatToShortDate = (dateStr?: string) => {
   if (!dateStr) return '';
   const parts = dateStr.split(/[-/]/);
@@ -73,7 +76,6 @@ const formatToShortDate = (dateStr?: string) => {
   return dateStr;
 };
 
-// 시간대에서 상세 시간 제거 (오전, 오후, 종일만 표시)
 const formatShortTimeSlot = (slot?: string) => {
   if (!slot) return '';
   if (slot.includes('오전')) return '오전';
@@ -89,6 +91,12 @@ const getMonday = (d: Date) => {
   return new Date(date.setDate(diff));
 };
 
+function isFormerEmployee(user: AppUser): boolean {
+  const values = [user.department, user.position, user.job_title, user.field]
+    .map(value => String(value || '').trim().toLowerCase());
+  return values.some(value => /퇴사|퇴직|퇴사자|퇴직자/.test(value));
+}
+
 export default function WorkManagement({ currentUser }: { currentUser?: { id: string; name: string; role: string } | null }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [vessels, setVessels] = useState<CabinVessel[]>([]);
@@ -98,7 +106,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [validUserNames, setValidUserNames] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 관리자 권한 여부 확인
   const isAdmin = useMemo(() => {
     const role = String(currentUser?.role || '').trim().toUpperCase();
     return ['SUPER_ADMIN', 'WORK_ADMIN', 'ADMIN'].includes(role) || currentUser?.role === '관리자';
@@ -106,7 +113,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const currentUserId = currentUser?.id;
   const currentUserNameForFetch = currentUser?.name;
 
-  // 야간업무진행은 작성자 본인 또는 관리자만 수정/삭제 가능
   const canManageTask = useCallback((task: Task) => {
     if (isAdmin) return true;
     if (task.task_type !== 'DAILY_OTHER' || !currentUser) return false;
@@ -114,14 +120,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return Boolean(task.created_by_name && currentUser.name && task.created_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase());
   }, [isAdmin, currentUser]);
 
-  // 탭 및 서브탭 상태
   const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN'>('DAILY');
   const [dailySubTab, setDailySubTab] = useState<'ACTIVE' | 'OTHER' | 'HISTORY'>('ACTIVE'); 
   const [cabinSubTab, setCabinSubTab] = useState<string>('ALL');
   const [cabinStatusSubTab, setCabinStatusSubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
-  // 표 헤더 내부 열별 필터 상태 및 드롭다운 펼치기 상태
   const [tableFilterVessel, setTableFilterVessel] = useState<string>('ALL');
   const [tableFilterCargoHold, setTableFilterCargoHold] = useState<string>('ALL');
   const [tableFilterDate, setTableFilterDate] = useState<string>('ALL');
@@ -129,10 +133,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [tableFilterStatus, setTableFilterStatus] = useState<string>('ALL');
 
   const [activeFilterDropdown, setActiveFilterDropdown] = useState<string | null>(null);
-
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // 주간 업무 뷰 & 월 선택 (엑셀 추출용)
   const [weeklyViewMode, setWeeklyViewMode] = useState<'GRID' | 'LIST'>('GRID');
   const [currentWeekMonday, setCurrentWeekMonday] = useState<Date>(() => getMonday(new Date()));
   const [selectedExportMonth, setSelectedExportMonth] = useState<string>(() => {
@@ -140,16 +142,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
 
-  // 주간업무 선택적 불러오기 상태 (일일업무 작성 시 해당일 기준)
   const [isWeeklyImportModalOpen, setIsWeeklyImportModalOpen] = useState(false);
   const [importTargetDate, setImportTargetDate] = useState<string>(() => formatDateToYYYYMMDD(new Date()));
   const [selectedWeeklyIdsToImport, setSelectedWeeklyIdsToImport] = useState<string[]>([]);
 
-  // 업무 등록 모달 내 빠른 호선 추가용 상태
   const [isQuickVesselInputOpen, setIsQuickVesselInputOpen] = useState(false);
   const [quickVesselName, setQuickVesselName] = useState('');
 
-  // 커스텀 통일 알림 모달 상태
   const [customAlert, setCustomAlert] = useState<{ open: boolean; title: string; message: string; type?: 'info' | 'confirm' | 'monthlyDelete'; onConfirm?: () => void; onDownload?: () => void }>({
     open: false,
     title: '',
@@ -165,7 +164,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setCustomAlert({ open: true, title, message, type: 'confirm', onConfirm });
   }, []);
 
-  // 팝업 미완료 알림 상태
   const [isAlertOpen, setIsAlertOpen] = useState(false);
   const [myAssignedTasks, setMyAssignedTasks] = useState<Task[]>([]);
   const [isNightWorkAlertOpen, setIsNightWorkAlertOpen] = useState(false);
@@ -177,10 +175,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const tasksFetchInFlightRef = useRef(false);
   const tasksFetchQueuedRef = useRef(false);
 
-  // 바텀시트 모달
   const [selectedTaskForSheet, setSelectedTaskForSheet] = useState<Task | null>(null);
 
-  // 상태 변경 모달
   const [statusChangeModal, setStatusChangeModal] = useState<{
     open: boolean;
     task: Task | null;
@@ -193,12 +189,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     remarks: ''
   });
 
-  // 호선 관리 모달
   const [isVesselManagerOpen, setIsVesselManagerOpen] = useState(false);
   const [newVesselName, setNewVesselName] = useState('');
   const [editingVessel, setEditingVessel] = useState<CabinVessel | null>(null);
 
-  // Team 관리 모달
   const [isTeamManagerOpen, setIsTeamManagerOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
   const [newTeamDept, setNewTeamDept] = useState('');
@@ -206,7 +200,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [editingTeam, setEditingTeam] = useState<PresetTeam | null>(null);
   const [editTeamMembersText, setEditTeamMembersText] = useState('');
 
-  // 업무 등록/수정 모달 상태
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   
@@ -217,8 +210,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     end_date: formatDateToYYYYMMDD(new Date()),
     time_slot: '오전(08:00~12:00)',
     task_type: 'DAILY' as 'DAILY' | 'DAILY_OTHER' | 'WEEKLY' | 'CABIN',
-    category: '',     // 호선
-    cargo_hold: '',   // 화물창
+    category: '',
+    cargo_hold: '',
   });
 
   const [assignedList, setAssignedList] = useState<string[]>([]);
@@ -226,10 +219,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [nightWorkerList, setNightWorkerList] = useState<string[]>([]);
   const [singleWorkerInput, setSingleWorkerInput] = useState('');
 
-  // app_users 인원 및 부서 불러오기
   const fetchAppUsers = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('app_users').select('name, department, phone');
+      const { data, error } = await supabase.from('app_users').select('name, department, position, job_title, field, phone, work_status');
       if (error) throw error;
       if (data) {
         setAppUsers(data);
@@ -246,7 +238,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
   }, []);
 
-  // CABIN 호선 목록 조회
   const fetchVessels = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('cabin_vessels').select('id, name, created_at').order('created_at', { ascending: true });
@@ -262,7 +253,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
   }, []);
 
-  // Preset Teams 조회
   const fetchTeams = useCallback(async () => {
     try {
       const { data, error } = await supabase.from('preset_teams').select('id, name, department, members, created_at').order('created_at', { ascending: true });
@@ -322,7 +312,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return <span className="text-[10px] font-extrabold text-red-600 ml-1">N</span>;
   }, [isTaskNew]);
 
-  // 전체 업무 데이터 조회
   const fetchTasks = useCallback(async () => {
     if (tasksFetchInFlightRef.current) {
       tasksFetchQueuedRef.current = true;
@@ -455,8 +444,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return assigned.includes(name) || day.includes(name) || night.includes(name);
   }, [isAdmin, currentUser]);
 
-
-  // 완료이력의 '비고 수정됨' 표시는 실제 비고 변경 시 DB에 저장된 시각으로 판단합니다.
   const wasCompletedHistoryRemarksEdited = useCallback((task: Task) => (
     task.status === 'COMPLETED' &&
     task.completion_pending_review !== true &&
@@ -576,7 +563,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setNewTeamMembersText(deptMembers.join(', '));
   }, [appUsers]);
 
-  // 전화 연결 함수
   const handleCallWorker = useCallback((workerName: string) => {
     const worker = appUsers.find((u) => u.name?.trim().toLowerCase() === workerName.trim().toLowerCase());
     const phone = worker?.phone?.trim();
@@ -611,7 +597,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return;
     }
 
-    // 완료이력은 상태를 변경하지 않고, 비고가 실제로 달라진 경우에만 한 번 저장합니다.
     if (isCompletedHistory) {
       const previousRemarks = task.remarks || '';
       const nextRemarks = remarks || '';
@@ -622,7 +607,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
       try {
         const remarksEditedAt = new Date().toISOString();
-        // 수정과 수정시각을 단일 Supabase 요청으로 저장합니다. 별도 재조회는 하지 않습니다.
         const { data, error } = await supabase.from('tasks').update({
           remarks: nextRemarks,
           remarks_edited_at: remarksEditedAt,
@@ -767,11 +751,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const handleAddWorkerSingle = useCallback((target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (!singleWorkerInput.trim()) return;
     const name = singleWorkerInput.trim();
+    
+    // 휴무 인원 검증
+    const foundUser = appUsers.find(u => u.name?.trim().toLowerCase() === name.toLowerCase());
+    if (foundUser && foundUser.work_status === '휴무') {
+      showCustomAlert('업무 등록 제한', `${foundUser.name} 휴무입니다.`);
+      return;
+    }
+
     if (target === 'ASSIGNED' && !assignedList.includes(name)) setAssignedList([...assignedList, name]);
     if (target === 'DAY' && !dayWorkerList.includes(name)) setDayWorkerList([...dayWorkerList, name]);
     if (target === 'NIGHT' && !nightWorkerList.includes(name)) setNightWorkerList([...nightWorkerList, name]);
     setSingleWorkerInput('');
-  }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList]);
+  }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList, appUsers, showCustomAlert]);
 
   const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
@@ -789,6 +781,21 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
     if (isDailyOther && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
     if (!formData.title.trim()) { showCustomAlert('입력 확인', '업무명을 입력해 주세요.'); return; }
+
+    // 휴무 인원 등록 검증 (전체 대상)
+    const workersToCheck = formData.task_type === 'CABIN'
+      ? [...dayWorkerList, ...nightWorkerList]
+      : isDailyOther
+        ? [editingTask?.created_by_name || currentUser?.name || '']
+        : assignedList;
+
+    for (const wName of workersToCheck) {
+      const u = appUsers.find(user => user.name?.trim().toLowerCase() === wName.trim().toLowerCase());
+      if (u && u.work_status === '휴무') {
+        showCustomAlert('업무 등록 제한', `${u.name} 휴무입니다.`);
+        return;
+      }
+    }
 
     let payload: any = {
       title: formData.title.trim(),
@@ -838,7 +845,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       fetchTasks();
       showCustomAlert('성공', '업무가 정상적으로 저장되었습니다.');
     } catch (err: any) { showCustomAlert('오류', `저장 중 오류: ${err.message}`); }
-  }, [isAdmin, canManageTask, currentUser, formData, editingTask, dayWorkerList, nightWorkerList, assignedList, fetchTasks, showCustomAlert]);
+  }, [isAdmin, canManageTask, currentUser, formData, editingTask, dayWorkerList, nightWorkerList, assignedList, appUsers, fetchTasks, showCustomAlert]);
 
   const handleFinalizeDailyTask = useCallback((task: Task) => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 최종 완료 처리할 수 있습니다.'); return; }
@@ -1121,7 +1128,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSelectedTaskIds([]);
   }, [currentWeekMonday]);
 
-  // 테이블 필터링 적용된 업무 목록
   const filteredTasks = useMemo(() => {
     const list = tasks.filter((t) => {
       if (taskTab === 'DAILY') {
@@ -1129,8 +1135,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (!isDailyType) return false;
         if (dailySubTab === 'ACTIVE') {
           if (!(t.task_type === 'DAILY' && (t.status !== 'COMPLETED' || t.completion_pending_review === true))) return false;
-          // 기본 목록은 오늘과 내일, 최대 이틀치만 표시합니다.
-          // 일자를 직접 선택하면 선택한 날짜 기준으로 조회하되, 과거 날짜는 진행중/대기 목록에서 제외합니다.
           const todayDate = new Date();
           const today = formatDateToYYYYMMDD(todayDate);
           const tomorrowDate = new Date(todayDate);
@@ -1140,8 +1144,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           if (tableFilterDate === 'ALL' && t.start_date > tomorrow) return false;
         } else if (dailySubTab === 'OTHER') {
           if (!(t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED')) return false;
-          // 기본 야간업무 목록도 오늘과 내일, 최대 이틀치만 표시합니다.
-          // 일자를 직접 선택하면 선택한 날짜 기준으로 조회하되, 과거 날짜는 제외합니다.
           const todayDate = new Date();
           const today = formatDateToYYYYMMDD(todayDate);
           const tomorrowDate = new Date(todayDate);
@@ -1166,10 +1168,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (cabinStatusSubTab === 'HISTORY' && t.status !== 'COMPLETED') return false;
       }
 
-      // 표 헤더 내부 필터 적용
       if (tableFilterVessel !== 'ALL' && t.category !== tableFilterVessel) return false;
       if (tableFilterCargoHold !== 'ALL' && t.cargo_hold !== tableFilterCargoHold) return false;
-      // 완료이력은 날짜별 필터링 대상이 아니며, 전체 완료 기록을 날짜순으로 표시합니다.
       if (!(taskTab === 'DAILY' && dailySubTab === 'HISTORY') && tableFilterDate !== 'ALL' && t.start_date !== tableFilterDate) return false;
       if (tableFilterTimeSlot !== 'ALL') {
         const shortSlot = formatShortTimeSlot(t.time_slot);
@@ -1204,7 +1204,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
 
     return [...list].sort((a, b) => {
-      // 일일업무는 날짜를 우선 정렬해 오늘 업무가 내일 업무보다 항상 위에 표시되게 함.
       if (taskTab === 'DAILY') {
         const dateCompare = (a.start_date || '').localeCompare(b.start_date || '');
         if (dateCompare !== 0) return dateCompare;
@@ -1325,6 +1324,33 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         </div>
 
+        {/* 인원 현황 요약 배너 (일일업무, 주간업무, CABIN 아래 배치) */}
+        {(() => {
+          const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
+          const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
+          const offUsers = activeUsers.filter(u => u.work_status === '휴무');
+          return (
+            <div className="bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl p-2.5 flex flex-wrap items-center justify-between gap-2 text-xs shadow-2xs">
+              <div className="flex items-center space-x-3 flex-wrap gap-y-1">
+                <span className="font-bold text-[#243B5A] flex items-center gap-1">
+                  <Users className="h-3.5 w-3.5" /> 인원 현황:
+                </span>
+                <span>전체(퇴사자 제외): <strong className="text-[#1F2937]">{activeUsers.length}명</strong></span>
+                <span>근무중: <strong className="text-emerald-600">{workingUsers.length}명</strong></span>
+                <span>휴무: <strong className="text-blue-600">{offUsers.length}명</strong></span>
+              </div>
+              <div className="text-[11px] text-[#64748B] flex items-center gap-1 flex-wrap">
+                <span className="font-semibold text-[#1F2937]">휴무자 명단:</span>
+                {offUsers.length > 0 ? (
+                  <span className="text-blue-700 font-medium">{offUsers.map(u => u.name).join(', ')}</span>
+                ) : (
+                  <span>없음</span>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* 일일 업무 서브탭 */}
         {taskTab === 'DAILY' && (
           <div className="flex items-center justify-between bg-[#F5F6F8] p-1 rounded-xl border border-[#E2E5E9] overflow-x-auto [&::-webkit-scrollbar]:h-1">
@@ -1417,12 +1443,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 컨텐츠 구역 (모바일 최적화: 가로 스크롤 없이 한 화면에 맞춤 + ▶ 펼치기 필터 적용) */}
         {isLoading ? (
           <div className="text-center py-16 text-xs text-[#64748B]">로딩 중...</div>
         ) : taskTab === 'DAILY' ? (
           <>
-          {/* 모바일: 표의 열이 좁아져 인원/전화 버튼이 사라지는 문제를 방지하기 위한 카드형 목록 */}
           <div className="md:hidden space-y-2">
             <div className="relative grid grid-cols-2 gap-2 rounded-xl border border-[#E2E5E9] bg-white p-2">
               <button
@@ -1497,7 +1521,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
             ))}
           </div>
-          {/* 태블릿/PC: 기존 표 레이아웃 유지 */}
+
           <div className="hidden md:block w-full rounded-xl border bg-white shadow-2xs overflow-visible">
             <table className="w-full text-left border-collapse text-[10px] sm:text-[11px] table-fixed">
               <thead>
@@ -1508,7 +1532,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     </th>
                   )}
                   
-                  {/* 호선 헤더 (▶ 펼치기 버튼 포함) */}
                   <th className="p-1 font-bold text-center w-[14%] relative border-r border-white/20 last:border-r-0">
                     <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'vessel' ? null : 'vessel')}>
                       <span className="truncate">호선{tableFilterVessel !== 'ALL' ? `(${tableFilterVessel})` : ''}</span>
@@ -1525,7 +1548,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     )}
                   </th>
 
-                  {/* 화물창 헤더 (▶ 펼치기 버튼 포함) */}
                   <th className="p-1 font-bold text-center w-[10%] relative border-r border-white/20 last:border-r-0">
                     <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'cargo' ? null : 'cargo')}>
                       <span className="truncate">화물창{tableFilterCargoHold !== 'ALL' ? `(${tableFilterCargoHold})` : ''}</span>
@@ -1542,7 +1564,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     )}
                   </th>
 
-                  {/* 완료이력은 날짜별 필터 없이 전체를 날짜순으로 표시 */}
                   <th className={`p-1 font-bold text-center w-[10%] ${dailySubTab === 'HISTORY' ? '' : 'relative'}`}>
                     {dailySubTab === 'HISTORY' ? (
                       <span>일자</span>
@@ -1565,7 +1586,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     )}
                   </th>
 
-                  {/* 시간대 헤더 (▶ 펼치기 버튼 포함) */}
                   <th className="p-1 font-bold text-center w-[9%] relative border-r border-white/20 last:border-r-0">
                     <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'timeslot' ? null : 'timeslot')}>
                       <span className="truncate">시간대{tableFilterTimeSlot !== 'ALL' ? `(${tableFilterTimeSlot})` : ''}</span>
@@ -1582,7 +1602,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     )}
                   </th>
 
-                  {/* 상태버튼 헤더 (▶ 펼치기 버튼 포함) */}
                   <th className="p-1 font-bold text-center w-[12%] relative border-r border-white/20 last:border-r-0">
                     <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
                       <span className="truncate">상태버튼{tableFilterStatus !== 'ALL' ? `(${tableFilterStatus === 'PENDING' ? '대기' : tableFilterStatus === 'IN_PROGRESS' ? '진행중' : '완료'})` : ''}</span>
@@ -1662,7 +1681,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           )}
                         </div>
                       </td>
-                      {/* 인원 표시 및 정확한 전화 연동 */}
                       <td className="p-1 text-[#64748B] align-top whitespace-normal border-r border-slate-200 last:border-r-0" title={t.assigned_names?.join(', ') || '미지정'}>
                         <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 {t.assigned_names?.length || 0}명</div>
                         {t.assigned_names?.length ? (
@@ -1788,7 +1806,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         ) : (
           <>
-          {/* 모바일 CABIN 목록: 근무명/상태와 주간·야간 인원 및 전화 연결을 카드에 표시 */}
           <div className="md:hidden space-y-2">
             {filteredTasks.length === 0 ? (
               <div className="rounded-xl border bg-white py-10 text-center text-xs text-[#64748B]">등록된 CABIN 편성이 없습니다.</div>
@@ -1823,7 +1840,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               );
             })}
           </div>
-          {/* 태블릿/PC: 기존 CABIN 표 유지 */}
+
           <div className="hidden md:block w-full rounded-xl border bg-white shadow-2xs overflow-hidden">
             <table className="w-full text-left border-collapse text-[11px] sm:text-xs table-fixed">
               <thead>
@@ -1886,7 +1903,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </>
         )}
 
-        {/* 주간업무 선택적 불러오기 모달 */}
         {isWeeklyImportModalOpen && isAdmin && (
           <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
@@ -1960,7 +1976,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 커스텀 알림 모달 */}
         {customAlert.open && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-sm w-full p-4 shadow-2xl space-y-3 border">
@@ -1989,7 +2004,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 미완료 팝업 알림 창 */}
         {isAlertOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
@@ -2023,7 +2037,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 상태 변경 및 비고 입력 모달 */}
         {statusChangeModal.open && statusChangeModal.task && (() => {
           const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
           return (
@@ -2077,7 +2090,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           );
         })()}
 
-        {/* 상세 바텀시트 */}
         {selectedTaskForSheet && (
           <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 backdrop-blur-xs">
             <div className="bg-white rounded-t-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl space-y-4 border-t">
@@ -2134,7 +2146,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 호선 관리 모달: 등록/수정 모달보다 위에 표시 */}
         {isVesselManagerOpen && isAdmin && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
@@ -2165,7 +2176,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* Team 그룹 관리 모달 */}
         {isTeamManagerOpen && isAdmin && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
@@ -2206,7 +2216,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 업무 등록/수정 모달 */}
         {isModalOpen && (isAdmin || formData.task_type === 'DAILY_OTHER') && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[90vh] overflow-y-auto">
