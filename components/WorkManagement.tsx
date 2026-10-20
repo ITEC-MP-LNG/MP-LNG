@@ -305,7 +305,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [validUserNames, setValidUserNames] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 차량 사용 내역 일괄 삭제를 위한 선택 ID 상태 추가
   const [selectedVehicleUsageIds, setSelectedVehicleUsageIds] = useState<string[]>([]);
 
   const isAdmin = useMemo(() => {
