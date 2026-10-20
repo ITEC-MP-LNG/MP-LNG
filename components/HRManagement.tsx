@@ -65,7 +65,6 @@ interface HRManagementProps {
   onCurrentUserStatusChange?: (status: '근무중' | '휴무') => void;
 }
 
-// 변경 여부를 비교할 때 객체 키 순서 차이와 undefined/null 차이로 불필요한 UPDATE가 발생하지 않게 합니다.
 function normalizeForCompare(value: any): any {
   if (value === undefined || value === null) return null;
   if (Array.isArray(value)) return value.map(normalizeForCompare);
@@ -117,9 +116,6 @@ function addYearsToDate(dateStr: string, years: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-
-
-/** 앱 공통 디자인을 사용하는 사용자 정의 날짜 선택 달력 */
 function CalendarDatePicker({
   value,
   onChange,
@@ -744,7 +740,6 @@ export default function HRManagement({
   const canManageDormitories = isAdmin || isSuperAdmin;
   const canEditDormitoryRecord = (row: any) => canManageDormitories || (!!currentUser && String(row.user_id) === String(currentUser.id));
 
-  // 요구사항 5: supabase 호출 최소화 (Promise.all 병렬 처리 및 캐싱/상태 관리 유지)
   const loadDormitoryData = useCallback(async () => {
     setDormitoryLoading(true);
     try {
@@ -838,13 +833,11 @@ export default function HRManagement({
     }
   };
 
-  // 요구사항 1, 2: 현황등록 내 기숙사명 추가 기능 및 중복된 이름 예외 처리 개선
   const addDormitoryLocation = async () => {
     const name = newDormitoryName.trim();
     if (!name) { showNotice('추가할 기숙사명을 입력해주세요.', 'warning'); return; }
     if (!canManageDormitories) { showNotice('관리자만 기숙사명을 추가할 수 있습니다.', 'warning'); return; }
     
-    // 중복된 이름 검사 (클라이언트단 선제 확인 및 사용자 안내)
     if (dormitoryLocations.includes(name)) {
       showNotice(`이미 등록된 중복된 기숙사명(${name})입니다. 다른 이름을 입력해주세요.`, 'warning');
       return;
@@ -884,7 +877,6 @@ export default function HRManagement({
     }
   };
 
-  // 요구사항 3: Excel 저장 템플릿 서식 및 병합/필터 적용 (제목: 기숙사 현황, 높이 56, 폰트 20, HY헤드라인M, 병합 가운데 정렬 / 공과금 관리비·가스비 2개 열 병합 및 YY/MM/DD 형식 / 필터 포함)
   const exportDormitoryExcel = () => {
     const filtered = dormitoryRows.filter((row) => dormitoryFilter === '전체 보기' || row.dormitory_name === dormitoryFilter);
     const rows: any[][] = [
@@ -915,17 +907,17 @@ export default function HRManagement({
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }, // 제목 병합
-      { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } }, // 인원 세로 병합
-      { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } }, // 기숙사명 세로 병합
-      { s: { r: 1, c: 2 }, e: { r: 2, c: 2 } }, // 호실 세로 병합
-      { s: { r: 1, c: 3 }, e: { r: 2, c: 3 } }, // 입주날짜 세로 병합
-      { s: { r: 1, c: 4 }, e: { r: 1, c: 5 } }  // 공과금 납부현황 가로 병합 (관리비, 가스비 상위)
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+      { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } },
+      { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } },
+      { s: { r: 1, c: 2 }, e: { r: 2, c: 2 } },
+      { s: { r: 1, c: 3 }, e: { r: 2, c: 3 } },
+      { s: { r: 1, c: 4 }, e: { r: 1, c: 5 } }
     ];
 
     ws['!rows'] = [
-      { hpx: 56 }, // 제목 행 높이 56픽셀
-      { hpx: 26 }, 
+      { hpx: 56 },
+      { hpx: 26 },
       { hpx: 24 }
     ];
 
@@ -933,7 +925,6 @@ export default function HRManagement({
       wch: Math.min(30, Math.max(10, ...rows.map((row) => String(row[c] || '').length + 2))) 
     }));
 
-    // 엑셀 필터 적용
     ws['!autofilter'] = { ref: `A3:F${Math.max(3, rows.length)}` };
 
     for (let r = 0; r < rows.length; r++) {
@@ -1649,7 +1640,6 @@ export default function HRManagement({
               </div>
             </div>
             
-            {/* 요구사항 1: 현황 등록에 기숙사명 추가 기능 UI 및 인풋 영역 */}
             {canManageDormitories && (
               <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#F5F6F8] p-2.5 border border-[#E2E5E9]">
                 <span className="text-xs font-bold text-[#475569]">기숙사명 추가/관리</span>
