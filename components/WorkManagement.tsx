@@ -305,6 +305,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [validUserNames, setValidUserNames] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
+  // 차량 사용 내역 일괄 삭제를 위한 선택 ID 상태 추가
+  const [selectedVehicleUsageIds, setSelectedVehicleUsageIds] = useState<string[]>([]);
+
   const isAdmin = useMemo(() => {
     const role = String(currentUser?.role || '').trim().toUpperCase();
     return ['SUPER_ADMIN', 'WORK_ADMIN', 'ADMIN'].includes(role) || currentUser?.role === '관리자';
@@ -1871,6 +1874,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
               {(vehicleSubTab === 'ALL' ? vehicles : vehicles.filter(v => v.vehicle_no === vehicleSubTab)).map((v) => {
                 const usages = vehicleUsages.filter(u => u.vehicle_no === v.vehicle_no);
+                const isAllSelected = usages.length > 0 && usages.every(u => selectedVehicleUsageIds.includes(u.id));
+
                 return (
                   <div key={v.id} className="bg-white border rounded-xl p-4 shadow-2xs space-y-3 flex flex-col justify-between">
                     <div>
@@ -1885,21 +1890,86 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
 
                       <div className="space-y-1.5">
-                        <span className="text-xs font-bold text-[#64748B]">최근 사용 내역 ({usages.length}건)</span>
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#64748B]">사용 내역 ({usages.length}건)</span>
+                          {isAdmin && usages.length > 0 && (
+                            <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-1 text-[11px] font-semibold text-[#243B5A] cursor-pointer">
+                                <input
+                                  type="checkbox"
+                                  checked={isAllSelected}
+                                  onChange={(e) => {
+                                    const ids = usages.map(u => u.id);
+                                    if (e.target.checked) {
+                                      setSelectedVehicleUsageIds(prev => Array.from(new Set([...prev, ...ids])));
+                                    } else {
+                                      setSelectedVehicleUsageIds(prev => prev.filter(id => !ids.includes(id)));
+                                    }
+                                  }}
+                                  className="accent-[#243B5A]"
+                                />
+                                전체선택
+                              </label>
+                              <button
+                                onClick={async () => {
+                                  const targetIds = selectedVehicleUsageIds.filter(id => usages.some(u => u.id === id));
+                                  if (targetIds.length === 0) {
+                                    showCustomAlert('알림', '삭제할 사용 내역을 체크해주세요.');
+                                    return;
+                                  }
+                                  showCustomConfirm('사용 내역 삭제', `선택한 ${targetIds.length}건의 사용 내역을 삭제하시겠습니까?`, async () => {
+                                    try {
+                                      const { error } = await supabase.from('vehicle_usages').delete().in('id', targetIds);
+                                      if (error) throw error;
+                                      setSelectedVehicleUsageIds(prev => prev.filter(id => !targetIds.includes(id)));
+                                      await fetchVehicleUsages();
+                                      showCustomAlert('완료', '선택한 사용 내역이 삭제되었습니다.');
+                                    } catch (err: any) {
+                                      showCustomAlert('오류', `삭제 실패: ${err.message}`);
+                                    }
+                                  });
+                                }}
+                                className="px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded text-[10px] font-bold hover:bg-red-100"
+                              >
+                                선택삭제
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
                         <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
                           {usages.length === 0 ? (
                             <div className="text-[11px] text-[#94A3B8] py-2 text-center">사용 내역이 없습니다.</div>
                           ) : (
-                            usages.map((u) => (
-                              <div key={u.id} className="bg-[#F5F6F8] p-2 rounded-lg text-[11px] space-y-0.5 border">
-                                <div className="flex justify-between font-bold text-[#1F2937]">
-                                  <span>운전자: {u.driver_name}</span>
-                                  <span className="font-mono text-[#64748B]">{u.time_str || ''}</span>
+                            usages.map((u) => {
+                              const isChecked = selectedVehicleUsageIds.includes(u.id);
+                              return (
+                                <div key={u.id} className="bg-[#F5F6F8] p-2 rounded-lg text-[11px] space-y-0.5 border flex items-start gap-2">
+                                  {isAdmin && (
+                                    <input
+                                      type="checkbox"
+                                      checked={isChecked}
+                                      onChange={(e) => {
+                                        if (e.target.checked) {
+                                          setSelectedVehicleUsageIds(prev => [...prev, u.id]);
+                                        } else {
+                                          setSelectedVehicleUsageIds(prev => prev.filter(id => id !== u.id));
+                                        }
+                                      }}
+                                      className="mt-0.5 accent-[#243B5A]"
+                                    />
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between font-bold text-[#1F2937]">
+                                      <span>운전자: {u.driver_name}</span>
+                                      <span className="font-mono text-[#64748B]">{u.time_str || ''}</span>
+                                    </div>
+                                    <div>목적지: {u.destination || '-'} / 목적: {u.purpose || '-'}</div>
+                                    {u.start_date && <div className="text-[10px] text-[#64748B] font-mono">기간: {u.start_date} ~ {u.end_date || u.start_date}</div>}
+                                  </div>
                                 </div>
-                                <div>목적지: {u.destination || '-'} / 목적: {u.purpose || '-'}</div>
-                                {u.start_date && <div className="text-[10px] text-[#64748B] font-mono">기간: {u.start_date} ~ {u.end_date || u.start_date}</div>}
-                              </div>
-                            ))
+                              );
+                            })
                           )}
                         </div>
                       </div>
