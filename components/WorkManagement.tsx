@@ -752,12 +752,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (!singleWorkerInput.trim()) return;
     const name = singleWorkerInput.trim();
     
+    // 휴무 인원 검증
     const foundUser = appUsers.find(u => u.name?.trim().toLowerCase() === name.toLowerCase());
     if (foundUser && foundUser.work_status === '휴무') {
       showCustomAlert('업무 등록 제한', `${foundUser.name} 휴무입니다.`);
       return;
     }
 
+    // 일일 업무 등록 시 CABIN에 등록된 인원인지 체크
     if (formData.task_type === 'DAILY' && target === 'ASSIGNED') {
       for (const t of tasks) {
         if (t.task_type === 'CABIN' && t.status !== 'COMPLETED') {
@@ -798,6 +800,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (isDailyOther && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
     if (!formData.title.trim()) { showCustomAlert('입력 확인', '업무명을 입력해 주세요.'); return; }
 
+    // 휴무 인원 등록 검증 (전체 대상)
     const workersToCheck = formData.task_type === 'CABIN'
       ? [...dayWorkerList, ...nightWorkerList]
       : isDailyOther
@@ -811,6 +814,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         return;
       }
       
+      // 일일 업무 등록 시 CABIN 배치 여부 검증
       if (formData.task_type === 'DAILY') {
         for (const t of tasks) {
           if (t.task_type === 'CABIN' && t.status !== 'COMPLETED' && (!editingTask || t.id !== editingTask.id)) {
@@ -1362,10 +1366,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
           const offUsers = appUsers.filter(u => u.work_status === '휴무');
           
+          // 현재 활성화된(완료되지 않은) Cabin 업무들에서 주간/야간 인원 수집
           const activeCabinTasks = tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED');
           const cabinDayWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.day_workers || [])));
           const cabinNightWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.night_workers || [])));
           
+          // 공정 인원: 근무중 인원 중 Cabin 주간/야간에 속하지 않는 인원
           const cabinAllSet = new Set([...cabinDayWorkers, ...cabinNightWorkers].map(n => n.trim().toLowerCase()));
           const processWorkers = workingUsers.filter(u => !cabinAllSet.has((u.name || '').trim().toLowerCase()));
 
@@ -1472,15 +1478,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* 선택 삭제 및 일괄 삭제/관리 툴바 (관리자 전용) */}
-        {((taskTab === 'WEEKLY' || (taskTab === 'DAILY' && (dailySubTab === 'HISTORY' || dailySubTab === 'OTHER')) || taskTab === 'CABIN')) && isAdmin && (
+        {(taskTab === 'WEEKLY' || (taskTab === 'DAILY' && dailySubTab === 'HISTORY') || taskTab === 'CABIN') && isAdmin && (
           <div className="flex flex-wrap items-center gap-2 bg-white border border-[#E2E5E9] rounded-xl p-2">
             <label className="flex items-center gap-2 text-xs font-semibold text-[#243B5A]">
               <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-[#243B5A]" />
               전체 선택
             </label>
             <span className="text-xs text-[#64748B]">선택 {selectedTaskIds.filter((id) => filteredTasks.some((task) => task.id === id)).length}개</span>
-            <button onClick={handleBulkDeleteTasks} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 flex items-center gap-1"><Trash2 className="h-3 w-3" />선택 삭제 / 일괄 삭제</button>
+            <button onClick={handleBulkDeleteTasks} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 flex items-center gap-1"><Trash2 className="h-3 w-3" />삭제</button>
             {taskTab === 'DAILY' && dailySubTab === 'HISTORY' && <button onClick={handleExportDailyHistoryExcel} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white flex items-center gap-1"><FileSpreadsheet className="h-3 w-3" />엑셀</button>}
           </div>
         )}
@@ -1539,25 +1544,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     </div>
                     <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 수정됨</span>}</div>
                   </div>
-                  {isAdmin && (dailySubTab === 'HISTORY' || dailySubTab === 'OTHER') && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="mt-1 accent-[#243B5A]" aria-label="업무 선택" />}
+                  {isAdmin && dailySubTab === 'HISTORY' && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="mt-1 accent-[#243B5A]" aria-label="업무 선택" />}
                 </div>
                 {t.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-[#64748B]">{t.description}</p>}
-                
-                {/* 주차 및 상태 버튼 / 비고란 작성 트리거 */}
-                <div className="mt-2 flex flex-wrap items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  {renderStatusBadge(t)}
+                <div className="mt-2 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                  {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
                   {t.task_type === 'DAILY' && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
                   {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && <button type="button" onClick={() => handleCompleteOtherTask(t)} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800">완료</button>}
-                  
-                  <button
-                    type="button"
-                    onClick={(e) => handleNextStatus(e, t)}
-                    className="px-2 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[10px] font-bold hover:bg-indigo-100 transition"
-                  >
-                    주차 / 비고작성
-                  </button>
                 </div>
-
                 <div className="mt-3 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
                   <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 ({t.assigned_names?.length || 0}명)</div>
                   {t.assigned_names?.length ? (
@@ -1569,7 +1563,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <div className="mt-2 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
                   {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && <button type="button" onClick={() => handleFinalizeDailyTask(t)} className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white">최종 완료</button>}
                   {t.task_type === 'DAILY_OTHER' && canManageTask(t) && <><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2 py-1.5 text-xs font-semibold text-[#243B5A]"><Pencil className="mr-1 inline h-3 w-3" />수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button></>}
-                  {isAdmin && (dailySubTab === 'HISTORY' || dailySubTab === 'OTHER') && <button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button>}
+                  {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && <button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button>}
                 </div>
               </div>
             ))}
@@ -1579,7 +1573,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             <table className="w-full text-left border-collapse text-[10px] sm:text-[11px] table-fixed">
               <thead>
                 <tr className="bg-[#243B5A] text-white">
-                  {isAdmin && (dailySubTab === 'HISTORY' || dailySubTab === 'OTHER') && (
+                  {isAdmin && dailySubTab === 'HISTORY' && (
                     <th className="p-1.5 w-6 text-center border-r border-white/20 last:border-r-0">
                       <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
                     </th>
@@ -1655,9 +1649,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     )}
                   </th>
 
-                  <th className="p-1 font-bold text-center w-[15%] relative border-r border-white/20 last:border-r-0">
+                  <th className="p-1 font-bold text-center w-[12%] relative border-r border-white/20 last:border-r-0">
                     <div className="flex items-center justify-center gap-1 cursor-pointer" onClick={() => setActiveFilterDropdown(activeFilterDropdown === 'status' ? null : 'status')}>
-                      <span className="truncate">상태/주차{tableFilterStatus !== 'ALL' ? `(${tableFilterStatus})` : ''}</span>
+                      <span className="truncate">상태버튼{tableFilterStatus !== 'ALL' ? `(${tableFilterStatus === 'PENDING' ? '대기' : tableFilterStatus === 'IN_PROGRESS' ? '진행중' : '완료'})` : ''}</span>
                       <span className="text-[10px] text-blue-200 font-bold">▶</span>
                     </div>
                     {activeFilterDropdown === 'status' && (
@@ -1672,7 +1666,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </th>
 
                   <th className="p-1 font-bold text-center w-[9%] border-r border-white/20 last:border-r-0">관리</th>
-                  <th className="p-1 font-bold w-[33%] border-r border-white/20 last:border-r-0">인원</th>
+                  <th className="p-1 font-bold w-[36%] border-r border-white/20 last:border-r-0">인원</th>
                 </tr>
               </thead>
               <tbody>
@@ -1691,7 +1685,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     const dateGroupBackground = dateGroupIndex % 2 === 0 ? 'bg-white' : 'bg-slate-50';
                     return (
                     <tr key={t.id} className={`${dateGroupBackground} hover:bg-blue-50 transition cursor-pointer ${dateChanged && rowIndex > 0 ? 'border-t-[3px] border-double border-slate-400' : 'border-t border-[#E2E5E9]'}`} onClick={() => handleOpenTaskDetail(t)}>
-                      {isAdmin && (dailySubTab === 'HISTORY' || dailySubTab === 'OTHER') && (
+                      {isAdmin && dailySubTab === 'HISTORY' && (
                         <td className="p-1.5 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                           <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
                         </td>
@@ -1700,19 +1694,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <td className="p-1 font-semibold text-indigo-700 text-center truncate border-r border-slate-200 last:border-r-0" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
                       <td className="p-1 font-mono text-[#64748B] text-center truncate border-r border-slate-200 last:border-r-0" title={formatToShortDate(t.start_date)}>{formatToShortDate(t.start_date)}</td>
                       <td className="p-1 font-mono text-[#2563EB] text-center truncate border-r border-slate-200 last:border-r-0" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>
-                      
-                      {/* 상태 및 주차 버튼 / 비고 모달 연동 셀 */}
-                      <td className="p-1 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-center gap-1 flex-wrap">
-                          {renderStatusBadge(t)}
-                          <button
-                            type="button"
-                            onClick={(e) => handleNextStatus(e, t)}
-                            className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded text-[9px] font-bold hover:bg-indigo-100 transition"
-                            title="주차 및 비고란 작성"
-                          >
-                            주차
-                          </button>
+                      <td className="p-1 text-center truncate border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-center gap-1">
+                          {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
                           {dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 whitespace-nowrap text-[9px] font-bold text-green-600">비고 수정됨</span>}
                           {t.task_type === 'DAILY' && t.completion_pending_review === true && (
                             <span className="px-1 py-0.2 bg-amber-50 text-amber-800 border border-amber-300 rounded text-[9px] font-bold">대기</span>
@@ -1728,7 +1712,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           )}
                         </div>
                       </td>
-
                       <td className="p-1 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
@@ -1740,7 +1723,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                               <button onClick={() => handleDeleteTask(t.id)} className="inline-flex items-center justify-center p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
                             </>
                           )}
-                          {isAdmin && (dailySubTab === 'HISTORY' || dailySubTab === 'OTHER') && (
+                          {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && (
                             <button onClick={() => handleDeleteTask(t.id)} className="inline-flex items-center justify-center p-1 text-red-600 hover:bg-slate-200 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
                           )}
                         </div>
@@ -2109,7 +2092,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <div className="flex items-center justify-between border-b pb-3">
                   <div className="flex items-center space-x-2">
                     <FileText className="h-5 w-5 text-[#243B5A]" />
-                    <h3 className="text-sm font-bold text-[#1F2937]">상세보기 및 주차 / 비고란 작성</h3>
+                    <h3 className="text-sm font-bold text-[#1F2937]">상세보기 및 상태 변경</h3>
                   </div>
                   <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
                 </div>
@@ -2133,11 +2116,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-[#1F2937] mb-1">비고란 (주차 및 상세 내용 작성)</label>
+                    <label className="block text-xs font-bold text-[#1F2937] mb-1">비고란 (최대 10줄 이상 스크롤)</label>
                     <textarea
-                      rows={8}
+                      rows={10}
                       disabled={!isAllowedUser}
-                      placeholder="비고란 및 주차 관련 내용을 입력해주세요..."
+                      placeholder="비고 사항을 입력해주세요..."
                       value={statusChangeModal.remarks}
                       onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
                       className={`w-full px-3 py-2 border rounded-lg text-xs resize-y max-h-64 ${!isAllowedUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#243B5A]'}`}
@@ -2177,7 +2160,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 )}
                 {selectedTaskForSheet.remarks && (
                   <div className="text-xs text-[#1F2937] bg-amber-50/50 p-2.5 rounded-lg border border-amber-200">
-                    <span className="font-bold text-amber-900">비고/주차: </span>{selectedTaskForSheet.remarks}
+                    <span className="font-bold text-amber-900">비고: </span>{selectedTaskForSheet.remarks}
                   </div>
                 )}
               </div>
