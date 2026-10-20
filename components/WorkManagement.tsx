@@ -2801,7 +2801,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         </div>
       )}
 
-      {/* 미완료 업무 알림 팝업 (모달) */}
+     {/* 미완료 업무 알림 팝업 (모달) */}
       {isAlertOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setIsAlertOpen(false)}>
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
