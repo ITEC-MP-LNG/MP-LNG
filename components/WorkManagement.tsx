@@ -1015,7 +1015,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [handleNextStatus]);
 
   const handleOpenCreateModal = useCallback((defaultDate?: string, defaultType?: 'DAILY' | 'DAILY_OTHER' | 'WEEKLY' | 'CABIN', defaultCategory?: string) => {
-    const requestedType = defaultType || taskTab;
+    const requestedType: 'DAILY' | 'DAILY_OTHER' | 'WEEKLY' | 'CABIN' = defaultType || (taskTab === 'VEHICLE' ? 'DAILY' : taskTab);
     if (!isAdmin && requestedType !== 'DAILY_OTHER') { showCustomAlert('권한 제한', '관리자만 해당 업무를 등록할 수 있습니다.'); return; }
     if (requestedType === 'DAILY_OTHER' && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
     setEditingTask(null);
