@@ -2235,43 +2235,43 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   })}
                 </div>
               </div>
-            ) : (
+           ) : (
               <div className="space-y-2.5">
                 {weekDays.map((day) => {
                   const dayTasks = filteredTasks.filter((t) => t.start_date === day.dateStr);
                   return (
                     <div key={day.dateStr} className={`rounded-xl border p-3 bg-white ${day.isToday ? 'border-[#243B5A]' : 'border-[#E2E5E9]'}`}>
-                        <div className="flex items-center justify-between pb-2 mb-2 border-b">
-                          <span className="font-bold text-xs text-[#243B5A]">{day.label} <span className="text-[10px] text-[#64748B] font-mono">{day.displayDate}</span></span>
-                          {isAdmin && (
-                            <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="px-2 py-1 bg-[#243B5A] text-white text-[10px] font-bold rounded">등록</button>
-                          )}
-                        </div>
-                        <div className="space-y-2">
-                          {dayTasks.length === 0 ? (
-                            <div className="text-[11px] text-[#94A3B8] py-1">등록된 업무가 없습니다.</div>
-                          ) : (
-                            dayTasks.map((t) => (
-                              <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="bg-[#F5F6F8] border rounded-lg p-2.5 text-xs space-y-1.5 cursor-pointer hover:border-[#243B5A]">
-                                <div className="flex items-center justify-between">
-                                  <div className="flex items-center gap-1.5">
-                                    {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
-                                    {t.category && <span className="text-[10px] font-bold text-[#243B5A] bg-white px-1.5 py-0.5 rounded border">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
-                                  </div>
-                                  {renderStatusBadge(t)}
-                                </div>
-                                <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
-                                <div className="text-[11px] text-[#64748B]">담당: {t.assigned_names?.join(', ') || '미지정'}</div>
-                              </div>
-                            ))
-                          )}
-                        </div>
+                      <div className="flex items-center justify-between pb-2 mb-2 border-b">
+                        <span className="font-bold text-xs text-[#243B5A]">{day.label} <span className="text-[10px] text-[#64748B] font-mono">{day.displayDate}</span></span>
+                        {isAdmin && (
+                          <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="px-2 py-1 bg-[#243B5A] text-white text-[10px] font-bold rounded">등록</button>
+                        )}
                       </div>
-                    );
-                  })}
-                </div>
+                      <div className="space-y-2">
+                        {dayTasks.length === 0 ? (
+                          <div className="text-[11px] text-[#94A3B8] py-1">등록된 업무가 없습니다.</div>
+                        ) : (
+                          dayTasks.map((t) => (
+                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="bg-[#F5F6F8] border rounded-lg p-2.5 text-xs space-y-1.5 cursor-pointer hover:border-[#243B5A]">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-1.5">
+                                  {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
+                                  {t.category && <span className="text-[10px] font-bold text-[#243B5A] bg-white px-1.5 py-0.5 rounded border">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
+                                </div>
+                                {renderStatusBadge(t)}
+                              </div>
+                              <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
+                              <div className="text-[11px] text-[#64748B]">담당: {t.assigned_names?.join(', ') || '미지정'}</div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            )}
+          </div>
         )}
 
         {taskTab === 'CABIN' && (
