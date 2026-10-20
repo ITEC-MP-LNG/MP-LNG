@@ -2536,7 +2536,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         </div>
       )}
 
-      {/* 차량 사용 신청 모달 */}
+     {/* 차량 사용 신청 모달 */}
       {isVehicleUsageModalOpen && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setIsVehicleUsageModalOpen(false)}>
           <div className="bg-white rounded-2xl w-full max-w-sm p-5 shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
@@ -2832,7 +2832,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         </div>
       )}
 
-    {/* 업무 상세 보기 시트 (모달) */}
+      {/* 업무 상세 보기 시트 (모달) */}
       {selectedTaskForSheet && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4" onClick={() => setSelectedTaskForSheet(null)}>
           <div className="bg-white rounded-2xl w-full max-w-md p-5 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
