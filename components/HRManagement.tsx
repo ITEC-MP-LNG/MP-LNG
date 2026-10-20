@@ -179,7 +179,6 @@ function CalendarDatePicker({
       setInputText('');
       return;
     }
-    // YYYYMMDD 또는 YYYY-MM-DD 형식을 모두 허용합니다.
     const normalizedInput = /^\d{8}$/.test(trimmed)
       ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
       : trimmed;
@@ -196,7 +195,6 @@ function CalendarDatePicker({
         return;
       }
     }
-    // 입력 중인 값이 유효한 YYYY-MM-DD 형식이 아니면 기존 저장값으로 되돌립니다.
     setInputText(value || '');
   };
   const chooseDate = (day: number) => {
@@ -326,9 +324,6 @@ function calculateAge(birthStr?: string) {
 
 const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
 
-// 자격 표시는 구조화된 자격 상세 데이터만 사용합니다.
-// 과거 national_certificates / internal_certificates 문자열에 남아 있는 잘못된 값은
-// 화면에 재사용하지 않으며, 기존 DB 문자열 자체는 자동 삭제하지 않습니다.
 function getNationalCertLabels(user: HRUser): string[] {
   return (Array.isArray(user.national_cert_details) ? user.national_cert_details : [])
     .map((cert) => [String(cert.kind || '').trim(), String(cert.method || '').trim()].filter(Boolean).join(' '))
@@ -360,9 +355,7 @@ function getLtSubjects(subject: string): string[] {
   return LT_SUBJECTS.filter(item => item.pattern.test(raw)).map(item => item.value);
 }
 
-// 예전처럼 LT 하위 종목별로 저장된 자료도 편집 화면에서는 하나의 LT 자격으로 묶습니다.
 function normalizeNdtCertificates(list: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }> = []) {
-  // 이전 저장 형식의 취득일/유효일 키도 읽어서 현재 UI의 표준 키로 맞춥니다.
   const normalizedList = (Array.isArray(list) ? list : []).map((item: any) => ({
     ...item,
     issue_date: String(item?.issue_date || item?.obtained_date || item?.acquisition_date || item?.certification_date || item?.issued_at || ''),
@@ -407,8 +400,6 @@ function renderCertText(labels: string[]): string {
   return labels.length ? labels.join(', ') : '없음';
 }
 
-// 목록뷰에서 퇴사/퇴직으로 표시된 구성원은 별도 구역으로 모아 맨 아래에 표시합니다.
-// 현재 조회되는 기존 필드만 검사하며 DB 컬럼이나 기존 데이터를 변경하지 않습니다.
 function isFormerEmployee(user: HRUser): boolean {
   const values = [user.department, user.position, user.job_title, user.field]
     .map(value => String(value || '').trim().toLowerCase());
@@ -430,7 +421,6 @@ const JOB_TITLE_ORDER_IN_RANK: Record<string, number> = {
   '없음': 5
 };
 
-
 type StyledDropdownProps = Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange' | 'children'> & {
   value?: string | number;
   onChange?: (event: { target: { value: string } }) => void;
@@ -439,7 +429,6 @@ type StyledDropdownProps = Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'
   disabled?: boolean;
 };
 
-/** 앱 공통 스타일 드롭다운: 브라우저/모바일 기본 option 팝업 대신 동일한 디자인의 선택 목록을 표시합니다. */
 function StyledDropdown({ value, onChange, children, className = '', disabled = false, ...props }: StyledDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -512,7 +501,6 @@ function StyledDropdown({ value, onChange, children, className = '', disabled = 
   );
 }
 
-/** 여러 날짜를 선택할 수 있는 달력 모달. 기존 CalendarDatePicker와 동일한 색상 체계를 사용합니다. */
 function MultiDateCalendar({ value, onChange }: { value: string[]; onChange: (dates: string[]) => void }) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(() => {
@@ -653,6 +641,7 @@ export default function HRManagement({
     return isAdmin || isSelf(targetUser);
   };
 
+  // ✅ 2번, 3번 연동: 메인 화면 상단 계정 메뉴와 HR 관리 화면 간 근무 상태 즉시 동기화
   const handleQuickStatusChange = async (targetUser: HRUser, status: '근무중' | '휴무') => {
     const currentStatus = targetUser.work_status === '휴무' ? '휴무' : '근무중';
     if (currentStatus === status) return;
@@ -670,7 +659,20 @@ export default function HRManagement({
       const updatedUser = { ...targetUser, work_status: status };
       setUsers(prev => prev.map(user => user.id === targetUser.id ? updatedUser : user));
       setDetailUser(prev => prev?.id === targetUser.id ? updatedUser : prev);
-      if (isSelf(targetUser)) onCurrentUserStatusChange?.(status);
+      
+      // 본인 계정인 경우 상단 메인 화면 상태와 실시간 연동 콜백 호출
+      if (isSelf(targetUser)) {
+        onCurrentUserStatusChange?.(status);
+        const local = localStorage.getItem('currentUser');
+        if (local) {
+          try {
+            const parsed = JSON.parse(local);
+            parsed.work_status = status;
+            localStorage.setItem('currentUser', JSON.stringify(parsed));
+          } catch {}
+        }
+      }
+
       showNotice(`${targetUser.name}님의 상태가 '${status}'(으)로 변경되었습니다.`, 'success');
     } catch (error: any) {
       console.error('근무 상태 변경 실패:', error?.message || error);
@@ -678,7 +680,6 @@ export default function HRManagement({
     }
   };
 
-  // 구성원 상세정보(간단히 표시되는 팝업)를 열었을 때 해당 구성원의 휴무 날짜를 조회합니다.
   useEffect(() => {
     let cancelled = false;
     const loadDetailAbsenceDates = async () => {
@@ -904,14 +905,12 @@ export default function HRManagement({
     ws['!rows'] = [{ hpx: 56 }, { hpx: 26 }, { hpx: 24 }];
     ws['!cols'] = Array.from({ length: 6 }, (_, c) => ({ wch: Math.min(30, Math.max(10, ...rows.map((row) => String(row[c] || '').length + 2))) }));
     ws['!autofilter'] = { ref: `A3:F${Math.max(3, rows.length)}` };
-    // 표의 전체 셀을 가운데 정렬하는 스타일 메타데이터입니다. 실제 서식 저장은 xlsx 패키지 버전에 따라 제한될 수 있습니다.
     for (let r = 0; r < rows.length; r++) {
       for (let c = 0; c < 6; c++) {
         const address = XLSX.utils.encode_cell({ r, c });
         if (ws[address]) (ws[address] as any).s = { alignment: { horizontal: 'center', vertical: 'center' }, font: { name: r === 0 ? 'HY헤드라인M' : '맑은 고딕', sz: r === 0 ? 20 : 9, bold: r < 3 } };
       }
     }
-    // xlsx community edition supports merges, row/column sizing, and filters. Font/cell styling is best-effort; full style persistence requires xlsx-js-style.
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '기숙사 현황');
     XLSX.writeFile(wb, '기숙사_현황.xlsx');
@@ -1250,7 +1249,6 @@ export default function HRManagement({
       }
 
       if (selectedUser) {
-        // 실제 변경된 컬럼만 전송합니다. 변경 사항이 없으면 app_users UPDATE를 생략합니다.
         const changedPayload = Object.fromEntries(
           Object.entries(payload).filter(([key, value]) =>
             key !== 'id' && !valuesEqualForSave((selectedUser as any)[key], value)
@@ -1326,10 +1324,11 @@ export default function HRManagement({
         ndt_certificates: formData.ndt_certificates,
         work_status: formData.work_status === '휴무' ? '휴무' : '근무중'
       };
+      
       if (isSelf(savedUser)) {
         onCurrentUserStatusChange?.(savedUser.work_status === '휴무' ? '휴무' : '근무중');
       }
-      // 날짜별 휴무는 별도 테이블에 저장하여 업무현황에서 날짜 기준으로 조회할 수 있게 합니다.
+
       const targetUserId = formData.inputId.trim();
       const { data: existingAbsenceRows, error: absenceReadError } = await supabase.from('user_day_status').select('status_date').eq('user_id', targetUserId).eq('status', '휴무');
       if (absenceReadError) throw absenceReadError;
@@ -1339,6 +1338,7 @@ export default function HRManagement({
       const datesToRemove = Array.from(existingDates).filter(date => !nextDates.has(date));
       if (datesToAdd.length) { const { error } = await supabase.from('user_day_status').upsert(datesToAdd, { onConflict: 'user_id,status_date' }); if (error) throw error; }
       if (datesToRemove.length) { const { error } = await supabase.from('user_day_status').delete().eq('user_id', targetUserId).in('status_date', datesToRemove); if (error) throw error; }
+      
       setUsers(prev => {
         const next = selectedUser
           ? prev.filter(item => item.id !== selectedUser.id).concat(savedUser)
@@ -1368,7 +1368,6 @@ export default function HRManagement({
     );
   });
 
-  // 카드뷰 순서는 유지하고, 목록뷰에서만 퇴사자를 별도 그룹으로 맨 아래에 둡니다.
   const listViewUsers = [...filteredUsers].sort((a, b) => {
     const formerDifference = Number(isFormerEmployee(a)) - Number(isFormerEmployee(b));
     if (formerDifference !== 0) return formerDifference;
