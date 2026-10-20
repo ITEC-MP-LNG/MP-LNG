@@ -5,7 +5,7 @@ import {
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, AlertCircle, PlayCircle, PlusCircle,
-  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown
+  Users, History, FileSpreadsheet, Layers, FileText, CalendarDays
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
@@ -41,6 +41,24 @@ export interface CabinVessel {
   name: string;
 }
 
+export interface VehicleItem {
+  id: string;
+  vehicle_no: string;
+}
+
+export interface VehicleUsage {
+  id: string;
+  vehicle_no: string;
+  driver_name: string;
+  driver_id?: string;
+  time_str?: string;
+  destination?: string;
+  purpose?: string;
+  start_date?: string;
+  end_date?: string;
+  created_at?: string;
+}
+
 export interface PresetTeam {
   id: string;
   name: string;
@@ -57,6 +75,7 @@ export interface AppUser {
   field?: string;
   phone?: string;
   work_status?: '근무중' | '휴무' | string;
+  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>;
 }
 
 const formatDateToYYYYMMDD = (d: Date) => {
@@ -97,9 +116,190 @@ function isFormerEmployee(user: AppUser): boolean {
   return values.some(value => /퇴사|퇴직|퇴사자|퇴직자/.test(value));
 }
 
+/** cert.tsx의 날짜 선택 달력 컴포넌트 */
+function CalendarDatePicker({
+  value,
+  onChange,
+  className = "w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+    : new Date();
+  const [viewYear, setViewYear] = useState(initialDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+  const [inputText, setInputText] = useState(value || '');
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setInputText(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setIsOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  const moveMonth = (amount: number) => {
+    const next = new Date(viewYear, viewMonth + amount, 1);
+    setViewYear(next.getFullYear());
+    setViewMonth(next.getMonth());
+  };
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const selected = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+  const today = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })();
+  const commitTypedDate = () => {
+    const trimmed = inputText.trim();
+    if (!trimmed) {
+      onChange('');
+      setInputText('');
+      return;
+    }
+    const normalizedInput = /^\d{8}$/.test(trimmed)
+      ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
+      : trimmed;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizedInput);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const candidate = new Date(year, month - 1, day);
+      if (candidate.getFullYear() === year && candidate.getMonth() === month - 1 && candidate.getDate() === day) {
+        const normalized = `${match[1]}-${match[2]}-${match[3]}`;
+        onChange(normalized);
+        setInputText(normalized);
+        return;
+      }
+    }
+    setInputText(value || '');
+  };
+  const chooseDate = (day: number) => {
+    const nextValue = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(nextValue);
+    setInputText(nextValue);
+    setIsOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className="relative w-full min-w-0">
+      <div className="flex min-w-0 items-center gap-1">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={inputText}
+          onChange={(event) => setInputText(event.target.value)}
+          onBlur={commitTypedDate}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitTypedDate(); } }}
+          placeholder="YYYY-MM-DD 직접 입력"
+          aria-label="날짜 직접 입력 (YYYY-MM-DD)"
+          className={`${className} min-w-0 flex-1`}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (!isOpen) {
+              const current = selected ? new Date(Number(selected.slice(0, 4)), Number(selected.slice(5, 7)) - 1, Number(selected.slice(8, 10))) : new Date();
+              setViewYear(current.getFullYear());
+              setViewMonth(current.getMonth());
+            }
+            setIsOpen(open => !open);
+          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B] hover:bg-[#EEF2F7]"
+          aria-label="달력 열기"
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+        >
+          <CalendarDays size={16} />
+        </button>
+      </div>
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="날짜 선택"
+            onClick={(event) => event.stopPropagation()}
+            className="relative w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft size={16} /></button>
+              <div className="flex min-w-0 items-center gap-1">
+                <select
+                  aria-label="연도 선택"
+                  value={viewYear}
+                  onChange={(event) => setViewYear(Number(event.target.value))}
+                  className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map((year) => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="월 선택"
+                  value={viewMonth}
+                  onChange={(event) => setViewMonth(Number(event.target.value))}
+                  className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: 12 }, (_, month) => <option key={month} value={month}>{month + 1}월</option>)}
+                </select>
+              </div>
+              <button type="button" onClick={() => moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight size={16} /></button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{day}</div>)}
+              {Array.from({ length: firstDay }, (_, index) => <div key={`empty-${index}`} />)}
+              {Array.from({ length: daysInMonth }, (_, index) => {
+                const day = index + 1;
+                const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = dateKey === selected;
+                const isToday = dateKey === today;
+                const weekday = new Date(viewYear, viewMonth, day).getDay();
+                return <button key={dateKey} type="button" onClick={() => chooseDate(day)} aria-pressed={isSelected} className={`h-9 rounded-lg text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white shadow-sm' : isToday ? 'border border-[#243B5A] font-bold text-[#243B5A]' : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`}`}>{day}</button>;
+              })}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
+              <button type="button" onClick={() => { const now = new Date(); const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`; setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); onChange(date); setInputText(date); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">오늘</button>
+              <div className="flex items-center gap-1">
+                {selected && <button type="button" onClick={() => { onChange(''); setInputText(''); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">날짜 지우기</button>}
+                <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">닫기</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function WorkManagement({ currentUser }: { currentUser?: { id: string; name: string; role: string } | null }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [vessels, setVessels] = useState<CabinVessel[]>([]);
+  const [vehicles, setVehicles] = useState<VehicleItem[]>([]);
+  const [vehicleUsages, setVehicleUsages] = useState<VehicleUsage[]>([]);
   const [presetTeams, setPresetTeams] = useState<PresetTeam[]>([]);
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
@@ -120,10 +320,28 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return Boolean(task.created_by_name && currentUser.name && task.created_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase());
   }, [isAdmin, currentUser]);
 
-  const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN'>('DAILY');
+  const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN' | 'VEHICLE'>('DAILY');
   const [dailySubTab, setDailySubTab] = useState<'ACTIVE' | 'OTHER' | 'HISTORY'>('ACTIVE'); 
   const [cabinSubTab, setCabinSubTab] = useState<string>('ALL');
   const [cabinStatusSubTab, setCabinStatusSubTab] = useState<'ACTIVE' | 'HISTORY'>('ACTIVE');
+  
+  // 차량 탭 서브탭 (차량 번호 또는 차량 등록 관리)
+  const [vehicleSubTab, setVehicleSubTab] = useState<string>('ALL');
+  const [isVehicleManagerOpen, setIsVehicleManagerOpen] = useState(false);
+  const [newVehicleNo, setNewVehicleNo] = useState('');
+  const [editingVehicle, setEditingVehicle] = useState<VehicleItem | null>(null);
+
+  // 차량 사용 모달 state
+  const [isVehicleUsageModalOpen, setIsVehicleUsageModalOpen] = useState(false);
+  const [targetVehicleForUsage, setTargetVehicleForUsage] = useState<string>('');
+  const [vehicleUsageForm, setVehicleUsageForm] = useState({
+    time_str: '',
+    destination: '',
+    purpose: '',
+    start_date: formatDateToYYYYMMDD(new Date()),
+    end_date: formatDateToYYYYMMDD(new Date()),
+  });
+
   const [selectedTaskIds, setSelectedTaskIds] = useState<string[]>([]);
 
   const [tableFilterVessel, setTableFilterVessel] = useState<string>('ALL');
@@ -221,7 +439,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const fetchAppUsers = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('app_users').select('name, department, position, job_title, field, phone, work_status');
+      const { data, error } = await supabase.from('app_users').select('id, name, department, position, job_title, field, phone, work_status, yard_cert_details');
       if (error) throw error;
       if (data) {
         setAppUsers(data);
@@ -250,6 +468,30 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }
     } catch (err) {
       console.error('vessels 로드 실패:', err);
+    }
+  }, []);
+
+  const fetchVehicles = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('vehicles').select('id, vehicle_no, created_at').order('created_at', { ascending: true });
+      if (error) throw error;
+      if (data) {
+        setVehicles(data);
+      }
+    } catch (err) {
+      console.error('vehicles 로드 실패:', err);
+    }
+  }, []);
+
+  const fetchVehicleUsages = useCallback(async () => {
+    try {
+      const { data, error } = await supabase.from('vehicle_usages').select('*').order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) {
+        setVehicleUsages(data);
+      }
+    } catch (err) {
+      console.error('vehicle_usages 로드 실패:', err);
     }
   }, []);
 
@@ -399,8 +641,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   useEffect(() => {
     fetchAppUsers();
     fetchVessels();
+    fetchVehicles();
+    fetchVehicleUsages();
     fetchTeams();
-  }, [fetchAppUsers, fetchVessels, fetchTeams]);
+  }, [fetchAppUsers, fetchVessels, fetchVehicles, fetchVehicleUsages, fetchTeams]);
 
   useEffect(() => {
     fetchTasks();
@@ -503,6 +747,96 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       } catch (err: any) { showCustomAlert('오류', `호선 삭제 실패: ${err.message}`); }
     });
   }, [isAdmin, showCustomConfirm, fetchVessels, showCustomAlert, vessels, cabinSubTab, tableFilterVessel]);
+
+  // 차량 등록/수정/삭제 핸들러
+  const handleAddVehicle = useCallback(async () => {
+    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
+    if (!newVehicleNo.trim()) return;
+    try {
+      const { error } = await supabase.from('vehicles').insert([{ vehicle_no: newVehicleNo.trim() }]);
+      if (error) throw error;
+      setNewVehicleNo('');
+      fetchVehicles();
+      showCustomAlert('성공', '차량이 등록되었습니다.');
+    } catch (err: any) { showCustomAlert('오류', `차량 등록 실패: ${err.message}`); }
+  }, [isAdmin, newVehicleNo, fetchVehicles, showCustomAlert]);
+
+  const handleUpdateVehicle = useCallback(async (id: string, vehicleNo: string) => {
+    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
+    if (!vehicleNo.trim()) return;
+    try {
+      const { error } = await supabase.from('vehicles').update({ vehicle_no: vehicleNo.trim() }).eq('id', id);
+      if (error) throw error;
+      setEditingVehicle(null);
+      fetchVehicles();
+      showCustomAlert('성공', '차량 정보가 수정되었습니다.');
+    } catch (err: any) { showCustomAlert('오류', `차량 수정 실패: ${err.message}`); }
+  }, [isAdmin, fetchVehicles, showCustomAlert]);
+
+  const handleDeleteVehicle = useCallback(async (id: string) => {
+    if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
+    showCustomConfirm('차량 삭제', '이 차량을 삭제하시겠습니까?', async () => {
+      try {
+        const vehicleToDelete = vehicles.find((v) => v.id === id);
+        const { error } = await supabase.from('vehicles').delete().eq('id', id);
+        if (error) throw error;
+        if (vehicleToDelete && vehicleSubTab === vehicleToDelete.vehicle_no) setVehicleSubTab('ALL');
+        await fetchVehicles();
+        showCustomAlert('완료', '차량이 삭제되었습니다.');
+      } catch (err: any) { showCustomAlert('오류', `차량 삭제 실패: ${err.message}`); }
+    });
+  }, [isAdmin, showCustomConfirm, fetchVehicles, showCustomAlert, vehicles, vehicleSubTab]);
+
+  // 차량 사용 버튼 클릭 및 권한 검증 핸들러
+  const handleOpenVehicleUsageModal = useCallback((vehicleNo: string) => {
+    if (!currentUser) {
+      showCustomAlert('알림', '로그인 후 이용 가능합니다.');
+      return;
+    }
+    // 현재 로그인한 사용자의 yard 자격 중 '작업용차량운전자 교육' 이수 여부 검증
+    const currentUserObj = appUsers.find(u => u.name?.trim().toLowerCase() === currentUser.name?.trim().toLowerCase());
+    const yardCerts = currentUserObj?.yard_cert_details || [];
+    const hasDrivingCert = yardCerts.some(c => (c.name || '').includes('작업용차량운전자'));
+
+    if (!hasDrivingCert) {
+      showCustomAlert('알림', '교육이수가 되지 않은 인원입니다');
+      return;
+    }
+
+    setTargetVehicleForUsage(vehicleNo);
+    setVehicleUsageForm({
+      time_str: '08:00',
+      destination: '',
+      purpose: '',
+      start_date: formatDateToYYYYMMDD(new Date()),
+      end_date: formatDateToYYYYMMDD(new Date()),
+    });
+    setIsVehicleUsageModalOpen(true);
+  }, [currentUser, appUsers, showCustomAlert]);
+
+  const handleSaveVehicleUsage = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser?.name) return;
+    try {
+      const payload = {
+        vehicle_no: targetVehicleForUsage,
+        driver_name: currentUser.name,
+        driver_id: currentUser.id || null,
+        time_str: vehicleUsageForm.time_str,
+        destination: vehicleUsageForm.destination.trim(),
+        purpose: vehicleUsageForm.purpose.trim(),
+        start_date: vehicleUsageForm.start_date,
+        end_date: vehicleUsageForm.end_date,
+      };
+      const { error } = await supabase.from('vehicle_usages').insert([payload]);
+      if (error) throw error;
+      setIsVehicleUsageModalOpen(false);
+      fetchVehicleUsages();
+      showCustomAlert('성공', '차량 사용 신청이 등록되었습니다.');
+    } catch (err: any) {
+      showCustomAlert('오류', `차량 사용 등록 실패: ${err.message}`);
+    }
+  }, [currentUser, targetVehicleForUsage, vehicleUsageForm, fetchVehicleUsages, showCustomAlert]);
 
   const handleAddTeam = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 없음', '관리자 권한이 없습니다.'); return; }
@@ -703,7 +1037,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [handleNextStatus]);
 
   const handleOpenCreateModal = useCallback((defaultDate?: string, defaultType?: 'DAILY' | 'DAILY_OTHER' | 'WEEKLY' | 'CABIN', defaultCategory?: string) => {
-    const requestedType = defaultType || taskTab;
+    const requestedType = defaultType || (taskTab === 'VEHICLE' ? 'DAILY' : taskTab);
     if (!isAdmin && requestedType !== 'DAILY_OTHER') { showCustomAlert('권한 제한', '관리자만 해당 업무를 등록할 수 있습니다.'); return; }
     if (requestedType === 'DAILY_OTHER' && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
     setEditingTask(null);
@@ -752,14 +1086,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (!singleWorkerInput.trim()) return;
     const name = singleWorkerInput.trim();
     
-    // 휴무 인원 검증
     const foundUser = appUsers.find(u => u.name?.trim().toLowerCase() === name.toLowerCase());
     if (foundUser && foundUser.work_status === '휴무') {
       showCustomAlert('업무 등록 제한', `${foundUser.name} 휴무입니다.`);
       return;
     }
 
-    // 일일 업무 등록 시 CABIN에 등록된 인원인지 체크
     if (formData.task_type === 'DAILY' && target === 'ASSIGNED') {
       for (const t of tasks) {
         if (t.task_type === 'CABIN' && t.status !== 'COMPLETED') {
@@ -800,7 +1132,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (isDailyOther && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
     if (!formData.title.trim()) { showCustomAlert('입력 확인', '업무명을 입력해 주세요.'); return; }
 
-    // 휴무 인원 등록 검증 (전체 대상)
     const workersToCheck = formData.task_type === 'CABIN'
       ? [...dayWorkerList, ...nightWorkerList]
       : isDailyOther
@@ -814,7 +1145,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         return;
       }
       
-      // 일일 업무 등록 시 CABIN 배치 여부 검증
       if (formData.task_type === 'DAILY') {
         for (const t of tasks) {
           if (t.task_type === 'CABIN' && t.status !== 'COMPLETED' && (!editingTask || t.id !== editingTask.id)) {
@@ -1202,6 +1532,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (cabinSubTab !== 'ALL' && t.category !== cabinSubTab) return false;
         if (cabinStatusSubTab === 'ACTIVE' && t.status === 'COMPLETED') return false;
         if (cabinStatusSubTab === 'HISTORY' && t.status !== 'COMPLETED') return false;
+      } else if (taskTab === 'VEHICLE') {
+        return false;
       }
 
       if (tableFilterVessel !== 'ALL' && t.category !== tableFilterVessel) return false;
@@ -1263,7 +1595,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   }, [filteredTasks]);
 
-  const handleBulkDeleteTasks = useCallback(() => {
+  const handleBulkDeleteTasks = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 업무를 삭제할 수 있습니다.'); return; }
     const ids = selectedTaskIds.filter((id) => filteredTasks.some((task) => task.id === id));
     if (ids.length === 0) { showCustomAlert('선택 항목 없음', '삭제할 업무를 먼저 선택해 주세요.'); return; }
@@ -1293,7 +1625,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
               <div>
                 <h2 className="text-sm sm:text-base font-bold">운영 및 근무 관리 시스템</h2>
-                <p className="text-[11px] sm:text-xs text-[#64748B]">일일, 주간 및 CABIN 업무 편성</p>
+                <p className="text-[11px] sm:text-xs text-[#64748B]">일일, 주간, CABIN 및 차량 운영 관리</p>
               </div>
             </div>
 
@@ -1311,7 +1643,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 </button>
               )}
 
-              {(isAdmin || (taskTab === 'DAILY' && dailySubTab === 'OTHER')) && (
+              {(isAdmin || (taskTab === 'DAILY' && dailySubTab === 'OTHER')) && taskTab !== 'VEHICLE' && (
                 <button
                   onClick={() => handleOpenCreateModal(undefined, taskTab === 'DAILY' && dailySubTab === 'OTHER' ? 'DAILY_OTHER' : undefined)}
                   className="flex items-center space-x-1 bg-[#243B5A] text-white px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-semibold shadow-xs shrink-0"
@@ -1336,7 +1668,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <span className="truncate">미완료 알림 ({myAssignedTasks.length})</span>
             </button>
 
-            <div className="col-span-2 sm:col-span-auto bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] grid grid-cols-3 gap-1 h-8 items-center shrink-0">
+            <div className="col-span-2 sm:col-span-auto bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9] grid grid-cols-4 gap-1 h-8 items-center shrink-0">
               <button
                 onClick={() => { setTaskTab('DAILY'); setSelectedTaskIds([]); }}
                 className={`px-2.5 py-0.5 text-xs font-semibold rounded-md text-center transition ${taskTab === 'DAILY' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
@@ -1356,22 +1688,26 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <Home className="h-3 w-3 shrink-0" />
                 <span>CABIN</span>
               </button>
+              <button
+                onClick={() => { setTaskTab('VEHICLE'); setSelectedTaskIds([]); }}
+                className={`px-2.5 py-0.5 text-xs font-semibold rounded-md flex items-center justify-center gap-1 transition ${taskTab === 'VEHICLE' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B] hover:text-[#1F2937]'}`}
+              >
+                <span>차량</span>
+              </button>
             </div>
           </div>
         </div>
 
         {/* 인원 현황 요약 배너 */}
-        {(() => {
+        {taskTab !== 'VEHICLE' && (() => {
           const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
           const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
           const offUsers = appUsers.filter(u => u.work_status === '휴무');
           
-          // 현재 활성화된(완료되지 않은) Cabin 업무들에서 주간/야간 인원 수집
           const activeCabinTasks = tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED');
           const cabinDayWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.day_workers || [])));
           const cabinNightWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.night_workers || [])));
           
-          // 공정 인원: 근무중 인원 중 Cabin 주간/야간에 속하지 않는 인원
           const cabinAllSet = new Set([...cabinDayWorkers, ...cabinNightWorkers].map(n => n.trim().toLowerCase()));
           const processWorkers = workingUsers.filter(u => !cabinAllSet.has((u.name || '').trim().toLowerCase()));
 
@@ -1397,6 +1733,43 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
           );
         })()}
+
+        {/* 차량 탭 서브탭 및 차량 등록 관리 */}
+        {taskTab === 'VEHICLE' && (
+          <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
+            <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0 [&::-webkit-scrollbar]:h-1">
+              <Tag className="h-3.5 w-3.5 text-[#64748B] ml-1 shrink-0" />
+              <span className="text-xs font-bold text-[#1F2937] mr-1 shrink-0">차량:</span>
+              <button
+                onClick={() => setVehicleSubTab('ALL')}
+                className={`px-2.5 py-1 text-xs font-semibold rounded-lg shrink-0 ${vehicleSubTab === 'ALL' ? 'bg-white border text-[#243B5A] font-bold shadow-2xs' : 'text-[#64748B]'}`}
+              >
+                전체
+              </button>
+              {vehicles.map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => setVehicleSubTab(v.vehicle_no)}
+                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg shrink-0 flex items-center gap-1 transition ${
+                    vehicleSubTab === v.vehicle_no ? 'bg-[#243B5A] text-white font-bold shadow-2xs' : 'bg-white border text-[#243B5A] hover:bg-slate-100'
+                  }`}
+                >
+                  <span>{v.vehicle_no}</span>
+                </button>
+              ))}
+            </div>
+
+            {isAdmin && (
+              <button
+                onClick={() => setIsVehicleManagerOpen(true)}
+                className="flex items-center space-x-1 text-xs text-[#243B5A] font-semibold bg-white border px-2 py-1 rounded-lg shrink-0 hover:bg-slate-50 ml-1"
+              >
+                <Settings className="h-3 w-3" />
+                <span className="hidden sm:inline">차량 등록/관리</span>
+              </button>
+            )}
+          </div>
+        )}
 
         {/* 일일 업무 서브탭 */}
         {taskTab === 'DAILY' && (
@@ -1492,6 +1865,62 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
         {isLoading ? (
           <div className="text-center py-16 text-xs text-[#64748B]">로딩 중...</div>
+        ) : taskTab === 'VEHICLE' ? (
+          /* 차량 탭 콘텐츠 화면 */
+          <div className="space-y-4">
+            <div className="flex items-center justify-between bg-white p-3 rounded-xl border shadow-2xs">
+              <div>
+                <h3 className="text-sm font-bold text-[#243B5A]">차량 운영 및 사용 관리</h3>
+                <p className="text-[11px] text-[#64748B]">등록된 차량을 선택하고 '차량 사용' 버튼을 통해 사용 신청을 할 수 있습니다. (작업용차량운전자 교육 이수자 필수)</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {(vehicleSubTab === 'ALL' ? vehicles : vehicles.filter(v => v.vehicle_no === vehicleSubTab)).map((v) => {
+                const usages = vehicleUsages.filter(u => u.vehicle_no === v.vehicle_no);
+                return (
+                  <div key={v.id} className="bg-white border rounded-xl p-4 shadow-2xs space-y-3 flex flex-col justify-between">
+                    <div>
+                      <div className="flex items-center justify-between border-b pb-2 mb-2">
+                        <span className="font-bold text-sm text-[#243B5A]">🚗 차량번호: {v.vehicle_no}</span>
+                        <button
+                          onClick={() => handleOpenVehicleUsageModal(v.vehicle_no)}
+                          className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-bold rounded-lg hover:bg-[#1B2F49] transition shadow-xs"
+                        >
+                          차량 사용
+                        </button>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <span className="text-xs font-bold text-[#64748B]">최근 사용 내역 ({usages.length}건)</span>
+                        <div className="max-h-40 overflow-y-auto space-y-1.5 pr-1">
+                          {usages.length === 0 ? (
+                            <div className="text-[11px] text-[#94A3B8] py-2 text-center">사용 내역이 없습니다.</div>
+                          ) : (
+                            usages.map((u) => (
+                              <div key={u.id} className="bg-[#F5F6F8] p-2 rounded-lg text-[11px] space-y-0.5 border">
+                                <div className="flex justify-between font-bold text-[#1F2937]">
+                                  <span>운전자: {u.driver_name}</span>
+                                  <span className="font-mono text-[#64748B]">{u.time_str || ''}</span>
+                                </div>
+                                <div>목적지: {u.destination || '-'} / 목적: {u.purpose || '-'}</div>
+                                {u.start_date && <div className="text-[10px] text-[#64748B] font-mono">기간: {u.start_date} ~ {u.end_date || u.start_date}</div>}
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+              {vehicles.length === 0 && (
+                <div className="col-span-full py-12 text-center text-xs text-[#64748B] bg-white rounded-xl border">
+                  등록된 차량이 없습니다. 관리자 계정에서 '차량 등록/관리'를 통해 차량을 등록해 주세요.
+                </div>
+              )}
+            </div>
+          </div>
         ) : taskTab === 'DAILY' ? (
           <>
           <div className="md:hidden space-y-2">
@@ -2023,6 +2452,61 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
+        {/* 차량 사용 신청 모달 (CERT의 달력 모달 활용) */}
+        {isVehicleUsageModalOpen && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b pb-3">
+                <h3 className="text-sm font-bold text-[#243B5A]">차량 사용 신청 ({targetVehicleForUsage})</h3>
+                <button onClick={() => setIsVehicleUsageModalOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+              </div>
+
+              <form onSubmit={handleSaveVehicleUsage} className="space-y-3 text-xs">
+                <div>
+                  <label className="block font-semibold mb-1">운전자 (로그인 계정)</label>
+                  <input type="text" disabled value={currentUser?.name || ''} className="w-full px-3 py-2 border rounded-lg bg-slate-100 text-[#1F2937]" />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">차량 번호</label>
+                  <input type="text" disabled value={targetVehicleForUsage} className="w-full px-3 py-2 border rounded-lg bg-slate-100 text-[#1F2937] font-bold" />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">시간</label>
+                  <input type="text" placeholder="예) 09:00 또는 오전" value={vehicleUsageForm.time_str} onChange={e => setVehicleUsageForm({ ...vehicleUsageForm, time_str: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">목적지</label>
+                  <input type="text" placeholder="목적지 입력" value={vehicleUsageForm.destination} onChange={e => setVehicleUsageForm({ ...vehicleUsageForm, destination: e.target.value })} className="w-full px-3 py-2 border rounded-lg" required />
+                </div>
+
+                <div>
+                  <label className="block font-semibold mb-1">사용 목적 (장기 수리 또는 출장 등)</label>
+                  <textarea rows={2} placeholder="사용 목적 입력" value={vehicleUsageForm.purpose} onChange={e => setVehicleUsageForm({ ...vehicleUsageForm, purpose: e.target.value })} className="w-full px-3 py-2 border rounded-lg resize-none" required />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-semibold mb-1">시작일 (기간)</label>
+                    <CalendarDatePicker value={vehicleUsageForm.start_date} onChange={date => setVehicleUsageForm({ ...vehicleUsageForm, start_date: date })} />
+                  </div>
+                  <div>
+                    <label className="block font-semibold mb-1">종료일 (기간)</label>
+                    <CalendarDatePicker value={vehicleUsageForm.end_date} onChange={date => setVehicleUsageForm({ ...vehicleUsageForm, end_date: date })} />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-3 border-t">
+                  <button type="button" onClick={() => setIsVehicleUsageModalOpen(false)} className="px-3.5 py-1.5 border rounded-lg">취소</button>
+                  <button type="submit" className="px-4 py-1.5 bg-[#243B5A] text-white font-semibold rounded-lg">신청 완료</button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         {customAlert.open && (
           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
             <div className="bg-white rounded-xl max-w-sm w-full p-4 shadow-2xl space-y-3 border">
@@ -2215,6 +2699,37 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     <div className="flex items-center space-x-1.5">
                       <button onClick={() => setEditingVessel(v)} className="p-1 text-[#64748B] hover:text-[#243B5A]"><Pencil className="h-3.5 w-3.5" /></button>
                       <button onClick={() => handleDeleteVessel(v.id)} className="p-1 text-[#64748B] hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 차량 등록/수정/삭제 관리 모달 */}
+        {isVehicleManagerOpen && isAdmin && (
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
+              <div className="flex items-center justify-between border-b pb-3">
+                <h3 className="text-sm font-bold text-[#243B5A]">차량 등록 / 수정 / 삭제 관리</h3>
+                <button onClick={() => setIsVehicleManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+              </div>
+              <div className="flex space-x-2">
+                <input type="text" placeholder="차량 번호 입력 (예: 1234)" value={newVehicleNo} onChange={(e) => setNewVehicleNo(e.target.value)} className="flex-1 px-3 py-1.5 border rounded-lg text-xs" />
+                <button onClick={handleAddVehicle} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg shrink-0">등록</button>
+              </div>
+              <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
+                {vehicles.map((v) => (
+                  <div key={v.id} className="flex items-center justify-between p-2.5 border rounded-lg text-xs">
+                    {editingVehicle?.id === v.id ? (
+                      <input type="text" defaultValue={v.vehicle_no} onBlur={(e) => handleUpdateVehicle(v.id, e.target.value)} className="px-2 py-0.5 border rounded text-xs" autoFocus />
+                    ) : (
+                      <span className="font-bold text-[#1F2937]">{v.vehicle_no}</span>
+                    )}
+                    <div className="flex items-center space-x-1.5">
+                      <button onClick={() => setEditingVehicle(v)} className="p-1 text-[#64748B] hover:text-[#243B5A]"><Pencil className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => handleDeleteVehicle(v.id)} className="p-1 text-[#64748B] hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                   </div>
                 ))}
