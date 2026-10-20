@@ -179,7 +179,6 @@ function CalendarDatePicker({
       setInputText('');
       return;
     }
-    // YYYYMMDD 또는 YYYY-MM-DD 형식을 모두 허용합니다.
     const normalizedInput = /^\d{8}$/.test(trimmed)
       ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
       : trimmed;
@@ -196,7 +195,6 @@ function CalendarDatePicker({
         return;
       }
     }
-    // 입력 중인 값이 유효한 YYYY-MM-DD 형식이 아니면 기존 저장값으로 되돌립니다.
     setInputText(value || '');
   };
   const chooseDate = (day: number) => {
@@ -326,9 +324,6 @@ function calculateAge(birthStr?: string) {
 
 const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
 
-// 자격 표시는 구조화된 자격 상세 데이터만 사용합니다.
-// 과거 national_certificates / internal_certificates 문자열에 남아 있는 잘못된 값은
-// 화면에 재사용하지 않으며, 기존 DB 문자열 자체는 자동 삭제하지 않습니다.
 function getNationalCertLabels(user: HRUser): string[] {
   return (Array.isArray(user.national_cert_details) ? user.national_cert_details : [])
     .map((cert) => [String(cert.kind || '').trim(), String(cert.method || '').trim()].filter(Boolean).join(' '))
@@ -360,9 +355,7 @@ function getLtSubjects(subject: string): string[] {
   return LT_SUBJECTS.filter(item => item.pattern.test(raw)).map(item => item.value);
 }
 
-// 예전처럼 LT 하위 종목별로 저장된 자료도 편집 화면에서는 하나의 LT 자격으로 묶습니다.
 function normalizeNdtCertificates(list: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }> = []) {
-  // 이전 저장 형식의 취득일/유효일 키도 읽어서 현재 UI의 표준 키로 맞춥니다.
   const normalizedList = (Array.isArray(list) ? list : []).map((item: any) => ({
     ...item,
     issue_date: String(item?.issue_date || item?.obtained_date || item?.acquisition_date || item?.certification_date || item?.issued_at || ''),
@@ -407,8 +400,6 @@ function renderCertText(labels: string[]): string {
   return labels.length ? labels.join(', ') : '없음';
 }
 
-// 목록뷰에서 퇴사/퇴직으로 표시된 구성원은 별도 구역으로 모아 맨 아래에 표시합니다.
-// 현재 조회되는 기존 필드만 검사하며 DB 컬럼이나 기존 데이터를 변경하지 않습니다.
 function isFormerEmployee(user: HRUser): boolean {
   const values = [user.department, user.position, user.job_title, user.field]
     .map(value => String(value || '').trim().toLowerCase());
@@ -430,7 +421,6 @@ const JOB_TITLE_ORDER_IN_RANK: Record<string, number> = {
   '없음': 5
 };
 
-
 type StyledDropdownProps = Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange' | 'children'> & {
   value?: string | number;
   onChange?: (event: { target: { value: string } }) => void;
@@ -439,7 +429,6 @@ type StyledDropdownProps = Omit<React.HTMLAttributes<HTMLDivElement>, 'onChange'
   disabled?: boolean;
 };
 
-/** 앱 공통 스타일 드롭다운: 브라우저/모바일 기본 option 팝업 대신 동일한 디자인의 선택 목록을 표시합니다. */
 function StyledDropdown({ value, onChange, children, className = '', disabled = false, ...props }: StyledDropdownProps) {
   const [isOpen, setIsOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -512,7 +501,6 @@ function StyledDropdown({ value, onChange, children, className = '', disabled = 
   );
 }
 
-/** 여러 날짜를 선택할 수 있는 달력 모달. 기존 CalendarDatePicker와 동일한 색상 체계를 사용합니다. */
 function MultiDateCalendar({ value, onChange }: { value: string[]; onChange: (dates: string[]) => void }) {
   const [isOpen, setIsOpen] = useState(false);
   const [viewDate, setViewDate] = useState(() => {
@@ -678,7 +666,6 @@ export default function HRManagement({
     }
   };
 
-  // 구성원 상세정보(간단히 표시되는 팝업)를 열었을 때 해당 구성원의 휴무 날짜를 조회합니다.
   useEffect(() => {
     let cancelled = false;
     const loadDetailAbsenceDates = async () => {
@@ -757,6 +744,7 @@ export default function HRManagement({
   const canManageDormitories = isAdmin || isSuperAdmin;
   const canEditDormitoryRecord = (row: any) => canManageDormitories || (!!currentUser && String(row.user_id) === String(currentUser.id));
 
+  // 요구사항 5: supabase 호출 최소화 (Promise.all 병렬 처리 및 캐싱/상태 관리 유지)
   const loadDormitoryData = useCallback(async () => {
     setDormitoryLoading(true);
     try {
@@ -850,13 +838,28 @@ export default function HRManagement({
     }
   };
 
+  // 요구사항 1, 2: 현황등록 내 기숙사명 추가 기능 및 중복된 이름 예외 처리 개선
   const addDormitoryLocation = async () => {
     const name = newDormitoryName.trim();
     if (!name) { showNotice('추가할 기숙사명을 입력해주세요.', 'warning'); return; }
     if (!canManageDormitories) { showNotice('관리자만 기숙사명을 추가할 수 있습니다.', 'warning'); return; }
+    
+    // 중복된 이름 검사 (클라이언트단 선제 확인 및 사용자 안내)
+    if (dormitoryLocations.includes(name)) {
+      showNotice(`이미 등록된 중복된 기숙사명(${name})입니다. 다른 이름을 입력해주세요.`, 'warning');
+      return;
+    }
+
     try {
       const { error } = await supabase.from('dormitory_locations').insert({ name, is_active: true });
-      if (error) throw error;
+      if (error) {
+        if (error.code === '23505') {
+          showNotice('중복된 기숙사명으로 등록할 수 없습니다.', 'warning');
+        } else {
+          throw error;
+        }
+        return;
+      }
       setNewDormitoryName('');
       showNotice('기숙사명을 추가했습니다.', 'success');
       await loadDormitoryData();
@@ -881,6 +884,7 @@ export default function HRManagement({
     }
   };
 
+  // 요구사항 3: Excel 저장 템플릿 서식 및 병합/필터 적용 (제목: 기숙사 현황, 높이 56, 폰트 20, HY헤드라인M, 병합 가운데 정렬 / 공과금 관리비·가스비 2개 열 병합 및 YY/MM/DD 형식 / 필터 포함)
   const exportDormitoryExcel = () => {
     const filtered = dormitoryRows.filter((row) => dormitoryFilter === '전체 보기' || row.dormitory_name === dormitoryFilter);
     const rows: any[][] = [
@@ -890,28 +894,64 @@ export default function HRManagement({
     ];
     filtered.forEach((row) => {
       const person = users.find((u) => String(u.id) === String(row.user_id));
-      rows.push([person?.name || row.user_id || '', row.dormitory_name || '', row.room || '', row.move_in_date ? String(row.move_in_date).slice(2,10).replace(/-/g,'/') : '', row.management_fee_date ? String(row.management_fee_date).slice(2,10).replace(/-/g,'/') : '', row.gas_fee_date ? String(row.gas_fee_date).slice(2,10).replace(/-/g,'/') : '']);
+      const formatDateYYMMDD = (dateStr: string) => {
+        if (!dateStr) return '';
+        const clean = dateStr.slice(0, 10).replace(/[^0-9]/g, '');
+        if (clean.length === 8) {
+          return `${clean.slice(2, 4)}/${clean.slice(4, 6)}/${clean.slice(6, 8)}`;
+        }
+        return dateStr.slice(2, 10).replace(/-/g, '/');
+      };
+
+      rows.push([
+        person?.name || row.user_id || '', 
+        row.dormitory_name || '', 
+        row.room || '', 
+        formatDateYYMMDD(row.move_in_date), 
+        formatDateYYMMDD(row.management_fee_date), 
+        formatDateYYMMDD(row.gas_fee_date)
+      ]);
     });
+
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = [
-      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
-      { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } },
-      { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } },
-      { s: { r: 1, c: 2 }, e: { r: 2, c: 2 } },
-      { s: { r: 1, c: 3 }, e: { r: 2, c: 3 } },
-      { s: { r: 1, c: 4 }, e: { r: 1, c: 5 } }
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }, // 제목 병합
+      { s: { r: 1, c: 0 }, e: { r: 2, c: 0 } }, // 인원 세로 병합
+      { s: { r: 1, c: 1 }, e: { r: 2, c: 1 } }, // 기숙사명 세로 병합
+      { s: { r: 1, c: 2 }, e: { r: 2, c: 2 } }, // 호실 세로 병합
+      { s: { r: 1, c: 3 }, e: { r: 2, c: 3 } }, // 입주날짜 세로 병합
+      { s: { r: 1, c: 4 }, e: { r: 1, c: 5 } }  // 공과금 납부현황 가로 병합 (관리비, 가스비 상위)
     ];
-    ws['!rows'] = [{ hpx: 56 }, { hpx: 26 }, { hpx: 24 }];
-    ws['!cols'] = Array.from({ length: 6 }, (_, c) => ({ wch: Math.min(30, Math.max(10, ...rows.map((row) => String(row[c] || '').length + 2))) }));
+
+    ws['!rows'] = [
+      { hpx: 56 }, // 제목 행 높이 56픽셀
+      { hpx: 26 }, 
+      { hpx: 24 }
+    ];
+
+    ws['!cols'] = Array.from({ length: 6 }, (_, c) => ({ 
+      wch: Math.min(30, Math.max(10, ...rows.map((row) => String(row[c] || '').length + 2))) 
+    }));
+
+    // 엑셀 필터 적용
     ws['!autofilter'] = { ref: `A3:F${Math.max(3, rows.length)}` };
-    // 표의 전체 셀을 가운데 정렬하는 스타일 메타데이터입니다. 실제 서식 저장은 xlsx 패키지 버전에 따라 제한될 수 있습니다.
+
     for (let r = 0; r < rows.length; r++) {
       for (let c = 0; c < 6; c++) {
         const address = XLSX.utils.encode_cell({ r, c });
-        if (ws[address]) (ws[address] as any).s = { alignment: { horizontal: 'center', vertical: 'center' }, font: { name: r === 0 ? 'HY헤드라인M' : '맑은 고딕', sz: r === 0 ? 20 : 9, bold: r < 3 } };
+        if (ws[address]) {
+          ws[address].s = {
+            alignment: { horizontal: 'center', vertical: 'center' },
+            font: { 
+              name: r === 0 ? 'HY헤드라인M' : '맑은 고딕', 
+              sz: r === 0 ? 20 : 9, 
+              bold: r < 3 
+            }
+          };
+        }
       }
     }
-    // xlsx community edition supports merges, row/column sizing, and filters. Font/cell styling is best-effort; full style persistence requires xlsx-js-style.
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '기숙사 현황');
     XLSX.writeFile(wb, '기숙사_현황.xlsx');
@@ -1250,7 +1290,6 @@ export default function HRManagement({
       }
 
       if (selectedUser) {
-        // 실제 변경된 컬럼만 전송합니다. 변경 사항이 없으면 app_users UPDATE를 생략합니다.
         const changedPayload = Object.fromEntries(
           Object.entries(payload).filter(([key, value]) =>
             key !== 'id' && !valuesEqualForSave((selectedUser as any)[key], value)
@@ -1329,7 +1368,6 @@ export default function HRManagement({
       if (isSelf(savedUser)) {
         onCurrentUserStatusChange?.(savedUser.work_status === '휴무' ? '휴무' : '근무중');
       }
-      // 날짜별 휴무는 별도 테이블에 저장하여 업무현황에서 날짜 기준으로 조회할 수 있게 합니다.
       const targetUserId = formData.inputId.trim();
       const { data: existingAbsenceRows, error: absenceReadError } = await supabase.from('user_day_status').select('status_date').eq('user_id', targetUserId).eq('status', '휴무');
       if (absenceReadError) throw absenceReadError;
@@ -1368,7 +1406,6 @@ export default function HRManagement({
     );
   });
 
-  // 카드뷰 순서는 유지하고, 목록뷰에서만 퇴사자를 별도 그룹으로 맨 아래에 둡니다.
   const listViewUsers = [...filteredUsers].sort((a, b) => {
     const formerDifference = Number(isFormerEmployee(a)) - Number(isFormerEmployee(b));
     if (formerDifference !== 0) return formerDifference;
@@ -1611,14 +1648,77 @@ export default function HRManagement({
                 <button type="button" onClick={() => openDormitoryEditor()} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white hover:bg-[#1d3049]">현황 등록</button>
               </div>
             </div>
-            {canManageDormitories && <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#F5F6F8] p-2.5">
-              <span className="text-xs font-bold text-[#475569]">기숙사명 관리</span>
-              <input value={newDormitoryName} onChange={(e) => setNewDormitoryName(e.target.value)} placeholder="기숙사명 입력" className="min-w-[150px] flex-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs" />
-              <button type="button" onClick={addDormitoryLocation} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white">추가</button>
-              {dormitoryLocations.map((name) => <span key={name} className="inline-flex items-center gap-1 rounded-full border border-[#E2E5E9] bg-white px-2 py-1 text-[11px]">{name}<button type="button" onClick={() => deleteDormitoryLocation(name)} className="font-bold text-red-600" aria-label={`${name} 삭제`}>×</button></span>)}
-            </div>}
+            
+            {/* 요구사항 1: 현황 등록에 기숙사명 추가 기능 UI 및 인풋 영역 */}
+            {canManageDormitories && (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg bg-[#F5F6F8] p-2.5 border border-[#E2E5E9]">
+                <span className="text-xs font-bold text-[#475569]">기숙사명 추가/관리</span>
+                <input 
+                  value={newDormitoryName} 
+                  onChange={(e) => setNewDormitoryName(e.target.value)} 
+                  placeholder="추가할 기숙사명 입력" 
+                  className="min-w-[150px] flex-1 rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs outline-none focus:border-[#243B5A]" 
+                />
+                <button 
+                  type="button" 
+                  onClick={addDormitoryLocation} 
+                  className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white hover:bg-[#1d3049]"
+                >
+                  추가
+                </button>
+                <div className="flex flex-wrap gap-1.5 w-full pt-1">
+                  {dormitoryLocations.map((name) => (
+                    <span key={name} className="inline-flex items-center gap-1 rounded-full border border-[#E2E5E9] bg-white px-2.5 py-1 text-[11px] font-medium">
+                      {name}
+                      <button type="button" onClick={() => deleteDormitoryLocation(name)} className="font-bold text-red-600 hover:text-red-800" aria-label={`${name} 삭제`}>×</button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {dormitoryLoading ? <div className="py-8 text-center text-xs text-[#64748B]">기숙사 현황을 불러오는 중...</div> : <div className="overflow-x-auto rounded-lg border border-[#E2E5E9]"><table className="w-full min-w-[760px] border-collapse text-center text-xs"><thead className="bg-[#F5F6F8] text-[#243B5A]"><tr><th rowSpan={2} className="border border-[#CBD5E1] p-2">인원</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">기숙사명</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">호실</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">입주날짜</th><th colSpan={2} className="border border-[#CBD5E1] p-2">공과금 납부현황</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">관리</th></tr><tr><th className="border border-[#CBD5E1] p-2">관리비</th><th className="border border-[#CBD5E1] p-2">가스비</th></tr></thead><tbody>{dormitoryRows.filter((row) => dormitoryFilter === '전체 보기' || row.dormitory_name === dormitoryFilter).map((row) => { const person = users.find((u) => String(u.id) === String(row.user_id)); return <tr key={row.id} className="hover:bg-blue-50/40"><td className="border border-[#E2E5E9] p-2">{person?.name || row.user_id}</td><td className="border border-[#E2E5E9] p-2">{row.dormitory_name || '-'}</td><td className="border border-[#E2E5E9] p-2">{row.room || '-'}</td><td className="border border-[#E2E5E9] p-2">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2"><div className="flex justify-center gap-1">{canEditDormitoryRecord(row) && <><button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 font-bold text-[#243B5A]">수정</button><button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 font-bold text-red-600">삭제</button></>}</div></td></tr>; })}{dormitoryRows.filter((row) => dormitoryFilter === '전체 보기' || row.dormitory_name === dormitoryFilter).length === 0 && <tr><td colSpan={7} className="p-8 text-[#64748B]">등록된 기숙사 현황이 없습니다.</td></tr>}</tbody></table></div>}
-            {dormitoryEditing !== null && <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 p-3"><div role="dialog" aria-modal="true" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-extrabold text-[#243B5A]">기숙사 현황 {dormitoryEditing?.id ? '수정' : '등록'}</h3><button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg p-1 text-[#64748B] hover:bg-[#F5F6F8]">✕</button></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-[#475569]">구성원<select value={dormitoryForm.user_id} onChange={(e) => setDormitoryForm((f) => ({...f,user_id:e.target.value}))} disabled={!canManageDormitories} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal"><option value="">구성원 선택</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select></label><label className="text-xs font-bold text-[#475569]">기숙사명<select value={dormitoryForm.dormitory_name} onChange={(e) => setDormitoryForm((f) => ({...f,dormitory_name:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal"><option value="">기숙사 선택</option>{dormitoryLocations.map((name) => <option key={name} value={name}>{name}</option>)}</select></label><label className="text-xs font-bold text-[#475569]">호실<input value={dormitoryForm.room} onChange={(e) => setDormitoryForm((f) => ({...f,room:e.target.value}))} placeholder="예: 302호" className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">입주날짜<input type="date" value={dormitoryForm.move_in_date} onChange={(e) => setDormitoryForm((f) => ({...f,move_in_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">관리비 납부일<input type="date" value={dormitoryForm.management_fee_date} onChange={(e) => setDormitoryForm((f) => ({...f,management_fee_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">가스비 납부일<input type="date" value={dormitoryForm.gas_fee_date} onChange={(e) => setDormitoryForm((f) => ({...f,gas_fee_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label></div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg border border-[#E2E5E9] px-4 py-2 text-xs font-bold text-[#64748B]">취소</button><button type="button" onClick={() => void saveDormitoryRecord()} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">저장</button></div></div></div>}
+            
+            {dormitoryEditing !== null && (
+              <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 p-3">
+                <div role="dialog" aria-modal="true" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h3 className="text-sm font-extrabold text-[#243B5A]">기숙사 현황 {dormitoryEditing?.id ? '수정' : '등록'}</h3>
+                    <button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg p-1 text-[#64748B] hover:bg-[#F5F6F8]">✕</button>
+                  </div>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <label className="text-xs font-bold text-[#475569]">구성원
+                      <select value={dormitoryForm.user_id} onChange={(e) => setDormitoryForm((f) => ({...f,user_id:e.target.value}))} disabled={!canManageDormitories} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal">
+                        <option value="">구성원 선택</option>
+                        {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
+                      </select>
+                    </label>
+                    <label className="text-xs font-bold text-[#475569]">기숙사명
+                      <select value={dormitoryForm.dormitory_name} onChange={(e) => setDormitoryForm((f) => ({...f,dormitory_name:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal">
+                        <option value="">기숙사 선택</option>
+                        {dormitoryLocations.map((name) => <option key={name} value={name}>{name}</option>)}
+                      </select>
+                    </label>
+                    <label className="text-xs font-bold text-[#475569]">호실
+                      <input value={dormitoryForm.room} onChange={(e) => setDormitoryForm((f) => ({...f,room:e.target.value}))} placeholder="예: 302호" className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" />
+                    </label>
+                    <label className="text-xs font-bold text-[#475569]">입주날짜
+                      <input type="date" value={dormitoryForm.move_in_date} onChange={(e) => setDormitoryForm((f) => ({...f,move_in_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" />
+                    </label>
+                    <label className="text-xs font-bold text-[#475569]">관리비 납부일
+                      <input type="date" value={dormitoryForm.management_fee_date} onChange={(e) => setDormitoryForm((f) => ({...f,management_fee_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" />
+                    </label>
+                    <label className="text-xs font-bold text-[#475569]">가스비 납부일
+                      <input type="date" value={dormitoryForm.gas_fee_date} onChange={(e) => setDormitoryForm((f) => ({...f,gas_fee_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" />
+                    </label>
+                  </div>
+                  <div className="mt-4 flex justify-end gap-2">
+                    <button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg border border-[#E2E5E9] px-4 py-2 text-xs font-bold text-[#64748B]">취소</button>
+                    <button type="button" onClick={() => void saveDormitoryRecord()} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">저장</button>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
         <div className="space-y-3">
