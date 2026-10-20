@@ -5,7 +5,7 @@ import {
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, AlertCircle, PlayCircle, PlusCircle,
-  Users, History, FileSpreadsheet, Layers, FileText, CalendarDays
+  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown, CalendarDays
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
@@ -1717,7 +1717,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <span className="font-bold text-[#243B5A] flex items-center gap-1">
                   <Users className="h-3.5 w-3.5" /> 인원 현황:
                 </span>
-                <span>전체(퇴사자 제외): <strong className="text-[#1F2937]">{activeUsers.length}명</strong></span>
+                <span>전체: <strong className="text-[#1F2937]">{activeUsers.length}명</strong></span>
                 <span>근무중: <strong className="text-emerald-600">{workingUsers.length}명 (Cabin 주간: {cabinDayWorkers.length}명, Cabin 야간: {cabinNightWorkers.length}명, 공정: {processWorkers.length}명)</strong></span>
                 <span>휴무: <strong className="text-blue-600">{offUsers.length}명</strong></span>
               </div>
