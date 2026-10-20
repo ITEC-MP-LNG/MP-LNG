@@ -1711,7 +1711,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <span className="font-bold text-[#243B5A] flex items-center gap-1">
                   <Users className="h-3.5 w-3.5" /> 인원 현황:
                 </span>
-                <span>전체(퇴사자 제외): <strong className="text-[#1F2937]">{activeUsers.length}명</strong></span>
+                <span>전체: <strong className="text-[#1F2937]">{activeUsers.length}명</strong></span>
                 <span>근무중: <strong className="text-emerald-600">{workingUsers.length}명 (Cabin 주간: {cabinDayWorkers.length}명, Cabin 야간: {cabinNightWorkers.length}명, 공정: {processWorkers.length}명)</strong></span>
                 <span>휴무: <strong className="text-blue-600">{offUsers.length}명</strong></span>
               </div>
@@ -2179,7 +2179,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </table>
           </div>
           </>
-        ) : taskTab === 'WEEKLY' ? (
+     ) : taskTab === 'WEEKLY' ? (
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row items-center justify-between pb-2.5 border-b gap-2">
               <div className="flex items-center space-x-2">
@@ -2204,7 +2204,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
             </div>
 
-           {weeklyViewMode === 'GRID' ? (
+            {weeklyViewMode === 'GRID' ? (
               <div className="overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-2">
                 <div className="grid grid-cols-7 gap-2 min-w-[900px]">
                   {weekDays.map((day) => {
@@ -2272,8 +2272,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
             )}
           </div>
-        )}
-
+        ) : taskTab === 'CABIN' && (
         {taskTab === 'CABIN' && (
           <div className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
