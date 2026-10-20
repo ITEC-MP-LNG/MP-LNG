@@ -2204,7 +2204,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
             </div>
 
-            {weeklyViewMode === 'GRID' ? (
+           {weeklyViewMode === 'GRID' ? (
               <div className="overflow-x-auto pb-2 [&::-webkit-scrollbar]:h-2">
                 <div className="grid grid-cols-7 gap-2 min-w-[900px]">
                   {weekDays.map((day) => {
@@ -2235,7 +2235,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   })}
                 </div>
               </div>
-           ) : (
+            ) : (
               <div className="space-y-2.5">
                 {weekDays.map((day) => {
                   const dayTasks = filteredTasks.filter((t) => t.start_date === day.dateStr);
@@ -2319,7 +2319,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
           </div>
         )}
-      </div>
 
       {/* 업무 생성/수정 모달 */}
       {isModalOpen && (
