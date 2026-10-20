@@ -2891,7 +2891,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 </div>
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-3 border-t">
+         <div className="flex items-center justify-end gap-2 pt-3 border-t">
                 {canModifyTaskStatus(selectedTaskForSheet) && (
                   <button onClick={() => { const task = selectedTaskForSheet; setSelectedTaskForSheet(null); setStatusChangeModal({ open: true, task, targetStatus: task.status, remarks: task.remarks || '' }); }} className="px-3 py-1.5 bg-[#243B5A] text-white font-bold rounded-lg text-xs">상태/비고 변경</button>
                 )}
@@ -2902,5 +2902,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         </div>
       )}
     </div>
+  );
+}
   );
 }
