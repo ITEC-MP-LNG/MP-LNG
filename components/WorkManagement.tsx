@@ -759,11 +759,29 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return;
     }
 
+    // 일일 업무 등록 시 CABIN에 등록된 인원인지 체크
+    if (formData.task_type === 'DAILY' && target === 'ASSIGNED') {
+      for (const t of tasks) {
+        if (t.task_type === 'CABIN' && t.status !== 'COMPLETED') {
+          const isDay = (t.day_workers || []).some(w => w.trim().toLowerCase() === name.toLowerCase());
+          const isNight = (t.night_workers || []).some(w => w.trim().toLowerCase() === name.toLowerCase());
+          if (isDay) {
+            showCustomAlert('업무 등록 제한', `Cabin 주간 근무 입니다`);
+            return;
+          }
+          if (isNight) {
+            showCustomAlert('업무 등록 제한', `Cabin 야간 근무 입니다`);
+            return;
+          }
+        }
+      }
+    }
+
     if (target === 'ASSIGNED' && !assignedList.includes(name)) setAssignedList([...assignedList, name]);
     if (target === 'DAY' && !dayWorkerList.includes(name)) setDayWorkerList([...dayWorkerList, name]);
     if (target === 'NIGHT' && !nightWorkerList.includes(name)) setNightWorkerList([...nightWorkerList, name]);
     setSingleWorkerInput('');
-  }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList, appUsers, showCustomAlert]);
+  }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList, appUsers, showCustomAlert, formData.task_type, tasks]);
 
   const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
@@ -794,6 +812,24 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       if (u && u.work_status === '휴무') {
         showCustomAlert('업무 등록 제한', `${u.name} 휴무입니다.`);
         return;
+      }
+      
+      // 일일 업무 등록 시 CABIN 배치 여부 검증
+      if (formData.task_type === 'DAILY') {
+        for (const t of tasks) {
+          if (t.task_type === 'CABIN' && t.status !== 'COMPLETED' && (!editingTask || t.id !== editingTask.id)) {
+            const isDay = (t.day_workers || []).some(w => w.trim().toLowerCase() === wName.toLowerCase());
+            const isNight = (t.night_workers || []).some(w => w.trim().toLowerCase() === wName.toLowerCase());
+            if (isDay) {
+              showCustomAlert('업무 등록 제한', `Cabin 주간 근무 입니다`);
+              return;
+            }
+            if (isNight) {
+              showCustomAlert('업무 등록 제한', `Cabin 야간 근무 입니다`);
+              return;
+            }
+          }
+        }
       }
     }
 
@@ -845,7 +881,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       fetchTasks();
       showCustomAlert('성공', '업무가 정상적으로 저장되었습니다.');
     } catch (err: any) { showCustomAlert('오류', `저장 중 오류: ${err.message}`); }
-  }, [isAdmin, canManageTask, currentUser, formData, editingTask, dayWorkerList, nightWorkerList, assignedList, appUsers, fetchTasks, showCustomAlert]);
+  }, [isAdmin, canManageTask, currentUser, formData, editingTask, dayWorkerList, nightWorkerList, assignedList, appUsers, tasks, fetchTasks, showCustomAlert]);
 
   const handleFinalizeDailyTask = useCallback((task: Task) => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 최종 완료 처리할 수 있습니다.'); return; }
@@ -1324,7 +1360,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         </div>
 
-        {/* 인원 현황 요약 배너 (일일업무, 주간업무, CABIN 아래 배치) */}
+        {/* 인원 현황 요약 배너 */}
         {(() => {
           const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
           const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
@@ -1346,6 +1382,35 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 ) : (
                   <span>없음</span>
                 )}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* CABIN 탭인 경우 근무중 인원의 주간/야간 배치 명단 표시 배너 */}
+        {taskTab === 'CABIN' && (() => {
+          const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
+          const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
+          
+          // 현재 활성화된(완료되지 않은) Cabin 업무들에서 주간/야간 인원 수집
+          const activeCabinTasks = tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED');
+          const cabinDayWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.day_workers || [])));
+          const cabinNightWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.night_workers || [])));
+          
+          return (
+            <div className="bg-blue-50/60 border border-blue-200 rounded-xl p-2.5 text-xs space-y-1">
+              <div className="font-bold text-[#243B5A] flex items-center gap-1">
+                <Users className="h-3.5 w-3.5" /> CABIN 근무 인원 배치 현황 (근무중 총 {workingUsers.length}명 중)
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                <div className="bg-white p-2 rounded-lg border border-blue-100 flex items-start gap-2">
+                  <span className="font-bold text-blue-700 shrink-0 flex items-center gap-0.5"><Sun className="h-3 w-3" /> 주간 근무 ({cabinDayWorkers.length}명):</span>
+                  <span className="text-[#1F2937] break-all">{cabinDayWorkers.length > 0 ? cabinDayWorkers.join(', ') : '배정된 인원 없음'}</span>
+                </div>
+                <div className="bg-white p-2 rounded-lg border border-violet-100 flex items-start gap-2">
+                  <span className="font-bold text-violet-700 shrink-0 flex items-center gap-0.5"><Moon className="h-3 w-3" /> 야간 근무 ({cabinNightWorkers.length}명):</span>
+                  <span className="text-[#1F2937] break-all">{cabinNightWorkers.length > 0 ? cabinNightWorkers.join(', ') : '배정된 인원 없음'}</span>
+                </div>
               </div>
             </div>
           );
