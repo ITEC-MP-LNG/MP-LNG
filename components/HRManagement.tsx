@@ -941,9 +941,12 @@ export default function HRManagement({
     ];
     filtered.forEach((row) => {
       const person = users.find((u) => String(u.id) === String(row.user_id));
-      const managementEditor = row.management_fee_date ? (users.find((u) => String(u.id) === String(row.user_id))?.name || users.find((u) => String(u.id) === String(row.management_fee_updated_by))?.name || '') : '미납';
-      const gasEditor = row.gas_fee_date ? (users.find((u) => String(u.id) === String(row.user_id))?.name || users.find((u) => String(u.id) === String(row.gas_fee_updated_by))?.name || '') : '미납';
-      rows.push([person?.name || row.user_id || '', row.dormitory_name || '', row.room || '', row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '', row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '', managementEditor, row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '', gasEditor, row.condition_note || '']);
+      const roomRows = filtered.filter((candidate) => candidate.dormitory_name === row.dormitory_name && String(candidate.room || '').trim() === String(row.room || '').trim());
+      const managementRow = roomRows.find((candidate) => candidate.management_fee_date) || row;
+      const gasRow = roomRows.find((candidate) => candidate.gas_fee_date) || row;
+      const managementEditor = managementRow.management_fee_date ? (users.find((u) => String(u.id) === String(managementRow.management_fee_updated_by))?.name || (String(currentUser?.id || '') === String(managementRow.management_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
+      const gasEditor = gasRow.gas_fee_date ? (users.find((u) => String(u.id) === String(gasRow.gas_fee_updated_by))?.name || (String(currentUser?.id || '') === String(gasRow.gas_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
+      rows.push([person?.name || row.user_id || '', row.dormitory_name || '', row.room || '', row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '', managementRow.management_fee_date ? String(managementRow.management_fee_date).slice(0,10).replace(/-/g,'/') : '', managementEditor, gasRow.gas_fee_date ? String(gasRow.gas_fee_date).slice(0,10).replace(/-/g,'/') : '', gasEditor, row.condition_note || '']);
     });
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = [
@@ -961,6 +964,10 @@ export default function HRManagement({
       if (j - i > 1) {
         ws['!merges'].push({ s: { r: i + 3, c: 1 }, e: { r: j + 2, c: 1 } });
         ws['!merges'].push({ s: { r: i + 3, c: 2 }, e: { r: j + 2, c: 2 } });
+        // 관리비/가스비 납부일과 납부자도 호실별로 병합
+        for (const column of [4, 5, 6, 7]) {
+          ws['!merges'].push({ s: { r: i + 3, c: column }, e: { r: j + 2, c: column } });
+        }
       }
       i = j;
     }
@@ -1001,10 +1008,17 @@ export default function HRManagement({
     }
     if (!Object.keys(payload).length) { setUtilityEditing(null); showNotice('변경된 공과금 납입일이 없습니다.', 'info'); return; }
     try {
-      const { error } = await supabase.from('dormitory_records').update(payload).eq('id', utilityEditing.id);
+      // 공과금은 개인별이 아니라 같은 기숙사명 + 호실 전체에 공통 적용합니다.
+      const targetRoom = String(utilityEditing.room || utilityEditing.note || '').trim();
+      const roomRows = dormitoryRows.filter((row: any) =>
+        Number(row.location_id) === Number(utilityEditing.location_id) &&
+        String(row.room || row.note || '').trim() === targetRoom
+      );
+      const roomIds = Array.from(new Set([...roomRows.map((row: any) => row.id), utilityEditing.id].filter(Boolean)));
+      const { error } = await supabase.from('dormitory_records').update(payload).in('id', roomIds);
       if (error) throw error;
       setUtilityEditing(null);
-      showNotice('공과금 납입일을 저장했습니다.', 'success');
+      showNotice('해당 호실의 공과금 납입일을 저장했습니다.', 'success');
       await loadDormitoryData();
     } catch (error: any) {
       console.error('공과금 납입일 저장 실패:', error?.message || error);
@@ -1741,9 +1755,14 @@ export default function HRManagement({
             </div>
             {dormitoryLoading ? <div className="py-8 text-center text-xs text-[#64748B]">기숙사 현황을 불러오는 중...</div> : <>
               <div className="space-y-2 md:hidden">
-                {filteredDormitoryRows.map((row) => {
+                {filteredDormitoryRows.map((row, index) => {
                   const person = users.find((u) => String(u.id) === String(row.user_id));
-                  const feeEditor = (id: string) => users.find((u) => String(u.id) === String(id))?.name || '-';
+                  const previous = filteredDormitoryRows[index - 1];
+                  const sameRoomAsPrevious = !!previous && previous.dormitory_name === row.dormitory_name && String(previous.room || '').trim() === String(row.room || '').trim();
+                  const roomRows = filteredDormitoryRows.filter((candidate) => candidate.dormitory_name === row.dormitory_name && String(candidate.room || '').trim() === String(row.room || '').trim());
+                  const managementRow = roomRows.find((candidate) => candidate.management_fee_date) || row;
+                  const gasRow = roomRows.find((candidate) => candidate.gas_fee_date) || row;
+                  const feeEditor = (id: string) => users.find((u) => String(u.id) === String(id))?.name || (String(currentUser?.id || '') === String(id || '') ? currentUser?.name : '') || '확인 필요';
                   return <article key={row.id} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-xs">
                     <div className="flex items-start justify-between gap-2 border-b border-[#E2E5E9] pb-2">
                       <div className="flex min-w-0 items-start gap-2"><input type="checkbox" aria-label="기숙사 현황 선택" checked={selectedDormitoryIds.includes(String(row.id))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? [...prev, String(row.id)] : prev.filter((id) => id !== String(row.id)))} className="mt-1" /><div className="min-w-0"><div className="text-sm font-extrabold text-[#243B5A]">{person?.name || row.user_id}</div><div className="mt-1 text-xs text-[#64748B]">{row.dormitory_name || '-'} · {row.room || '호실 미입력'}</div></div></div>
@@ -1751,8 +1770,10 @@ export default function HRManagement({
                     </div>
                     <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                       <div><dt className="text-[#64748B]">입주날짜</dt><dd className="mt-0.5 font-semibold">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</dd></div>
-                      <div><dt className="text-[#64748B]">관리비 납부일</dt><dd className="mt-0.5 font-semibold">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {row.management_fee_date ? (person?.name || feeEditor(row.management_fee_updated_by)) : '미납'}</dd></div>
-                      <div><dt className="text-[#64748B]">가스비 납부일</dt><dd className="mt-0.5 font-semibold">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {row.gas_fee_date ? (person?.name || feeEditor(row.gas_fee_updated_by)) : '미납'}</dd></div>
+                      {!sameRoomAsPrevious && <>
+                        <div><dt className="text-[#64748B]">관리비 납부일</dt><dd className="mt-0.5 font-semibold">{managementRow.management_fee_date ? String(managementRow.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {managementRow.management_fee_date ? feeEditor(managementRow.management_fee_updated_by) : '미납'}</dd></div>
+                        <div><dt className="text-[#64748B]">가스비 납부일</dt><dd className="mt-0.5 font-semibold">{gasRow.gas_fee_date ? String(gasRow.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {gasRow.gas_fee_date ? feeEditor(gasRow.gas_fee_updated_by) : '미납'}</dd></div>
+                      </>}
                       <div className="col-span-2 rounded-lg bg-[#F8FAFC] p-2"><dt className="text-[#64748B]">비고 / 이상유무</dt><dd className="mt-0.5 whitespace-pre-wrap break-words">{row.condition_note || '내용 없음'}</dd></div>
                     </dl>
                   </article>;
@@ -1761,20 +1782,25 @@ export default function HRManagement({
               </div>
               <div className="hidden overflow-x-auto rounded-lg border border-[#E2E5E9] md:block">
                 <table className="w-full border-collapse text-center text-xs">
-                  <thead className="bg-[#F5F6F8] text-[#243B5A]"><tr><th rowSpan={2} className="border border-[#CBD5E1] p-2"><input type="checkbox" aria-label="전체 선택" checked={filteredDormitoryRows.length > 0 && filteredDormitoryRows.every((row) => selectedDormitoryIds.includes(String(row.id)))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? Array.from(new Set([...prev, ...filteredDormitoryRows.map((row) => String(row.id))])) : prev.filter((id) => !filteredDormitoryRows.some((row) => String(row.id) === id)))} /></th><th rowSpan={2} className="border border-[#CBD5E1] p-2">성명</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">기숙사명</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">호실</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">입주날짜</th><th colSpan={2} className="border border-[#CBD5E1] p-2">관리비 납부현황</th><th colSpan={2} className="border border-[#CBD5E1] p-2">가스비 납부현황</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">비고 / 이상유무</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">관리</th></tr><tr><th className="border border-[#CBD5E1] p-2">납부일</th><th className="border border-[#CBD5E1] p-2">입력자</th><th className="border border-[#CBD5E1] p-2">납부일</th><th className="border border-[#CBD5E1] p-2">입력자</th></tr></thead>
+                  <thead className="bg-[#F5F6F8] text-[#243B5A]"><tr><th rowSpan={2} className="border border-[#CBD5E1] p-2"><input type="checkbox" aria-label="전체 선택" checked={filteredDormitoryRows.length > 0 && filteredDormitoryRows.every((row) => selectedDormitoryIds.includes(String(row.id)))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? Array.from(new Set([...prev, ...filteredDormitoryRows.map((row) => String(row.id))])) : prev.filter((id) => !filteredDormitoryRows.some((row) => String(row.id) === id)))} /></th><th rowSpan={2} className="border border-[#CBD5E1] p-2">성명</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">기숙사명</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">호실</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">입주날짜</th><th colSpan={2} className="border border-[#CBD5E1] p-2">관리비 납부현황</th><th colSpan={2} className="border border-[#CBD5E1] p-2">가스비 납부현황</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">비고 / 이상유무</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">관리</th></tr><tr><th className="border border-[#CBD5E1] p-2">납부일</th><th className="border border-[#CBD5E1] p-2">납부자</th><th className="border border-[#CBD5E1] p-2">납부일</th><th className="border border-[#CBD5E1] p-2">납부자</th></tr></thead>
                   <tbody>{filteredDormitoryRows.map((row, index) => {
                     const person = users.find((u) => String(u.id) === String(row.user_id));
                     const previous = filteredDormitoryRows[index - 1];
                     const sameGroupAsPrevious = previous && previous.dormitory_name === row.dormitory_name && previous.room === row.room;
                     const sameGroupCount = filteredDormitoryRows.slice(index).findIndex((candidate) => candidate.dormitory_name !== row.dormitory_name || candidate.room !== row.room);
                     const rowSpan = sameGroupAsPrevious ? 0 : (sameGroupCount === -1 ? filteredDormitoryRows.length - index : sameGroupCount);
-                    const editorName = (id: string) => users.find((u) => String(u.id) === String(id))?.name || '-';
+                    const roomRows = filteredDormitoryRows.filter((candidate) => candidate.dormitory_name === row.dormitory_name && String(candidate.room || '').trim() === String(row.room || '').trim());
+                    const managementRow = roomRows.find((candidate) => candidate.management_fee_date) || row;
+                    const gasRow = roomRows.find((candidate) => candidate.gas_fee_date) || row;
+                    const editorName = (id: string) => users.find((u) => String(u.id) === String(id))?.name || (String(currentUser?.id || '') === String(id || '') ? currentUser?.name : '') || '확인 필요';
                     return <tr key={row.id} className="hover:bg-blue-50/40">
                       <td className="border border-[#E2E5E9] p-2"><input type="checkbox" aria-label={`${person?.name || row.user_id} 선택`} checked={selectedDormitoryIds.includes(String(row.id))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? [...prev, String(row.id)] : prev.filter((id) => id !== String(row.id)))} /></td><td className="border border-[#E2E5E9] p-2">{person?.name || row.user_id}</td>
                       {!sameGroupAsPrevious && <><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2 font-semibold">{row.dormitory_name || '-'}</td><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{row.room || '-'}</td></>}
                       <td className="border border-[#E2E5E9] p-2">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
-                      <td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? (person?.name || editorName(row.management_fee_updated_by)) : '미납'}</td>
-                      <td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? (person?.name || editorName(row.gas_fee_updated_by)) : '미납'}</td>
+                      {!sameGroupAsPrevious && <>
+                        <td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{managementRow.management_fee_date ? String(managementRow.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{managementRow.management_fee_date ? editorName(managementRow.management_fee_updated_by) : '미납'}</td>
+                        <td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{gasRow.gas_fee_date ? String(gasRow.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{gasRow.gas_fee_date ? editorName(gasRow.gas_fee_updated_by) : '미납'}</td>
+                      </>}
                       <td className="max-w-[220px] whitespace-pre-wrap break-words border border-[#E2E5E9] p-2 text-left">{row.condition_note || '-'}</td>
                       <td className="border border-[#E2E5E9] p-2"><div className="flex justify-center gap-1">{canEditDormitoryRecord(row) && <><button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 font-bold text-emerald-700">공과금</button><button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 font-bold text-[#243B5A]">수정</button><button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 font-bold text-red-600">삭제</button></>}</div></td>
                     </tr>;
