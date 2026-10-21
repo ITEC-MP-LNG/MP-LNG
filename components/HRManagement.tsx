@@ -60,7 +60,7 @@ interface HRManagementProps {
   isAdmin?: boolean;
   currentUserRole?: string;
   currentUser?: any;
-  initialAction?: 'self-edit' | 'my-team' | null;
+  initialAction?: 'self-edit' | 'my-team' | 'dormitory' | null;
   onInitialActionHandled?: () => void;
   onCurrentUserStatusChange?: (status: '근무중' | '휴무') => void;
 }
@@ -1096,6 +1096,10 @@ export default function HRManagement({
       const myDepartment = String(currentUser?.department || '').trim();
       setActiveTab('ORG');
       setSubGroupType('DEPT');
+      } else if (initialAction === 'dormitory') { // 👈 이 부분을 추가해주세요!
+      setActiveTab('ORG');
+      setSubGroupType('DORM');
+    }
       if (myDepartment && users.some((user) => (user.department || '미지정 파트') === myDepartment)) {
         setSelectedSubCategory(myDepartment);
         setSearchTerm('');
