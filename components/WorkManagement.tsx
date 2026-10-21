@@ -97,6 +97,11 @@ function isFormerEmployee(user: AppUser): boolean {
   return values.some(value => /퇴사|퇴직|퇴사자|퇴직자/.test(value));
 }
 
+function isOperationsOrManagement(user: AppUser): boolean {
+  const department = String(user.department || '').replace(/\s/g, '').toLowerCase();
+  return department.includes('운영') || department.includes('관리');
+}
+
 
 type VehicleRow = {
   id: string;
@@ -179,8 +184,8 @@ function VehicleCalendarPicker({ value, onChange, label }: { value: string; onCh
   return <div ref={rootRef} className="relative w-full min-w-0 space-y-1">
     <label className="block text-[11px] font-semibold text-[#1F2937]">{label}</label>
     <div className="flex min-w-0 items-center gap-1">
-      <input type="text" inputMode="numeric" value={inputText} onChange={e=>setInputText(e.target.value)} onBlur={commitTypedDate} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();commitTypedDate();}}} placeholder="YYYY-MM-DD 직접 입력" aria-label={`${label} 날짜 직접 입력`} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white" />
-      <button type="button" onClick={()=>{if(!isOpen){const current=selected?new Date(Number(selected.slice(0,4)),Number(selected.slice(5,7))-1,Number(selected.slice(8,10))):new Date();setViewYear(current.getFullYear());setViewMonth(current.getMonth());}setIsOpen(open=>!open);}} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-[#64748B] hover:bg-[#EEF2F7]" aria-label={`${label} 달력 열기`} aria-haspopup="dialog" aria-expanded={isOpen}><CalendarIcon className="h-4 w-4" /></button>
+      <input type="text" inputMode="numeric" value={inputText} onChange={e=>setInputText(e.target.value)} onBlur={commitTypedDate} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();commitTypedDate();}}} placeholder="YYYY-MM-DD 직접 입력" aria-label={`${label} 날짜 직접 입력`} className="min-w-0 flex-1 px-3 py-1.5 border rounded-lg text-xs font-mono bg-white text-[#1F2937] outline-none focus:border-[#243B5A]" />
+      <button type="button" onClick={()=>{if(!isOpen){const current=selected?new Date(Number(selected.slice(0,4)),Number(selected.slice(5,7))-1,Number(selected.slice(8,10))):new Date();setViewYear(current.getFullYear());setViewMonth(current.getMonth());}setIsOpen(open=>!open);}} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8]" aria-label={`${label} 달력 열기`} aria-haspopup="dialog" aria-expanded={isOpen}><CalendarIcon className="h-4 w-4" /></button>
     </div>
     {isOpen && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4" onClick={()=>setIsOpen(false)}>
       <div role="dialog" aria-modal="true" aria-label={`${label} 날짜 선택`} onClick={e=>e.stopPropagation()} className="relative max-h-[calc(100dvh-32px)] w-[min(320px,calc(100vw-32px))] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 text-[#1F2937] shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
@@ -419,7 +424,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
     {usageModalOpen && vehicles.length > 0 && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setUsageModalOpen(false)}>
       <form onSubmit={saveUsage} onClick={e=>e.stopPropagation()} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-1 text-[11px] text-[#64748B]">사용자 {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">차량번호 선택</label><select value={activeVehicleId} onChange={e=>setActiveVehicleId(e.target.value)} required className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:bg-white"><option value="">차량을 선택해주세요</option>{vehicles.map(vehicle=><option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}</select></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">차량번호 선택</label><select value={activeVehicleId} onChange={e=>setActiveVehicleId(e.target.value)} required className="w-full px-3 py-1.5 border rounded-lg text-xs font-bold text-[#243B5A] bg-white outline-none focus:border-[#243B5A]"><option value="">차량을 선택해주세요</option>{vehicles.map(vehicle=><option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}</select></div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <VehicleCalendarPicker
             label="사용 날짜"
@@ -439,13 +444,13 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
                 return { ...p, used_at: `${date}T${e.target.value}` };
               })}
               required
-              className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white"
+              className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono bg-white text-[#1F2937] outline-none focus:border-[#243B5A]"
             />
           </div>
         </div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"/></div>
         <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#E2E5E9] bg-[#FCFCFD] p-3 sm:grid-cols-2"><VehicleCalendarPicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><VehicleCalendarPicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-[#64748B] sm:col-span-2">기간은 선택 입력입니다. 사용목적에 정비 또는 수리가 포함되면 반드시 입력해야 합니다.</p></div>
         <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving?'저장 중...':'사용 등록'}</button></div>
       </form>
@@ -455,7 +460,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
       <form onSubmit={saveParking} onClick={e=>e.stopPropagation()} className="w-full max-w-md space-y-4 rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">주차 상태 및 비고</h3><p className="mt-1 text-[11px] text-[#64748B]">{parkingRow.vehicle_number} · {parkingRow.user_name}</p></div><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
         <div className="rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-3 text-xs"><span className="font-bold text-[#243B5A]">사용 일시: </span>{new Date(parkingRow.used_at).toLocaleString('ko-KR')}</div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">주차 비고</label><textarea rows={4} value={parkingRemarks} onChange={e=>setParkingRemarks(e.target.value)} placeholder="주차 위치, 차량 상태 등 비고를 입력해주세요." className="w-full resize-y rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:bg-white"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">주차 비고</label><textarea rows={4} value={parkingRemarks} onChange={e=>setParkingRemarks(e.target.value)} placeholder="주차 위치, 차량 상태 등 비고를 입력해주세요." className="w-full resize-y px-3 py-1.5 border rounded-lg text-xs bg-white outline-none focus:border-[#243B5A]"/></div>
         <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold">취소</button><button type="submit" disabled={saving || !canEditParking(parkingRow)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving?'저장 중...':'주차 비고 저장'}</button></div>
       </form>
     </div>}
@@ -761,6 +766,51 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   useEffect(() => {
     fetchTasksRef.current = fetchTasks;
   }, [fetchTasks]);
+
+  // 이미 조회한 app_users/tasks 데이터로 계산해 추가 Supabase 호출을 발생시키지 않습니다.
+  const activeUsers = useMemo(() => appUsers.filter(u => !isFormerEmployee(u)), [appUsers]);
+  const workingUsers = useMemo(() => activeUsers.filter(u => u.work_status !== '휴무'), [activeUsers]);
+  const offUsers = useMemo(() => activeUsers.filter(u => u.work_status === '휴무'), [activeUsers]);
+  const activeCabinTasks = useMemo(
+    () => tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED'),
+    [tasks]
+  );
+  const cabinDayWorkers = useMemo(
+    () => Array.from(new Set(activeCabinTasks.flatMap(t => t.day_workers || []).map(n => n.trim()).filter(Boolean))),
+    [activeCabinTasks]
+  );
+  const cabinNightWorkers = useMemo(
+    () => Array.from(new Set(activeCabinTasks.flatMap(t => t.night_workers || []).map(n => n.trim()).filter(Boolean))),
+    [activeCabinTasks]
+  );
+  const cabinAllSet = useMemo(
+    () => new Set([...cabinDayWorkers, ...cabinNightWorkers].map(n => n.trim().toLowerCase())),
+    [cabinDayWorkers, cabinNightWorkers]
+  );
+  const processWorkers = useMemo(
+    () => workingUsers.filter(u =>
+      !cabinAllSet.has((u.name || '').trim().toLowerCase()) &&
+      !isOperationsOrManagement(u)
+    ),
+    [workingUsers, cabinAllSet]
+  );
+  const unassignedWorkersForForm = useMemo(() => {
+    if (formData.task_type !== 'DAILY') return [];
+    const date = formData.start_date;
+    const slot = formatShortTimeSlot(formData.time_slot);
+    const occupied = new Set<string>();
+    tasks.forEach(task => {
+      if (task.task_type !== 'DAILY' || task.status === 'COMPLETED' || task.start_date !== date) return;
+      if (editingTask && task.id === editingTask.id) return;
+      const existingSlot = formatShortTimeSlot(task.time_slot);
+      if (!(slot === '종일' || existingSlot === '종일' || slot === existingSlot)) return;
+      (task.assigned_names || []).forEach(name => occupied.add(name.trim().toLowerCase()));
+    });
+    return processWorkers.map(user => user.name.trim()).filter(name =>
+      name && !occupied.has(name.toLowerCase()) &&
+      !assignedList.some(assigned => assigned.trim().toLowerCase() === name.toLowerCase())
+    );
+  }, [formData.task_type, formData.start_date, formData.time_slot, tasks, editingTask, processWorkers, assignedList]);
 
   useEffect(() => {
     fetchAppUsers();
@@ -1120,15 +1170,17 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     
     // 휴무 인원 검증
     const foundUser = appUsers.find(u => u.name?.trim().toLowerCase() === name.toLowerCase());
-    if (foundUser && foundUser.work_status === '휴무') {
-      showCustomAlert('업무 등록 제한', `${foundUser.name} 휴무입니다.`);
+    if (foundUser && foundUser.work_status === '휴무' &&
+        (formData.task_type !== 'DAILY' || formData.start_date === formatDateToYYYYMMDD(new Date()))) {
+      showCustomAlert('업무 등록 제한', `${foundUser.name} 오늘 휴무입니다.`);
       return;
     }
 
     // 일일 업무 등록 시 CABIN에 등록된 인원인지 체크
     if (formData.task_type === 'DAILY' && target === 'ASSIGNED') {
       for (const t of tasks) {
-        if (t.task_type === 'CABIN' && t.status !== 'COMPLETED') {
+        const cabinDateMatches = formData.start_date >= t.start_date && formData.start_date <= (t.end_date || t.start_date);
+        if (t.task_type === 'CABIN' && t.status !== 'COMPLETED' && cabinDateMatches) {
           const isDay = (t.day_workers || []).some(w => w.trim().toLowerCase() === name.toLowerCase());
           const isNight = (t.night_workers || []).some(w => w.trim().toLowerCase() === name.toLowerCase());
           if (isDay) {
@@ -1147,7 +1199,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (target === 'DAY' && !dayWorkerList.includes(name)) setDayWorkerList([...dayWorkerList, name]);
     if (target === 'NIGHT' && !nightWorkerList.includes(name)) setNightWorkerList([...nightWorkerList, name]);
     setSingleWorkerInput('');
-  }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList, appUsers, showCustomAlert, formData.task_type, tasks]);
+  }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList, appUsers, showCustomAlert, formData.task_type, formData.start_date, tasks]);
 
   const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
@@ -1183,7 +1235,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       // 일일 업무 등록 시 CABIN 배치 여부 검증
       if (formData.task_type === 'DAILY') {
         for (const t of tasks) {
-          if (t.task_type === 'CABIN' && t.status !== 'COMPLETED' && (!editingTask || t.id !== editingTask.id)) {
+          const cabinDateMatches = formData.start_date >= t.start_date && formData.start_date <= (t.end_date || t.start_date);
+          if (t.task_type === 'CABIN' && t.status !== 'COMPLETED' && cabinDateMatches && (!editingTask || t.id !== editingTask.id)) {
             const isDay = (t.day_workers || []).some(w => w.trim().toLowerCase() === wName.toLowerCase());
             const isNight = (t.night_workers || []).some(w => w.trim().toLowerCase() === wName.toLowerCase());
             if (isDay) {
@@ -1738,19 +1791,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <>
         {/* 인원 현황 요약 배너 */}
         {(() => {
-          const activeUsers = appUsers.filter(u => !isFormerEmployee(u));
-          const workingUsers = activeUsers.filter(u => u.work_status !== '휴무');
-          const offUsers = appUsers.filter(u => u.work_status === '휴무');
-          
-          // 현재 활성화된(완료되지 않은) Cabin 업무들에서 주간/야간 인원 수집
-          const activeCabinTasks = tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED');
-          const cabinDayWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.day_workers || [])));
-          const cabinNightWorkers = Array.from(new Set(activeCabinTasks.flatMap(t => t.night_workers || [])));
-          
-          // 공정 인원: 근무중 인원 중 Cabin 주간/야간에 속하지 않는 인원
-          const cabinAllSet = new Set([...cabinDayWorkers, ...cabinNightWorkers].map(n => n.trim().toLowerCase()));
-          const processWorkers = workingUsers.filter(u => !cabinAllSet.has((u.name || '').trim().toLowerCase()));
-
           return (
             <div className="bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl p-2.5 space-y-2 text-xs shadow-2xs">
               <div className="flex items-center space-x-3 flex-wrap gap-y-1">
@@ -2813,6 +2853,20 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                             ))
                           )}
                         </div>
+                        {formData.task_type === 'DAILY' && (
+                          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 p-2.5">
+                            <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-900">
+                              <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                              {formatShortTimeSlot(formData.time_slot)} 미배정 공정인원 ({unassignedWorkersForForm.length}명)
+                            </div>
+                            <p className="mt-1 text-[10px] leading-relaxed text-amber-800">
+                              선택한 날짜·시간대에 다른 일일업무로 배정되지 않은 공정인원입니다. 운영·관리 파트, 휴무자 및 CABIN 주간·야간 인원은 제외합니다. 종일 업무는 오전·오후 모두 배정된 것으로 계산합니다.
+                            </p>
+                            <div className="mt-1.5 text-[11px] leading-relaxed text-[#1F2937] break-words">
+                              {unassignedWorkersForForm.length > 0 ? unassignedWorkersForForm.join(', ') : '미배정 공정인원이 없습니다.'}
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </>
