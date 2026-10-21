@@ -55,7 +55,6 @@ import {
   DialogFooter 
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Card } from '@/components/ui/card';
 
 function calculateCareerDetails(startDateStr?: string) {
   if (!startDateStr) return null;
@@ -565,6 +564,8 @@ export default function MainPage() {
     { id: 'HR', label: '인사 관리', icon: Users },
   ];
 
+  const isWorking = currentUser.work_status !== '휴무';
+
   return (
     <div className="min-h-screen bg-background text-foreground flex flex-col pb-20 md:pb-0 font-sans relative">
       <header className="bg-card border-b sticky top-0 z-30 shadow-sm">
@@ -613,57 +614,86 @@ export default function MainPage() {
               <Bell className="h-4 w-4" />
             </Button>
 
-            <div className="relative shrink-0">
+            {/* 로그인 계정 및 상태 드롭다운 */}
+            <div className="relative shrink-0 z-50">
               <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
-                <DropdownMenuTrigger className="flex items-center space-x-1.5 sm:space-x-2 bg-muted px-2 sm:px-3 py-1.5 h-auto rounded-lg max-w-[170px] sm:max-w-none hover:bg-muted/80 cursor-pointer outline-none">
+                <DropdownMenuTrigger className="flex items-center space-x-1.5 sm:space-x-2 bg-muted/80 px-2.5 sm:px-3 py-1.5 h-auto rounded-lg max-w-[170px] sm:max-w-none hover:bg-muted cursor-pointer outline-none border border-border/50 shadow-xs transition-colors">
                   <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary shrink-0" />
-                  <span className="text-xs font-semibold truncate">{currentUser.name}</span>
-                  <Badge variant={currentUser.work_status === '휴무' ? 'secondary' : 'default'} className="text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 shrink-0">
-                    {currentUser.work_status === '휴무' ? '휴무' : '근무중'}
+                  <span className="text-xs font-bold truncate">{currentUser.name}</span>
+                  
+                  {/* 근무 상태 뱃지 (근무중: 녹색, 휴무: 주황색) */}
+                  <Badge 
+                    variant="outline" 
+                    className={`text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 shrink-0 font-bold border ${
+                      isWorking 
+                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30' 
+                        : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                    }`}
+                  >
+                    {isWorking ? '● 근무중' : '● 휴무'}
                   </Badge>
+
                   <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
                 </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="w-52 p-1.5">
-                  <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-muted-foreground">내 근무 상태 변경</div>
-                  <div className="grid grid-cols-2 gap-1 px-1 pb-2">
+
+                {/* 드롭다운 메뉴 (완전 불투명 & 선명한 노출) */}
+                <DropdownMenuContent align="end" className="w-56 p-2 bg-popover/100 border border-border shadow-xl rounded-xl z-50">
+                  <div className="px-2 pt-1 pb-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
+                    내 근무 상태 변경
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-1.5 px-0.5 pb-2">
                     <Button 
                       type="button" 
-                      variant={currentUser.work_status !== '휴무' ? 'default' : 'outline'}
+                      variant={isWorking ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => handleOwnWorkStatusChange('근무중')} 
-                      className="h-10 text-[11px] font-bold"
+                      className={`h-9 text-[11px] font-bold cursor-pointer ${
+                        isWorking ? 'bg-emerald-600 hover:bg-emerald-700 text-white' : ''
+                      }`}
                     >
                       ● 근무중
                     </Button>
                     <Button 
                       type="button" 
-                      variant={currentUser.work_status === '휴무' ? 'default' : 'outline'}
+                      variant={!isWorking ? 'default' : 'outline'}
                       size="sm"
                       onClick={() => handleOwnWorkStatusChange('휴무')} 
-                      className="h-10 text-[11px] font-bold"
+                      className={`h-9 text-[11px] font-bold cursor-pointer ${
+                        !isWorking ? 'bg-amber-600 hover:bg-amber-700 text-white' : ''
+                      }`}
                     >
                       ● 휴무
                     </Button>
                   </div>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
-                    <LogOut className="h-4 w-4 mr-2" /> 로그아웃
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => openHrAction('self-edit')} className="cursor-pointer">
+
+                  <DropdownMenuSeparator className="my-1" />
+
+                  <DropdownMenuItem onClick={() => openHrAction('self-edit')} className="cursor-pointer py-2 font-medium">
                     <UserRoundPen className="h-4 w-4 mr-2 text-primary" /> 개인정보 수정
                   </DropdownMenuItem>
                   
                   {isDormitoryUser && (
-                    <DropdownMenuItem onClick={() => openHrAction('dormitory')} className="cursor-pointer">
+                    <DropdownMenuItem onClick={() => openHrAction('dormitory')} className="cursor-pointer py-2 font-medium">
                       <Home className="h-4 w-4 mr-2 text-primary" /> 공과금 납입 (기숙사)
                     </DropdownMenuItem>
                   )}
 
                   {String((currentUser as any).job_title || '').includes('팀장') && (
-                    <DropdownMenuItem onClick={() => openHrAction('my-team')} className="cursor-pointer">
+                    <DropdownMenuItem onClick={() => openHrAction('my-team')} className="cursor-pointer py-2 font-medium">
                       <Users className="h-4 w-4 mr-2 text-primary" /> 팀원 관리
                     </DropdownMenuItem>
                   )}
+
+                  <DropdownMenuSeparator className="my-1" />
+
+                  {/* 로그아웃 버튼 (빨간색 칩 형태로 강조) */}
+                  <DropdownMenuItem 
+                    onClick={handleLogout} 
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90 focus:bg-destructive focus:text-destructive-foreground cursor-pointer font-bold py-2 rounded-md transition-colors mt-1"
+                  >
+                    <LogOut className="h-4 w-4 mr-2" /> 로그아웃
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
@@ -672,7 +702,8 @@ export default function MainPage() {
       </header>
 
       <div className="flex-1 max-w-full w-full mx-auto flex">
-        <aside className="hidden md:block w-56 bg-card border-r p-3 space-y-1 shrink-0">
+        {/* PC 전용 좌측 사이드바 (현재 상태 시각성 대폭 강화) */}
+        <aside className="hidden md:block w-56 bg-card border-r p-3 space-y-1.5 shrink-0">
           <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
             통합 현장관리 Navigation
           </div>
@@ -684,22 +715,29 @@ export default function MainPage() {
                 key={item.id}
                 variant={isActive ? 'default' : 'ghost'}
                 onClick={() => { setMainTab(item.id as any); markNavigationAsRead(item.id); }}
-                className={`w-full justify-start space-x-2.5 px-3 py-2.5 h-auto text-xs font-semibold cursor-pointer ${
+                className={`w-full justify-start space-x-2.5 px-3.5 py-2.5 h-10 text-xs cursor-pointer transition-all ${
                   isActive
-                    ? 'shadow-sm font-bold'
-                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+                    ? 'bg-primary text-primary-foreground font-bold shadow-md hover:bg-primary/90'
+                    : 'text-muted-foreground font-medium hover:bg-muted hover:text-foreground'
                 }`}
               >
                 <Icon className={`h-4 w-4 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
-                <span className="flex items-center gap-1.5">
+                <span className="flex items-center justify-between w-full">
                   <span>{item.label}</span>
-                  {navNewFlags[item.id] && <span className="text-[9px] font-black text-destructive leading-none">N</span>}
+                  {navNewFlags[item.id] && (
+                    <span className={`text-[9px] font-black px-1 rounded-full ${
+                      isActive ? 'bg-destructive text-white' : 'text-destructive'
+                    }`}>
+                      N
+                    </span>
+                  )}
                 </span>
               </Button>
             );
           })}
         </aside>
 
+        {/* 메인 콘텐츠 영역 */}
         <main className="flex-1 p-0 overflow-y-auto min-w-0">
           {mainTab === 'NOTICE' && (
             <NoticeBoard
@@ -769,7 +807,8 @@ export default function MainPage() {
         </main>
       </div>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-40 px-1 py-1.5 flex justify-between items-center shadow-lg">
+      {/* 모바일 전용 하단 네비게이션바 (현재 상태 배경색 및 하이라이트 부여) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-40 px-1 py-1.5 flex justify-between items-center shadow-lg backdrop-blur-md">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = mainTab === item.id;
@@ -777,13 +816,15 @@ export default function MainPage() {
             <button
               key={item.id}
               onClick={() => { setMainTab(item.id as any); markNavigationAsRead(item.id); }}
-              className={`flex-1 flex flex-col items-center justify-center py-1.5 px-0.5 rounded-lg transition min-w-0 ${
-                isActive ? 'text-primary font-bold' : 'text-muted-foreground font-medium'
+              className={`flex-1 flex flex-col items-center justify-center py-1.5 px-0.5 rounded-xl transition-all min-w-0 ${
+                isActive 
+                  ? 'bg-primary/15 text-primary font-extrabold shadow-xs' 
+                  : 'text-muted-foreground font-medium hover:bg-muted/50'
               }`}
             >
-              <Icon className={`h-5 w-5 mb-1 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
+              <Icon className={`h-5 w-5 mb-0.5 shrink-0 transition-transform ${isActive ? 'text-primary scale-110' : 'text-muted-foreground'}`} />
               <span className="text-[10px] sm:text-[11px] leading-tight tracking-tight truncate w-full text-center">
-                <span className="flex items-center justify-center gap-1">
+                <span className="flex items-center justify-center gap-0.5">
                   <span>{item.label}</span>
                   {navNewFlags[item.id] && <span className="text-[8px] font-black text-destructive leading-none">N</span>}
                 </span>
