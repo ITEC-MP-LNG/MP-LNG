@@ -920,7 +920,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }
     } catch (err) {
       console.error('tasks 로드 실패:', err);
-    } font-mono finally {
+    } finally {
       lastTasksFetchCompletedAtRef.current = Date.now();
       tasksFetchInFlightRef.current = false;
       setIsLoading(false);
