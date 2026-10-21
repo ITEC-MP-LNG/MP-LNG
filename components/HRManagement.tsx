@@ -1120,12 +1120,25 @@ export default function HRManagement({
         setSelectedSubCategory('ALL');
         showNotice('소속 파트를 확인하지 못해 전체 파트 조직도를 표시합니다.', 'warning');
       }
-    } else if (initialAction === 'dormitory') {
+   } else if (initialAction === 'dormitory') {
+      // 기숙사 현황 탭으로 이동 후 본인 레코드의 공과금 등록 창 바로 띄우기
       setActiveTab('ORG');
       setSubGroupType('DORM');
+      
+      // 약간의 지연 후 본인 기숙사 레코드 탐색 및 공과금 모달 오픈
+      setTimeout(() => {
+        const myDormRow = dormitoryRows.find(
+          (row) => String(row.user_id) === String(currentUser?.id)
+        );
+        if (myDormRow) {
+          openUtilityEditor(myDormRow);
+        } else {
+          showNotice('등록된 기숙사 정보가 없습니다. 먼저 기숙사 현황을 등록해주세요.', 'warning');
+        }
+      }, 300);
     }
     onInitialActionHandled?.();
-  }, [initialAction, loading, users, currentUser, onInitialActionHandled]);
+  }, [initialAction, loading, users, currentUser, dormitoryRows, onInitialActionHandled]);
 
   useEffect(() => {
     let cancelled = false;
