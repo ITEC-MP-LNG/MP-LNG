@@ -184,7 +184,7 @@ function VehicleCalendarPicker({ value, onChange, label }: { value: string; onCh
   return <div ref={rootRef} className="relative w-full min-w-0 space-y-1">
     <label className="block text-[11px] font-semibold text-[#1F2937]">{label}</label>
     <div className="flex min-w-0 items-center gap-1">
-      <input type="text" inputMode="numeric" value={inputText} onChange={e=>setInputText(e.target.value)} onBlur={commitTypedDate} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();commitTypedDate();}}} placeholder="YYYY-MM-DD 직접 입력" aria-label={`${label} 날짜 직접 입력`} className="min-w-0 flex-1 px-3 py-1.5 border rounded-lg text-xs font-mono bg-white text-[#1F2937] outline-none focus:border-[#243B5A]" />
+      <input type="text" inputMode="numeric" value={inputText} onChange={e=>setInputText(e.target.value)} onBlur={commitTypedDate} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();commitTypedDate();}}} placeholder="YYYY-MM-DD 직접 입력" aria-label={`${label} 날짜 직접 입력`} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
       <button type="button" onClick={()=>{if(!isOpen){const current=selected?new Date(Number(selected.slice(0,4)),Number(selected.slice(5,7))-1,Number(selected.slice(8,10))):new Date();setViewYear(current.getFullYear());setViewMonth(current.getMonth());}setIsOpen(open=>!open);}} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8]" aria-label={`${label} 달력 열기`} aria-haspopup="dialog" aria-expanded={isOpen}><CalendarIcon className="h-4 w-4" /></button>
     </div>
     {isOpen && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4" onClick={()=>setIsOpen(false)}>
@@ -424,7 +424,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
     {usageModalOpen && vehicles.length > 0 && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setUsageModalOpen(false)}>
       <form onSubmit={saveUsage} onClick={e=>e.stopPropagation()} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-1 text-[11px] text-[#64748B]">사용자 {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">차량번호 선택</label><select value={activeVehicleId} onChange={e=>setActiveVehicleId(e.target.value)} required className="w-full px-3 py-1.5 border rounded-lg text-xs font-bold text-[#243B5A] bg-white outline-none focus:border-[#243B5A]"><option value="">차량을 선택해주세요</option>{vehicles.map(vehicle=><option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}</select></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">차량번호 선택</label><select value={activeVehicleId} onChange={e=>setActiveVehicleId(e.target.value)} required className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"><option value="">차량을 선택해주세요</option>{vehicles.map(vehicle=><option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}</select></div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <VehicleCalendarPicker
             label="사용 날짜"
@@ -444,13 +444,13 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
                 return { ...p, used_at: `${date}T${e.target.value}` };
               })}
               required
-              className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono bg-white text-[#1F2937] outline-none focus:border-[#243B5A]"
+              className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"
             />
           </div>
         </div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"/></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"/></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"/></div>
         <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#E2E5E9] bg-[#FCFCFD] p-3 sm:grid-cols-2"><VehicleCalendarPicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><VehicleCalendarPicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-[#64748B] sm:col-span-2">기간은 선택 입력입니다. 사용목적에 정비 또는 수리가 포함되면 반드시 입력해야 합니다.</p></div>
         <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving?'저장 중...':'사용 등록'}</button></div>
       </form>
@@ -472,6 +472,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [tasks, setTasks] = useState<Task[]>([]);
   const [vessels, setVessels] = useState<CabinVessel[]>([]);
   const [presetTeams, setPresetTeams] = useState<PresetTeam[]>([]);
+  const [selectedPresetTeamId, setSelectedPresetTeamId] = useState('');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
   const [departments, setDepartments] = useState<string[]>([]);
   const [validUserNames, setValidUserNames] = useState<string[]>([]);
@@ -1165,41 +1166,92 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [canManageTask, vessels, showCustomAlert]);
 
   const handleAddWorkerSingle = useCallback((target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
-    if (!singleWorkerInput.trim()) return;
-    const name = singleWorkerInput.trim();
-    
-    // 휴무 인원 검증
-    const foundUser = appUsers.find(u => u.name?.trim().toLowerCase() === name.toLowerCase());
-    if (foundUser && foundUser.work_status === '휴무' &&
-        (formData.task_type !== 'DAILY' || formData.start_date === formatDateToYYYYMMDD(new Date()))) {
-      showCustomAlert('업무 등록 제한', `${foundUser.name} 오늘 휴무입니다.`);
-      return;
-    }
+    const names = Array.from(new Set(singleWorkerInput.split(',').map(name => name.trim()).filter(Boolean)));
+    if (names.length === 0) return;
 
-    // 일일 업무 등록 시 CABIN에 등록된 인원인지 체크
-    if (formData.task_type === 'DAILY' && target === 'ASSIGNED') {
-      for (const t of tasks) {
-        const cabinDateMatches = formData.start_date >= t.start_date && formData.start_date <= (t.end_date || t.start_date);
-        if (t.task_type === 'CABIN' && t.status !== 'COMPLETED' && cabinDateMatches) {
-          const isDay = (t.day_workers || []).some(w => w.trim().toLowerCase() === name.toLowerCase());
-          const isNight = (t.night_workers || []).some(w => w.trim().toLowerCase() === name.toLowerCase());
-          if (isDay) {
-            showCustomAlert('업무 등록 제한', `Cabin 주간 근무 입니다`);
-            return;
-          }
-          if (isNight) {
-            showCustomAlert('업무 등록 제한', `Cabin 야간 근무 입니다`);
-            return;
+    const accepted: string[] = [];
+    const rejected: string[] = [];
+    const today = formatDateToYYYYMMDD(new Date());
+
+    for (const name of names) {
+      const alreadyAdded = target === 'ASSIGNED' ? assignedList.includes(name)
+        : target === 'DAY' ? dayWorkerList.includes(name) : nightWorkerList.includes(name);
+      if (alreadyAdded) continue;
+
+      const foundUser = appUsers.find(u => u.name?.trim().toLowerCase() === name.toLowerCase());
+      if (foundUser && foundUser.work_status === '휴무' &&
+          (formData.task_type !== 'DAILY' || formData.start_date === today)) {
+        rejected.push(`${name}(휴무)`);
+        continue;
+      }
+
+      let cabinConflict = '';
+      if (formData.task_type === 'DAILY' && target === 'ASSIGNED') {
+        for (const task of tasks) {
+          const cabinDateMatches = formData.start_date >= task.start_date && formData.start_date <= (task.end_date || task.start_date);
+          if (task.task_type === 'CABIN' && task.status !== 'COMPLETED' && cabinDateMatches) {
+            const isDay = (task.day_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase());
+            const isNight = (task.night_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase());
+            if (isDay) { cabinConflict = 'CABIN 주간'; break; }
+            if (isNight) { cabinConflict = 'CABIN 야간'; break; }
           }
         }
       }
+      if (cabinConflict) {
+        rejected.push(`${name}(${cabinConflict})`);
+        continue;
+      }
+      accepted.push(name);
     }
 
-    if (target === 'ASSIGNED' && !assignedList.includes(name)) setAssignedList([...assignedList, name]);
-    if (target === 'DAY' && !dayWorkerList.includes(name)) setDayWorkerList([...dayWorkerList, name]);
-    if (target === 'NIGHT' && !nightWorkerList.includes(name)) setNightWorkerList([...nightWorkerList, name]);
+    if (target === 'ASSIGNED' && accepted.length) setAssignedList(prev => Array.from(new Set([...prev, ...accepted])));
+    if (target === 'DAY' && accepted.length) setDayWorkerList(prev => Array.from(new Set([...prev, ...accepted])));
+    if (target === 'NIGHT' && accepted.length) setNightWorkerList(prev => Array.from(new Set([...prev, ...accepted])));
     setSingleWorkerInput('');
+    if (rejected.length) showCustomAlert('일부 인원 제외', `다음 인원은 추가하지 않았습니다: ${rejected.join(', ')}`);
   }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList, appUsers, showCustomAlert, formData.task_type, formData.start_date, tasks]);
+
+  const handleAddPresetTeamToTask = useCallback(() => {
+    const team = presetTeams.find(item => item.id === selectedPresetTeamId);
+    if (!team) {
+      showCustomAlert('Team 선택', '추가할 Team을 먼저 선택해주세요.');
+      return;
+    }
+    const names = Array.from(new Set((team.members || []).flatMap(member => String(member || '').split(',')).map(name => name.trim()).filter(Boolean)));
+    if (!names.length) {
+      showCustomAlert('Team 인원 없음', `“${team.name}”에 등록된 구성원이 없습니다.`);
+      return;
+    }
+
+    const accepted: string[] = [];
+    const rejected: string[] = [];
+    const today = formatDateToYYYYMMDD(new Date());
+    for (const name of names) {
+      if (assignedList.some(existing => existing.toLowerCase() === name.toLowerCase()) || accepted.some(existing => existing.toLowerCase() === name.toLowerCase())) continue;
+      const foundUser = appUsers.find(user => user.name?.trim().toLowerCase() === name.toLowerCase());
+      if (foundUser?.work_status === '휴무' && (formData.task_type !== 'DAILY' || formData.start_date === today)) {
+        rejected.push(`${name}(휴무)`);
+        continue;
+      }
+      let cabinConflict = '';
+      if (formData.task_type === 'DAILY') {
+        for (const task of tasks) {
+          const cabinDateMatches = formData.start_date >= task.start_date && formData.start_date <= (task.end_date || task.start_date);
+          if (task.task_type === 'CABIN' && task.status !== 'COMPLETED' && cabinDateMatches) {
+            if ((task.day_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase())) { cabinConflict = 'CABIN 주간'; break; }
+            if ((task.night_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase())) { cabinConflict = 'CABIN 야간'; break; }
+          }
+        }
+      }
+      if (cabinConflict) { rejected.push(`${name}(${cabinConflict})`); continue; }
+      accepted.push(name);
+    }
+    if (accepted.length) setAssignedList(prev => Array.from(new Set([...prev, ...accepted])));
+    setSelectedPresetTeamId('');
+    if (rejected.length) showCustomAlert('일부 인원 제외', `Team “${team.name}”에서 다음 인원은 추가하지 않았습니다: ${rejected.join(', ')}`);
+    else if (accepted.length) showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${accepted.length}명이 추가되었습니다.`);
+    else showCustomAlert('추가할 인원 없음', '선택한 Team의 구성원은 이미 모두 추가되어 있습니다.');
+  }, [presetTeams, selectedPresetTeamId, assignedList, appUsers, formData.task_type, formData.start_date, tasks, showCustomAlert]);
 
   const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
@@ -2383,7 +2435,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   type="date"
                   value={importTargetDate}
                   onChange={(e) => { setImportTargetDate(e.target.value); setSelectedWeeklyIdsToImport([]); }}
-                  className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono bg-white"
+                  className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"
                 />
                 <p className="text-[10px] text-[#64748B]">선택한 날짜에 해당하는 주간업무 항목들을 일일업무로 등록합니다.</p>
               </div>
@@ -2620,7 +2672,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <button onClick={() => setIsVesselManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
               </div>
               <div className="flex space-x-2">
-                <input type="text" placeholder="신규 호선명 입력" value={newVesselName} onChange={(e) => setNewVesselName(e.target.value)} className="flex-1 px-3 py-1.5 border rounded-lg text-xs" />
+                <input type="text" placeholder="신규 호선명 입력" value={newVesselName} onChange={(e) => setNewVesselName(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
                 <button onClick={handleAddVessel} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg shrink-0">추가</button>
               </div>
               <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
@@ -2655,12 +2707,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
               <div className="space-y-2 bg-[#F5F6F8] p-3 rounded-lg border">
                 <span className="text-xs font-bold text-[#243B5A]">신규 Team 추가</span>
-                <input type="text" placeholder="Team 이름" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white" />
-                <select value={newTeamDept} onChange={(e) => handleSelectDepartmentUsersToNewTeam(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white">
+                <input type="text" placeholder="Team 이름" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
+                <select value={newTeamDept} onChange={(e) => handleSelectDepartmentUsersToNewTeam(e.target.value)} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10">
                   <option value="">-- 부서 선택 (인원 자동입력) --</option>
                   {departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
                 </select>
-                <input type="text" placeholder="구성원 이름 (쉼표 구분)" value={newTeamMembersText} onChange={(e) => setNewTeamMembersText(e.target.value)} className="w-full px-3 py-1.5 border rounded-lg text-xs bg-white" />
+                <input type="text" placeholder="구성원 이름 (쉼표 구분)" value={newTeamMembersText} onChange={(e) => setNewTeamMembersText(e.target.value)} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
                 <button onClick={handleAddTeam} className="w-full py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg">Team 생성</button>
               </div>
 
@@ -2758,7 +2810,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       placeholder="예) Cargo Hold #1"
                       value={formData.cargo_hold}
                       onChange={(e) => setFormData({ ...formData, cargo_hold: e.target.value })}
-                      className="w-full px-3 py-1.5 border rounded-lg text-xs"
+                      className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"
                     />
                   </div>
                 </div>
@@ -2767,16 +2819,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <>
                     <div>
                       <label className="block text-[11px] font-semibold mb-1">근무/점검명</label>
-                      <input type="text" required placeholder="예) 메인 캐빈 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs" />
+                      <input type="text" required placeholder="예) 메인 캐빈 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[11px] font-semibold mb-1">시작일</label>
-                        <input type="date" required value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono" />
+                        <input type="date" required value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
                       </div>
                       <div>
                         <label className="block text-[11px] font-semibold mb-1">종료일</label>
-                        <input type="date" required value={formData.end_date} onChange={(e) => setFormData({ ...formData, end_date: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono" />
+                        <input type="date" required value={formData.end_date} onChange={(e) => setFormData({ ...formData, end_date: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
                       </div>
                     </div>
                     <div className="space-y-3 rounded-lg border bg-slate-50 p-3">
@@ -2802,20 +2854,20 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <>
                     <div>
                       <label className="block text-[11px] font-semibold mb-1">업무명</label>
-                      <input type="text" required placeholder="예) 시설 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs" />
+                      <input type="text" required placeholder="예) 시설 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="block text-[11px] font-semibold mb-1">일자</label>
-                        <input type="date" required value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono" />
+                        <input type="date" required value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
                       </div>
                       <div>
                         <label className="block text-[11px] font-semibold mb-1">시간대</label>
                         <select
                           value={formData.time_slot}
                           onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
-                          className="w-full px-3 py-1.5 border rounded-lg text-xs font-mono bg-white"
+                          className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"
                         >
                           <option value="오전(08:00~12:00)">오전</option>
                           <option value="오후(13:00~17:00)">오후</option>
@@ -2833,13 +2885,20 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     ) : (
                       <div className="space-y-1.5">
-                        <div className="flex justify-between items-center">
+                        <div className="flex justify-between items-center gap-2">
                           <label className="block text-[11px] font-semibold">인원 추가</label>
-                          <button type="button" onClick={() => setIsTeamManagerOpen(true)} className="text-[10px] text-[#243B5A] hover:underline font-semibold">Team 관리</button>
+                          <button type="button" onClick={() => setIsTeamManagerOpen(true)} className="rounded-md px-2 py-1 text-[10px] text-[#243B5A] hover:bg-[#EEF2F7] font-semibold">Team 관리</button>
                         </div>
                         <div className="flex gap-2">
-                          <input type="text" placeholder="인원 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} className="flex-1 px-3 py-1.5 border rounded-lg text-xs" />
-                          <button type="button" onClick={() => handleAddWorkerSingle('ASSIGNED')} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg">추가</button>
+                          <input type="text" placeholder="이름 입력 (여러 명은 쉼표로 구분)" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('ASSIGNED'); } }} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
+                          <button type="button" onClick={() => handleAddWorkerSingle('ASSIGNED')} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#304D73]">추가</button>
+                        </div>
+                        <div className="flex gap-2 rounded-lg border border-[#E2E5E9] bg-[#FCFCFD] p-2">
+                          <select aria-label="추가할 Team 선택" value={selectedPresetTeamId} onChange={e => setSelectedPresetTeamId(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10">
+                            <option value="">{presetTeams.length ? 'Team 선택 후 인원 추가' : '등록된 Team이 없습니다'}</option>
+                            {presetTeams.map(team => <option key={team.id} value={team.id}>{team.name} ({team.members?.length || 0}명)</option>)}
+                          </select>
+                          <button type="button" onClick={handleAddPresetTeamToTask} className="shrink-0 rounded-lg border border-[#243B5A] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] transition hover:bg-[#EEF2F7]">Team 추가</button>
                         </div>
                         <div className="flex flex-wrap gap-1 pt-1">
                           {assignedList.length === 0 ? (
@@ -2874,7 +2933,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
                 <div>
                   <label className="block text-[11px] font-semibold mb-1">상세 설명 / 업무 내용</label>
-                  <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full px-3 py-1.5 border rounded-lg text-xs resize-none" />
+                  <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10 resize-none" />
                 </div>
 
                 <div className="flex justify-end space-x-2 pt-3 border-t">
