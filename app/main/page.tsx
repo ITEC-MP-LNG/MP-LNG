@@ -104,6 +104,9 @@ export default function MainPage() {
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [hrLaunchAction, setHrLaunchAction] = useState<'self-edit' | 'my-team' | 'dormitory' | null>(null);
 
+  // 기숙사 현황 등록 여부 상태 (Supabase 호출 최소화를 위해 로그인 직후 1회만 체크)
+  const [isDormitoryUser, setIsDormitoryUser] = useState(false);
+
   const [hasUnreadNotice, setHasUnreadNotice] = useState(false);
   const [navNewFlags, setNavNewFlags] = useState<Record<string, boolean>>({});
 
@@ -132,6 +135,27 @@ export default function MainPage() {
       }
     } catch (err) {
       console.error('공지 읽음 상태 확인 실패:', err);
+    }
+  }, []);
+
+  // 로그인한 사용자가 기숙사 현황에 등록되어 있는지 확인하는 함수 (Supabase 호출 최소화)
+  const checkDormitoryMembership = useCallback(async (userId: string) => {
+    if (!userId) return;
+    try {
+      const { data, error } = await supabase
+        .from('dormitory_records')
+        .select('id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (!error && data) {
+        setIsDormitoryUser(true);
+      } else {
+        setIsDormitoryUser(false);
+      }
+    } catch (err) {
+      console.error('기숙사 멤버십 확인 실패:', err);
+      setIsDormitoryUser(false);
     }
   }, []);
 
@@ -338,6 +362,7 @@ export default function MainPage() {
 
         const userKey = targetUser.id || targetUser.email || targetUser.name || 'guest';
         await checkUnreadNotices(String(userKey));
+        await checkDormitoryMembership(String(targetUser.id));
         await fetchTasks(targetUser);
 
       } catch (e) {
@@ -348,7 +373,7 @@ export default function MainPage() {
     };
 
     initAuthAndData();
-  }, [router, checkUnreadNotices, fetchTasks]);
+  }, [router, checkUnreadNotices, checkDormitoryMembership, fetchTasks]);
 
   useEffect(() => {
     if (!currentUser) return;
@@ -584,7 +609,14 @@ export default function MainPage() {
                   <div className="border-t border-[#E2E5E9] pt-1">
                     <button type="button" role="menuitem" onClick={handleLogout} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#DC2626] hover:bg-red-50"><LogOut className="h-4 w-4" /> 로그아웃</button>
                     <button type="button" role="menuitem" onClick={() => openHrAction('self-edit')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><UserRoundPen className="h-4 w-4 text-[#243B5A]" /> 개인정보 수정</button>
-                    <button type="button" role="menuitem" onClick={() => openHrAction('dormitory')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><Home className="h-4 w-4 text-[#243B5A]" /> 공과금 납입 (기숙사)</button>
+                    
+                    {/* 기숙사 현황에 등록된 인원에게만 조건부로 노출되는 공과금 납입 메뉴 */}
+                    {isDormitoryUser && (
+                      <button type="button" role="menuitem" onClick={() => openHrAction('dormitory')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]">
+                        <Home className="h-4 w-4 text-[#243B5A]" /> 공과금 납입 (기숙사)
+                      </button>
+                    )}
+
                     {String((currentUser as any).job_title || '').includes('팀장') && <button type="button" role="menuitem" onClick={() => openHrAction('my-team')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><Users className="h-4 w-4 text-[#243B5A]" /> 팀원 관리</button>}
                   </div>
                 </div>
