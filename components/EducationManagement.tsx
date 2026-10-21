@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Plus, 
   Pencil, 
@@ -16,7 +16,8 @@ import {
   Bell,
   AlertCircle,
   HelpCircle,
-  CheckCircle2
+  CheckCircle2,
+  ChevronDown
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { Education, EducationRecord } from '@/lib/types';
@@ -49,6 +50,248 @@ const getLocalDateString = (d: Date = new Date()) => {
   const day = String(d.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+const inputClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white transition-colors';
+
+/** cert.tsx 및 WorkManagement.tsx 스타일을 참조한 앱 공통 달력 날짜 선택 컴포넌트 */
+function CalendarDatePicker({
+  value,
+  onChange,
+  className = inputClass,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  label?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+    : new Date();
+  const [viewYear, setViewYear] = useState(initialDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+  const [inputText, setInputText] = useState(value || '');
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setInputText(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setIsOpen(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  const moveMonth = (amount: number) => {
+    const next = new Date(viewYear, viewMonth + amount, 1);
+    setViewYear(next.getFullYear());
+    setViewMonth(next.getMonth());
+  };
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const selected = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+  const today = getLocalDateString(new Date());
+
+  const commitTypedDate = () => {
+    const trimmed = inputText.trim();
+    if (!trimmed) {
+      onChange('');
+      setInputText('');
+      return;
+    }
+    const normalizedInput = /^\d{8}$/.test(trimmed)
+      ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
+      : trimmed;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizedInput);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const candidate = new Date(year, month - 1, day);
+      if (candidate.getFullYear() === year && candidate.getMonth() === month - 1 && candidate.getDate() === day) {
+        const normalized = `${match[1]}-${match[2]}-${match[3]}`;
+        onChange(normalized);
+        setInputText(normalized);
+        return;
+      }
+    }
+    setInputText(value || '');
+  };
+
+  const chooseDate = (day: number) => {
+    const nextValue = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(nextValue);
+    setInputText(nextValue);
+    setIsOpen(false);
+  };
+
+  return (
+    <div ref={rootRef} className="relative w-full min-w-0 space-y-1">
+      {label && <label className="block text-[11px] font-semibold text-[#1F2937]">{label}</label>}
+      <div className="flex min-w-0 items-center gap-1">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={inputText}
+          onChange={(event) => setInputText(event.target.value)}
+          onBlur={commitTypedDate}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitTypedDate(); } }}
+          placeholder="YYYY-MM-DD 직접 입력"
+          aria-label={label ? `${label} 날짜 직접 입력 (YYYY-MM-DD)` : "날짜 직접 입력 (YYYY-MM-DD)"}
+          className={`${className} min-w-0 flex-1`}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (!isOpen) {
+              const current = selected ? new Date(Number(selected.slice(0, 4)), Number(selected.slice(5, 7)) - 1, Number(selected.slice(8, 10))) : new Date();
+              setViewYear(current.getFullYear());
+              setViewMonth(current.getMonth());
+            }
+            setIsOpen(open => !open);
+          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8] transition-colors"
+          aria-label="달력 열기"
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+        >
+          <CalendarIcon className="h-4 w-4" />
+        </button>
+      </div>
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/25 p-4"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="날짜 선택"
+            onClick={(event) => event.stopPropagation()}
+            className="relative w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft className="h-4 w-4" /></button>
+              <div className="flex min-w-0 items-center gap-1">
+                <select
+                  aria-label="연도 선택"
+                  value={viewYear}
+                  onChange={(event) => setViewYear(Number(event.target.value))}
+                  className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map((year) => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="월 선택"
+                  value={viewMonth}
+                  onChange={(event) => setViewMonth(Number(event.target.value))}
+                  className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: 12 }, (_, month) => <option key={month} value={month}>{month + 1}월</option>)}
+                </select>
+              </div>
+              <button type="button" onClick={() => moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{day}</div>)}
+              {Array.from({ length: firstDay }, (_, index) => <div key={`empty-${index}`} />)}
+              {Array.from({ length: daysInMonth }, (_, index) => {
+                const day = index + 1;
+                const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = dateKey === selected;
+                const isToday = dateKey === today;
+                const weekday = new Date(viewYear, viewMonth, day).getDay();
+                return <button key={dateKey} type="button" onClick={() => chooseDate(day)} aria-pressed={isSelected} className={`h-9 rounded-lg text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white shadow-sm' : isToday ? 'border border-[#243B5A] font-bold text-[#243B5A]' : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`}`}>{day}</button>;
+              })}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
+              <button type="button" onClick={() => { const now = new Date(); const date = getLocalDateString(now); setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); onChange(date); setInputText(date); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">오늘</button>
+              <div className="flex items-center gap-1">
+                {selected && <button type="button" onClick={() => { onChange(''); setInputText(''); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">지우기</button>}
+                <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">닫기</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+type StyledSelectOption = { value: string; label: string };
+
+/** cert.tsx 및 WorkManagement.tsx 스타일을 참조한 앱 공통 드롭메뉴 (셀렉트 박스) 컴포넌트 */
+function AppStyledSelect({
+  value,
+  options,
+  onChange,
+  className = inputClass,
+  placeholder = '선택해주세요',
+  disabled = false,
+  ariaLabel = '항목 선택',
+}: {
+  value: string;
+  options: StyledSelectOption[];
+  onChange: (value: string) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [open]);
+  const selected = options.find(option => option.value === value);
+  return <>
+    <button
+      type="button"
+      className={`${className} flex items-center justify-between gap-2 text-left ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-[#243B5A]'}`}
+      onClick={() => { if (!disabled) setOpen(true); }}
+      aria-label={ariaLabel}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      disabled={disabled}
+    >
+      <span className={`min-w-0 flex-1 truncate ${selected ? 'text-[#1F2937]' : 'text-[#94A3B8]'}`}>{selected?.label || placeholder}</span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+    </button>
+    {open && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/25 p-4" onClick={() => setOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={event => event.stopPropagation()} className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3">
+          <span className="text-sm font-bold text-[#243B5A]">{ariaLabel}</span>
+          <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#E2E8F0]" aria-label="선택 메뉴 닫기"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="max-h-[60dvh] overflow-y-auto p-2">
+          {options.map(option => <button key={option.value} type="button" onClick={() => { onChange(option.value); setOpen(false); }} className={`mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}>
+            <span className="min-w-0 break-words">{option.label}</span>
+            {option.value === value && <span aria-hidden="true" className="shrink-0">✓</span>}
+          </button>)}
+          {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#64748B]">선택 가능한 항목이 없습니다.</p>}
+        </div>
+      </div>
+    </div>}
+  </>;
+}
 
 export default function EducationManagement({
   isAdmin,
@@ -799,31 +1042,23 @@ export default function EducationManagement({
             </h2>
             
             <form onSubmit={handleSubmitSchedule} className="space-y-3 text-xs">
-              {/* 등록 구분 선택 */}
+              {/* 등록 구분 선택 (AppStyledSelect 대체 적용) */}
               <div>
                 <label className="block font-semibold text-[#64748B] mb-1">등록 구분</label>
-                <div className="flex bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9]">
-                  <button
-                    type="button"
-                    disabled={!!editingScheduleId}
-                    onClick={() => setScheduleType('education')}
-                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition ${
-                      scheduleType === 'education' ? 'bg-[#243B5A] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
-                    } ${editingScheduleId ? 'opacity-80 cursor-not-allowed' : ''}`}
-                  >
-                    교육 일정
-                  </button>
-                  <button
-                    type="button"
-                    disabled={!!editingScheduleId}
-                    onClick={() => setScheduleType('event')}
-                    className={`flex-1 py-1.5 rounded-md text-xs font-semibold transition ${
-                      scheduleType === 'event' ? 'bg-[#0D9488] text-white shadow-xs' : 'text-[#64748B] hover:text-[#1F2937]'
-                    } ${editingScheduleId ? 'opacity-80 cursor-not-allowed' : ''}`}
-                  >
-                    EVENT 일정
-                  </button>
-                </div>
+                <AppStyledSelect
+                  ariaLabel="등록 구분"
+                  value={scheduleType}
+                  onChange={(val) => {
+                    if (!editingScheduleId) {
+                      setScheduleType(val as 'education' | 'event');
+                    }
+                  }}
+                  disabled={!!editingScheduleId}
+                  options={[
+                    { value: 'education', label: '교육 일정' },
+                    { value: 'event', label: 'EVENT 일정' }
+                  ]}
+                />
               </div>
 
               {/* 제목 */}
@@ -854,18 +1089,13 @@ export default function EducationManagement({
                 />
               </div>
 
-              {/* 날짜 및 시간 */}
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block font-semibold text-[#64748B] mb-1">일자</label>
-                  <input
-                    type="date"
-                    required
-                    value={formDate}
-                    onChange={e => setFormDate(e.target.value)}
-                    className="w-full bg-slate-50 border border-[#E2E5E9] rounded-lg p-2 text-xs text-[#1F2937]"
-                  />
-                </div>
+              {/* 날짜(CalendarDatePicker 적용) 및 시간 */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <CalendarDatePicker
+                  label="일자"
+                  value={formDate}
+                  onChange={date => setFormDate(date)}
+                />
                 <div>
                   <label className="block font-semibold text-[#64748B] mb-1">시간대</label>
                   <input
