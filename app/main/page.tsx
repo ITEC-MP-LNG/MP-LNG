@@ -614,17 +614,16 @@ export default function MainPage() {
             </Button>
 
             <div className="relative shrink-0">
-              <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
-                <DropdownMenuTrigger asChild>
-                  <Button variant="outline" className="flex items-center space-x-1.5 sm:space-x-2 bg-muted px-2 sm:px-3 py-1.5 h-auto rounded-lg max-w-[170px] sm:max-w-none hover:bg-muted/80">
-                    <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary shrink-0" />
-                    <span className="text-xs font-semibold truncate">{currentUser.name}</span>
-                    <Badge variant={currentUser.work_status === '휴무' ? 'secondary' : 'default'} className="text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 shrink-0">
-                      {currentUser.work_status === '휴무' ? '휴무' : '근무중'}
-                    </Badge>
-                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
-                  </Button>
-                </DropdownMenuTrigger>
+              <DropdownMenuTrigger className="...">
+  <div className="flex items-center space-x-1.5 sm:space-x-2 bg-muted px-2 sm:px-3 py-1.5 h-auto rounded-lg max-w-[170px] sm:max-w-none hover:bg-muted/80 cursor-pointer">
+    <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary shrink-0" />
+    <span className="text-xs font-semibold truncate">{currentUser.name}</span>
+    <Badge variant={currentUser.work_status === '휴무' ? 'secondary' : 'default'} className="text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 shrink-0">
+      {currentUser.work_status === '휴무' ? '휴무' : '근무중'}
+    </Badge>
+    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
+  </div>
+</DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-52 p-1.5">
                   <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-muted-foreground">내 근무 상태 변경</div>
                   <div className="grid grid-cols-2 gap-1 px-1 pb-2">
