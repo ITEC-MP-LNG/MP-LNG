@@ -37,6 +37,26 @@ import HRManagement from '@/components/HRManagement';
 import ShipInfo from '@/components/ShipInfo';
 import NoticeBoard from '@/components/NoticeBoard';
 
+// shadcn/ui 컴포넌트 임포트
+import { Button } from '@/components/ui/button';
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuSeparator, 
+  DropdownMenuTrigger 
+} from '@/components/ui/dropdown-menu';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter 
+} from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Card } from '@/components/ui/card';
+
 function calculateCareerDetails(startDateStr?: string) {
   if (!startDateStr) return null;
 
@@ -546,110 +566,138 @@ export default function MainPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#F5F6F8] text-[#1F2937] flex flex-col pb-20 md:pb-0 font-sans relative">
-      <header className="bg-white border-b border-[#E2E5E9] sticky top-0 z-30 shadow-2xs">
+    <div className="min-h-screen bg-background text-foreground flex flex-col pb-20 md:pb-0 font-sans relative">
+      <header className="bg-card border-b sticky top-0 z-30 shadow-sm">
         <div className="max-w-full mx-auto px-2 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
           <div className="flex items-center space-x-2.5">
-            <div className="bg-[#243B5A] p-2 rounded-lg text-white shadow-xs">
+            <div className="bg-primary p-2 rounded-lg text-primary-foreground shadow-sm">
               <Layers className="h-4 w-4 sm:h-5 sm:w-5" />
             </div>
             <div>
-              <h1 className="text-sm sm:text-base font-bold text-[#1F2937] tracking-tight leading-none">
-                통합현장관리 <span className="text-[#243B5A]">SYSTEM</span>
+              <h1 className="text-sm sm:text-base font-bold tracking-tight leading-none">
+                통합현장관리 <span className="text-primary">SYSTEM</span>
               </h1>
-              <span className="text-[10px] text-[#64748B] hidden sm:inline-block">Enterprise Field Management</span>
+              <span className="text-[10px] text-muted-foreground hidden sm:inline-block">Enterprise Field Management</span>
             </div>
           </div>
 
           <div className="flex items-center space-x-1.5 sm:space-x-3">
             <div className="hidden lg:flex items-center space-x-2 text-xs">
               {companyCareer && (
-                <div className="flex items-center space-x-1.5 bg-[#F5F6F8] text-[#1F2937] px-2.5 py-1 rounded-md border border-[#E2E5E9]">
-                  <Calendar className="h-3.5 w-3.5 text-[#243B5A]" />
-                  <span>자사근속: <strong className="text-[#243B5A]">{companyCareer}</strong></span>
+                <div className="flex items-center space-x-1.5 bg-muted text-foreground px-2.5 py-1 rounded-md border">
+                  <Calendar className="h-3.5 w-3.5 text-primary" />
+                  <span>자사근속: <strong className="text-primary">{companyCareer}</strong></span>
                 </div>
               )}
               {totalCareer && (
-                <div className="flex items-center space-x-1.5 bg-[#F5F6F8] text-[#1F2937] px-2.5 py-1 rounded-md border border-[#E2E5E9]">
-                  <Briefcase className="h-3.5 w-3.5 text-[#243B5A]" />
-                  <span>총 경력: <strong className="text-[#243B5A]">{totalCareer}</strong></span>
+                <div className="flex items-center space-x-1.5 bg-muted text-foreground px-2.5 py-1 rounded-md border">
+                  <Briefcase className="h-3.5 w-3.5 text-primary" />
+                  <span>총 경력: <strong className="text-primary">{totalCareer}</strong></span>
                 </div>
               )}
             </div>
 
-            <button
+            <Button
               type="button"
+              variant="outline"
+              size="icon"
               onClick={() => setMainTab('NOTICE')}
-              className={`md:hidden flex items-center justify-center p-2 rounded-lg border transition shrink-0 ${
+              className={`md:hidden shrink-0 ${
                 hasUnreadNotice 
-                  ? 'bg-red-50 text-red-600 border-red-200' 
-                  : 'bg-sky-50 text-sky-400 border-sky-200'
+                  ? 'bg-destructive/10 text-destructive border-destructive/20 hover:bg-destructive/20' 
+                  : 'bg-sky-50 text-sky-500 border-sky-200 hover:bg-sky-100'
               }`}
               title={hasUnreadNotice ? '읽지 않은 새 공지가 있습니다.' : '모든 공지를 확인했습니다.'}
               aria-label="게시판"
             >
               <Bell className="h-4 w-4" />
-            </button>
+            </Button>
 
             <div className="relative shrink-0">
-              <button type="button" onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} aria-haspopup="menu" className="flex items-center space-x-1.5 sm:space-x-2 bg-[#F5F6F8] px-2 sm:px-3 py-1.5 rounded-lg border border-[#E2E5E9] max-w-[170px] sm:max-w-none hover:bg-[#E9EDF2] transition">
-                <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-[#243B5A] shrink-0" />
-                <span className="text-xs font-semibold text-[#1F2937] truncate">{currentUser.name}</span>
-                <span className={`text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full font-bold shrink-0 ${currentUser.work_status === '휴무' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{currentUser.work_status === '휴무' ? '휴무' : '근무중'}</span>
-                <ChevronDown className={`h-3.5 w-3.5 text-[#64748B] transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {accountMenuOpen && <>
-                <button type="button" aria-label="계정 메뉴 닫기" className="fixed inset-0 z-[80] cursor-default" onClick={() => setAccountMenuOpen(false)} />
-                <div role="menu" className="absolute right-0 top-[calc(100%+6px)] z-[90] w-52 rounded-xl border border-[#E2E5E9] bg-white p-1.5 shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
-                  <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-[#64748B]">내 근무 상태 변경</div>
+              <DropdownMenu open={accountMenuOpen} onOpenChange={setAccountMenuOpen}>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="outline" className="flex items-center space-x-1.5 sm:space-x-2 bg-muted px-2 sm:px-3 py-1.5 h-auto rounded-lg max-w-[170px] sm:max-w-none hover:bg-muted/80">
+                    <ShieldCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4 text-primary shrink-0" />
+                    <span className="text-xs font-semibold truncate">{currentUser.name}</span>
+                    <Badge variant={currentUser.work_status === '휴무' ? 'secondary' : 'default'} className="text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 shrink-0">
+                      {currentUser.work_status === '휴무' ? '휴무' : '근무중'}
+                    </Badge>
+                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${accountMenuOpen ? 'rotate-180' : ''}`} />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-52 p-1.5">
+                  <div className="px-3 pt-2 pb-1 text-[10px] font-bold text-muted-foreground">내 근무 상태 변경</div>
                   <div className="grid grid-cols-2 gap-1 px-1 pb-2">
-                    <button type="button" role="menuitem" onClick={() => handleOwnWorkStatusChange('근무중')} className={`min-h-10 rounded-lg border px-2 py-2 text-[11px] font-bold ${currentUser.work_status !== '휴무' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
-                    <button type="button" role="menuitem" onClick={() => handleOwnWorkStatusChange('휴무')} className={`min-h-10 rounded-lg border px-2 py-2 text-[11px] font-bold ${currentUser.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
+                    <Button 
+                      type="button" 
+                      variant={currentUser.work_status !== '휴무' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => handleOwnWorkStatusChange('근무중')} 
+                      className="h-10 text-[11px] font-bold"
+                    >
+                      ● 근무중
+                    </Button>
+                    <Button 
+                      type="button" 
+                      variant={currentUser.work_status === '휴무' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => handleOwnWorkStatusChange('휴무')} 
+                      className="h-10 text-[11px] font-bold"
+                    >
+                      ● 휴무
+                    </Button>
                   </div>
-                  <div className="border-t border-[#E2E5E9] pt-1">
-                    <button type="button" role="menuitem" onClick={handleLogout} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#DC2626] hover:bg-red-50"><LogOut className="h-4 w-4" /> 로그아웃</button>
-                    <button type="button" role="menuitem" onClick={() => openHrAction('self-edit')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><UserRoundPen className="h-4 w-4 text-[#243B5A]" /> 개인정보 수정</button>
-                    
-                    {/* 기숙사 현황에 등록된 인원에게만 조건부로 노출되는 공과금 납입 메뉴 */}
-                    {isDormitoryUser && (
-                      <button type="button" role="menuitem" onClick={() => openHrAction('dormitory')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]">
-                        <Home className="h-4 w-4 text-[#243B5A]" /> 공과금 납입 (기숙사)
-                      </button>
-                    )}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout} className="text-destructive focus:text-destructive cursor-pointer">
+                    <LogOut className="h-4 w-4 mr-2" /> 로그아웃
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => openHrAction('self-edit')} className="cursor-pointer">
+                    <UserRoundPen className="h-4 w-4 mr-2 text-primary" /> 개인정보 수정
+                  </DropdownMenuItem>
+                  
+                  {isDormitoryUser && (
+                    <DropdownMenuItem onClick={() => openHrAction('dormitory')} className="cursor-pointer">
+                      <Home className="h-4 w-4 mr-2 text-primary" /> 공과금 납입 (기숙사)
+                    </DropdownMenuItem>
+                  )}
 
-                    {String((currentUser as any).job_title || '').includes('팀장') && <button type="button" role="menuitem" onClick={() => openHrAction('my-team')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><Users className="h-4 w-4 text-[#243B5A]" /> 팀원 관리</button>}
-                  </div>
-                </div>
-              </>}
+                  {String((currentUser as any).job_title || '').includes('팀장') && (
+                    <DropdownMenuItem onClick={() => openHrAction('my-team')} className="cursor-pointer">
+                      <Users className="h-4 w-4 mr-2 text-primary" /> 팀원 관리
+                    </DropdownMenuItem>
+                  )}
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
         </div>
       </header>
 
       <div className="flex-1 max-w-full w-full mx-auto flex">
-        <aside className="hidden md:block w-56 bg-white border-r border-[#E2E5E9] p-3 space-y-1 shrink-0">
-          <div className="px-3 py-2 text-[10px] font-bold text-[#64748B] uppercase tracking-wider">
+        <aside className="hidden md:block w-56 bg-card border-r p-3 space-y-1 shrink-0">
+          <div className="px-3 py-2 text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
             통합 현장관리 Navigation
           </div>
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = mainTab === item.id;
             return (
-              <button
+              <Button
                 key={item.id}
+                variant={isActive ? 'default' : 'ghost'}
                 onClick={() => { setMainTab(item.id as any); markNavigationAsRead(item.id); }}
-                className={`w-full flex items-center space-x-2.5 px-3 py-2.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                className={`w-full justify-start space-x-2.5 px-3 py-2.5 h-auto text-xs font-semibold cursor-pointer ${
                   isActive
-                    ? 'bg-[#243B5A] text-white shadow-2xs font-bold'
-                    : 'text-[#64748B] hover:bg-[#F5F6F8] hover:text-[#1F2937]'
+                    ? 'shadow-sm font-bold'
+                    : 'text-muted-foreground hover:bg-muted hover:text-foreground'
                 }`}
               >
-                <Icon className={`h-4 w-4 ${isActive ? 'text-white' : 'text-[#64748B]'}`} />
+                <Icon className={`h-4 w-4 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground'}`} />
                 <span className="flex items-center gap-1.5">
                   <span>{item.label}</span>
-                  {navNewFlags[item.id] && <span className="text-[9px] font-black text-red-600 leading-none">N</span>}
+                  {navNewFlags[item.id] && <span className="text-[9px] font-black text-destructive leading-none">N</span>}
                 </span>
-              </button>
+              </Button>
             );
           })}
         </aside>
@@ -723,7 +771,7 @@ export default function MainPage() {
         </main>
       </div>
 
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-[#E2E5E9] z-40 px-1 py-1.5 flex justify-between items-center shadow-lg">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-card border-t z-40 px-1 py-1.5 flex justify-between items-center shadow-lg">
         {menuItems.map((item) => {
           const Icon = item.icon;
           const isActive = mainTab === item.id;
@@ -732,14 +780,14 @@ export default function MainPage() {
               key={item.id}
               onClick={() => { setMainTab(item.id as any); markNavigationAsRead(item.id); }}
               className={`flex-1 flex flex-col items-center justify-center py-1.5 px-0.5 rounded-lg transition min-w-0 ${
-                isActive ? 'text-[#243B5A] font-bold' : 'text-[#64748B] font-medium'
+                isActive ? 'text-primary font-bold' : 'text-muted-foreground font-medium'
               }`}
             >
-              <Icon className={`h-5 w-5 mb-1 shrink-0 ${isActive ? 'text-[#243B5A]' : 'text-[#64748B]'}`} />
+              <Icon className={`h-5 w-5 mb-1 shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground'}`} />
               <span className="text-[10px] sm:text-[11px] leading-tight tracking-tight truncate w-full text-center">
                 <span className="flex items-center justify-center gap-1">
                   <span>{item.label}</span>
-                  {navNewFlags[item.id] && <span className="text-[8px] font-black text-red-600 leading-none">N</span>}
+                  {navNewFlags[item.id] && <span className="text-[8px] font-black text-destructive leading-none">N</span>}
                 </span>
               </span>
             </button>
@@ -747,38 +795,38 @@ export default function MainPage() {
         })}
       </nav>
 
-      {showExitModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-xl border border-[#E2E5E9] space-y-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-2.5 bg-[#243B5A]/10 rounded-xl text-[#243B5A]">
+      <Dialog open={showExitModal} onOpenChange={setShowExitModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <div className="flex items-center space-x-3 mb-2">
+              <div className="p-2.5 bg-primary/10 rounded-xl text-primary">
                 <AlertCircle className="h-6 w-6" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-[#1F2937]">시스템 종료</h3>
-                <p className="text-xs text-[#64748B]">시스템을 종료하고 로그아웃 하시겠습니까?</p>
+                <DialogTitle className="text-sm font-bold">시스템 종료</DialogTitle>
+                <DialogDescription className="text-xs text-muted-foreground mt-0.5">시스템을 종료하고 로그아웃 하시겠습니까?</DialogDescription>
               </div>
             </div>
-
-            <div className="flex space-x-2 pt-2">
-              <button
-                type="button"
-                onClick={cancelExitApp}
-                className="flex-1 py-2.5 px-4 bg-[#F5F6F8] text-[#1F2937] hover:bg-[#E2E5E9] text-xs font-semibold rounded-lg transition border border-[#E2E5E9] cursor-pointer"
-              >
-                취소
-              </button>
-              <button
-                type="button"
-                onClick={confirmExitApp}
-                className="flex-1 py-2.5 px-4 bg-[#243B5A] text-white hover:bg-[#1a2d46] text-xs font-bold rounded-lg transition shadow-xs cursor-pointer"
-              >
-                확인
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+          </DialogHeader>
+          <DialogFooter className="flex space-x-2 pt-2 sm:space-x-0">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={cancelExitApp}
+              className="flex-1 text-xs font-semibold"
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              onClick={confirmExitApp}
+              className="flex-1 text-xs font-bold"
+            >
+              확인
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
