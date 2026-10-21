@@ -797,7 +797,7 @@ export default function HRManagement({
         management_fee_date: row.management_fee_due_date || '',
         gas_fee_date: row.gas_fee_due_date || '',
         condition_note: row.condition_note || '',
-        updated_by: row.created_by || ''
+        updated_by: ''
       })));
       dormitoryLoadedRef.current = true;
     } catch (error: any) {
@@ -842,8 +842,8 @@ export default function HRManagement({
       note: dormitoryForm.room.trim() || null,
       condition_note: dormitoryForm.condition_note.trim() || null
     };
-    if (dormitoryEditing?.id && dormitoryForm.management_fee_date !== (dormitoryEditing?.management_fee_due_date || dormitoryEditing?.management_fee_date || '')) payload.management_fee_updated_by = currentUser?.id ? String(currentUser.id) : null;
-    if (dormitoryEditing?.id && dormitoryForm.gas_fee_date !== (dormitoryEditing?.gas_fee_due_date || dormitoryEditing?.gas_fee_date || '')) payload.gas_fee_updated_by = currentUser?.id ? String(currentUser.id) : null;
+    if (dormitoryEditing?.id && dormitoryForm.management_fee_date !== (dormitoryEditing?.management_fee_due_date || dormitoryEditing?.management_fee_date || '')) payload.management_fee_updated_by = dormitoryForm.management_fee_date ? (currentUser?.id ? String(currentUser.id) : null) : null;
+    if (dormitoryEditing?.id && dormitoryForm.gas_fee_date !== (dormitoryEditing?.gas_fee_due_date || dormitoryEditing?.gas_fee_date || '')) payload.gas_fee_updated_by = dormitoryForm.gas_fee_date ? (currentUser?.id ? String(currentUser.id) : null) : null;
     try {
       if (dormitoryEditing?.id) {
         const original = {
@@ -937,12 +937,12 @@ export default function HRManagement({
     const rows: any[][] = [
       ['기숙사 현황', '', '', '', '', '', '', '', ''],
       ['성명', '기숙사명', '호실', '입주날짜', '공과금 납입', '', '', '', '비고'],
-      ['', '', '', '', '관리비 납부일', '납부 입력자', '가스비 납부일', '납부 입력자', '']
+      ['', '', '', '', '관리비 납부일', '납부자', '가스비 납부일', '납부자', '']
     ];
     filtered.forEach((row) => {
       const person = users.find((u) => String(u.id) === String(row.user_id));
-      const managementEditor = users.find((u) => String(u.id) === String(row.management_fee_updated_by || row.created_by))?.name || '';
-      const gasEditor = users.find((u) => String(u.id) === String(row.gas_fee_updated_by || row.created_by))?.name || '';
+      const managementEditor = row.management_fee_date ? (users.find((u) => String(u.id) === String(row.user_id))?.name || users.find((u) => String(u.id) === String(row.management_fee_updated_by))?.name || '') : '미납';
+      const gasEditor = row.gas_fee_date ? (users.find((u) => String(u.id) === String(row.user_id))?.name || users.find((u) => String(u.id) === String(row.gas_fee_updated_by))?.name || '') : '미납';
       rows.push([person?.name || row.user_id || '', row.dormitory_name || '', row.room || '', row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '', row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '', managementEditor, row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '', gasEditor, row.condition_note || '']);
     });
     const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -993,11 +993,11 @@ export default function HRManagement({
     const payload: any = {};
     if (utilityForm.management_fee_date !== (utilityEditing.management_fee_date || '')) {
       payload.management_fee_due_date = utilityForm.management_fee_date || null;
-      payload.management_fee_updated_by = currentUser?.id ? String(currentUser.id) : null;
+      payload.management_fee_updated_by = utilityForm.management_fee_date ? (currentUser?.id ? String(currentUser.id) : null) : null;
     }
     if (utilityForm.gas_fee_date !== (utilityEditing.gas_fee_date || '')) {
       payload.gas_fee_due_date = utilityForm.gas_fee_date || null;
-      payload.gas_fee_updated_by = currentUser?.id ? String(currentUser.id) : null;
+      payload.gas_fee_updated_by = utilityForm.gas_fee_date ? (currentUser?.id ? String(currentUser.id) : null) : null;
     }
     if (!Object.keys(payload).length) { setUtilityEditing(null); showNotice('변경된 공과금 납입일이 없습니다.', 'info'); return; }
     try {
@@ -1751,8 +1751,8 @@ export default function HRManagement({
                     </div>
                     <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                       <div><dt className="text-[#64748B]">입주날짜</dt><dd className="mt-0.5 font-semibold">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</dd></div>
-                      <div><dt className="text-[#64748B]">관리비 납부일</dt><dd className="mt-0.5 font-semibold">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">입력자: {feeEditor(row.management_fee_updated_by)}</dd></div>
-                      <div><dt className="text-[#64748B]">가스비 납부일</dt><dd className="mt-0.5 font-semibold">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">입력자: {feeEditor(row.gas_fee_updated_by)}</dd></div>
+                      <div><dt className="text-[#64748B]">관리비 납부일</dt><dd className="mt-0.5 font-semibold">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {row.management_fee_date ? (person?.name || feeEditor(row.management_fee_updated_by)) : '미납'}</dd></div>
+                      <div><dt className="text-[#64748B]">가스비 납부일</dt><dd className="mt-0.5 font-semibold">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {row.gas_fee_date ? (person?.name || feeEditor(row.gas_fee_updated_by)) : '미납'}</dd></div>
                       <div className="col-span-2 rounded-lg bg-[#F8FAFC] p-2"><dt className="text-[#64748B]">비고 / 이상유무</dt><dd className="mt-0.5 whitespace-pre-wrap break-words">{row.condition_note || '내용 없음'}</dd></div>
                     </dl>
                   </article>;
@@ -1773,8 +1773,8 @@ export default function HRManagement({
                       <td className="border border-[#E2E5E9] p-2"><input type="checkbox" aria-label={`${person?.name || row.user_id} 선택`} checked={selectedDormitoryIds.includes(String(row.id))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? [...prev, String(row.id)] : prev.filter((id) => id !== String(row.id)))} /></td><td className="border border-[#E2E5E9] p-2">{person?.name || row.user_id}</td>
                       {!sameGroupAsPrevious && <><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2 font-semibold">{row.dormitory_name || '-'}</td><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{row.room || '-'}</td></>}
                       <td className="border border-[#E2E5E9] p-2">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
-                      <td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{editorName(row.management_fee_updated_by || row.created_by)}</td>
-                      <td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{editorName(row.gas_fee_updated_by || row.created_by)}</td>
+                      <td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? (person?.name || editorName(row.management_fee_updated_by)) : '미납'}</td>
+                      <td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? (person?.name || editorName(row.gas_fee_updated_by)) : '미납'}</td>
                       <td className="max-w-[220px] whitespace-pre-wrap break-words border border-[#E2E5E9] p-2 text-left">{row.condition_note || '-'}</td>
                       <td className="border border-[#E2E5E9] p-2"><div className="flex justify-center gap-1">{canEditDormitoryRecord(row) && <><button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 font-bold text-emerald-700">공과금</button><button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 font-bold text-[#243B5A]">수정</button><button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 font-bold text-red-600">삭제</button></>}</div></td>
                     </tr>;
@@ -1782,8 +1782,8 @@ export default function HRManagement({
                 </table>
               </div>
             </>}
-            {utilityEditing && <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-900/40 p-3"><div role="dialog" aria-modal="true" className="w-full max-w-md rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-extrabold text-[#243B5A]">공과금 납입일 등록</h3><button type="button" onClick={() => setUtilityEditing(null)} className="rounded-lg p-1 text-[#64748B]">✕</button></div><p className="mb-3 text-xs text-[#64748B]">{users.find((u) => String(u.id) === String(utilityEditing.user_id))?.name || ''} · {utilityEditing.dormitory_name || ''} {utilityEditing.room || ''}</p><div className="space-y-3"><label className="block text-xs font-bold text-[#475569]">관리비 납부일<input type="date" value={utilityForm.management_fee_date} onChange={(e) => setUtilityForm((f) => ({ ...f, management_fee_date: e.target.value }))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="block text-xs font-bold text-[#475569]">가스비 납부일<input type="date" value={utilityForm.gas_fee_date} onChange={(e) => setUtilityForm((f) => ({ ...f, gas_fee_date: e.target.value }))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label></div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setUtilityEditing(null)} className="rounded-lg border border-[#E2E5E9] px-4 py-2 text-xs font-bold text-[#64748B]">취소</button><button type="button" onClick={() => void saveUtilityDates()} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">납입일 저장</button></div></div></div>}
-            {dormitoryEditing !== null && <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 p-3"><div role="dialog" aria-modal="true" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-extrabold text-[#243B5A]">기숙사 현황 {dormitoryEditing?.id ? '수정' : '등록'}</h3><button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg p-1 text-[#64748B] hover:bg-[#F5F6F8]">✕</button></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-[#475569]">구성원<select value={dormitoryForm.user_id} onChange={(e) => setDormitoryForm((f) => ({...f,user_id:e.target.value}))} disabled={!canManageDormitories} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal"><option value="">구성원 선택</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select></label><label className="text-xs font-bold text-[#475569]">기숙사명<select value={dormitoryForm.dormitory_name} onChange={(e) => setDormitoryForm((f) => ({...f,dormitory_name:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal"><option value="">기숙사 선택</option>{dormitoryLocations.map((name) => <option key={name} value={name}>{name}</option>)}</select></label><label className="text-xs font-bold text-[#475569]">호실<input value={dormitoryForm.room} onChange={(e) => setDormitoryForm((f) => ({...f,room:e.target.value}))} placeholder="예: 302호" className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">입주날짜<input type="date" value={dormitoryForm.move_in_date} onChange={(e) => setDormitoryForm((f) => ({...f,move_in_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">관리비 납부일<input type="date" value={dormitoryForm.management_fee_date} onChange={(e) => setDormitoryForm((f) => ({...f,management_fee_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">가스비 납부일<input type="date" value={dormitoryForm.gas_fee_date} onChange={(e) => setDormitoryForm((f) => ({...f,gas_fee_date:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569] sm:col-span-2">비고 / 이상유무<textarea value={dormitoryForm.condition_note} onChange={(e) => setDormitoryForm((f) => ({...f,condition_note:e.target.value}))} rows={3} placeholder="기숙사 상태, 이상유무 등을 입력하세요." className="mt-1 w-full resize-y rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label></div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg border border-[#E2E5E9] px-4 py-2 text-xs font-bold text-[#64748B]">취소</button><button type="button" onClick={() => void saveDormitoryRecord()} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">저장</button></div></div></div>}
+            {utilityEditing && <div className="fixed inset-0 z-[220] flex items-center justify-center bg-slate-900/40 p-3"><div role="dialog" aria-modal="true" className="w-full max-w-md rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-extrabold text-[#243B5A]">공과금 납입일 등록</h3><button type="button" onClick={() => setUtilityEditing(null)} className="rounded-lg p-1 text-[#64748B]">✕</button></div><p className="mb-3 text-xs text-[#64748B]">{users.find((u) => String(u.id) === String(utilityEditing.user_id))?.name || ''} · {utilityEditing.dormitory_name || ''} {utilityEditing.room || ''}</p><div className="space-y-3"><label className="block text-xs font-bold text-[#475569]">관리비 납부일<div className="mt-1"><CalendarDatePicker value={utilityForm.management_fee_date} onChange={(date) => setUtilityForm((f) => ({ ...f, management_fee_date: date }))} /></div></label><label className="block text-xs font-bold text-[#475569]">가스비 납부일<div className="mt-1"><CalendarDatePicker value={utilityForm.gas_fee_date} onChange={(date) => setUtilityForm((f) => ({ ...f, gas_fee_date: date }))} /></div></label></div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setUtilityEditing(null)} className="rounded-lg border border-[#E2E5E9] px-4 py-2 text-xs font-bold text-[#64748B]">취소</button><button type="button" onClick={() => void saveUtilityDates()} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">납입일 저장</button></div></div></div>}
+            {dormitoryEditing !== null && <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/40 p-3"><div role="dialog" aria-modal="true" className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl border border-[#E2E5E9] bg-white p-4 shadow-2xl"><div className="mb-3 flex items-center justify-between"><h3 className="text-sm font-extrabold text-[#243B5A]">기숙사 현황 {dormitoryEditing?.id ? '수정' : '등록'}</h3><button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg p-1 text-[#64748B] hover:bg-[#F5F6F8]">✕</button></div><div className="grid grid-cols-1 gap-3 sm:grid-cols-2"><label className="text-xs font-bold text-[#475569]">구성원<select value={dormitoryForm.user_id} onChange={(e) => setDormitoryForm((f) => ({...f,user_id:e.target.value}))} disabled={!canManageDormitories} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal"><option value="">구성원 선택</option>{users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}</select></label><label className="text-xs font-bold text-[#475569]">기숙사명<select value={dormitoryForm.dormitory_name} onChange={(e) => setDormitoryForm((f) => ({...f,dormitory_name:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-white p-2.5 font-normal"><option value="">기숙사 선택</option>{dormitoryLocations.map((name) => <option key={name} value={name}>{name}</option>)}</select></label><label className="text-xs font-bold text-[#475569]">호실<input value={dormitoryForm.room} onChange={(e) => setDormitoryForm((f) => ({...f,room:e.target.value}))} placeholder="예: 302호" className="mt-1 w-full rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label><label className="text-xs font-bold text-[#475569]">입주날짜<div className="mt-1"><CalendarDatePicker value={dormitoryForm.move_in_date} onChange={(date) => setDormitoryForm((f) => ({...f,move_in_date:date}))} /></div></label><label className="text-xs font-bold text-[#475569]">관리비 납부일<div className="mt-1"><CalendarDatePicker value={dormitoryForm.management_fee_date} onChange={(date) => setDormitoryForm((f) => ({...f,management_fee_date:date}))} /></div></label><label className="text-xs font-bold text-[#475569]">가스비 납부일<div className="mt-1"><CalendarDatePicker value={dormitoryForm.gas_fee_date} onChange={(date) => setDormitoryForm((f) => ({...f,gas_fee_date:date}))} /></div></label><label className="text-xs font-bold text-[#475569] sm:col-span-2">비고 / 이상유무<textarea value={dormitoryForm.condition_note} onChange={(e) => setDormitoryForm((f) => ({...f,condition_note:e.target.value}))} rows={3} placeholder="기숙사 상태, 이상유무 등을 입력하세요." className="mt-1 w-full resize-y rounded-lg border border-[#E2E5E9] p-2.5 font-normal" /></label></div><div className="mt-4 flex justify-end gap-2"><button type="button" onClick={() => setDormitoryEditing(null)} className="rounded-lg border border-[#E2E5E9] px-4 py-2 text-xs font-bold text-[#64748B]">취소</button><button type="button" onClick={() => void saveDormitoryRecord()} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">저장</button></div></div></div>}
           </div>
         ) : (
         <div className="space-y-3">
@@ -2538,18 +2538,23 @@ export default function HRManagement({
 
       {notice && (
         <div className="fixed top-3 left-3 right-3 sm:top-5 sm:left-auto sm:right-5 z-[100] w-auto sm:w-[min(92vw,420px)] pt-[env(safe-area-inset-top)]">
-          <div role="status" aria-live="polite" className={`rounded-xl border bg-white px-3.5 sm:px-4 py-3 shadow-lg flex items-start gap-3 ${
-            notice.type === 'success' ? 'border-green-200' :
-            notice.type === 'error' ? 'border-red-200' :
-            notice.type === 'warning' ? 'border-amber-200' : 'border-blue-200'
+          <div role="status" aria-live="polite" className={`overflow-hidden rounded-xl border bg-white shadow-[0_12px_32px_rgba(15,23,42,0.16)] ${
+            notice.type === 'success' ? 'border-emerald-200' :
+            notice.type === 'error' ? 'border-rose-200' :
+            notice.type === 'warning' ? 'border-amber-200' : 'border-[#CBD5E1]'
           }`}>
-            <div className={`mt-0.5 h-2.5 w-2.5 rounded-full shrink-0 ${
-              notice.type === 'success' ? 'bg-green-500' :
-              notice.type === 'error' ? 'bg-red-500' :
-              notice.type === 'warning' ? 'bg-amber-500' : 'bg-blue-500'
-            }`} />
-            <p className="text-sm font-medium text-[#1F2937] flex-1">{notice.message}</p>
-            <button onClick={() => setNotice(null)} className="text-[#94A3B8] hover:text-[#475569]">×</button>
+            <div className="flex items-center justify-between bg-[#243B5A] px-3.5 py-2">
+              <span className="text-[11px] font-bold tracking-wide text-white">현장관리 알림</span>
+              <button type="button" onClick={() => setNotice(null)} aria-label="알림 닫기" className="rounded-md px-1.5 text-lg leading-none text-white/80 hover:bg-white/10 hover:text-white">×</button>
+            </div>
+            <div className="flex items-start gap-3 px-4 py-3">
+              <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold text-white ${
+                notice.type === 'success' ? 'bg-emerald-600' :
+                notice.type === 'error' ? 'bg-rose-600' :
+                notice.type === 'warning' ? 'bg-amber-500' : 'bg-[#64748B]'
+              }`}>{notice.type === 'success' ? '✓' : notice.type === 'error' ? '!' : notice.type === 'warning' ? '!' : 'i'}</div>
+              <p className="flex-1 pt-0.5 text-sm font-medium leading-5 text-[#1F2937]">{notice.message}</p>
+            </div>
           </div>
         </div>
       )}
