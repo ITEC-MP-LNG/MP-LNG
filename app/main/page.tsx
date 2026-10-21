@@ -16,7 +16,8 @@ import {
   Briefcase,
   Anchor,
   AlertCircle,
-  Bell
+  Bell,
+  Home
 } from 'lucide-react';
 
 import { supabase } from '@/lib/supabase';
@@ -72,13 +73,11 @@ interface ExtendedAppUser extends AppUser {
 export default function MainPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<ExtendedAppUser | null>(null);
-  // NoticeBoard에 매 렌더마다 새 사용자 객체를 전달해 조회 useEffect가 반복 실행되는 것을 방지합니다.
   const noticeBoardUser = useMemo(() => {
     if (!currentUser) return undefined;
     return { id: currentUser.id, name: currentUser.name, email: currentUser.email };
   }, [currentUser?.id, currentUser?.name, currentUser?.email]);
   const [mainTab, setMainTab] = useState<'NOTICE' | 'TASKS' | 'INVENTORY' | 'SHIP' | 'EDUCATION' | 'HR'>('NOTICE');
-  // Realtime 구독을 메뉴 이동 때마다 다시 만들지 않고 최신 메뉴 상태를 참조합니다.
   const mainTabRef = useRef(mainTab);
   mainTabRef.current = mainTab;
 
@@ -98,25 +97,21 @@ export default function MainPage() {
   const [loadingEdu, setLoadingEdu] = useState(false);
   const [educationRefreshVersion, setEducationRefreshVersion] = useState(0);
 
-  // 목록이 비어 있어도 최초 조회를 마쳤는지 구분해 불필요한 재조회를 방지합니다.
   const hasLoadedInventoryRef = useRef(false);
   const hasLoadedEducationRef = useRef(false);
 
   const [showExitModal, setShowExitModal] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [hrLaunchAction, setHrLaunchAction] = useState<'self-edit' | 'my-team' | null>(null);
+  const [hrLaunchAction, setHrLaunchAction] = useState<'self-edit' | 'my-team' | 'dormitory' | null>(null);
 
-  // 모바일 종 모양 버튼 색상 제어용 (읽지 않은 새 공지 유무)
   const [hasUnreadNotice, setHasUnreadNotice] = useState(false);
   const [navNewFlags, setNavNewFlags] = useState<Record<string, boolean>>({});
 
   const normalizedRole = String(currentUser?.role || '').trim().toUpperCase();
   const isAdmin = normalizedRole === 'ADMIN';
 
-  // 불필요한 재생성을 막기 위한 인증 초기화 완료 여부 Ref
   const isInitializedRef = useRef(false);
 
-  // 읽지 않은 공지 체크 함수
   const checkUnreadNotices = useCallback(async (userKey: string) => {
     try {
       const { data, error } = await supabase
@@ -140,7 +135,6 @@ export default function MainPage() {
     }
   }, []);
 
-  // 데이터 불러오기 함수들 (useCallback 최적화)
   const fetchTasks = useCallback(async (user: AppUser) => {
     setLoadingTasks(true);
     try {
@@ -242,7 +236,6 @@ export default function MainPage() {
     }
   }, []);
 
-  // 모바일 뒤로가기 처리
   useEffect(() => {
     let lastBackPressTime = 0;
 
@@ -284,7 +277,6 @@ export default function MainPage() {
     };
   }, [showExitModal]);
 
-  // ✅ 세션 및 사용자 인증 1회 초기화 (무한 루프 방지 가드 적용)
   useEffect(() => {
     if (isInitializedRef.current) return;
     isInitializedRef.current = true;
@@ -358,7 +350,6 @@ export default function MainPage() {
     initAuthAndData();
   }, [router, checkUnreadNotices, fetchTasks]);
 
-  // 탭 변경 시 필요한 데이터만 최초 1회 지연 로딩 (Lazy Loading)
   useEffect(() => {
     if (!currentUser) return;
 
@@ -371,7 +362,6 @@ export default function MainPage() {
     }
   }, [mainTab, currentUser, fetchInventory, fetchInventoryLogs, fetchEducations, fetchEducationRecords]);
 
-  // 실시간 이벤트 수신: 메뉴 이동 때 구독을 재생성하지 않고, 연속 이벤트는 묶어서 조회합니다.
   useEffect(() => {
     if (!currentUser) return;
 
@@ -445,7 +435,7 @@ export default function MainPage() {
     setNavNewFlags((prev) => ({ ...prev, [tabId]: false }));
   };
 
-  const openHrAction = (action: 'self-edit' | 'my-team') => {
+  const openHrAction = (action: 'self-edit' | 'my-team' | 'dormitory') => {
     setAccountMenuOpen(false);
     setHrLaunchAction(action);
     setMainTab('HR');
@@ -592,9 +582,10 @@ export default function MainPage() {
                     <button type="button" role="menuitem" onClick={() => handleOwnWorkStatusChange('휴무')} className={`min-h-10 rounded-lg border px-2 py-2 text-[11px] font-bold ${currentUser.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
                   </div>
                   <div className="border-t border-[#E2E5E9] pt-1">
-                  <button type="button" role="menuitem" onClick={handleLogout} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#DC2626] hover:bg-red-50"><LogOut className="h-4 w-4" /> 로그아웃</button>
-                  <button type="button" role="menuitem" onClick={() => openHrAction('self-edit')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><UserRoundPen className="h-4 w-4 text-[#243B5A]" /> 개인정보 수정</button>
-                  {String((currentUser as any).job_title || '').includes('팀장') && <button type="button" role="menuitem" onClick={() => openHrAction('my-team')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><Users className="h-4 w-4 text-[#243B5A]" /> 팀원 관리</button>}
+                    <button type="button" role="menuitem" onClick={handleLogout} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#DC2626] hover:bg-red-50"><LogOut className="h-4 w-4" /> 로그아웃</button>
+                    <button type="button" role="menuitem" onClick={() => openHrAction('self-edit')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><UserRoundPen className="h-4 w-4 text-[#243B5A]" /> 개인정보 수정</button>
+                    <button type="button" role="menuitem" onClick={() => openHrAction('dormitory')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><Home className="h-4 w-4 text-[#243B5A]" /> 공과금 납입 (기숙사)</button>
+                    {String((currentUser as any).job_title || '').includes('팀장') && <button type="button" role="menuitem" onClick={() => openHrAction('my-team')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><Users className="h-4 w-4 text-[#243B5A]" /> 팀원 관리</button>}
                   </div>
                 </div>
               </>}
