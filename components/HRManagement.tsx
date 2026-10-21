@@ -570,6 +570,7 @@ export default function HRManagement({
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('ALL');
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+  const [dormListCollapsed, setDormListCollapsed] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [detailUser, setDetailUser] = useState<HRUser | null>(null);
@@ -784,7 +785,8 @@ export default function HRManagement({
       setDormitoryLocationOptions(activeLocations.map((x: any) => ({ id: Number(x.id), name: String(x.name) })));
       setDormitoryLocations(activeLocations.map((x: any) => String(x.name)).filter(Boolean));
       const locationNameById = new Map((locationsResult.data || []).map((x: any) => [String(x.id), String(x.name)]));
-      setDormitoryRows((recordsResult.data || []).map((row: any) => ({
+      
+      const loadedRows = (recordsResult.data || []).map((row: any) => ({
         ...row,
         dormitory_name: locationNameById.get(String(row.location_id)) || '',
         room: row.room || row.note || '',
@@ -792,11 +794,14 @@ export default function HRManagement({
         gas_fee_date: row.gas_fee_due_date || '',
         condition_note: row.condition_note || '',
         updated_by: ''
-      })));
+      }));
+      setDormitoryRows(loadedRows);
       dormitoryLoadedRef.current = true;
+      return loadedRows;
     } catch (error: any) {
       console.error('기숙사 현황 조회 실패:', error?.message || error);
       showNotice('기숙사 현황을 불러오지 못했습니다. 기숙사 테이블 생성 SQL을 먼저 실행했는지 확인해주세요.', 'error');
+      return [];
     } finally {
       setDormitoryLoading(false);
     }
@@ -1109,6 +1114,7 @@ export default function HRManagement({
       setSelectedSubCategory('ALL');
       if (self) handleOpenEditModal(self);
       else showNotice('로그인한 계정의 구성원 정보를 찾지 못했습니다.', 'warning');
+      onInitialActionHandled?.();
     } else if (initialAction === 'my-team') {
       const myDepartment = String(currentUser?.department || '').trim();
       setActiveTab('ORG');
@@ -1120,25 +1126,37 @@ export default function HRManagement({
         setSelectedSubCategory('ALL');
         showNotice('소속 파트를 확인하지 못해 전체 파트 조직도를 표시합니다.', 'warning');
       }
-   } else if (initialAction === 'dormitory') {
-      // 기숙사 현황 탭으로 이동 후 본인 레코드의 공과금 등록 창 바로 띄우기
+      onInitialActionHandled?.();
+    } else if (initialAction === 'dormitory') {
       setActiveTab('ORG');
       setSubGroupType('DORM');
       
-      // 약간의 지연 후 본인 기숙사 레코드 탐색 및 공과금 모달 오픈
-      setTimeout(() => {
-        const myDormRow = dormitoryRows.find(
-          (row) => String(row.user_id) === String(currentUser?.id)
+      const processDormitoryAction = async () => {
+        let currentRows = dormitoryRows;
+        if (!dormitoryLoadedRef.current) {
+          currentRows = await loadDormitoryData();
+        }
+        
+        const myUserId = currentUser?.id ? String(currentUser.id).trim() : '';
+        const myName = currentUser?.name ? String(currentUser.name).trim() : '';
+
+        const myDormRow = currentRows.find(
+          (row) => String(row.user_id).trim() === myUserId || 
+                   (myName && users.find(u => String(u.id) === String(row.user_id))?.name?.trim() === myName)
         );
+
         if (myDormRow) {
           openUtilityEditor(myDormRow);
         } else {
-          showNotice('등록된 기숙사 정보가 없습니다. 먼저 기숙사 현황을 등록해주세요.', 'warning');
+          openDormitoryEditor();
+          showNotice('기숙사 현황에 본인 정보가 없습니다. 새로 등록해주세요.', 'info');
         }
-      }, 300);
+        onInitialActionHandled?.();
+      };
+
+      void processDormitoryAction();
     }
-    onInitialActionHandled?.();
-  }, [initialAction, loading, users, currentUser, dormitoryRows, onInitialActionHandled]);
+  }, [initialAction, loading, users, currentUser, dormitoryRows, loadDormitoryData, onInitialActionHandled]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1785,8 +1803,17 @@ export default function HRManagement({
                 <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#94A3B8]" />
                 <input value={dormitorySearch} onChange={(e) => setDormitorySearch(e.target.value)} placeholder="성명·기숙사명·호실 검색" aria-label="기숙사 현황 검색" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] py-2 pl-9 pr-3 text-xs outline-none focus:border-[#243B5A] focus:bg-white" />
               </div>
+              <button
+                type="button"
+                onClick={() => setDormListCollapsed((prev) => !prev)}
+                className="flex items-center justify-center gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#E2E5E9]"
+              >
+                <span>{dormListCollapsed ? '목록 펼치기' : '목록 접기'}</span>
+                {dormListCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </button>
             </div>
-            {dormitoryLoading ? <div className="py-8 text-center text-xs text-[#64748B]">기숙사 현황을 불러오는 중...</div> : <>
+            
+            {dormitoryLoading ? <div className="py-8 text-center text-xs text-[#64748B]">기숙사 현황을 불러오는 중...</div> : !dormListCollapsed && <>
               <div className="space-y-2 md:hidden">
                 {filteredDormitoryRows.map((row, index) => {
                   const person = users.find((u) => String(u.id) === String(row.user_id));
@@ -1799,7 +1826,17 @@ export default function HRManagement({
                   return <article key={row.id} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-xs">
                     <div className="flex items-start justify-between gap-2 border-b border-[#E2E5E9] pb-2">
                       <div className="flex min-w-0 items-start gap-2"><input type="checkbox" aria-label="기숙사 현황 선택" checked={selectedDormitoryIds.includes(String(row.id))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? [...prev, String(row.id)] : prev.filter((id) => id !== String(row.id)))} className="mt-1" /><div className="min-w-0"><div className="text-sm font-extrabold text-[#243B5A]">{person?.name || row.user_id}</div><div className="mt-1 text-xs text-[#64748B]">{row.dormitory_name || '-'} · {row.room || '호실 미입력'}</div></div></div>
-                      <div className="flex shrink-0 gap-1">{canEditDormitoryRecord(row) && <><button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 text-[11px] font-bold text-emerald-700">공과금 납입</button><button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 text-[11px] font-bold text-[#243B5A]">수정</button><button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 text-[11px] font-bold text-red-600">삭제</button></>}</div>
+                      <div className="flex shrink-0 gap-1">
+                        {canEditDormitoryRecord(row) && (
+                          <>
+                            {!sameRoomAsPrevious && (
+                              <button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50">공과금</button>
+                            )}
+                            <button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 text-[11px] font-bold text-[#243B5A] hover:bg-[#F5F6F8]">수정</button>
+                            <button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50">삭제</button>
+                          </>
+                        )}
+                      </div>
                     </div>
                     <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                       <div><dt className="text-[#64748B]">입주날짜</dt><dd className="mt-0.5 font-semibold">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</dd></div>
@@ -1835,7 +1872,19 @@ export default function HRManagement({
                         <td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{gasRow.gas_fee_date ? String(gasRow.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{gasRow.gas_fee_date ? editorName(gasRow.gas_fee_updated_by) : '미납'}</td>
                       </>}
                       <td className="max-w-[220px] whitespace-pre-wrap break-words border border-[#E2E5E9] p-2 text-left">{row.condition_note || '-'}</td>
-                      <td className="border border-[#E2E5E9] p-2"><div className="flex justify-center gap-1">{canEditDormitoryRecord(row) && <><button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 font-bold text-emerald-700">공과금</button><button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 font-bold text-[#243B5A]">수정</button><button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 font-bold text-red-600">삭제</button></>}</div></td>
+                      <td className="border border-[#E2E5E9] p-2">
+                        <div className="flex justify-center gap-1">
+                          {canEditDormitoryRecord(row) && (
+                            <>
+                              {!sameGroupAsPrevious && (
+                                <button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 font-bold text-emerald-700 hover:bg-emerald-50">공과금</button>
+                              )}
+                              <button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 font-bold text-[#243B5A] hover:bg-[#F5F6F8]">수정</button>
+                              <button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 font-bold text-red-600 hover:bg-red-50">삭제</button>
+                            </>
+                          )}
+                        </div>
+                      </td>
                     </tr>;
                   })}{filteredDormitoryRows.length === 0 && <tr><td colSpan={11} className="p-8 text-[#64748B]">검색 결과가 없습니다.</td></tr>}</tbody>
                 </table>
