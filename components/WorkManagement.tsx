@@ -420,7 +420,29 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
       <form onSubmit={saveUsage} onClick={e=>e.stopPropagation()} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-1 text-[11px] text-[#64748B]">사용자 {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">차량번호 선택</label><select value={activeVehicleId} onChange={e=>setActiveVehicleId(e.target.value)} required className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:bg-white"><option value="">차량을 선택해주세요</option>{vehicles.map(vehicle=><option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}</select></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">사용시간</label><input type="datetime-local" value={usageForm.used_at} onChange={e=>setUsageForm(p=>({...p,used_at:e.target.value}))} required className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <VehicleCalendarPicker
+            label="사용 날짜"
+            value={usageForm.used_at ? usageForm.used_at.split('T')[0] : ''}
+            onChange={date => setUsageForm(p => {
+              const time = p.used_at.split('T')[1] || '09:00';
+              return { ...p, used_at: date ? `${date}T${time}` : '' };
+            })}
+          />
+          <div className="space-y-1">
+            <label className="block text-[11px] font-semibold text-[#1F2937]">사용 시간</label>
+            <input
+              type="time"
+              value={usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : ''}
+              onChange={e => setUsageForm(p => {
+                const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
+                return { ...p, used_at: `${date}T${e.target.value}` };
+              })}
+              required
+              className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white"
+            />
+          </div>
+        </div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs"/></div>
