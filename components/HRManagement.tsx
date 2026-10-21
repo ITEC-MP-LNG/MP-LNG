@@ -60,7 +60,7 @@ interface HRManagementProps {
   isAdmin?: boolean;
   currentUserRole?: string;
   currentUser?: any;
-  initialAction?: 'self-edit' | 'my-team' | null;
+  initialAction?: 'self-edit' | 'my-team' | 'dormitory' | null; // 👈 'dormitory' 추가
   onInitialActionHandled?: () => void;
   onCurrentUserStatusChange?: (status: '근무중' | '휴무') => void;
 }
