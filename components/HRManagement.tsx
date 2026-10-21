@@ -1902,10 +1902,12 @@ export default function HRManagement({
                   <tbody>
                     {(() => {
                       const rows = filteredDormitoryRows;
-                      const spanMap: { dormSpan: number[]; roomSpan: number[]; mPayerSpan: number[]; gPayerSpan: number[]; noteSpan: number[] } = {
+                      const spanMap: { dormSpan: number[]; roomSpan: number[]; mDateSpan: number[]; mPayerSpan: number[]; gDateSpan: number[]; gPayerSpan: number[]; noteSpan: number[] } = {
                         dormSpan: new Array(rows.length).fill(1),
                         roomSpan: new Array(rows.length).fill(1),
+                        mDateSpan: new Array(rows.length).fill(1),
                         mPayerSpan: new Array(rows.length).fill(1),
+                        gDateSpan: new Array(rows.length).fill(1),
                         gPayerSpan: new Array(rows.length).fill(1),
                         noteSpan: new Array(rows.length).fill(1),
                       };
@@ -1924,7 +1926,7 @@ export default function HRManagement({
                         i = j;
                       }
 
-                      // 2. 호실 병합 및 납부자, 비고 병합 계산 (기숙사명과 호실이 같을 때)
+                      // 2. 호실, 납부일, 납부자, 비고 병합 계산 (기숙사명과 호실이 같을 때)
                       for (let i = 0; i < rows.length; ) {
                         let j = i;
                         while (
@@ -1936,12 +1938,16 @@ export default function HRManagement({
                         }
                         const count = j - i;
                         spanMap.roomSpan[i] = count;
+                        spanMap.mDateSpan[i] = count;
                         spanMap.mPayerSpan[i] = count;
+                        spanMap.gDateSpan[i] = count;
                         spanMap.gPayerSpan[i] = count;
                         spanMap.noteSpan[i] = count;
                         for (let k = i + 1; k < j; k++) {
                           spanMap.roomSpan[k] = 0;
+                          spanMap.mDateSpan[k] = 0;
                           spanMap.mPayerSpan[k] = 0;
+                          spanMap.gDateSpan[k] = 0;
                           spanMap.gPayerSpan[k] = 0;
                           spanMap.noteSpan[k] = 0;
                         }
@@ -1958,12 +1964,17 @@ export default function HRManagement({
                         const mRecord = roomGroup.find(r => r.management_fee_date) || row;
                         const gRecord = roomGroup.find(r => r.gas_fee_date) || row;
 
+                        const mDateVal = mRecord.management_fee_date ? String(mRecord.management_fee_date).slice(0,10).replace(/-/g,'/') : '-';
+                        const gDateVal = gRecord.gas_fee_date ? String(gRecord.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-';
+
                         const mEditorName = mRecord.management_fee_date ? (users.find((u) => String(u.id) === String(mRecord.management_fee_updated_by))?.name || (String(currentUser?.id || '') === String(mRecord.management_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
                         const gEditorName = gRecord.gas_fee_date ? (users.find((u) => String(u.id) === String(gRecord.gas_fee_updated_by))?.name || (String(currentUser?.id || '') === String(gRecord.gas_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
 
                         const dSpan = spanMap.dormSpan[index];
                         const rSpan = spanMap.roomSpan[index];
+                        const mdSpan = spanMap.mDateSpan[index];
                         const mpSpan = spanMap.mPayerSpan[index];
+                        const gdSpan = spanMap.gDateSpan[index];
                         const gpSpan = spanMap.gPayerSpan[index];
                         const nSpan = spanMap.noteSpan[index];
 
@@ -1987,15 +1998,24 @@ export default function HRManagement({
                             )}
 
                             <td className="border border-[#E2E5E9] p-2">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
-                            <td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
                             
+                            {mdSpan > 0 && (
+                              <td rowSpan={mdSpan} className="border border-[#E2E5E9] p-2 bg-white align-middle">
+                                {mDateVal}
+                              </td>
+                            )}
+
                             {mpSpan > 0 && (
                               <td rowSpan={mpSpan} className="border border-[#E2E5E9] p-2 bg-white align-middle">
                                 {mEditorName}
                               </td>
                             )}
 
-                            <td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
+                            {gdSpan > 0 && (
+                              <td rowSpan={gdSpan} className="border border-[#E2E5E9] p-2 bg-white align-middle">
+                                {gDateVal}
+                              </td>
+                            )}
                             
                             {gpSpan > 0 && (
                               <td rowSpan={gpSpan} className="border border-[#E2E5E9] p-2 bg-white align-middle">
