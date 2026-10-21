@@ -60,7 +60,7 @@ interface HRManagementProps {
   isAdmin?: boolean;
   currentUserRole?: string;
   currentUser?: any;
-  initialAction?: 'self-edit' | 'my-team' | 'dormitory' | null;
+  initialAction?: 'self-edit' | 'my-team' | null;
   onInitialActionHandled?: () => void;
   onCurrentUserStatusChange?: (status: '근무중' | '휴무') => void;
 }
@@ -865,16 +865,33 @@ export default function HRManagement({
         }
         const { error } = await supabase.from('dormitory_records').update(payload).eq('id', dormitoryEditing.id);
         if (error) throw error;
+        setDormitoryRows((prev) => prev.map((row: any) => String(row.id) === String(dormitoryEditing.id) ? {
+          ...row,
+          ...payload,
+          dormitory_name: selectedLocation.name,
+          room: payload.note || '',
+          management_fee_date: payload.management_fee_due_date || '',
+          gas_fee_date: payload.gas_fee_due_date || '',
+          condition_note: payload.condition_note || ''
+        } : row));
       } else {
         payload.created_by = currentUser?.id ? String(currentUser.id) : null;
         if (dormitoryForm.management_fee_date) payload.management_fee_updated_by = currentUser?.id ? String(currentUser.id) : null;
         if (dormitoryForm.gas_fee_date) payload.gas_fee_updated_by = currentUser?.id ? String(currentUser.id) : null;
-        const { error } = await supabase.from('dormitory_records').insert(payload);
+        const { data, error } = await supabase.from('dormitory_records').insert(payload).select('id').single();
         if (error) throw error;
+        setDormitoryRows((prev) => [...prev, {
+          ...payload,
+          id: data.id,
+          dormitory_name: selectedLocation.name,
+          room: payload.note || '',
+          management_fee_date: payload.management_fee_due_date || '',
+          gas_fee_date: payload.gas_fee_due_date || '',
+          condition_note: payload.condition_note || ''
+        }]);
       }
       setDormitoryEditing(null);
       showNotice('기숙사 현황을 저장했습니다.', 'success');
-      await loadDormitoryData();
     } catch (error: any) {
       console.error('기숙사 현황 저장 실패:', error?.message || error);
       showNotice('기숙사 현황 저장에 실패했습니다. 테이블 권한과 RLS 정책을 확인해주세요.', 'error');
@@ -887,8 +904,9 @@ export default function HRManagement({
     try {
       const { error } = await supabase.from('dormitory_records').delete().eq('id', row.id);
       if (error) throw error;
+      setDormitoryRows((prev) => prev.filter((item: any) => String(item.id) !== String(row.id)));
+      setSelectedDormitoryIds((prev) => prev.filter((id) => String(id) !== String(row.id)));
       showNotice('기숙사 현황을 삭제했습니다.', 'success');
-      await loadDormitoryData();
     } catch (error: any) {
       console.error('기숙사 현황 삭제 실패:', error?.message || error);
       showNotice('기숙사 현황 삭제에 실패했습니다.', 'error');
@@ -901,11 +919,12 @@ export default function HRManagement({
     if (!canManageDormitories) { showNotice('관리자만 기숙사명을 추가할 수 있습니다.', 'warning'); return; }
     if (dormitoryLocations.some((existing) => existing.trim().toLocaleLowerCase() === name.toLocaleLowerCase())) { showNotice('이미 등록된 기숙사명입니다. 다른 이름을 입력해주세요.', 'warning'); return; }
     try {
-      const { error } = await supabase.from('dormitory_locations').insert({ name, is_active: true });
+      const { data, error } = await supabase.from('dormitory_locations').insert({ name, is_active: true }).select('id,name,is_active').single();
       if (error) throw error;
+      setDormitoryLocationOptions((prev) => [...prev, { id: Number(data.id), name: String(data.name) }].sort((a, b) => a.name.localeCompare(b.name, 'ko')));
+      setDormitoryLocations((prev) => [...prev, String(data.name)].sort((a, b) => a.localeCompare(b, 'ko')));
       setNewDormitoryName('');
       showNotice('기숙사명을 추가했습니다.', 'success');
-      await loadDormitoryData();
     } catch (error: any) {
       const errorMessage = String(error?.message || error?.details || error?.hint || '');
       console.error('기숙사명 추가 실패:', errorMessage || error);
@@ -924,8 +943,9 @@ export default function HRManagement({
     try {
       const { error } = await supabase.from('dormitory_locations').update({ is_active: false }).eq('name', name);
       if (error) throw error;
+      setDormitoryLocationOptions((prev) => prev.filter((location) => location.name !== name));
+      setDormitoryLocations((prev) => prev.filter((location) => location !== name));
       showNotice('기숙사명을 삭제했습니다.', 'success');
-      await loadDormitoryData();
     } catch (error: any) {
       console.error('기숙사명 삭제 실패:', error?.message || error);
       showNotice('기숙사명 삭제에 실패했습니다.', 'error');
@@ -1017,9 +1037,14 @@ export default function HRManagement({
       const roomIds = Array.from(new Set([...roomRows.map((row: any) => row.id), utilityEditing.id].filter(Boolean)));
       const { error } = await supabase.from('dormitory_records').update(payload).in('id', roomIds);
       if (error) throw error;
+      setDormitoryRows((prev) => prev.map((row: any) => roomIds.some((id) => String(id) === String(row.id)) ? {
+        ...row,
+        ...payload,
+        management_fee_date: payload.management_fee_due_date !== undefined ? (payload.management_fee_due_date || '') : row.management_fee_date,
+        gas_fee_date: payload.gas_fee_due_date !== undefined ? (payload.gas_fee_due_date || '') : row.gas_fee_date
+      } : row));
       setUtilityEditing(null);
       showNotice('해당 호실의 공과금 납입일을 저장했습니다.', 'success');
-      await loadDormitoryData();
     } catch (error: any) {
       console.error('공과금 납입일 저장 실패:', error?.message || error);
       showNotice(`공과금 납입일 저장에 실패했습니다: ${error?.message || '권한 및 RLS 정책을 확인해주세요.'}`, 'error');
@@ -1036,9 +1061,9 @@ export default function HRManagement({
     try {
       const { error } = await supabase.from('dormitory_records').delete().in('id', ids);
       if (error) throw error;
+      setDormitoryRows((prev) => prev.filter((row: any) => !ids.some((id) => String(id) === String(row.id))));
       setSelectedDormitoryIds([]);
       showNotice(`${ids.length}건의 기숙사 현황을 삭제했습니다.`, 'success');
-      await loadDormitoryData();
     } catch (error: any) {
       console.error('기숙사 현황 일괄 삭제 실패:', error?.message || error);
       showNotice(`선택 삭제에 실패했습니다: ${error?.message || '테이블 권한과 RLS 정책을 확인해주세요.'}`, 'error');
@@ -1096,10 +1121,6 @@ export default function HRManagement({
       const myDepartment = String(currentUser?.department || '').trim();
       setActiveTab('ORG');
       setSubGroupType('DEPT');
-      } else if (initialAction === 'dormitory') { // 👈 이 부분을 추가해주세요!
-      setActiveTab('ORG');
-      setSubGroupType('DORM');
-    }
       if (myDepartment && users.some((user) => (user.department || '미지정 파트') === myDepartment)) {
         setSelectedSubCategory(myDepartment);
         setSearchTerm('');
