@@ -1006,14 +1006,14 @@ export default function HRManagement({
     const mDone = !!row.management_fee_date;
     const gDone = !!row.gas_fee_date;
 
-    if (mDone && gDone) {
-      showNotice('공과금 납입이 완료되었습니다.', 'success');
-    } else if (mDone) {
-      showNotice('가스비가 미납입 되었습니다.', 'warning');
-    } else if (gDone) {
-      showNotice('관리비가 미납입 되었습니다.', 'warning');
-    } else {
+    if (!mDone && !gDone) {
       showNotice('관리비와 가스비가 모두 미납입 되었습니다.', 'warning');
+    } else if (!mDone) {
+      showNotice('관리비가 미납입 되었습니다.', 'warning');
+    } else if (!gDone) {
+      showNotice('가스비가 미납입 되었습니다.', 'warning');
+    } else {
+      showNotice('공과금 납입이 완료되었습니다.', 'success');
     }
 
     setUtilityEditing(row);
