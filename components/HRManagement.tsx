@@ -60,11 +60,11 @@ interface HRManagementProps {
   isAdmin?: boolean;
   currentUserRole?: string;
   currentUser?: any;
-  initialAction?: 'self-edit' | 'my-team' | 'dormitory' | null; // 'dormitory' 추가
+  initialAction?: 'self-edit' | 'my-team' | 'dormitory' | null;
   onInitialActionHandled?: () => void;
   onCurrentUserStatusChange?: (status: '근무중' | '휴무') => void;
 }
-// 변경 여부를 비교할 때 객체 키 순서 차이와 undefined/null 차이로 불필요한 UPDATE가 발생하지 않게 합니다.
+
 function normalizeForCompare(value: any): any {
   if (value === undefined || value === null) return null;
   if (Array.isArray(value)) return value.map(normalizeForCompare);
@@ -116,9 +116,6 @@ function addYearsToDate(dateStr: string, years: number) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-
-
-/** 앱 공통 디자인을 사용하는 사용자 정의 날짜 선택 달력 */
 function CalendarDatePicker({
   value,
   onChange,
@@ -547,7 +544,7 @@ export default function HRManagement({
   isAdmin = false, 
   currentUserRole = '',
   currentUser = null,
-   = null,
+  initialAction = null,
   onInitialActionHandled,
   onCurrentUserStatusChange
 }: HRManagementProps) {
@@ -650,7 +647,6 @@ export default function HRManagement({
 
   const canManageAbsence = (targetUser: HRUser) => isAdmin || isSuperAdmin || (isTeamLeader && String(targetUser.department || '') === String(currentUser?.department || '')) || isSelf(targetUser);
 
-  // ✅ 2번, 3번 연동: 메인 화면 상단 계정 메뉴와 HR 관리 화면 간 근무 상태 즉시 동기화
   const handleQuickStatusChange = async (targetUser: HRUser, status: '근무중' | '휴무') => {
     const currentStatus = targetUser.work_status === '휴무' ? '휴무' : '근무중';
     if (currentStatus === status) return;
@@ -669,7 +665,6 @@ export default function HRManagement({
       setUsers(prev => prev.map(user => user.id === targetUser.id ? updatedUser : user));
       setDetailUser(prev => prev?.id === targetUser.id ? updatedUser : prev);
       
-      // 본인 계정인 경우 상단 메인 화면 상태와 실시간 연동 콜백 호출
       if (isSelf(targetUser)) {
         onCurrentUserStatusChange?.(status);
         const local = localStorage.getItem('currentUser');
@@ -983,7 +978,6 @@ export default function HRManagement({
       if (j - i > 1) {
         ws['!merges'].push({ s: { r: i + 3, c: 1 }, e: { r: j + 2, c: 1 } });
         ws['!merges'].push({ s: { r: i + 3, c: 2 }, e: { r: j + 2, c: 2 } });
-        // 관리비/가스비 납부일과 납부자도 호실별로 병합
         for (const column of [4, 5, 6, 7]) {
           ws['!merges'].push({ s: { r: i + 3, c: column }, e: { r: j + 2, c: column } });
         }
@@ -1027,7 +1021,6 @@ export default function HRManagement({
     }
     if (!Object.keys(payload).length) { setUtilityEditing(null); showNotice('변경된 공과금 납입일이 없습니다.', 'info'); return; }
     try {
-      // 공과금은 개인별이 아니라 같은 기숙사명 + 호실 전체에 공통 적용합니다.
       const targetRoom = String(utilityEditing.room || utilityEditing.note || '').trim();
       const roomRows = dormitoryRows.filter((row: any) =>
         Number(row.location_id) === Number(utilityEditing.location_id) &&
@@ -1120,10 +1113,6 @@ export default function HRManagement({
       const myDepartment = String(currentUser?.department || '').trim();
       setActiveTab('ORG');
       setSubGroupType('DEPT');
-    } else if (initialAction === 'dormitory') {
-      setActiveTab('ORG');
-      setSubGroupType('DORM');
-    }
       if (myDepartment && users.some((user) => (user.department || '미지정 파트') === myDepartment)) {
         setSelectedSubCategory(myDepartment);
         setSearchTerm('');
@@ -1131,6 +1120,9 @@ export default function HRManagement({
         setSelectedSubCategory('ALL');
         showNotice('소속 파트를 확인하지 못해 전체 파트 조직도를 표시합니다.', 'warning');
       }
+    } else if (initialAction === 'dormitory') {
+      setActiveTab('ORG');
+      setSubGroupType('DORM');
     }
     onInitialActionHandled?.();
   }, [initialAction, loading, users, currentUser, onInitialActionHandled]);
