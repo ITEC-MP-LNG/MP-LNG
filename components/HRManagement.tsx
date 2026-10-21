@@ -904,9 +904,17 @@ export default function HRManagement({
     }
   };
 
+  const [confirmDormitoryRow, setConfirmDormitoryRow] = useState<any | null>(null);
+
   const deleteDormitoryRecord = async (row: any) => {
     if (!canEditDormitoryRecord(row)) { showNotice('본인 정보 또는 관리자만 삭제할 수 있습니다.', 'warning'); return; }
-    if (!window.confirm('해당 기숙사 현황을 삭제하시겠습니까?')) return;
+    setConfirmDormitoryRow(row);
+  };
+
+  const handleConfirmDeleteDormitory = async () => {
+    if (!confirmDormitoryRow) return;
+    const row = confirmDormitoryRow;
+    setConfirmDormitoryRow(null);
     try {
       const { error } = await supabase.from('dormitory_records').delete().eq('id', row.id);
       if (error) throw error;
@@ -1010,8 +1018,13 @@ export default function HRManagement({
   };
 
   const openUtilityEditor = (row: any) => {
-    const mDone = !!row.management_fee_date;
-    const gDone = !!row.gas_fee_date;
+    // 같은 기숙사 및 호실에 거주하는 인원의 납부일과 납부자를 동일하게 통일하여 가져옴
+    const sameRoomRows = dormitoryRows.filter(r => r.dormitory_name === row.dormitory_name && (r.room || '') === (row.room || ''));
+    const sharedMDate = sameRoomRows.find(r => r.management_fee_date)?.management_fee_date || row.management_fee_date || '';
+    const sharedGDate = sameRoomRows.find(r => r.gas_fee_date)?.gas_fee_date || row.gas_fee_date || '';
+
+    const mDone = !!sharedMDate;
+    const gDone = !!sharedGDate;
 
     if (!mDone && !gDone) {
       showNotice('관리비와 가스비가 모두 미납입 되었습니다.', 'warning');
@@ -1024,7 +1037,7 @@ export default function HRManagement({
     }
 
     setUtilityEditing(row);
-    setUtilityForm({ management_fee_date: row.management_fee_date || '', gas_fee_date: row.gas_fee_date || '' });
+    setUtilityForm({ management_fee_date: sharedMDate, gas_fee_date: sharedGDate });
   };
 
   const saveUtilityDates = async () => {
@@ -1035,27 +1048,40 @@ export default function HRManagement({
       return;
     }
 
+    // 같은 기숙사 및 호실에 거주하는 모든 인원의 ID들을 찾음
+    const targetRoomRows = dormitoryRows.filter(r => r.dormitory_name === utilityEditing.dormitory_name && (r.room || '') === (utilityEditing.room || ''));
+    const targetIds = targetRoomRows.map(r => r.id);
+
     const payload: any = {};
-    if (utilityForm.management_fee_date !== (utilityEditing.management_fee_date || '')) {
+    const mDateChanged = utilityForm.management_fee_date !== (utilityEditing.management_fee_date || '');
+    const gDateChanged = utilityForm.gas_fee_date !== (utilityEditing.gas_fee_date || '');
+
+    if (mDateChanged) {
       payload.management_fee_due_date = utilityForm.management_fee_date || null;
       payload.management_fee_updated_by = utilityForm.management_fee_date ? (currentUser?.id ? String(currentUser.id) : null) : null;
     }
-    if (utilityForm.gas_fee_date !== (utilityEditing.gas_fee_date || '')) {
+    if (gDateChanged) {
       payload.gas_fee_due_date = utilityForm.gas_fee_date || null;
       payload.gas_fee_updated_by = utilityForm.gas_fee_date ? (currentUser?.id ? String(currentUser.id) : null) : null;
     }
     if (!Object.keys(payload).length) { setUtilityEditing(null); showNotice('변경된 공과금 납입일이 없습니다.', 'info'); return; }
+    
     try {
-      const { error } = await supabase.from('dormitory_records').update(payload).eq('id', utilityEditing.id);
+      // 같은 호실에 거주하는 모든 인원에게 일괄 적용 (업데이트)
+      const { error } = await supabase.from('dormitory_records').update(payload).in('id', targetIds);
       if (error) throw error;
-      setDormitoryRows((prev) => prev.map((row: any) => String(row.id) === String(utilityEditing.id) ? {
+
+      setDormitoryRows((prev) => prev.map((row: any) => targetIds.includes(row.id) ? {
         ...row,
         ...payload,
         management_fee_date: payload.management_fee_due_date !== undefined ? (payload.management_fee_due_date || '') : row.management_fee_date,
-        gas_fee_date: payload.gas_fee_due_date !== undefined ? (payload.gas_fee_due_date || '') : row.gas_fee_date
+        gas_fee_date: payload.gas_fee_due_date !== undefined ? (payload.gas_fee_due_date || '') : row.gas_fee_date,
+        management_fee_updated_by: payload.management_fee_updated_by !== undefined ? payload.management_fee_updated_by : row.management_fee_updated_by,
+        gas_fee_updated_by: payload.gas_fee_updated_by !== undefined ? payload.gas_fee_updated_by : row.gas_fee_updated_by
       } : row));
+
       setUtilityEditing(null);
-      showNotice('해당 입주자의 공과금 납입일을 저장했습니다.', 'success');
+      showNotice('같은 호실 거주 인원들의 공과금 납입일이 공동으로 저장되었습니다.', 'success');
     } catch (error: any) {
       console.error('공과금 납입일 저장 실패:', error?.message || error);
       showNotice(`공과금 납입일 저장에 실패했습니다: ${error?.message || '권한 및 RLS 정책을 확인해주세요.'}`, 'error');
@@ -1854,6 +1880,12 @@ export default function HRManagement({
               <div className="space-y-2 md:hidden">
                 {filteredDormitoryRows.map((row) => {
                   const person = users.find((u) => String(u.id) === String(row.user_id));
+                  
+                  // 같은 기숙사 및 호실 기준으로 공동 납부 정보 추출
+                  const sameRoomRows = filteredDormitoryRows.filter(r => r.dormitory_name === row.dormitory_name && (r.room || '') === (row.room || ''));
+                  const sharedMRecord = sameRoomRows.find(r => r.management_fee_date) || row;
+                  const sharedGRecord = sameRoomRows.find(r => r.gas_fee_date) || row;
+
                   const feeEditor = (id: string) => users.find((u) => String(u.id) === String(id))?.name || (String(currentUser?.id || '') === String(id || '') ? currentUser?.name : '') || '확인 필요';
                   return <article key={row.id} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-xs">
                     <div className="flex items-start justify-between gap-2 border-b border-[#E2E5E9] pb-2">
@@ -1870,8 +1902,8 @@ export default function HRManagement({
                     </div>
                     <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                       <div><dt className="text-[#64748B]">입주날짜</dt><dd className="mt-0.5 font-semibold">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</dd></div>
-                      <div><dt className="text-[#64748B]">관리비 납부일</dt><dd className="mt-0.5 font-semibold">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {row.management_fee_date ? feeEditor(row.management_fee_updated_by) : '미납'}</dd></div>
-                      <div><dt className="text-[#64748B]">가스비 납부일</dt><dd className="mt-0.5 font-semibold">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {row.gas_fee_date ? feeEditor(row.gas_fee_updated_by) : '미납'}</dd></div>
+                      <div><dt className="text-[#64748B]">관리비 납부일</dt><dd className="mt-0.5 font-semibold">{sharedMRecord.management_fee_date ? String(sharedMRecord.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {sharedMRecord.management_fee_date ? feeEditor(sharedMRecord.management_fee_updated_by) : '미납'}</dd></div>
+                      <div><dt className="text-[#64748B]">가스비 납부일</dt><dd className="mt-0.5 font-semibold">{sharedGRecord.gas_fee_date ? String(sharedGRecord.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {sharedGRecord.gas_fee_date ? feeEditor(sharedGRecord.gas_fee_updated_by) : '미납'}</dd></div>
                       <div className="col-span-2 rounded-lg bg-[#F8FAFC] p-2"><dt className="text-[#64748B]">비고 / 이상유무</dt><dd className="mt-0.5 whitespace-pre-wrap break-words">{row.condition_note || '내용 없음'}</dd></div>
                     </dl>
                   </article>;
@@ -1957,7 +1989,7 @@ export default function HRManagement({
                       return rows.map((row, index) => {
                         const person = users.find((u) => String(u.id) === String(row.user_id));
                         
-                        // 동일 호실 그룹에서 실제 납부 정보를 가지고 있는 row 탐색
+                        // 동일 호실 그룹에서 실제 납부 정보를 가지고 있는 row 탐색 (공동 반영)
                         const roomGroup = rows.filter(
                           r => r.dormitory_name === row.dormitory_name && (r.room || '') === (row.room || '')
                         );
@@ -2060,7 +2092,7 @@ export default function HRManagement({
                     <button type="button" onClick={() => setUtilityEditing(null)} className="rounded-lg p-1 text-[#64748B] hover:bg-[#F5F6F8] transition">✕</button>
                   </div>
                   <p className="text-xs font-semibold text-[#64748B]">
-                    {users.find((u) => String(u.id) === String(utilityEditing.user_id))?.name || ''} · {utilityEditing.dormitory_name || ''} {utilityEditing.room || ''}
+                    {users.find((u) => String(u.id) === String(utilityEditing.user_id))?.name || ''} · {utilityEditing.dormitory_name || ''} {utilityEditing.room || ''} (동일 호실 거주 인원 공동 적용)
                   </p>
                   <div className="space-y-3">
                     <div>
@@ -2933,6 +2965,43 @@ export default function HRManagement({
               <button
                 type="button"
                 onClick={handleConfirmDelete}
+                className="rounded-lg bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-rose-700 transition"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmDormitoryRow && (
+        <div className="fixed inset-0 z-[110] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div role="dialog" aria-modal="true" className="w-full max-w-md overflow-hidden rounded-xl border border-rose-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.16)] animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between bg-[#243B5A] px-3.5 py-2">
+              <span className="text-[11px] font-bold tracking-wide text-white">현장관리 알림</span>
+              <button type="button" onClick={() => setConfirmDormitoryRow(null)} aria-label="알림 닫기" className="rounded-md px-1.5 text-lg leading-none text-white/80 hover:bg-white/10 hover:text-white">×</button>
+            </div>
+            <div className="flex items-start gap-3 px-4 py-4">
+              <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-extrabold text-white">!</div>
+              <div className="flex-1 space-y-1">
+                <h3 className="text-sm font-bold text-[#1F2937]">기숙사 현황 삭제 확인</h3>
+                <p className="text-xs leading-5 text-[#475569]">
+                  해당 기숙사 현황을 삭제하시겠습니까?
+                  <br />삭제된 데이터는 복구할 수 없습니다.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 bg-[#F8FAFC] px-4 py-3 border-t border-[#E2E5E9]">
+              <button
+                type="button"
+                onClick={() => setConfirmDormitoryRow(null)}
+                className="rounded-lg border border-[#E2E5E9] bg-white px-3.5 py-1.5 text-xs font-bold text-[#64748B] hover:bg-[#F5F6F8] transition"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDormitory}
                 className="rounded-lg bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-rose-700 transition"
               >
                 삭제
