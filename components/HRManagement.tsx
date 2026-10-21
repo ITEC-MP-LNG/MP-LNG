@@ -60,11 +60,10 @@ interface HRManagementProps {
   isAdmin?: boolean;
   currentUserRole?: string;
   currentUser?: any;
-  initialAction?: 'self-edit' | 'my-team' | 'dormitory' | null; // 👈 'dormitory' 추가
+  initialAction?: 'self-edit' | 'my-team' | 'dormitory' | null; // 'dormitory' 추가
   onInitialActionHandled?: () => void;
   onCurrentUserStatusChange?: (status: '근무중' | '휴무') => void;
 }
-
 // 변경 여부를 비교할 때 객체 키 순서 차이와 undefined/null 차이로 불필요한 UPDATE가 발생하지 않게 합니다.
 function normalizeForCompare(value: any): any {
   if (value === undefined || value === null) return null;
@@ -548,7 +547,7 @@ export default function HRManagement({
   isAdmin = false, 
   currentUserRole = '',
   currentUser = null,
-  initialAction = null,
+   = null,
   onInitialActionHandled,
   onCurrentUserStatusChange
 }: HRManagementProps) {
@@ -1121,7 +1120,7 @@ export default function HRManagement({
       const myDepartment = String(currentUser?.department || '').trim();
       setActiveTab('ORG');
       setSubGroupType('DEPT');
-      } else if (initialAction === 'dormitory') {
+    } else if (initialAction === 'dormitory') {
       setActiveTab('ORG');
       setSubGroupType('DORM');
     }
