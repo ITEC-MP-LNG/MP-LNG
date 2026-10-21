@@ -242,7 +242,7 @@ function CalendarDatePicker({
             aria-modal="true"
             aria-label="날짜 선택"
             onClick={(event) => event.stopPropagation()}
-            className="relative w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
+            className="relative w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px))] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
           >
             <div className="mb-3 flex items-center justify-between gap-2">
               <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft size={16} /></button>
@@ -960,12 +960,9 @@ export default function HRManagement({
     ];
     filtered.forEach((row) => {
       const person = users.find((u) => String(u.id) === String(row.user_id));
-      const roomRows = filtered.filter((candidate) => candidate.dormitory_name === row.dormitory_name && String(candidate.room || '').trim() === String(row.room || '').trim());
-      const managementRow = roomRows.find((candidate) => candidate.management_fee_date) || row;
-      const gasRow = roomRows.find((candidate) => candidate.gas_fee_date) || row;
-      const managementEditor = managementRow.management_fee_date ? (users.find((u) => String(u.id) === String(managementRow.management_fee_updated_by))?.name || (String(currentUser?.id || '') === String(managementRow.management_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
-      const gasEditor = gasRow.gas_fee_date ? (users.find((u) => String(u.id) === String(gasRow.gas_fee_updated_by))?.name || (String(currentUser?.id || '') === String(gasRow.gas_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
-      rows.push([person?.name || row.user_id || '', row.dormitory_name || '', row.room || '', row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '', managementRow.management_fee_date ? String(managementRow.management_fee_date).slice(0,10).replace(/-/g,'/') : '', managementEditor, gasRow.gas_fee_date ? String(gasRow.gas_fee_date).slice(0,10).replace(/-/g,'/') : '', gasEditor, row.condition_note || '']);
+      const managementEditor = row.management_fee_date ? (users.find((u) => String(u.id) === String(row.management_fee_updated_by))?.name || (String(currentUser?.id || '') === String(row.management_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
+      const gasEditor = row.gas_fee_date ? (users.find((u) => String(u.id) === String(row.gas_fee_updated_by))?.name || (String(currentUser?.id || '') === String(row.gas_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
+      rows.push([person?.name || row.user_id || '', row.dormitory_name || '', row.room || '', row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '', row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '', managementEditor, row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '', gasEditor, row.condition_note || '']);
     });
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = [
@@ -983,9 +980,6 @@ export default function HRManagement({
       if (j - i > 1) {
         ws['!merges'].push({ s: { r: i + 3, c: 1 }, e: { r: j + 2, c: 1 } });
         ws['!merges'].push({ s: { r: i + 3, c: 2 }, e: { r: j + 2, c: 2 } });
-        for (const column of [4, 5, 6, 7]) {
-          ws['!merges'].push({ s: { r: i + 3, c: column }, e: { r: j + 2, c: column } });
-        }
       }
       i = j;
     }
@@ -1009,19 +1003,14 @@ export default function HRManagement({
   };
 
   const openUtilityEditor = (row: any) => {
-    // 호실 전체 행들 파악 (동일 기숙사 및 동일 호실)
     const targetRoom = String(row.room || row.note || '').trim();
     const roomRows = dormitoryRows.filter((r: any) =>
       Number(r.location_id) === Number(row.location_id) &&
       String(r.room || r.note || '').trim() === targetRoom
     );
 
-    // 관리비, 가스비가 하나라도 입력된 행이 있는지 확인
-    const mRow = roomRows.find((r: any) => !!r.management_fee_date) || row;
-    const gRow = roomRows.find((r: any) => !!r.gas_fee_date) || row;
-
-    const mDone = !!mRow.management_fee_date;
-    const gDone = !!gRow.gas_fee_date;
+    const mDone = !!row.management_fee_date;
+    const gDone = !!row.gas_fee_date;
 
     if (mDone && gDone) {
       showNotice('공과금 납입이 완료되었습니다.', 'success');
@@ -1029,10 +1018,12 @@ export default function HRManagement({
       showNotice('가스비가 미납입 되었습니다.', 'warning');
     } else if (gDone) {
       showNotice('관리비가 미납입 되었습니다.', 'warning');
+    } else {
+      showNotice('관리비와 가스비가 모두 미납입 되었습니다.', 'warning');
     }
 
     setUtilityEditing(row);
-    setUtilityForm({ management_fee_date: mRow.management_fee_date || '', gas_fee_date: gRow.gas_fee_date || '' });
+    setUtilityForm({ management_fee_date: row.management_fee_date || '', gas_fee_date: row.gas_fee_date || '' });
   };
 
   const saveUtilityDates = async () => {
@@ -1048,22 +1039,16 @@ export default function HRManagement({
     }
     if (!Object.keys(payload).length) { setUtilityEditing(null); showNotice('변경된 공과금 납입일이 없습니다.', 'info'); return; }
     try {
-      const targetRoom = String(utilityEditing.room || utilityEditing.note || '').trim();
-      const roomRows = dormitoryRows.filter((row: any) =>
-        Number(row.location_id) === Number(utilityEditing.location_id) &&
-        String(row.room || row.note || '').trim() === targetRoom
-      );
-      const roomIds = Array.from(new Set([...roomRows.map((row: any) => row.id), utilityEditing.id].filter(Boolean)));
-      const { error } = await supabase.from('dormitory_records').update(payload).in('id', roomIds);
+      const { error } = await supabase.from('dormitory_records').update(payload).eq('id', utilityEditing.id);
       if (error) throw error;
-      setDormitoryRows((prev) => prev.map((row: any) => roomIds.some((id) => String(id) === String(row.id)) ? {
+      setDormitoryRows((prev) => prev.map((row: any) => String(row.id) === String(utilityEditing.id) ? {
         ...row,
         ...payload,
         management_fee_date: payload.management_fee_due_date !== undefined ? (payload.management_fee_due_date || '') : row.management_fee_date,
         gas_fee_date: payload.gas_fee_due_date !== undefined ? (payload.gas_fee_due_date || '') : row.gas_fee_date
       } : row));
       setUtilityEditing(null);
-      showNotice('해당 호실의 공과금 납입일을 저장했습니다.', 'success');
+      showNotice('해당 입주자의 공과금 납입일을 저장했습니다.', 'success');
     } catch (error: any) {
       console.error('공과금 납입일 저장 실패:', error?.message || error);
       showNotice(`공과금 납입일 저장에 실패했습니다: ${error?.message || '권한 및 RLS 정책을 확인해주세요.'}`, 'error');
@@ -1837,13 +1822,8 @@ export default function HRManagement({
             
             {dormitoryLoading ? <div className="py-8 text-center text-xs text-[#64748B]">기숙사 현황을 불러오는 중...</div> : !dormListCollapsed && <>
               <div className="space-y-2 md:hidden">
-                {filteredDormitoryRows.map((row, index) => {
+                {filteredDormitoryRows.map((row) => {
                   const person = users.find((u) => String(u.id) === String(row.user_id));
-                  const previous = filteredDormitoryRows[index - 1];
-                  const sameRoomAsPrevious = !!previous && previous.dormitory_name === row.dormitory_name && String(previous.room || '').trim() === String(row.room || '').trim();
-                  const roomRows = filteredDormitoryRows.filter((candidate) => candidate.dormitory_name === row.dormitory_name && String(candidate.room || '').trim() === String(row.room || '').trim());
-                  const managementRow = roomRows.find((candidate) => candidate.management_fee_date) || row;
-                  const gasRow = roomRows.find((candidate) => candidate.gas_fee_date) || row;
                   const feeEditor = (id: string) => users.find((u) => String(u.id) === String(id))?.name || (String(currentUser?.id || '') === String(id || '') ? currentUser?.name : '') || '확인 필요';
                   return <article key={row.id} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-xs">
                     <div className="flex items-start justify-between gap-2 border-b border-[#E2E5E9] pb-2">
@@ -1851,9 +1831,7 @@ export default function HRManagement({
                       <div className="flex shrink-0 gap-1">
                         {canEditDormitoryRecord(row) && (
                           <>
-                            {!sameRoomAsPrevious && (
-                              <button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50">공과금</button>
-                            )}
+                            <button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 text-[11px] font-bold text-emerald-700 hover:bg-emerald-50">공과금</button>
                             <button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 text-[11px] font-bold text-[#243B5A] hover:bg-[#F5F6F8]">수정</button>
                             <button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 text-[11px] font-bold text-red-600 hover:bg-red-50">삭제</button>
                           </>
@@ -1862,10 +1840,8 @@ export default function HRManagement({
                     </div>
                     <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
                       <div><dt className="text-[#64748B]">입주날짜</dt><dd className="mt-0.5 font-semibold">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</dd></div>
-                      {!sameRoomAsPrevious && <>
-                        <div><dt className="text-[#64748B]">관리비 납부일</dt><dd className="mt-0.5 font-semibold">{managementRow.management_fee_date ? String(managementRow.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {managementRow.management_fee_date ? feeEditor(managementRow.management_fee_updated_by) : '미납'}</dd></div>
-                        <div><dt className="text-[#64748B]">가스비 납부일</dt><dd className="mt-0.5 font-semibold">{gasRow.gas_fee_date ? String(gasRow.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {gasRow.gas_fee_date ? feeEditor(gasRow.gas_fee_updated_by) : '미납'}</dd></div>
-                      </>}
+                      <div><dt className="text-[#64748B]">관리비 납부일</dt><dd className="mt-0.5 font-semibold">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {row.management_fee_date ? feeEditor(row.management_fee_updated_by) : '미납'}</dd></div>
+                      <div><dt className="text-[#64748B]">가스비 납부일</dt><dd className="mt-0.5 font-semibold">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</dd><dd className="text-[10px] text-[#64748B]">납부자: {row.gas_fee_date ? feeEditor(row.gas_fee_updated_by) : '미납'}</dd></div>
                       <div className="col-span-2 rounded-lg bg-[#F8FAFC] p-2"><dt className="text-[#64748B]">비고 / 이상유무</dt><dd className="mt-0.5 whitespace-pre-wrap break-words">{row.condition_note || '내용 없음'}</dd></div>
                     </dl>
                   </article>;
@@ -1875,32 +1851,25 @@ export default function HRManagement({
               <div className="hidden overflow-x-auto rounded-lg border border-[#E2E5E9] md:block">
                 <table className="w-full border-collapse text-center text-xs">
                   <thead className="bg-[#F5F6F8] text-[#243B5A]"><tr><th rowSpan={2} className="border border-[#CBD5E1] p-2"><input type="checkbox" aria-label="전체 선택" checked={filteredDormitoryRows.length > 0 && filteredDormitoryRows.every((row) => selectedDormitoryIds.includes(String(row.id)))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? Array.from(new Set([...prev, ...filteredDormitoryRows.map((row) => String(row.id))])) : prev.filter((id) => !filteredDormitoryRows.some((row) => String(row.id) === id)))} /></th><th rowSpan={2} className="border border-[#CBD5E1] p-2">성명</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">기숙사명</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">호실</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">입주날짜</th><th colSpan={2} className="border border-[#CBD5E1] p-2">관리비 납부현황</th><th colSpan={2} className="border border-[#CBD5E1] p-2">가스비 납부현황</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">비고 / 이상유무</th><th rowSpan={2} className="border border-[#CBD5E1] p-2">관리</th></tr><tr><th className="border border-[#CBD5E1] p-2">납부일</th><th className="border border-[#CBD5E1] p-2">납부자</th><th className="border border-[#CBD5E1] p-2">납부일</th><th className="border border-[#CBD5E1] p-2">납부자</th></tr></thead>
-                  <tbody>{filteredDormitoryRows.map((row, index) => {
+                  <tbody>{filteredDormitoryRows.map((row) => {
                     const person = users.find((u) => String(u.id) === String(row.user_id));
-                    const previous = filteredDormitoryRows[index - 1];
-                    const sameGroupAsPrevious = previous && previous.dormitory_name === row.dormitory_name && previous.room === row.room;
-                    const sameGroupCount = filteredDormitoryRows.slice(index).findIndex((candidate) => candidate.dormitory_name !== row.dormitory_name || candidate.room !== row.room);
-                    const rowSpan = sameGroupAsPrevious ? 0 : (sameGroupCount === -1 ? filteredDormitoryRows.length - index : sameGroupCount);
-                    const roomRows = filteredDormitoryRows.filter((candidate) => candidate.dormitory_name === row.dormitory_name && String(candidate.room || '').trim() === String(row.room || '').trim());
-                    const managementRow = roomRows.find((candidate) => candidate.management_fee_date) || row;
-                    const gasRow = roomRows.find((candidate) => candidate.gas_fee_date) || row;
                     const editorName = (id: string) => users.find((u) => String(u.id) === String(id))?.name || (String(currentUser?.id || '') === String(id || '') ? currentUser?.name : '') || '확인 필요';
                     return <tr key={row.id} className="hover:bg-blue-50/40">
-                      <td className="border border-[#E2E5E9] p-2"><input type="checkbox" aria-label={`${person?.name || row.user_id} 선택`} checked={selectedDormitoryIds.includes(String(row.id))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? [...prev, String(row.id)] : prev.filter((id) => id !== String(row.id)))} /></td><td className="border border-[#E2E5E9] p-2">{person?.name || row.user_id}</td>
-                      {!sameGroupAsPrevious && <><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2 font-semibold">{row.dormitory_name || '-'}</td><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{row.room || '-'}</td></>}
+                      <td className="border border-[#E2E5E9] p-2"><input type="checkbox" aria-label={`${person?.name || row.user_id} 선택`} checked={selectedDormitoryIds.includes(String(row.id))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? [...prev, String(row.id)] : prev.filter((id) => id !== String(row.id)))} /></td>
+                      <td className="border border-[#E2E5E9] p-2">{person?.name || row.user_id}</td>
+                      <td className="border border-[#E2E5E9] p-2 font-semibold">{row.dormitory_name || '-'}</td>
+                      <td className="border border-[#E2E5E9] p-2">{row.room || '-'}</td>
                       <td className="border border-[#E2E5E9] p-2">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
-                      {!sameGroupAsPrevious && <>
-                        <td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{managementRow.management_fee_date ? String(managementRow.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{managementRow.management_fee_date ? editorName(managementRow.management_fee_updated_by) : '미납'}</td>
-                        <td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{gasRow.gas_fee_date ? String(gasRow.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td><td rowSpan={rowSpan} className="border border-[#E2E5E9] p-2">{gasRow.gas_fee_date ? editorName(gasRow.gas_fee_updated_by) : '미납'}</td>
-                      </>}
+                      <td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
+                      <td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? editorName(row.management_fee_updated_by) : '미납'}</td>
+                      <td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
+                      <td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? editorName(row.gas_fee_updated_by) : '미납'}</td>
                       <td className="max-w-[220px] whitespace-pre-wrap break-words border border-[#E2E5E9] p-2 text-left">{row.condition_note || '-'}</td>
                       <td className="border border-[#E2E5E9] p-2">
                         <div className="flex justify-center gap-1">
                           {canEditDormitoryRecord(row) && (
                             <>
-                              {!sameGroupAsPrevious && (
-                                <button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 font-bold text-emerald-700 hover:bg-emerald-50">공과금</button>
-                              )}
+                              <button type="button" onClick={() => openUtilityEditor(row)} className="rounded-md border border-emerald-200 px-2 py-1 font-bold text-emerald-700 hover:bg-emerald-50">공과금</button>
                               <button type="button" onClick={() => openDormitoryEditor(row)} className="rounded-md border border-[#CBD5E1] px-2 py-1 font-bold text-[#243B5A] hover:bg-[#F5F6F8]">수정</button>
                               <button type="button" onClick={() => void deleteDormitoryRecord(row)} className="rounded-md border border-red-200 px-2 py-1 font-bold text-red-600 hover:bg-red-50">삭제</button>
                             </>
@@ -2703,7 +2672,7 @@ export default function HRManagement({
                     <details key={`ndt-${index}`} className="rounded-lg border border-[#E2E5E9] p-2">
                       <summary className="cursor-pointer font-semibold">{isLt ? `LT ${cert.level || 'Level 선택'} (${selectedLtSubjects.map(value => LT_SUBJECTS.find(item => item.value === value)?.label || value).join(', ') || '서브종목 미선택'})` : `${cert.subject || '종목 미선택'} · ${cert.level || 'Level 선택'}`} · 유효일 {cert.expiry_date || '미입력'}</summary>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                        <div><label className="block text-[10px] text-[#64748B] mb-1">발급형태</label><StyledDropdown value={cert.issuer} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issuer: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></StyledDropdown></div>
+                        <div><label className="block text-[10px] text-[#64748B] mb-1">발행형태</label><StyledDropdown value={cert.issuer} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issuer: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="사내">사내</option><option value="ASNT/ISO">ASNT/ISO</option></StyledDropdown></div>
                         {isLt ? <div className="sm:col-span-2 rounded-lg bg-[#F8FAFC] border border-[#E2E5E9] p-2"><div className="text-[10px] font-bold text-[#64748B] mb-2">LT 서브종목 선택 (복수 선택 가능)</div><div className="grid grid-cols-1 sm:grid-cols-3 gap-2">{LT_SUBJECTS.map(item => <label key={item.value} className="flex items-center gap-2 text-xs"><input type="checkbox" checked={selectedLtSubjects.includes(item.value)} onChange={(e) => { const next = e.target.checked ? [...selectedLtSubjects, item.value] : selectedLtSubjects.filter(value => value !== item.value); updateLt(next); }} />{item.label}</label>)}</div></div> : <div><label className="block text-[10px] text-[#64748B] mb-1">종목</label><StyledDropdown value={cert.subject} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, subject: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="">종목 선택</option>{Array.from(new Set([...ndtSubjectOptions.filter(subject => !isLtCertificateSubject(subject)), ...(cert.subject && !ndtSubjectOptions.includes(cert.subject) ? [cert.subject] : [])])).map(subject => <option key={subject} value={subject}>{subject}</option>)}</StyledDropdown></div>}
                         <div><label className="block text-[10px] text-[#64748B] mb-1">종류</label><StyledDropdown value={cert.level} onChange={(e) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, level: e.target.value } : item) }))} className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value="Level I">Level I</option><option value="Level II">Level II</option><option value="Level III">Level III</option></StyledDropdown></div>
                         <div><label className="block text-[10px] text-[#64748B] mb-1">발행일</label><CalendarDatePicker value={cert.issue_date} onChange={(date) => setFormData(prev => ({ ...prev, ndt_certificates: prev.ndt_certificates.map((item, i) => i === index ? { ...item, issue_date: date, expiry_date: addYearsToDate(date, 5) } : item) }))} /></div>
