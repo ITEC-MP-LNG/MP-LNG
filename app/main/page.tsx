@@ -667,6 +667,9 @@ export default function MainPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
             </div>
+          </div>
+        </div>
+      </header>
 
       <div className="flex-1 max-w-full w-full mx-auto flex">
         <aside className="hidden md:block w-56 bg-card border-r p-3 space-y-1 shrink-0">
