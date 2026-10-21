@@ -1121,6 +1121,10 @@ export default function HRManagement({
       const myDepartment = String(currentUser?.department || '').trim();
       setActiveTab('ORG');
       setSubGroupType('DEPT');
+      } else if (initialAction === 'dormitory') {
+      setActiveTab('ORG');
+      setSubGroupType('DORM');
+    }
       if (myDepartment && users.some((user) => (user.department || '미지정 파트') === myDepartment)) {
         setSelectedSubCategory(myDepartment);
         setSearchTerm('');
