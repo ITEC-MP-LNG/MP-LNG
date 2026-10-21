@@ -832,6 +832,13 @@ export default function HRManagement({
     if (!dormitoryForm.dormitory_name.trim()) { showNotice('기숙사명을 선택해주세요.', 'warning'); return; }
     const selectedLocation = dormitoryLocationOptions.find((location) => location.name === dormitoryForm.dormitory_name.trim());
     if (!selectedLocation) { showNotice('선택한 기숙사명을 찾을 수 없습니다. 기숙사 목록을 새로고침해주세요.', 'warning'); return; }
+    
+    // 동일 날짜 방지 체크
+    if (dormitoryForm.management_fee_date && dormitoryForm.gas_fee_date && dormitoryForm.management_fee_date === dormitoryForm.gas_fee_date) {
+      showNotice('관리비 납부일과 가스비 납부일은 동일한 날짜로 설정할 수 없습니다.', 'warning');
+      return;
+    }
+
     const payload: any = {
       user_id: String(targetUser.id),
       location_id: selectedLocation.id,
@@ -1022,6 +1029,12 @@ export default function HRManagement({
 
   const saveUtilityDates = async () => {
     if (!utilityEditing?.id) return;
+
+    if (utilityForm.management_fee_date && utilityForm.gas_fee_date && utilityForm.management_fee_date === utilityForm.gas_fee_date) {
+      showNotice('관리비 납부일과 가스비 납부일은 동일한 날짜로 설정할 수 없습니다.', 'warning');
+      return;
+    }
+
     const payload: any = {};
     if (utilityForm.management_fee_date !== (utilityEditing.management_fee_date || '')) {
       payload.management_fee_due_date = utilityForm.management_fee_date || null;
@@ -1584,6 +1597,29 @@ export default function HRManagement({
 
   return (
     <div className="w-full min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-3 space-y-3 font-sans box-border">
+      {notice && (
+        <div className="fixed top-3 left-3 right-3 sm:top-5 sm:left-auto sm:right-5 z-[100] w-auto sm:w-[min(92vw,420px)] pt-[env(safe-area-inset-top)]">
+          <div role="status" aria-live="polite" className={`overflow-hidden rounded-xl border bg-white shadow-[0_12px_32px_rgba(15,23,42,0.16)] ${
+            notice.type === 'success' ? 'border-emerald-200' :
+            notice.type === 'error' ? 'border-rose-200' :
+            notice.type === 'warning' ? 'border-amber-200' : 'border-[#CBD5E1]'
+          }`}>
+            <div className="flex items-center justify-between bg-[#243B5A] px-3.5 py-2">
+              <span className="text-[11px] font-bold tracking-wide text-white">현장관리 알림</span>
+              <button type="button" onClick={() => setNotice(null)} aria-label="알림 닫기" className="rounded-md px-1.5 text-lg leading-none text-white/80 hover:bg-white/10 hover:text-white">×</button>
+            </div>
+            <div className="flex items-start gap-3 px-4 py-3">
+              <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold text-white ${
+                notice.type === 'success' ? 'bg-emerald-600' :
+                notice.type === 'error' ? 'bg-rose-600' :
+                notice.type === 'warning' ? 'bg-amber-500' : 'bg-[#64748B]'
+              }`}>{notice.type === 'success' ? '✓' : notice.type === 'error' ? '!' : notice.type === 'warning' ? '!' : 'i'}</div>
+              <p className="flex-1 pt-0.5 text-sm font-medium leading-5 text-[#1F2937]">{notice.message}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white p-3 rounded-xl border border-[#E2E5E9] shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="flex items-center space-x-3">
           <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-xl text-[#243B5A]">
@@ -1866,9 +1902,11 @@ export default function HRManagement({
                   <tbody>
                     {(() => {
                       const rows = filteredDormitoryRows;
-                      const spanMap: { dormSpan: number[]; roomSpan: number[]; noteSpan: number[] } = {
+                      const spanMap: { dormSpan: number[]; roomSpan: number[]; mPayerSpan: number[]; gPayerSpan: number[]; noteSpan: number[] } = {
                         dormSpan: new Array(rows.length).fill(1),
                         roomSpan: new Array(rows.length).fill(1),
+                        mPayerSpan: new Array(rows.length).fill(1),
+                        gPayerSpan: new Array(rows.length).fill(1),
                         noteSpan: new Array(rows.length).fill(1),
                       };
 
@@ -1886,7 +1924,7 @@ export default function HRManagement({
                         i = j;
                       }
 
-                      // 2. 호실 병합 계산 (기숙사명과 호실이 모두 같을 때)
+                      // 2. 호실 병합 및 납부자, 비고 병합 계산 (기숙사명과 호실이 같을 때)
                       for (let i = 0; i < rows.length; ) {
                         let j = i;
                         while (
@@ -1898,25 +1936,13 @@ export default function HRManagement({
                         }
                         const count = j - i;
                         spanMap.roomSpan[i] = count;
-                        for (let k = i + 1; k < j; k++) {
-                          spanMap.roomSpan[k] = 0;
-                        }
-                        i = j;
-                      }
-
-                      // 3. 비고/이상유무 병합 계산 (기숙사명과 호실이 같을 때만)
-                      for (let i = 0; i < rows.length; ) {
-                        let j = i;
-                        while (
-                          j < rows.length &&
-                          rows[j].dormitory_name === rows[i].dormitory_name &&
-                          (rows[j].room || '') === (rows[i].room || '')
-                        ) {
-                          j++;
-                        }
-                        const count = j - i;
+                        spanMap.mPayerSpan[i] = count;
+                        spanMap.gPayerSpan[i] = count;
                         spanMap.noteSpan[i] = count;
                         for (let k = i + 1; k < j; k++) {
+                          spanMap.roomSpan[k] = 0;
+                          spanMap.mPayerSpan[k] = 0;
+                          spanMap.gPayerSpan[k] = 0;
                           spanMap.noteSpan[k] = 0;
                         }
                         i = j;
@@ -1924,10 +1950,21 @@ export default function HRManagement({
 
                       return rows.map((row, index) => {
                         const person = users.find((u) => String(u.id) === String(row.user_id));
-                        const editorName = (id: string) => users.find((u) => String(u.id) === String(id))?.name || (String(currentUser?.id || '') === String(id || '') ? currentUser?.name : '') || '확인 필요';
                         
+                        // 동일 호실 그룹에서 실제 납부 정보를 가지고 있는 row 탐색
+                        const roomGroup = rows.filter(
+                          r => r.dormitory_name === row.dormitory_name && (r.room || '') === (row.room || '')
+                        );
+                        const mRecord = roomGroup.find(r => r.management_fee_date) || row;
+                        const gRecord = roomGroup.find(r => r.gas_fee_date) || row;
+
+                        const mEditorName = mRecord.management_fee_date ? (users.find((u) => String(u.id) === String(mRecord.management_fee_updated_by))?.name || (String(currentUser?.id || '') === String(mRecord.management_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
+                        const gEditorName = gRecord.gas_fee_date ? (users.find((u) => String(u.id) === String(gRecord.gas_fee_updated_by))?.name || (String(currentUser?.id || '') === String(gRecord.gas_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
+
                         const dSpan = spanMap.dormSpan[index];
                         const rSpan = spanMap.roomSpan[index];
+                        const mpSpan = spanMap.mPayerSpan[index];
+                        const gpSpan = spanMap.gPayerSpan[index];
                         const nSpan = spanMap.noteSpan[index];
 
                         return (
@@ -1951,9 +1988,20 @@ export default function HRManagement({
 
                             <td className="border border-[#E2E5E9] p-2">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
                             <td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
-                            <td className="border border-[#E2E5E9] p-2">{row.management_fee_date ? editorName(row.management_fee_updated_by) : '미납'}</td>
+                            
+                            {mpSpan > 0 && (
+                              <td rowSpan={mpSpan} className="border border-[#E2E5E9] p-2 bg-white align-middle">
+                                {mEditorName}
+                              </td>
+                            )}
+
                             <td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
-                            <td className="border border-[#E2E5E9] p-2">{row.gas_fee_date ? editorName(row.gas_fee_updated_by) : '미납'}</td>
+                            
+                            {gpSpan > 0 && (
+                              <td rowSpan={gpSpan} className="border border-[#E2E5E9] p-2 bg-white align-middle">
+                                {gEditorName}
+                              </td>
+                            )}
 
                             {nSpan > 0 && (
                               <td rowSpan={nSpan} className="max-w-[220px] whitespace-pre-wrap break-words border border-[#E2E5E9] p-2 text-left bg-white align-middle">
@@ -2809,29 +2857,6 @@ export default function HRManagement({
         </div>
       )}
 
-      {notice && (
-        <div className="fixed top-3 left-3 right-3 sm:top-5 sm:left-auto sm:right-5 z-[100] w-auto sm:w-[min(92vw,420px)] pt-[env(safe-area-inset-top)]">
-          <div role="status" aria-live="polite" className={`overflow-hidden rounded-xl border bg-white shadow-[0_12px_32px_rgba(15,23,42,0.16)] ${
-            notice.type === 'success' ? 'border-emerald-200' :
-            notice.type === 'error' ? 'border-rose-200' :
-            notice.type === 'warning' ? 'border-amber-200' : 'border-[#CBD5E1]'
-          }`}>
-            <div className="flex items-center justify-between bg-[#243B5A] px-3.5 py-2">
-              <span className="text-[11px] font-bold tracking-wide text-white">현장관리 알림</span>
-              <button type="button" onClick={() => setNotice(null)} aria-label="알림 닫기" className="rounded-md px-1.5 text-lg leading-none text-white/80 hover:bg-white/10 hover:text-white">×</button>
-            </div>
-            <div className="flex items-start gap-3 px-4 py-3">
-              <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-extrabold text-white ${
-                notice.type === 'success' ? 'bg-emerald-600' :
-                notice.type === 'error' ? 'bg-rose-600' :
-                notice.type === 'warning' ? 'bg-amber-500' : 'bg-[#64748B]'
-              }`}>{notice.type === 'success' ? '✓' : notice.type === 'error' ? '!' : notice.type === 'warning' ? '!' : 'i'}</div>
-              <p className="flex-1 pt-0.5 text-sm font-medium leading-5 text-[#1F2937]">{notice.message}</p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {callConfirmUser && (
         <div className="fixed inset-0 z-[115] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
           <div role="dialog" aria-modal="true" className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
@@ -2862,24 +2887,33 @@ export default function HRManagement({
 
       {confirmUser && (
         <div className="fixed inset-0 z-[110] bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
-          <div role="dialog" aria-modal="true" className="w-full max-w-md max-h-[90dvh] overflow-y-auto rounded-2xl bg-white shadow-2xl border border-[#E2E5E9] p-5 space-y-4 animate-in fade-in zoom-in-95 duration-150">
-            <h3 className="text-base font-extrabold text-red-600">구성원 삭제</h3>
-            <p className="text-sm text-[#475569] leading-6">
-              정말로 <span className="font-bold text-[#1F2937]">[{confirmUser.name}]</span> 님의 인사 정보를 삭제하시겠습니까?
-              <br />삭제 후에는 복구할 수 없습니다.
-            </p>
-            <div className="flex justify-end gap-2 pt-3 border-t border-[#E2E5E9]">
+          <div role="dialog" aria-modal="true" className="w-full max-w-md overflow-hidden rounded-xl border border-rose-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.16)] animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between bg-[#243B5A] px-3.5 py-2">
+              <span className="text-[11px] font-bold tracking-wide text-white">현장관리 알림</span>
+              <button type="button" onClick={() => setConfirmUser(null)} aria-label="알림 닫기" className="rounded-md px-1.5 text-lg leading-none text-white/80 hover:bg-white/10 hover:text-white">×</button>
+            </div>
+            <div className="flex items-start gap-3 px-4 py-4">
+              <div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-extrabold text-white">!</div>
+              <div className="flex-1 space-y-1">
+                <h3 className="text-sm font-bold text-[#1F2937]">구성원 삭제 확인</h3>
+                <p className="text-xs leading-5 text-[#475569]">
+                  정말로 <span className="font-bold text-[#1F2937]">[{confirmUser.name}]</span> 님의 인사 정보를 삭제하시겠습니까?
+                  <br />삭제된 데이터는 복구할 수 없습니다.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 bg-[#F8FAFC] px-4 py-3 border-t border-[#E2E5E9]">
               <button
                 type="button"
                 onClick={() => setConfirmUser(null)}
-                className="px-4 py-2 rounded-lg border border-[#E2E5E9] bg-white text-xs font-bold text-[#64748B] hover:bg-[#F5F6F8] transition"
+                className="rounded-lg border border-[#E2E5E9] bg-white px-3.5 py-1.5 text-xs font-bold text-[#64748B] hover:bg-[#F5F6F8] transition"
               >
                 취소
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDelete}
-                className="px-4 py-2 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition"
+                className="rounded-lg bg-rose-600 px-3.5 py-1.5 text-xs font-bold text-white hover:bg-rose-700 transition"
               >
                 삭제
               </button>
