@@ -59,6 +59,9 @@ export interface AppUser {
   work_status?: '근무중' | '휴무' | string;
 }
 
+const C = { navy: '#243B5A', pale: '#F5F6F8', border: '#E2E5E9', text: '#1F2937', muted: '#64748B' };
+const inputClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white';
+
 const formatDateToYYYYMMDD = (d: Date) => {
   const year = d.getFullYear();
   const month = String(d.getMonth() + 1).padStart(2, '0');
@@ -128,7 +131,18 @@ type VehicleUsageRow = {
 };
 type VehicleDriver = { id: string; name: string; yard_cert_details?: Array<{ name?: string }> };
 
-function VehicleCalendarPicker({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+/** cert.tsx 스타일을 참조한 앱 공통 달력 날짜 선택 컴포넌트 */
+function CalendarDatePicker({
+  value,
+  onChange,
+  className = inputClass,
+  label,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  className?: string;
+  label?: string;
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
     ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
@@ -138,13 +152,18 @@ function VehicleCalendarPicker({ value, onChange, label }: { value: string; onCh
   const [inputText, setInputText] = useState(value || '');
   const rootRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setInputText(value || ''); }, [value]);
+  useEffect(() => {
+    setInputText(value || '');
+  }, [value]);
+
   useEffect(() => {
     if (!isOpen) return;
     const handleOutside = (event: MouseEvent | TouchEvent) => {
       if (rootRef.current && !rootRef.current.contains(event.target as Node)) setIsOpen(false);
     };
-    const handleEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setIsOpen(false); };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
     document.addEventListener('mousedown', handleOutside);
     document.addEventListener('touchstart', handleOutside);
     document.addEventListener('keydown', handleEscape);
@@ -157,54 +176,199 @@ function VehicleCalendarPicker({ value, onChange, label }: { value: string; onCh
 
   const moveMonth = (amount: number) => {
     const next = new Date(viewYear, viewMonth + amount, 1);
-    setViewYear(next.getFullYear()); setViewMonth(next.getMonth());
+    setViewYear(next.getFullYear());
+    setViewMonth(next.getMonth());
   };
   const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
   const firstDay = new Date(viewYear, viewMonth, 1).getDay();
   const selected = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
   const today = formatDateToYYYYMMDD(new Date());
+
   const commitTypedDate = () => {
     const trimmed = inputText.trim();
-    if (!trimmed) { onChange(''); setInputText(''); return; }
-    const normalizedInput = /^\d{8}$/.test(trimmed) ? `${trimmed.slice(0,4)}-${trimmed.slice(4,6)}-${trimmed.slice(6,8)}` : trimmed;
+    if (!trimmed) {
+      onChange('');
+      setInputText('');
+      return;
+    }
+    const normalizedInput = /^\d{8}$/.test(trimmed)
+      ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
+      : trimmed;
     const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizedInput);
     if (match) {
-      const y=Number(match[1]), m=Number(match[2]), d=Number(match[3]);
-      const candidate = new Date(y,m-1,d);
-      if (candidate.getFullYear()===y && candidate.getMonth()===m-1 && candidate.getDate()===d) {
-        onChange(normalizedInput); setInputText(normalizedInput); return;
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const candidate = new Date(year, month - 1, day);
+      if (candidate.getFullYear() === year && candidate.getMonth() === month - 1 && candidate.getDate() === day) {
+        const normalized = `${match[1]}-${match[2]}-${match[3]}`;
+        onChange(normalized);
+        setInputText(normalized);
+        return;
       }
     }
     setInputText(value || '');
   };
+
   const chooseDate = (day: number) => {
-    const nextValue = `${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
-    onChange(nextValue); setInputText(nextValue); setIsOpen(false);
+    const nextValue = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(nextValue);
+    setInputText(nextValue);
+    setIsOpen(false);
   };
-  return <div ref={rootRef} className="relative w-full min-w-0 space-y-1">
-    <label className="block text-[11px] font-semibold text-[#1F2937]">{label}</label>
-    <div className="flex min-w-0 items-center gap-1">
-      <input type="text" inputMode="numeric" value={inputText} onChange={e=>setInputText(e.target.value)} onBlur={commitTypedDate} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();commitTypedDate();}}} placeholder="YYYY-MM-DD 직접 입력" aria-label={`${label} 날짜 직접 입력`} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
-      <button type="button" onClick={()=>{if(!isOpen){const current=selected?new Date(Number(selected.slice(0,4)),Number(selected.slice(5,7))-1,Number(selected.slice(8,10))):new Date();setViewYear(current.getFullYear());setViewMonth(current.getMonth());}setIsOpen(open=>!open);}} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8]" aria-label={`${label} 달력 열기`} aria-haspopup="dialog" aria-expanded={isOpen}><CalendarIcon className="h-4 w-4" /></button>
-    </div>
-    {isOpen && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4" onClick={()=>setIsOpen(false)}>
-      <div role="dialog" aria-modal="true" aria-label={`${label} 날짜 선택`} onClick={e=>e.stopPropagation()} className="relative max-h-[calc(100dvh-32px)] w-[min(320px,calc(100vw-32px))] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 text-[#1F2937] shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <button type="button" onClick={()=>moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft className="h-4 w-4" /></button>
-          <div className="flex min-w-0 items-center gap-1">
-            <select aria-label="연도 선택" value={viewYear} onChange={e=>setViewYear(Number(e.target.value))} className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]">{Array.from({length:Math.max(80,new Date().getFullYear()-1960+21)},(_,i)=>1960+i).map(y=><option key={y} value={y}>{y}년</option>)}</select>
-            <select aria-label="월 선택" value={viewMonth} onChange={e=>setViewMonth(Number(e.target.value))} className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A]">{Array.from({length:12},(_,i)=><option key={i} value={i}>{i+1}월</option>)}</select>
+
+  return (
+    <div ref={rootRef} className="relative w-full min-w-0 space-y-1">
+      {label && <label className="block text-[11px] font-semibold text-[#1F2937]">{label}</label>}
+      <div className="flex min-w-0 items-center gap-1">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={inputText}
+          onChange={(event) => setInputText(event.target.value)}
+          onBlur={commitTypedDate}
+          onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); commitTypedDate(); } }}
+          placeholder="YYYY-MM-DD 직접 입력"
+          aria-label={label ? `${label} 날짜 직접 입력 (YYYY-MM-DD)` : "날짜 직접 입력 (YYYY-MM-DD)"}
+          className={`${className} min-w-0 flex-1`}
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (!isOpen) {
+              const current = selected ? new Date(Number(selected.slice(0, 4)), Number(selected.slice(5, 7)) - 1, Number(selected.slice(8, 10))) : new Date();
+              setViewYear(current.getFullYear());
+              setViewMonth(current.getMonth());
+            }
+            setIsOpen(open => !open);
+          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8]"
+          aria-label="달력 열기"
+          aria-haspopup="dialog"
+          aria-expanded={isOpen}
+        >
+          <CalendarIcon className="h-4 w-4" />
+        </button>
+      </div>
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="날짜 선택"
+            onClick={(event) => event.stopPropagation()}
+            className="relative w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft className="h-4 w-4" /></button>
+              <div className="flex min-w-0 items-center gap-1">
+                <select
+                  aria-label="연도 선택"
+                  value={viewYear}
+                  onChange={(event) => setViewYear(Number(event.target.value))}
+                  className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map((year) => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <select
+                  aria-label="월 선택"
+                  value={viewMonth}
+                  onChange={(event) => setViewMonth(Number(event.target.value))}
+                  className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
+                >
+                  {Array.from({ length: 12 }, (_, month) => <option key={month} value={month}>{month + 1}월</option>)}
+                </select>
+              </div>
+              <button type="button" onClick={() => moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>{day}</div>)}
+              {Array.from({ length: firstDay }, (_, index) => <div key={`empty-${index}`} />)}
+              {Array.from({ length: daysInMonth }, (_, index) => {
+                const day = index + 1;
+                const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = dateKey === selected;
+                const isToday = dateKey === today;
+                const weekday = new Date(viewYear, viewMonth, day).getDay();
+                return <button key={dateKey} type="button" onClick={() => chooseDate(day)} aria-pressed={isSelected} className={`h-9 rounded-lg text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white shadow-sm' : isToday ? 'border border-[#243B5A] font-bold text-[#243B5A]' : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`}`}>{day}</button>;
+              })}
+            </div>
+            <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
+              <button type="button" onClick={() => { const now = new Date(); const date = formatDateToYYYYMMDD(now); setViewYear(now.getFullYear()); setViewMonth(now.getMonth()); onChange(date); setInputText(date); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">오늘</button>
+              <div className="flex items-center gap-1">
+                {selected && <button type="button" onClick={() => { onChange(''); setInputText(''); setIsOpen(false); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">지우기</button>}
+                <button type="button" onClick={() => setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">닫기</button>
+              </div>
+            </div>
           </div>
-          <button type="button" onClick={()=>moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight className="h-4 w-4" /></button>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center">{['일','월','화','수','목','금','토'].map((d,i)=><div key={d} className={`py-1 text-[11px] font-semibold ${i===0?'text-red-600':i===6?'text-blue-600':'text-[#64748B]'}`}>{d}</div>)}
-          {Array.from({length:firstDay},(_,i)=><div key={`blank-${i}`} />)}
-          {Array.from({length:daysInMonth},(_,i)=>{const day=i+1;const date=`${viewYear}-${String(viewMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;return <button key={date} type="button" onClick={()=>chooseDate(day)} className={`h-9 rounded-lg text-xs ${selected===date?'bg-[#243B5A] font-bold text-white':date===today?'border border-[#243B5A] font-bold text-[#243B5A]':'hover:bg-[#EEF2F7]'}`}>{day}</button>;})}
+      )}
+    </div>
+  );
+}
+
+type StyledSelectOption = { value: string; label: string };
+
+/** cert.tsx 스타일을 참조한 앱 공통 드롭메뉴 (셀렉트 박스) 컴포넌트 */
+function AppStyledSelect({
+  value,
+  options,
+  onChange,
+  className = inputClass,
+  placeholder = '선택해주세요',
+  disabled = false,
+  ariaLabel = '항목 선택',
+}: {
+  value: string;
+  options: StyledSelectOption[];
+  onChange: (value: string) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [open]);
+  const selected = options.find(option => option.value === value);
+  return <>
+    <button
+      type="button"
+      className={`${className} flex items-center justify-between gap-2 text-left ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-[#243B5A]'}`}
+      onClick={() => { if (!disabled) setOpen(true); }}
+      aria-label={ariaLabel}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      disabled={disabled}
+    >
+      <span className={`min-w-0 flex-1 truncate ${selected ? 'text-[#1F2937]' : 'text-[#94A3B8]'}`}>{selected?.label || placeholder}</span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+    </button>
+    {open && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/25 p-4" onClick={() => setOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={event => event.stopPropagation()} className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3">
+          <span className="text-sm font-bold text-[#243B5A]">{ariaLabel}</span>
+          <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#E2E8F0]" aria-label="선택 메뉴 닫기"><X className="h-4 w-4" /></button>
         </div>
-        <div className="mt-3 flex justify-between border-t border-[#E2E5E9] pt-2"><button type="button" onClick={()=>{onChange(today);setInputText(today);setIsOpen(false);}} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A]">오늘</button><button type="button" onClick={()=>setIsOpen(false)} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white">닫기</button></div>
+        <div className="max-h-[60dvh] overflow-y-auto p-2">
+          {options.map(option => <button key={option.value} type="button" onClick={() => { onChange(option.value); setOpen(false); }} className={`mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}>
+            <span className="min-w-0 break-words">{option.label}</span>
+            {option.value === value && <span aria-hidden="true" className="shrink-0">✓</span>}
+          </button>)}
+          {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#64748B]">선택 가능한 항목이 없습니다.</p>}
+        </div>
       </div>
     </div>}
-  </div>;
+  </>;
 }
 
 function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCustomConfirm }: {
@@ -264,7 +428,6 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
   useEffect(() => { void loadVehicleData(); }, [loadVehicleData]);
 
   const selectedVehicle = vehicles.find(v => v.id === activeVehicleId);
-  // 사용 이력은 선택한 차량에 종속하지 않고 모든 차량을 하나의 목록으로 표시합니다.
   const visibleUsage = useMemo(() => [...usageRows].sort((a,b)=>String(b.used_at).localeCompare(String(a.used_at))), [usageRows]);
   const eligibleDrivers = useMemo(() => drivers.filter(d => (d.yard_cert_details || []).some(cert => String(cert?.name || '').replace(/\s/g,'').includes('작업용차량운전자교육'))), [drivers]);
   const currentIsEligible = eligibleDrivers.some(d => (currentId && d.id === currentId) || (currentName && d.name.trim() === currentName));
@@ -426,7 +589,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-1 text-[11px] text-[#64748B]">사용자 {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">차량번호 선택</label><select value={activeVehicleId} onChange={e=>setActiveVehicleId(e.target.value)} required className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"><option value="">차량을 선택해주세요</option>{vehicles.map(vehicle=><option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}</select></div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <VehicleCalendarPicker
+          <CalendarDatePicker
             label="사용 날짜"
             value={usageForm.used_at ? usageForm.used_at.split('T')[0] : ''}
             onChange={date => setUsageForm(p => {
@@ -451,7 +614,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
         <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"/></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"/></div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"/></div>
-        <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#E2E5E9] bg-[#FCFCFD] p-3 sm:grid-cols-2"><VehicleCalendarPicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><VehicleCalendarPicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-[#64748B] sm:col-span-2">기간은 선택 입력입니다. 사용목적에 정비 또는 수리가 포함되면 반드시 입력해야 합니다.</p></div>
+        <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#E2E5E9] bg-[#FCFCFD] p-3 sm:grid-cols-2"><CalendarDatePicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><CalendarDatePicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-[#64748B] sm:col-span-2">기간은 선택 입력입니다. 사용목적에 정비 또는 수리가 포함되면 반드시 입력해야 합니다.</p></div>
         <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving?'저장 중...':'사용 등록'}</button></div>
       </form>
     </div>}
@@ -768,7 +931,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     fetchTasksRef.current = fetchTasks;
   }, [fetchTasks]);
 
-  // 이미 조회한 app_users/tasks 데이터로 계산해 추가 Supabase 호출을 발생시키지 않습니다.
   const activeUsers = useMemo(() => appUsers.filter(u => !isFormerEmployee(u)), [appUsers]);
   const workingUsers = useMemo(() => activeUsers.filter(u => u.work_status !== '휴무'), [activeUsers]);
   const offUsers = useMemo(() => activeUsers.filter(u => u.work_status === '휴무'), [activeUsers]);
@@ -1270,7 +1432,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (isDailyOther && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
     if (!formData.title.trim()) { showCustomAlert('입력 확인', '업무명을 입력해 주세요.'); return; }
 
-    // 휴무 인원 등록 검증 (전체 대상)
     const workersToCheck = formData.task_type === 'CABIN'
       ? [...dayWorkerList, ...nightWorkerList]
       : isDailyOther
@@ -1284,7 +1445,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         return;
       }
       
-      // 일일 업무 등록 시 CABIN 배치 여부 검증
       if (formData.task_type === 'DAILY') {
         for (const t of tasks) {
           const cabinDateMatches = formData.start_date >= t.start_date && formData.start_date <= (t.end_date || t.start_date);
@@ -1841,7 +2001,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <VehicleManagementPanel currentUser={currentUser} isAdmin={isAdmin} showCustomAlert={showCustomAlert} showCustomConfirm={showCustomConfirm} />
         ) : (
           <>
-        {/* 인원 현황 요약 배너 */}
         {(() => {
           return (
             <div className="bg-[#F8FAFC] border border-[#E2E5E9] rounded-xl p-2.5 space-y-2 text-xs shadow-2xs">
@@ -1866,7 +2025,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           );
         })()}
 
-        {/* 일일 업무 서브탭 */}
         {taskTab === 'DAILY' && (
           <div className="flex items-center justify-between bg-[#F5F6F8] p-1 rounded-xl border border-[#E2E5E9] overflow-x-auto [&::-webkit-scrollbar]:h-1">
             <div className="flex space-x-1 shrink-0">
@@ -1895,7 +2053,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {/* CABIN 호선 서브탭 */}
         {taskTab === 'CABIN' && (
           <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
             <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0 [&::-webkit-scrollbar]:h-1">
@@ -2430,12 +2587,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
 
               <div className="space-y-1.5">
-                <label className="block text-xs font-bold text-[#1F2937]">불러올 일자 선택 (해당일)</label>
-                <input
-                  type="date"
+                <CalendarDatePicker
+                  label="불러올 일자 선택 (해당일)"
                   value={importTargetDate}
-                  onChange={(e) => { setImportTargetDate(e.target.value); setSelectedWeeklyIdsToImport([]); }}
-                  className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"
+                  onChange={(date) => {
+                    if (date) {
+                      setImportTargetDate(date);
+                      setSelectedWeeklyIdsToImport([]);
+                    }
+                  }}
                 />
                 <p className="text-[10px] text-[#64748B]">선택한 날짜에 해당하는 주간업무 항목들을 일일업무로 등록합니다.</p>
               </div>
@@ -2793,14 +2953,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       </div>
                     ) : null}
 
-                    <select
+                    <AppStyledSelect
+                      ariaLabel="호선 선택"
                       value={formData.category}
-                      onChange={(e) => setFormData({ ...formData, category: e.target.value })}
-                      className="w-full px-3 py-1.5 border rounded-lg text-xs font-bold text-[#243B5A] bg-white"
-                    >
-                      <option value="">호선 선택</option>
-                      {vessels.map((v) => <option key={v.id} value={v.name}>{v.name}</option>)}
-                    </select>
+                      onChange={(val) => setFormData({ ...formData, category: val })}
+                      options={[{ value: '', label: '호선 선택' }, ...vessels.map(v => ({ value: v.name, label: v.name }))]}
+                    />
                   </div>
 
                   <div>
@@ -2822,14 +2980,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <input type="text" required placeholder="예) 메인 캐빈 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-semibold mb-1">시작일</label>
-                        <input type="date" required value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
-                      </div>
-                      <div>
-                        <label className="block text-[11px] font-semibold mb-1">종료일</label>
-                        <input type="date" required value={formData.end_date} onChange={(e) => setFormData({ ...formData, end_date: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
-                      </div>
+                      <CalendarDatePicker
+                        label="시작일"
+                        value={formData.start_date}
+                        onChange={(date) => { if (date) setFormData({ ...formData, start_date: date }); }}
+                      />
+                      <CalendarDatePicker
+                        label="종료일"
+                        value={formData.end_date}
+                        onChange={(date) => { if (date) setFormData({ ...formData, end_date: date }); }}
+                      />
                     </div>
                     <div className="space-y-3 rounded-lg border bg-slate-50 p-3">
                       <div className="space-y-1.5">
@@ -2858,21 +3018,23 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-[11px] font-semibold mb-1">일자</label>
-                        <input type="date" required value={formData.start_date} onChange={(e) => setFormData({ ...formData, start_date: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
-                      </div>
+                      <CalendarDatePicker
+                        label="일자"
+                        value={formData.start_date}
+                        onChange={(date) => { if (date) setFormData({ ...formData, start_date: date }); }}
+                      />
                       <div>
                         <label className="block text-[11px] font-semibold mb-1">시간대</label>
-                        <select
+                        <AppStyledSelect
+                          ariaLabel="시간대 선택"
                           value={formData.time_slot}
-                          onChange={(e) => setFormData({ ...formData, time_slot: e.target.value })}
-                          className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"
-                        >
-                          <option value="오전(08:00~12:00)">오전</option>
-                          <option value="오후(13:00~17:00)">오후</option>
-                          <option value="종일(08:00~)">종일</option>
-                        </select>
+                          onChange={(val) => setFormData({ ...formData, time_slot: val })}
+                          options={[
+                            { value: '오전(08:00~12:00)', label: '오전(08:00~12:00)' },
+                            { value: '오후(13:00~17:00)', label: '오후(13:00~17:00)' },
+                            { value: '종일(08:00~)', label: '종일(08:00~)' }
+                          ]}
+                        />
                       </div>
                     </div>
 
@@ -2894,10 +3056,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           <button type="button" onClick={() => handleAddWorkerSingle('ASSIGNED')} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#304D73]">추가</button>
                         </div>
                         <div className="flex gap-2 rounded-lg border border-[#E2E5E9] bg-[#FCFCFD] p-2">
-                          <select aria-label="추가할 Team 선택" value={selectedPresetTeamId} onChange={e => setSelectedPresetTeamId(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10">
-                            <option value="">{presetTeams.length ? 'Team 선택 후 인원 추가' : '등록된 Team이 없습니다'}</option>
-                            {presetTeams.map(team => <option key={team.id} value={team.id}>{team.name} ({team.members?.length || 0}명)</option>)}
-                          </select>
+                          <div className="min-w-0 flex-1">
+                            <AppStyledSelect
+                              ariaLabel="Team 선택"
+                              value={selectedPresetTeamId}
+                              onChange={(val) => setSelectedPresetTeamId(val)}
+                              placeholder={presetTeams.length ? 'Team 선택 후 인원 추가' : '등록된 Team이 없습니다'}
+                              options={presetTeams.map(team => ({ value: team.id, label: `${team.name} (${team.members?.length || 0}명)` }))}
+                            />
+                          </div>
                           <button type="button" onClick={handleAddPresetTeamToTask} className="shrink-0 rounded-lg border border-[#243B5A] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] transition hover:bg-[#EEF2F7]">Team 추가</button>
                         </div>
                         <div className="flex flex-wrap gap-1 pt-1">
