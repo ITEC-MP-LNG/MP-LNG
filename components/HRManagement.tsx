@@ -1,7 +1,7 @@
 'use client';
 
 import React, { Fragment, useState, useEffect, useCallback, useRef } from 'react';
-import * as XLSX from 'xlsx';
+import * as XLSX from 'xlsx-js-style';
 import { 
   Users, 
   Building2, 
@@ -633,7 +633,7 @@ export default function HRManagement({
   const normalizedRole = String(myRole).toUpperCase();
   const isTeamLeader = ['TEAM_LEADER', 'TEAMLEADER', 'LEADER'].includes(normalizedRole);
   const isSuperAdmin = ['ADMIN', 'SUPER_ADMIN'].includes(normalizedRole);
-  const canAssignRoles = normalizedRole === 'SUPER_ADMIN';
+  const canAssignRoles = isSuperAdmin;
 
   const isSelf = (targetUser: HRUser) => {
     if (!currentUser) return false;
@@ -958,13 +958,14 @@ export default function HRManagement({
       }
       i = j;
     }
-    ws['!rows'] = [{ hpx: 48 }, { hpx: 30 }, ...filtered.map(() => ({ hpx: 26 }))];
+    ws['!rows'] = [{ hpx: 56 }, { hpx: 30 }, ...filtered.map(() => ({ hpx: 26 }))];
+    if (ws['A1']) (ws['A1'] as any).s = { alignment: { horizontal: 'center', vertical: 'center' }, font: { name: 'HY헤드라인M', sz: 20, bold: true, color: { rgb: '243B5A' } }, fill: { fgColor: { rgb: 'E8EEF5' }, patternType: 'solid' }, border: { top: { style: 'thin', color: { rgb: 'CBD5E1' } }, bottom: { style: 'thin', color: { rgb: 'CBD5E1' } }, left: { style: 'thin', color: { rgb: 'CBD5E1' } }, right: { style: 'thin', color: { rgb: 'CBD5E1' } } } };
     ws['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 28 }];
     ws['!autofilter'] = { ref: `A2:I${Math.max(2, rows.length)}` };
     for (let r = 0; r < rows.length; r++) {
       for (let c = 0; c < 9; c++) {
         const address = XLSX.utils.encode_cell({ r, c });
-        if (ws[address]) (ws[address] as any).s = { alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, font: { name: r === 0 ? '맑은 고딕' : '맑은 고딕', sz: r === 0 ? 18 : 10, bold: r < 2, color: r === 0 ? { rgb: '243B5A' } : { rgb: '1F2937' } }, fill: r < 2 ? { fgColor: { rgb: r === 0 ? 'E8EEF5' : 'F1F5F9' }, patternType: 'solid' } : undefined, border: { top: { style: 'thin', color: { rgb: 'CBD5E1' } }, bottom: { style: 'thin', color: { rgb: 'CBD5E1' } }, left: { style: 'thin', color: { rgb: 'CBD5E1' } }, right: { style: 'thin', color: { rgb: 'CBD5E1' } } } };
+        if (ws[address]) (ws[address] as any).s = { alignment: { horizontal: 'center', vertical: 'center', wrapText: true }, font: { name: r === 0 ? 'HY헤드라인M' : '맑은 고딕', sz: r === 0 ? 20 : 10, bold: r < 2, color: r === 0 ? { rgb: '243B5A' } : { rgb: '1F2937' } }, fill: r < 2 ? { fgColor: { rgb: r === 0 ? 'E8EEF5' : 'F1F5F9' }, patternType: 'solid' } : undefined, border: { top: { style: 'thin', color: { rgb: 'CBD5E1' } }, bottom: { style: 'thin', color: { rgb: 'CBD5E1' } }, left: { style: 'thin', color: { rgb: 'CBD5E1' } }, right: { style: 'thin', color: { rgb: 'CBD5E1' } } } };
       }
     }
     const wb = XLSX.utils.book_new();
