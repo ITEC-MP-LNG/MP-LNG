@@ -60,7 +60,7 @@ export interface AppUser {
 }
 
 const C = { navy: '#243B5A', pale: '#F5F6F8', border: '#E2E5E9', text: '#1F2937', muted: '#64748B' };
-const inputClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white';
+const inputClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white transition-colors';
 
 const formatDateToYYYYMMDD = (d: Date) => {
   const year = d.getFullYear();
@@ -104,7 +104,6 @@ function isOperationsOrManagement(user: AppUser): boolean {
   const department = String(user.department || '').replace(/\s/g, '').toLowerCase();
   return department.includes('운영') || department.includes('관리');
 }
-
 
 type VehicleRow = {
   id: string;
@@ -242,7 +241,7 @@ function CalendarDatePicker({
             }
             setIsOpen(open => !open);
           }}
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8]"
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8] transition-colors"
           aria-label="달력 열기"
           aria-haspopup="dialog"
           aria-expanded={isOpen}
@@ -252,7 +251,7 @@ function CalendarDatePicker({
       </div>
       {isOpen && (
         <div
-          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/10 p-4"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/25 p-4"
           onClick={() => setIsOpen(false)}
         >
           <div
@@ -537,23 +536,23 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
     <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div><h3 className="text-sm font-bold text-[#243B5A]">차량 관리</h3><p className="mt-0.5 text-[11px] text-[#64748B]">차량번호별 사용 이력과 주차 비고를 관리합니다.</p></div>
-        {isAdmin && <button type="button" onClick={()=>setManagerOpen(true)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A]"><Settings className="h-3.5 w-3.5"/> 차량 등록·수정·삭제</button>}
+        {isAdmin && <button type="button" onClick={()=>setManagerOpen(true)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#EEF2F7] transition-colors"><Settings className="h-3.5 w-3.5"/> 차량 등록·수정·삭제</button>}
       </div>
       <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-2">
         <span className="shrink-0 text-xs font-bold text-[#64748B]">차량번호</span>
-        {vehicles.map(vehicle=><button key={vehicle.id} type="button" onClick={()=>{setActiveVehicleId(vehicle.id);setSelectedUsageIds([]);}} className={`rounded-lg border px-3 py-2 text-xs font-bold ${activeVehicleId===vehicle.id?'border-[#243B5A] bg-[#243B5A] text-white':'border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-slate-100'}`}>{vehicle.vehicle_number}</button>)}
+        {vehicles.map(vehicle=><button key={vehicle.id} type="button" onClick={()=>{setActiveVehicleId(vehicle.id);setSelectedUsageIds([]);}} className={`rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${activeVehicleId===vehicle.id?'border-[#243B5A] bg-[#243B5A] text-white':'border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#EEF2F7]'}`}>{vehicle.vehicle_number}</button>)}
         {vehicles.length===0 && <span className="text-xs text-[#64748B]">등록된 차량이 없습니다. 관리자에게 차량 등록을 요청해주세요.</span>}
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={!selectedVehicle || !currentIsEligible || saving} onClick={openUsage} className="flex items-center gap-1.5 rounded-lg bg-[#243B5A] px-3.5 py-2 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-40"><Plus className="h-3.5 w-3.5"/> 차량 사용</button>
-        <span className={`text-[11px] ${currentIsEligible?'text-emerald-700':'text-[#64748B]'}`}>{currentIsEligible?'작업용차량운전자교육 확인됨':'CERT YARD 자격에 작업용차량운전자교육이 있어야 사용 가능'}</span>
-        <button type="button" onClick={()=>void loadVehicleData()} disabled={loading} className="ml-auto rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] disabled:opacity-50"><span className="inline-flex items-center gap-1"><CalendarIcon className="h-3.5 w-3.5"/> {loading?'조회 중':'새로고침'}</span></button>
+        <button type="button" disabled={!selectedVehicle || !currentIsEligible || saving} onClick={openUsage} className="flex items-center gap-1.5 rounded-lg bg-[#243B5A] px-3.5 py-2 text-xs font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:bg-[#1B2F49]"><Plus className="h-3.5 w-3.5"/> 차량 사용</button>
+        <span className={`text-[11px] ${currentIsEligible?'text-emerald-700 font-medium':'text-[#64748B]'}`}>{currentIsEligible?'작업용차량운전자교육 확인됨':'CERT YARD 자격에 작업용차량운전자교육이 있어야 사용 가능'}</span>
+        <button type="button" onClick={()=>void loadVehicleData()} disabled={loading} className="ml-auto rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8] transition-colors disabled:opacity-50"><span className="inline-flex items-center gap-1"><CalendarIcon className="h-3.5 w-3.5"/> {loading?'조회 중':'새로고침'}</span></button>
       </div>
     </div>
     <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div><h3 className="text-sm font-bold text-[#243B5A]">최근 사용 내역 · 전체 차량</h3><p className="text-[11px] text-[#64748B]">모든 차량의 사용 내역을 날짜순으로 함께 표시합니다. 주차 버튼을 누르면 비고를 등록할 수 있습니다.</p></div>
-        {isAdmin && <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-1.5 text-xs font-semibold text-[#243B5A]"><input type="checkbox" checked={visibleUsage.length>0 && visibleUsage.every(row=>selectedUsageIds.includes(row.id))} onChange={e=>setSelectedUsageIds(prev=>e.target.checked?Array.from(new Set([...prev,...visibleUsage.map(r=>r.id)])):prev.filter(id=>!visibleUsage.some(r=>r.id===id)))} className="accent-[#243B5A]"/> 전체 선택</label><span className="text-xs text-[#64748B]">{selectedUsageIds.filter(id=>visibleUsage.some(r=>r.id===id)).length}건 선택</span><button type="button" onClick={deleteUsageSelected} className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"><Trash2 className="h-3.5 w-3.5"/> 선택 삭제</button></div>}
+        {isAdmin && <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-1.5 text-xs font-semibold text-[#243B5A] cursor-pointer"><input type="checkbox" checked={visibleUsage.length>0 && visibleUsage.every(row=>selectedUsageIds.includes(row.id))} onChange={e=>setSelectedUsageIds(prev=>e.target.checked?Array.from(new Set([...prev,...visibleUsage.map(r=>r.id)])):prev.filter(id=>!visibleUsage.some(r=>r.id===id)))} className="accent-[#243B5A]"/> 전체 선택</label><span className="text-xs text-[#64748B]">{selectedUsageIds.filter(id=>visibleUsage.some(r=>r.id===id)).length}건 선택</span><button type="button" onClick={deleteUsageSelected} className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"><Trash2 className="h-3.5 w-3.5"/> 선택 삭제</button></div>}
       </div>
       {loading ? <div className="py-10 text-center text-xs text-[#64748B]">차량 정보를 불러오는 중...</div> : visibleUsage.length===0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] py-10 text-center text-xs text-[#64748B]">최근 사용 내역이 없습니다.</div> :
         <div className="space-y-2">
@@ -570,24 +569,33 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
                 </div>
                 {row.parking_remarks && <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-xs"><span className="font-bold text-amber-900">주차 비고: </span><span className="whitespace-pre-wrap break-words">{row.parking_remarks}</span>{row.parking_updated_by_name && <div className="mt-1 text-[10px] text-amber-800">작성: {row.parking_updated_by_name}</div>}</div>}
               </div>
-              <button type="button" onClick={()=>{setParkingRow(row);setParkingRemarks(row.parking_remarks||'');}} disabled={!canEditParking(row)} className="shrink-0 rounded-lg border border-[#E2E5E9] bg-white px-2.5 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8] disabled:cursor-not-allowed disabled:opacity-40">주차 / 비고</button>
+              <button type="button" onClick={()=>{setParkingRow(row);setParkingRemarks(row.parking_remarks||'');}} disabled={!canEditParking(row)} className="shrink-0 rounded-lg border border-[#E2E5E9] bg-white px-2.5 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8] transition-colors disabled:cursor-not-allowed disabled:opacity-40">주차 / 비고</button>
             </div>
           </div>)}
         </div>}
     </div>
 
-    {managerOpen && isAdmin && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setManagerOpen(false)}>
-      <div role="dialog" aria-modal="true" aria-label="차량 관리" onClick={e=>e.stopPropagation()} className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl space-y-4">
+    {managerOpen && isAdmin && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/25 p-4" onClick={()=>setManagerOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label="차량 관리" onClick={e=>e.stopPropagation()} className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4">
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><h3 className="text-sm font-bold text-[#243B5A]">차량 등록 · 수정 · 삭제</h3><button type="button" onClick={()=>setManagerOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
-        <div className="flex gap-2"><input value={vehicleInput} onChange={e=>setVehicleInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void saveVehicle();}}} placeholder="차량번호 입력 (예: 12가3456)" className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs outline-none focus:border-[#243B5A]"/><button type="button" disabled={saving} onClick={()=>void saveVehicle()} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white disabled:opacity-50">{editingVehicleId?'수정 저장':'차량 추가'}</button>{editingVehicleId && <button type="button" onClick={()=>{setEditingVehicleId('');setVehicleInput('');}} className="rounded-lg border px-3 py-2 text-xs">취소</button>}</div>
-        <div className="space-y-2">{vehicles.map(vehicle=><div key={vehicle.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E5E9] px-3 py-2"><span className="text-xs font-bold text-[#1F2937]">{vehicle.vehicle_number}</span><div className="flex gap-1"><button type="button" onClick={()=>{setEditingVehicleId(vehicle.id);setVehicleInput(vehicle.vehicle_number);}} className="rounded-lg border border-[#E2E5E9] p-2 text-[#243B5A]" aria-label={`${vehicle.vehicle_number} 수정`}><Pencil className="h-3.5 w-3.5"/></button><button type="button" onClick={()=>deleteVehicle(vehicle)} className="rounded-lg border border-red-200 p-2 text-red-600" aria-label={`${vehicle.vehicle_number} 삭제`}><Trash2 className="h-3.5 w-3.5"/></button></div></div>)}</div>
+        <div className="flex gap-2"><input value={vehicleInput} onChange={e=>setVehicleInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void saveVehicle();}}} placeholder="차량번호 입력 (예: 12가3456)" className={inputClass}/><button type="button" disabled={saving} onClick={()=>void saveVehicle()} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white hover:bg-[#1B2F49] transition-colors disabled:opacity-50">{editingVehicleId?'수정 저장':'차량 추가'}</button>{editingVehicleId && <button type="button" onClick={()=>{setEditingVehicleId('');setVehicleInput('');}} className="rounded-lg border px-3 py-2 text-xs hover:bg-[#F5F6F8]">취소</button>}</div>
+        <div className="space-y-2">{vehicles.map(vehicle=><div key={vehicle.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E5E9] px-3 py-2"><span className="text-xs font-bold text-[#1F2937]">{vehicle.vehicle_number}</span><div className="flex gap-1"><button type="button" onClick={()=>{setEditingVehicleId(vehicle.id);setVehicleInput(vehicle.vehicle_number);}} className="rounded-lg border border-[#E2E5E9] p-2 text-[#243B5A] hover:bg-[#F5F6F8]" aria-label={`${vehicle.vehicle_number} 수정`}><Pencil className="h-3.5 w-3.5"/></button><button type="button" onClick={()=>deleteVehicle(vehicle)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" aria-label={`${vehicle.vehicle_number} 삭제`}><Trash2 className="h-3.5 w-3.5"/></button></div></div>)}</div>
       </div>
     </div>}
 
-    {usageModalOpen && vehicles.length > 0 && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setUsageModalOpen(false)}>
-      <form onSubmit={saveUsage} onClick={e=>e.stopPropagation()} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-1 text-[11px] text-[#64748B]">사용자 {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">차량번호 선택</label><select value={activeVehicleId} onChange={e=>setActiveVehicleId(e.target.value)} required className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"><option value="">차량을 선택해주세요</option>{vehicles.map(vehicle=><option key={vehicle.id} value={vehicle.id}>{vehicle.vehicle_number}</option>)}</select></div>
+    {usageModalOpen && vehicles.length > 0 && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/25 p-4" onClick={()=>setUsageModalOpen(false)}>
+      <form onSubmit={saveUsage} onClick={e=>e.stopPropagation()} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]">
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-0.5 text-[11px] text-[#64748B]">사용자: {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
+        <div className="space-y-1">
+          <label className="block text-[11px] font-semibold text-[#1F2937]">차량번호 선택</label>
+          <AppStyledSelect
+            ariaLabel="차량번호 선택"
+            value={activeVehicleId}
+            onChange={(val) => setActiveVehicleId(val)}
+            placeholder="차량을 선택해주세요"
+            options={vehicles.map(v => ({ value: v.id, label: v.vehicle_number }))}
+          />
+        </div>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <CalendarDatePicker
             label="사용 날짜"
@@ -597,7 +605,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
               return { ...p, used_at: date ? `${date}T${time}` : '' };
             })}
           />
-          <div className="space-y-1">
+          <div className="space-y-1 min-w-0">
             <label className="block text-[11px] font-semibold text-[#1F2937]">사용 시간</label>
             <input
               type="time"
@@ -607,24 +615,24 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
                 return { ...p, used_at: `${date}T${e.target.value}` };
               })}
               required
-              className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-mono text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"
+              className={`${inputClass} font-mono`}
             />
           </div>
         </div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"/></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"/></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"/></div>
-        <div className="grid grid-cols-1 gap-3 rounded-lg border border-[#E2E5E9] bg-[#FCFCFD] p-3 sm:grid-cols-2"><CalendarDatePicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><CalendarDatePicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-[#64748B] sm:col-span-2">기간은 선택 입력입니다. 사용목적에 정비 또는 수리가 포함되면 반드시 입력해야 합니다.</p></div>
-        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving?'저장 중...':'사용 등록'}</button></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className={inputClass}/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className={inputClass}/></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className={inputClass}/></div>
+        <div className="grid grid-cols-1 gap-3 rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3 sm:grid-cols-2"><CalendarDatePicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><CalendarDatePicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-[#64748B] sm:col-span-2">기간은 선택 입력입니다. 사용목적에 정비 또는 수리가 포함되면 반드시 입력해야 합니다.</p></div>
+        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold hover:bg-[#F5F6F8]">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1B2F49] transition-colors disabled:opacity-50">{saving?'저장 중...':'사용 등록'}</button></div>
       </form>
     </div>}
 
-    {parkingRow && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 p-4" onClick={()=>setParkingRow(null)}>
-      <form onSubmit={saveParking} onClick={e=>e.stopPropagation()} className="w-full max-w-md space-y-4 rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">주차 상태 및 비고</h3><p className="mt-1 text-[11px] text-[#64748B]">{parkingRow.vehicle_number} · {parkingRow.user_name}</p></div><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
+    {parkingRow && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/25 p-4" onClick={()=>setParkingRow(null)}>
+      <form onSubmit={saveParking} onClick={e=>e.stopPropagation()} className="w-full max-w-md space-y-4 rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">주차 상태 및 비고</h3><p className="mt-0.5 text-[11px] text-[#64748B]">{parkingRow.vehicle_number} · {parkingRow.user_name}</p></div><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
         <div className="rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-3 text-xs"><span className="font-bold text-[#243B5A]">사용 일시: </span>{new Date(parkingRow.used_at).toLocaleString('ko-KR')}</div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold">주차 비고</label><textarea rows={4} value={parkingRemarks} onChange={e=>setParkingRemarks(e.target.value)} placeholder="주차 위치, 차량 상태 등 비고를 입력해주세요." className="w-full resize-y px-3 py-1.5 border rounded-lg text-xs bg-white outline-none focus:border-[#243B5A]"/></div>
-        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold">취소</button><button type="submit" disabled={saving || !canEditParking(parkingRow)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving?'저장 중...':'주차 비고 저장'}</button></div>
+        <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">주차 비고</label><textarea rows={4} value={parkingRemarks} onChange={e=>setParkingRemarks(e.target.value)} placeholder="주차 위치, 차량 상태 등 비고를 입력해주세요." className="w-full resize-y p-3 border border-[#E2E5E9] rounded-lg text-xs bg-[#F5F6F8] outline-none focus:border-[#243B5A] focus:bg-white transition-colors"/></div>
+        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold hover:bg-[#F5F6F8]">취소</button><button type="submit" disabled={saving || !canEditParking(parkingRow)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1B2F49] transition-colors disabled:opacity-50">{saving?'저장 중...':'주차 비고 저장'}</button></div>
       </form>
     </div>}
   </div>;
@@ -912,7 +920,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }
     } catch (err) {
       console.error('tasks 로드 실패:', err);
-    } finally {
+    } font-mono finally {
       lastTasksFetchCompletedAtRef.current = Date.now();
       tasksFetchInFlightRef.current = false;
       setIsLoading(false);
@@ -1410,7 +1418,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
     if (accepted.length) setAssignedList(prev => Array.from(new Set([...prev, ...accepted])));
     setSelectedPresetTeamId('');
-    if (rejected.length) showCustomAlert('일부 인원 제외', `Team “${team.name}”에서 다음 인원은 추가하지 않았습니다: ${rejected.join(', ')}`);
+    if (rejected.length) showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${accepted.length}명이 추가되었습니다.`);
     else if (accepted.length) showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${accepted.length}명이 추가되었습니다.`);
     else showCustomAlert('추가할 인원 없음', '선택한 Team의 구성원은 이미 모두 추가되어 있습니다.');
   }, [presetTeams, selectedPresetTeamId, assignedList, appUsers, formData.task_type, formData.start_date, tasks, showCustomAlert]);
@@ -1945,7 +1953,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               {taskTab !== 'VEHICLE' && (isAdmin || (taskTab === 'DAILY' && dailySubTab === 'OTHER')) && (
                 <button
                   onClick={() => handleOpenCreateModal(undefined, taskTab === 'DAILY' && dailySubTab === 'OTHER' ? 'DAILY_OTHER' : undefined)}
-                  className="flex items-center space-x-1 bg-[#243B5A] text-white px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-semibold shadow-xs shrink-0"
+                  className="flex items-center space-x-1 bg-[#243B5A] text-white px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-lg text-xs font-semibold shadow-xs shrink-0 hover:bg-[#1B2F49] transition-colors"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   <span>{taskTab === 'DAILY' && dailySubTab === 'OTHER' ? '야간등록' : '등록'}</span>
@@ -2080,7 +2088,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             {isAdmin && (
               <button
                 onClick={() => setIsVesselManagerOpen(true)}
-                className="flex items-center space-x-1 text-xs text-[#243B5A] font-semibold bg-white border px-2 py-1 rounded-lg shrink-0 hover:bg-slate-50 ml-1"
+                className="flex items-center space-x-1 text-xs text-[#243B5A] font-semibold bg-white border px-2 py-1 rounded-lg shrink-0 hover:bg-slate-50 ml-1 transition-colors"
               >
                 <Settings className="h-3 w-3" />
                 <span className="hidden sm:inline">관리</span>
@@ -2096,7 +2104,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <button onClick={() => { setCabinStatusSubTab('HISTORY'); setSelectedTaskIds([]); }} className={`px-2.5 py-1 text-xs font-semibold rounded-lg flex items-center gap-1 ${cabinStatusSubTab === 'HISTORY' ? 'bg-white text-[#243B5A] font-bold shadow-2xs border' : 'text-[#64748B]'}`}><History className="h-3 w-3" /><span>완료이력</span></button>
             </div>
             {isAdmin && cabinSubTab !== 'ALL' && (
-              <button onClick={() => handleOpenCreateModal(undefined, 'CABIN', cabinSubTab)} className="px-2.5 py-1 bg-[#243B5A] text-white rounded-lg text-xs font-semibold shrink-0 ml-1">
+              <button onClick={() => handleOpenCreateModal(undefined, 'CABIN', cabinSubTab)} className="px-2.5 py-1 bg-[#243B5A] text-white rounded-lg text-xs font-semibold shrink-0 ml-1 hover:bg-[#1B2F49] transition-colors">
                 등록
               </button>
             )}
@@ -2105,13 +2113,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
         {(taskTab === 'WEEKLY' || (taskTab === 'DAILY' && dailySubTab === 'HISTORY') || taskTab === 'CABIN') && isAdmin && (
           <div className="flex flex-wrap items-center gap-2 bg-white border border-[#E2E5E9] rounded-xl p-2">
-            <label className="flex items-center gap-2 text-xs font-semibold text-[#243B5A]">
+            <label className="flex items-center gap-2 text-xs font-semibold text-[#243B5A] cursor-pointer">
               <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-[#243B5A]" />
               전체 선택
             </label>
             <span className="text-xs text-[#64748B]">선택 {selectedTaskIds.filter((id) => filteredTasks.some((task) => task.id === id)).length}개</span>
-            <button onClick={handleBulkDeleteTasks} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 flex items-center gap-1"><Trash2 className="h-3 w-3" />삭제</button>
-            {taskTab === 'DAILY' && dailySubTab === 'HISTORY' && <button onClick={handleExportDailyHistoryExcel} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white flex items-center gap-1"><FileSpreadsheet className="h-3 w-3" />엑셀</button>}
+            <button onClick={handleBulkDeleteTasks} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-red-50 text-red-600 border border-red-200 flex items-center gap-1 hover:bg-red-100 transition-colors"><Trash2 className="h-3 w-3" />삭제</button>
+            {taskTab === 'DAILY' && dailySubTab === 'HISTORY' && <button onClick={handleExportDailyHistoryExcel} className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-emerald-600 text-white flex items-center gap-1 hover:bg-emerald-700 transition-colors"><FileSpreadsheet className="h-3 w-3" />엑셀</button>}
           </div>
         )}
 
@@ -2151,14 +2159,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   ))}
                 </div>
               )}
-              {((dailySubTab !== 'HISTORY' && tableFilterDate !== 'ALL') || tableFilterVessel !== 'ALL') && <button type="button" onClick={() => { setTableFilterDate('ALL'); setTableFilterVessel('ALL'); }} className="col-span-2 rounded-lg border px-2 py-1.5 text-xs text-[#64748B]">필터 전체 해제</button>}
+              {((dailySubTab !== 'HISTORY' && tableFilterDate !== 'ALL') || tableFilterVessel !== 'ALL') && <button type="button" onClick={() => { setTableFilterDate('ALL'); setTableFilterVessel('ALL'); }} className="col-span-2 rounded-lg border px-2 py-1.5 text-xs text-[#64748B] hover:bg-[#F5F6F8]">필터 전체 해제</button>}
             </div>
             {filteredTasks.length === 0 ? (
               <div className="rounded-xl border bg-white py-10 text-center text-xs text-[#64748B]">
                 {dailySubTab === 'ACTIVE' ? '등록된 진행중/대기 일일 업무가 없습니다.' : dailySubTab === 'OTHER' ? '등록된 야간업무진행가 없습니다.' : '완료 이력이 없습니다.'}
               </div>
             ) : filteredTasks.map((t) => (
-              <div key={`mobile-${t.id}`} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-2xs" onClick={() => handleOpenTaskDetail(t)}>
+              <div key={`mobile-${t.id}`} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-2xs hover:border-[#243B5A] transition-colors" onClick={() => handleOpenTaskDetail(t)}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px]">
@@ -2175,20 +2183,20 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <div className="mt-2 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
                   {t.task_type === 'DAILY' && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
-                  {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && <button type="button" onClick={() => handleCompleteOtherTask(t)} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800">완료</button>}
+                  {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && <button type="button" onClick={() => handleCompleteOtherTask(t)} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100">완료</button>}
                 </div>
                 <div className="mt-3 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
                   <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 ({t.assigned_names?.length || 0}명)</div>
                   {t.assigned_names?.length ? (
                     <div className="flex flex-wrap gap-1.5">
-                      {t.assigned_names.map((name) => <button key={`${t.id}-mobile-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-blue-100"><span>📞</span><span>{name}</span></button>)}
+                      {t.assigned_names.map((name) => <button key={`${t.id}-mobile-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-blue-100 transition-colors"><span>📞</span><span>{name}</span></button>)}
                     </div>
                   ) : <div className="text-xs text-[#94A3B8]">미지정</div>}
                 </div>
                 <div className="mt-2 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                  {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && <button type="button" onClick={() => handleFinalizeDailyTask(t)} className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white">최종 완료</button>}
-                  {t.task_type === 'DAILY_OTHER' && canManageTask(t) && <><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2 py-1.5 text-xs font-semibold text-[#243B5A]"><Pencil className="mr-1 inline h-3 w-3" />수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button></>}
-                  {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && <button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button>}
+                  {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && <button type="button" onClick={() => handleFinalizeDailyTask(t)} className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">최종 완료</button>}
+                  {t.task_type === 'DAILY_OTHER' && canManageTask(t) && <><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]"><Pencil className="mr-1 inline h-3 w-3" />수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button></>}
+                  {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && <button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button>}
                 </div>
               </div>
             ))}
@@ -2200,7 +2208,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <tr className="bg-[#243B5A] text-white">
                   {isAdmin && dailySubTab === 'HISTORY' && (
                     <th className="p-1.5 w-6 text-center border-r border-white/20 last:border-r-0">
-                      <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
+                      <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white cursor-pointer" />
                     </th>
                   )}
                   
@@ -2386,16 +2394,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <div className="space-y-3">
             <div className="flex flex-col sm:flex-row items-center justify-between pb-2.5 border-b gap-2">
               <div className="flex items-center space-x-2">
-                <button onClick={() => changeWeek('prev')} className="p-1.5 border rounded-lg"><ChevronLeft className="h-4 w-4" /></button>
+                <button onClick={() => changeWeek('prev')} className="p-1.5 border rounded-lg hover:bg-[#F5F6F8] transition-colors"><ChevronLeft className="h-4 w-4" /></button>
                 <span className="text-xs sm:text-sm font-bold font-mono">{weekDays[0].displayDate} ~ {weekDays[6].displayDate} 일정</span>
-                <button onClick={() => changeWeek('next')} className="p-1.5 border rounded-lg"><ChevronRight className="h-4 w-4" /></button>
-                <button onClick={() => { setCurrentWeekMonday(getMonday(new Date())); setSelectedTaskIds([]); }} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2">오늘</button>
+                <button onClick={() => changeWeek('next')} className="p-1.5 border rounded-lg hover:bg-[#F5F6F8] transition-colors"><ChevronRight className="h-4 w-4" /></button>
+                <button onClick={() => { setCurrentWeekMonday(getMonday(new Date())); setSelectedTaskIds([]); }} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2 hover:bg-[#EEF2F7] transition-colors">오늘</button>
               </div>
 
               <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
                 {isAdmin && (
                   <>
-                    <input type="month" value={selectedExportMonth} onChange={(e) => setSelectedExportMonth(e.target.value)} className="px-2 py-1 text-xs border rounded-lg font-mono" />
+                    <input type="month" value={selectedExportMonth} onChange={(e) => setSelectedExportMonth(e.target.value)} className="px-2 py-1 text-xs border rounded-lg font-mono bg-[#F5F6F8]" />
                     <button onClick={() => { void handleExportWeeklyExcel(); }} className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><FileSpreadsheet className="h-3.5 w-3.5" /><span>엑셀 저장</span></button>
                     <button onClick={handleRequestMonthlyWeeklyDelete} className="flex items-center space-x-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><Trash2 className="h-3.5 w-3.5" /><span>월 삭제</span></button>
                   </>
@@ -2422,7 +2430,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         </div>
                         <div className="space-y-2 flex-1 overflow-y-auto">
                           {dayTasks.map((t) => (
-                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="bg-white border rounded-lg p-2 text-xs space-y-1 shadow-2xs cursor-pointer hover:border-[#243B5A]">
+                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="bg-white border rounded-lg p-2 text-xs space-y-1 shadow-2xs cursor-pointer hover:border-[#243B5A] transition-colors">
                               <div className="flex justify-between items-center">
                                 {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
                                 {t.category && <span className="text-[9px] font-bold text-[#243B5A] bg-blue-50 px-1.5 py-0.2 rounded">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
@@ -2447,7 +2455,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <div className="flex items-center justify-between pb-2 mb-2 border-b">
                         <span className="font-bold text-xs">{day.label} ({day.displayDate})</span>
                         {isAdmin && (
-                          <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="flex items-center gap-1 text-xs text-[#243B5A] font-semibold"><Plus className="h-3.5 w-3.5" /><span>추가</span></button>
+                          <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="flex items-center gap-1 text-xs text-[#243B5A] font-semibold hover:underline"><Plus className="h-3.5 w-3.5" /><span>추가</span></button>
                         )}
                       </div>
                       {dayTasks.length === 0 ? (
@@ -2455,7 +2463,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       ) : (
                         <div className="space-y-2">
                           {dayTasks.map((t) => (
-                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="flex items-center justify-between bg-white border rounded-lg p-2.5 text-xs cursor-pointer hover:border-[#243B5A]">
+                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="flex items-center justify-between bg-white border rounded-lg p-2.5 text-xs cursor-pointer hover:border-[#243B5A] transition-colors">
                               <div className="space-y-1">
                                 <div className="flex items-center space-x-2">
                                   {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
@@ -2483,7 +2491,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <div className="rounded-xl border bg-white py-10 text-center text-xs text-[#64748B]">등록된 CABIN 편성이 없습니다.</div>
             ) : filteredTasks.map((t) => {
               return (
-                <div key={`cabin-mobile-${t.id}`} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-2xs" onClick={() => handleOpenTaskDetail(t)}>
+                <div key={`cabin-mobile-${t.id}`} className="rounded-xl border border-[#E2E5E9] bg-white p-3 shadow-2xs hover:border-[#243B5A] transition-colors" onClick={() => handleOpenTaskDetail(t)}>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 flex flex-wrap items-center gap-1 text-[11px]">
@@ -2499,15 +2507,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <div className="mt-3 space-y-2 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
                     <div>
                       <div className="mb-1 text-[10px] font-bold text-[#64748B]">주간 인원 ({t.day_workers?.length || 0}명)</div>
-                      {t.day_workers?.length ? <div className="flex flex-wrap gap-1.5">{t.day_workers.map((name) => <button key={`${t.id}-day-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A]"><span>📞</span><span>{name}</span></button>)}</div> : <div className="text-xs text-[#94A3B8]">미지정</div>}
+                      {t.day_workers?.length ? <div className="flex flex-wrap gap-1.5">{t.day_workers.map((name) => <button key={`${t.id}-day-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-blue-100 transition-colors"><span>📞</span><span>{name}</span></button>)}</div> : <div className="text-xs text-[#94A3B8]">미지정</div>}
                     </div>
                     <div>
                       <div className="mb-1 text-[10px] font-bold text-[#64748B]">야간 인원 ({t.night_workers?.length || 0}명)</div>
-                      {t.night_workers?.length ? <div className="flex flex-wrap gap-1.5">{t.night_workers.map((name) => <button key={`${t.id}-night-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A]"><span>📞</span><span>{name}</span></button>)}</div> : <div className="text-xs text-[#94A3B8]">미지정</div>}
+                      {t.night_workers?.length ? <div className="flex flex-wrap gap-1.5">{t.night_workers.map((name) => <button key={`${t.id}-night-${name}`} type="button" onClick={() => handleCallWorker(name)} className="inline-flex items-center gap-1 rounded-full border border-violet-100 bg-violet-50 px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-violet-100 transition-colors"><span>📞</span><span>{name}</span></button>)}</div> : <div className="text-xs text-[#94A3B8]">미지정</div>}
                     </div>
                     {!t.day_workers?.length && !t.night_workers?.length && <div className="text-xs text-[#94A3B8]">등록된 인원이 없습니다.</div>}
                   </div>
-                  {isAdmin && <div className="mt-3 flex justify-end gap-2 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2.5 py-1.5 text-xs font-semibold text-[#243B5A]"><Pencil className="mr-1 inline h-3 w-3" />수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button></div>}
+                  {isAdmin && <div className="mt-3 flex justify-end gap-2 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]"><Pencil className="mr-1 inline h-3 w-3" />수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2.5 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button></div>}
                 </div>
               );
             })}
@@ -2519,7 +2527,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <tr className="bg-[#243B5A] text-white">
                   {isAdmin && (
                     <th className="p-1.5 w-6 text-center">
-                      <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white" />
+                      <input type="checkbox" checked={filteredTasks.length > 0 && filteredTasks.every((task) => selectedTaskIds.includes(task.id))} onChange={(e) => handleSelectAllVisible(e.target.checked)} className="accent-white cursor-pointer" />
                     </th>
                   )}
                   <th className="p-1.5 font-bold w-[12%]">호선</th>
@@ -2551,11 +2559,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <td className="p-1.5 font-bold text-[#1F2937] break-words" title={t.title}>{t.title}{renderTaskNewBadge(t)}</td>
                       <td className="p-1.5 align-top" onClick={(e) => e.stopPropagation()}>
                         <div className="mb-1 text-[10px] font-bold text-[#64748B]">주간 ({t.day_workers?.length || 0}명)</div>
-                        {t.day_workers?.length ? <div className="flex flex-wrap gap-1">{t.day_workers.map((name) => <button key={`${t.id}-desktop-day-${name}`} type="button" onClick={() => handleCallWorker(name)} className="rounded-full border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#243B5A] hover:bg-blue-100" title={`${name} 전화 연결`}>📞 {name}</button>)}</div> : <span className="text-[10px] text-[#94A3B8]">미지정</span>}
+                        {t.day_workers?.length ? <div className="flex flex-wrap gap-1">{t.day_workers.map((name) => <button key={`${t.id}-desktop-day-${name}`} type="button" onClick={() => handleCallWorker(name)} className="rounded-full border border-blue-100 bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#243B5A] hover:bg-blue-100 transition-colors" title={`${name} 전화 연결`}>📞 {name}</button>)}</div> : <span className="text-[10px] text-[#94A3B8]">미지정</span>}
                       </td>
                       <td className="p-1.5 align-top" onClick={(e) => e.stopPropagation()}>
                         <div className="mb-1 text-[10px] font-bold text-[#64748B]">야간 ({t.night_workers?.length || 0}명)</div>
-                        {t.night_workers?.length ? <div className="flex flex-wrap gap-1">{t.night_workers.map((name) => <button key={`${t.id}-desktop-night-${name}`} type="button" onClick={() => handleCallWorker(name)} className="rounded-full border border-violet-100 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#243B5A] hover:bg-violet-100" title={`${name} 전화 연결`}>📞 {name}</button>)}</div> : <span className="text-[10px] text-[#94A3B8]">미지정</span>}
+                        {t.night_workers?.length ? <div className="flex flex-wrap gap-1">{t.night_workers.map((name) => <button key={`${t.id}-desktop-night-${name}`} type="button" onClick={() => handleCallWorker(name)} className="rounded-full border border-violet-100 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#243B5A] hover:bg-violet-100 transition-colors" title={`${name} 전화 연결`}>📞 {name}</button>)}</div> : <span className="text-[10px] text-[#94A3B8]">미지정</span>}
                       </td>
                       <td className="p-1.5 text-center" onClick={(e) => e.stopPropagation()}>{renderStatusBadge(t)}</td>
                       <td className="p-1.5 text-right" onClick={(e) => e.stopPropagation()}>
@@ -2579,11 +2587,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         )}
 
         {isWeeklyImportModalOpen && isAdmin && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b pb-3">
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-slate-900/25 p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-4 sm:p-5 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 border border-[#E2E5E9] max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
                 <h3 className="text-sm font-bold text-[#243B5A]">주간업무에서 일일업무로 불러오기</h3>
-                <button onClick={() => setIsWeeklyImportModalOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                <button onClick={() => setIsWeeklyImportModalOpen(false)} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
               </div>
 
               <div className="space-y-1.5">
@@ -2613,19 +2621,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       const allSelected = availableIds.length > 0 && availableIds.every(id => selectedWeeklyIdsToImport.includes(id));
                       setSelectedWeeklyIdsToImport(prev => allSelected ? prev.filter(id => !availableIds.includes(id)) : Array.from(new Set([...prev, ...availableIds])));
                     }}
-                    className="px-3 py-1.5 border border-[#243B5A] rounded-lg text-xs font-semibold text-[#243B5A] hover:bg-blue-50"
+                    className="px-3 py-1.5 border border-[#243B5A] rounded-lg text-xs font-semibold text-[#243B5A] hover:bg-blue-50 transition-colors"
                   >
                     {tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).every(t => selectedWeeklyIdsToImport.includes(t.id)) ? '전체 해제' : '전체 선택'}
                   </button>
                 )}
               </div>
 
-              <div className="max-h-60 overflow-y-auto space-y-2 border p-2 rounded-lg bg-[#F5F6F8]">
+              <div className="max-h-60 overflow-y-auto space-y-2 border border-[#E2E5E9] p-2 rounded-xl bg-[#F5F6F8]">
                 {tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).length === 0 ? (
                   <div className="text-center py-6 text-xs text-[#64748B]">선택한 일자({importTargetDate})에 등록된 주간업무가 없습니다.</div>
                 ) : (
                   tasks.filter(t => t.task_type === 'WEEKLY' && t.start_date === importTargetDate).map(wt => (
-                    <label key={wt.id} className="flex items-center justify-between p-2 bg-white rounded border text-xs hover:border-[#243B5A] cursor-pointer">
+                    <label key={wt.id} className="flex items-center justify-between p-2 bg-white rounded-lg border border-[#E2E5E9] text-xs hover:border-[#243B5A] cursor-pointer transition-colors">
                       <div className="flex items-center gap-2">
                         <input
                           type="checkbox"
@@ -2646,36 +2654,36 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 )}
               </div>
 
-              <div className="flex justify-end space-x-2 pt-2 border-t text-xs">
-                <button onClick={() => setIsWeeklyImportModalOpen(false)} className="px-3 py-1.5 border rounded-lg">취소</button>
-                <button onClick={handleImportWeeklyToDaily} className="px-4 py-1.5 bg-[#243B5A] text-white font-semibold rounded-lg">선택 업무 일일등록</button>
+              <div className="flex justify-end space-x-2 pt-2 border-t border-[#E2E5E9] text-xs">
+                <button onClick={() => setIsWeeklyImportModalOpen(false)} className="px-3 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">취소</button>
+                <button onClick={handleImportWeeklyToDaily} className="px-4 py-1.5 bg-[#243B5A] text-white font-semibold rounded-lg hover:bg-[#1B2F49] transition-colors">선택 업무 일일등록</button>
               </div>
             </div>
           </div>
         )}
 
         {customAlert.open && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-sm w-full p-4 shadow-2xl space-y-3 border">
-              <div className="flex items-center justify-between border-b pb-2">
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/25 p-4">
+            <div className="bg-white rounded-2xl max-w-sm w-full p-4 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-3 border border-[#E2E5E9]">
+              <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
                 <h3 className="text-sm font-bold text-[#243B5A]">{customAlert.title}</h3>
-                <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
               </div>
               <p className="text-xs text-[#1F2937] leading-relaxed">{customAlert.message}</p>
-              <div className="flex justify-end space-x-2 pt-2 border-t text-xs">
+              <div className="flex justify-end space-x-2 pt-2 border-t border-[#E2E5E9] text-xs">
                 {customAlert.type === 'monthlyDelete' ? (
                   <>
-                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">취소</button>
-                    <button onClick={() => { if (customAlert.onDownload) customAlert.onDownload(); }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-semibold">내려받기</button>
-                    <button onClick={() => { const confirmAction = customAlert.onConfirm; setCustomAlert({ ...customAlert, open: false }); if (confirmAction) confirmAction(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold">확인</button>
+                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg font-semibold hover:bg-[#F5F6F8]">취소</button>
+                    <button onClick={() => { if (customAlert.onDownload) customAlert.onDownload(); }} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg font-semibold hover:bg-emerald-700 transition-colors">내려받기</button>
+                    <button onClick={() => { const confirmAction = customAlert.onConfirm; setCustomAlert({ ...customAlert, open: false }); if (confirmAction) confirmAction(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors">확인</button>
                   </>
                 ) : customAlert.type === 'confirm' ? (
                   <>
-                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg">취소</button>
-                    <button onClick={() => { const confirmAction = customAlert.onConfirm; setCustomAlert({ ...customAlert, open: false }); if (confirmAction) confirmAction(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold">확인</button>
+                    <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-3 py-1.5 border rounded-lg font-semibold hover:bg-[#F5F6F8]">취소</button>
+                    <button onClick={() => { const confirmAction = customAlert.onConfirm; setCustomAlert({ ...customAlert, open: false }); if (confirmAction) confirmAction(); }} className="px-3 py-1.5 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700 transition-colors">확인</button>
                   </>
                 ) : (
-                  <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold">확인</button>
+                  <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">확인</button>
                 )}
               </div>
             </div>
@@ -2683,14 +2691,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         )}
 
         {isAlertOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
-              <div className="flex items-center justify-between border-b pb-3">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/25 p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-5 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 border border-[#E2E5E9]">
+              <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
                 <div className="flex items-center space-x-2 text-[#243B5A]">
                   <Bell className="h-5 w-5 text-amber-500 animate-bounce" />
                   <h3 className="text-sm font-bold">배정된 미완료 알림 안내</h3>
                 </div>
-                <button onClick={() => setIsAlertOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                <button onClick={() => setIsAlertOpen(false)} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
               </div>
               <p className="text-xs text-[#64748B]">현재 미완료 상태인 업무가 총 <span className="font-bold text-red-600">{myAssignedTasks.length}건</span> 있습니다.</p>
               <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
@@ -2698,7 +2706,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <div className="text-center py-6 text-xs text-[#64748B]">미완료된 업무가 없습니다!</div>
                 ) : (
                   myAssignedTasks.map((t) => (
-                    <div key={t.id} className="p-2.5 bg-[#F5F6F8] rounded-lg text-xs space-y-1 border flex items-center justify-between">
+                    <div key={t.id} className="p-2.5 bg-[#F5F6F8] rounded-lg text-xs space-y-1 border border-[#E2E5E9] flex items-center justify-between">
                       <div>
                         <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
                         <div className="text-[11px] text-[#64748B] font-mono">{t.start_date} ({formatShortTimeSlot(t.time_slot)})</div>
@@ -2708,8 +2716,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   ))
                 )}
               </div>
-              <div className="flex justify-end pt-3 border-t text-xs">
-                <button onClick={() => setIsAlertOpen(false)} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold">닫기</button>
+              <div className="flex justify-end pt-3 border-t border-[#E2E5E9] text-xs">
+                <button onClick={() => setIsAlertOpen(false)} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">닫기</button>
               </div>
             </div>
           </div>
@@ -2718,18 +2726,18 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         {statusChangeModal.open && statusChangeModal.task && (() => {
           const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
           return (
-            <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-              <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
-                <div className="flex items-center justify-between border-b pb-3">
+            <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/25 p-4">
+              <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-5 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 border border-[#E2E5E9]">
+                <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
                   <div className="flex items-center space-x-2">
                     <FileText className="h-5 w-5 text-[#243B5A]" />
                     <h3 className="text-sm font-bold text-[#1F2937]">상세보기 및 상태 변경</h3>
                   </div>
-                  <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                  <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
                 </div>
 
                 <div className="space-y-3 text-xs">
-                  <div className="p-3 bg-[#F5F6F8] rounded-lg border space-y-2">
+                  <div className="p-3 bg-[#F5F6F8] rounded-lg border border-[#E2E5E9] space-y-2">
                     <div className="font-bold text-sm text-[#1F2937]">{statusChangeModal.task.title}</div>
                     <div className="text-[#64748B] font-mono">
                       일시: {statusChangeModal.task.start_date} {statusChangeModal.task.time_slot ? `(${formatShortTimeSlot(statusChangeModal.task.time_slot)})` : ''}
@@ -2740,9 +2748,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <div>
                     <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택</label>
                     <div className="grid grid-cols-3 gap-2">
-                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white' : 'bg-amber-50 text-amber-800'}`}>대기</button>
-                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-800'}`}>진행중</button>
-                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-700'}`}>완료</button>
+                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}`}>대기</button>
+                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'}`}>진행중</button>
+                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white border-slate-800' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'}`}>완료</button>
                     </div>
                   </div>
 
@@ -2754,14 +2762,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       placeholder="비고 사항을 입력해주세요..."
                       value={statusChangeModal.remarks}
                       onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
-                      className={`w-full px-3 py-2 border rounded-lg text-xs resize-y max-h-64 ${!isAllowedUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#243B5A]'}`}
+                      className={`w-full px-3 py-2 border border-[#E2E5E9] bg-[#F5F6F8] rounded-lg text-xs resize-y max-h-64 outline-none transition-colors ${!isAllowedUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#243B5A] focus:bg-white'}`}
                     />
                   </div>
                 </div>
 
-                <div className="flex justify-end space-x-2 pt-3 border-t text-xs">
-                  <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border rounded-lg">닫기</button>
-                  {isAllowedUser && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold">저장</button>}
+                <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9] text-xs">
+                  <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">닫기</button>
+                  {isAllowedUser && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">저장</button>}
                 </div>
               </div>
             </div>
@@ -2769,16 +2777,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         })()}
 
         {selectedTaskForSheet && (
-          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 backdrop-blur-xs">
-            <div className="bg-white rounded-t-2xl max-w-xl w-full p-4 sm:p-6 shadow-2xl space-y-4 border-t">
-              <div className="flex items-center justify-between border-b pb-3">
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/25">
+            <div className="bg-white rounded-t-2xl max-w-xl w-full p-4 sm:p-6 shadow-[0_-12px_32px_rgba(15,23,42,0.18)] space-y-4 border-t border-[#E2E5E9]">
+              <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
                 <div className="flex items-center space-x-2">
                   <span className="text-xs font-bold text-[#2563EB] bg-blue-50 px-2 py-0.5 rounded font-mono">
                     {selectedTaskForSheet.start_date} {selectedTaskForSheet.time_slot ? `(${formatShortTimeSlot(selectedTaskForSheet.time_slot)})` : ''}
                   </span>
                   {renderStatusBadge(selectedTaskForSheet)}
                 </div>
-                <button onClick={() => setSelectedTaskForSheet(null)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-5 w-5" /></button>
+                <button onClick={() => setSelectedTaskForSheet(null)} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-5 w-5" /></button>
               </div>
 
               <div className="space-y-2">
@@ -2787,7 +2795,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <div className="text-xs text-[#243B5A] font-semibold">호선: {selectedTaskForSheet.category} {selectedTaskForSheet.cargo_hold ? `(화물창: ${selectedTaskForSheet.cargo_hold})` : ''}</div>
                 )}
                 {selectedTaskForSheet.description && (
-                  <p className="text-xs text-[#64748B] bg-[#F5F6F8] p-3 rounded-lg border">{selectedTaskForSheet.description}</p>
+                  <p className="text-xs text-[#64748B] bg-[#F5F6F8] p-3 rounded-lg border border-[#E2E5E9]">{selectedTaskForSheet.description}</p>
                 )}
                 {selectedTaskForSheet.remarks && (
                   <div className="text-xs text-[#1F2937] bg-amber-50/50 p-2.5 rounded-lg border border-amber-200">
@@ -2815,9 +2823,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               </div>
 
               {canManageTask(selectedTaskForSheet) && (
-                <div className="flex items-center justify-end space-x-2 pt-3 border-t">
-                  <button onClick={() => { handleOpenTaskEdit(selectedTaskForSheet); setSelectedTaskForSheet(null); }} className="px-3 py-1.5 text-xs font-semibold border rounded-lg text-[#243B5A]">수정</button>
-                  <button onClick={() => handleDeleteTask(selectedTaskForSheet.id)} className="px-3 py-1.5 text-xs font-semibold border rounded-lg text-red-600 border-red-200">삭제</button>
+                <div className="flex items-center justify-end space-x-2 pt-3 border-t border-[#E2E5E9]">
+                  <button onClick={() => { handleOpenTaskEdit(selectedTaskForSheet); setSelectedTaskForSheet(null); }} className="px-3 py-1.5 text-xs font-semibold border border-[#E2E5E9] rounded-lg text-[#243B5A] hover:bg-[#F5F6F8]">수정</button>
+                  <button onClick={() => handleDeleteTask(selectedTaskForSheet.id)} className="px-3 py-1.5 text-xs font-semibold border rounded-lg text-red-600 border-red-200 hover:bg-red-50">삭제</button>
                 </div>
               )}
             </div>
@@ -2825,19 +2833,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         )}
 
         {isVesselManagerOpen && isAdmin && (
-          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border">
-              <div className="flex items-center justify-between border-b pb-3">
+          <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/25 p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-5 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 border border-[#E2E5E9]">
+              <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
                 <h3 className="text-sm font-bold text-[#243B5A]">호선 추가 / 수정 / 삭제</h3>
-                <button onClick={() => setIsVesselManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                <button onClick={() => setIsVesselManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
               </div>
               <div className="flex space-x-2">
-                <input type="text" placeholder="신규 호선명 입력" value={newVesselName} onChange={(e) => setNewVesselName(e.target.value)} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
-                <button onClick={handleAddVessel} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg shrink-0">추가</button>
+                <input type="text" placeholder="신규 호선명 입력" value={newVesselName} onChange={(e) => setNewVesselName(e.target.value)} className={inputClass} />
+                <button onClick={handleAddVessel} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg shrink-0 hover:bg-[#1B2F49] transition-colors">추가</button>
               </div>
               <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
                 {vessels.map((v) => (
-                  <div key={v.id} className="flex items-center justify-between p-2.5 border rounded-lg text-xs">
+                  <div key={v.id} className="flex items-center justify-between p-2.5 border border-[#E2E5E9] rounded-lg text-xs">
                     {editingVessel?.id === v.id ? (
                       <input type="text" defaultValue={v.name} onBlur={(e) => handleUpdateVessel(v.id, e.target.value)} className="px-2 py-0.5 border rounded text-xs" autoFocus />
                     ) : (
@@ -2855,37 +2863,37 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         )}
 
         {isTeamManagerOpen && isAdmin && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-md w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[85vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b pb-3">
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/25 p-4">
+            <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-5 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 border border-[#E2E5E9] max-h-[85vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
                 <div className="flex items-center space-x-1.5 text-[#243B5A]">
                   <Layers className="h-4 w-4" />
                   <h3 className="text-sm font-bold">Team 그룹 관리</h3>
                 </div>
-                <button onClick={() => setIsTeamManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                <button onClick={() => setIsTeamManagerOpen(false)} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
               </div>
 
-              <div className="space-y-2 bg-[#F5F6F8] p-3 rounded-lg border">
+              <div className="space-y-2 bg-[#F5F6F8] p-3 rounded-xl border border-[#E2E5E9]">
                 <span className="text-xs font-bold text-[#243B5A]">신규 Team 추가</span>
-                <input type="text" placeholder="Team 이름" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
-                <select value={newTeamDept} onChange={(e) => handleSelectDepartmentUsersToNewTeam(e.target.value)} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10">
+                <input type="text" placeholder="Team 이름" value={newTeamName} onChange={(e) => setNewTeamName(e.target.value)} className={inputClass} />
+                <select value={newTeamDept} onChange={(e) => handleSelectDepartmentUsersToNewTeam(e.target.value)} className={inputClass}>
                   <option value="">-- 부서 선택 (인원 자동입력) --</option>
                   {departments.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
                 </select>
-                <input type="text" placeholder="구성원 이름 (쉼표 구분)" value={newTeamMembersText} onChange={(e) => setNewTeamMembersText(e.target.value)} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
-                <button onClick={handleAddTeam} className="w-full py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg">Team 생성</button>
+                <input type="text" placeholder="구성원 이름 (쉼표 구분)" value={newTeamMembersText} onChange={(e) => setNewTeamMembersText(e.target.value)} className={inputClass} />
+                <button onClick={handleAddTeam} className="w-full py-2 bg-[#243B5A] text-white text-xs font-semibold rounded-lg hover:bg-[#1B2F49] transition-colors">Team 생성</button>
               </div>
 
               <div className="space-y-2">
                 <span className="text-xs font-bold text-[#1F2937]">등록된 Team 목록</span>
                 <div className="max-h-56 overflow-y-auto space-y-2 pr-1">
                   {presetTeams.map((team) => (
-                    <div key={team.id} className="p-2.5 border rounded-lg text-xs bg-white flex items-center justify-between">
+                    <div key={team.id} className="p-2.5 border border-[#E2E5E9] rounded-lg text-xs bg-white flex items-center justify-between">
                       <div>
                         <div className="font-bold text-[#243B5A]">{team.name}</div>
                         <div className="text-[11px] text-[#64748B]">{team.members?.join(', ')}</div>
                       </div>
-                      <button onClick={() => handleDeleteTeam(team.id)} className="p-1 text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                      <button onClick={() => handleDeleteTeam(team.id)} className="p-1 text-red-600 hover:bg-red-50 rounded"><Trash2 className="h-3.5 w-3.5" /></button>
                     </div>
                   ))}
                 </div>
@@ -2895,23 +2903,23 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         )}
 
         {isModalOpen && (isAdmin || formData.task_type === 'DAILY_OTHER') && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-xl max-w-lg w-full p-4 sm:p-5 shadow-2xl space-y-4 border max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between border-b pb-3">
-                <h3 className="text-sm font-bold">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/25 p-4">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-4 sm:p-5 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 border border-[#E2E5E9] max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
+                <h3 className="text-sm font-bold text-[#243B5A]">
                   {formData.task_type === 'CABIN' ? `CABIN 근무 등록/수정 (${formData.category || '호선미정'})` : '업무 등록/수정'}
                 </h3>
-                <button onClick={() => setIsModalOpen(false)} className="p-1 text-[#64748B] hover:bg-slate-100 rounded-lg"><X className="h-4 w-4" /></button>
+                <button onClick={() => setIsModalOpen(false)} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
               </div>
 
               <form onSubmit={handleSubmitTask} className="space-y-3.5">
                 {formData.task_type !== 'DAILY_OTHER' && (
                 <div>
-                  <label className="block text-[11px] font-semibold mb-1">구분</label>
-                  <div className="grid grid-cols-3 gap-1.5 bg-[#F5F6F8] p-1 rounded-lg border">
-                    <button type="button" onClick={() => setFormData({ ...formData, task_type: 'DAILY' })} className={`py-1 text-xs font-semibold rounded-md ${formData.task_type === 'DAILY' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}>일일 업무</button>
-                    <button type="button" onClick={() => setFormData({ ...formData, task_type: 'WEEKLY' })} className={`py-1 text-xs font-semibold rounded-md ${formData.task_type === 'WEEKLY' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}>주간 업무</button>
-                    <button type="button" onClick={() => setFormData({ ...formData, task_type: 'CABIN' })} className={`py-1 text-xs font-semibold rounded-md ${formData.task_type === 'CABIN' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}>CABIN</button>
+                  <label className="block text-[11px] font-semibold mb-1 text-[#1F2937]">구분</label>
+                  <div className="grid grid-cols-3 gap-1.5 bg-[#F5F6F8] p-1 rounded-lg border border-[#E2E5E9]">
+                    <button type="button" onClick={() => setFormData({ ...formData, task_type: 'DAILY' })} className={`py-1 text-xs font-semibold rounded-md transition-colors ${formData.task_type === 'DAILY' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B]'}`}>일일 업무</button>
+                    <button type="button" onClick={() => setFormData({ ...formData, task_type: 'WEEKLY' })} className={`py-1 text-xs font-semibold rounded-md transition-colors ${formData.task_type === 'WEEKLY' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B]'}`}>주간 업무</button>
+                    <button type="button" onClick={() => setFormData({ ...formData, task_type: 'CABIN' })} className={`py-1 text-xs font-semibold rounded-md transition-colors ${formData.task_type === 'CABIN' ? 'bg-[#243B5A] text-white shadow-2xs' : 'text-[#64748B]'}`}>CABIN</button>
                   </div>
                 </div>
                 )}
@@ -2919,7 +2927,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <div className="flex justify-between items-center mb-1">
-                      <label className="block text-[11px] font-semibold">호선</label>
+                      <label className="block text-[11px] font-semibold text-[#1F2937]">호선</label>
                       {isAdmin && (
                         <div className="flex items-center gap-2">
                           <button type="button" onClick={() => setIsVesselManagerOpen(true)} className="text-[10px] text-red-600 hover:underline font-semibold">호선 삭제/관리</button>
@@ -2941,12 +2949,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           placeholder="신규 호선명 입력"
                           value={quickVesselName}
                           onChange={(e) => setQuickVesselName(e.target.value)}
-                          className="flex-1 px-2.5 py-1.5 border rounded-lg text-xs bg-white"
+                          className={inputClass}
                         />
                         <button
                           type="button"
                           onClick={handleQuickAddVessel}
-                          className="px-2.5 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg shrink-0"
+                          className="px-2.5 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg shrink-0 hover:bg-[#1B2F49] transition-colors"
                         >
                           등록
                         </button>
@@ -2962,13 +2970,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   </div>
 
                   <div>
-                    <label className="block text-[11px] font-semibold mb-1">화물창</label>
+                    <label className="block text-[11px] font-semibold mb-1 text-[#1F2937]">화물창</label>
                     <input
                       type="text"
                       placeholder="예) Cargo Hold #1"
                       value={formData.cargo_hold}
                       onChange={(e) => setFormData({ ...formData, cargo_hold: e.target.value })}
-                      className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10"
+                      className={inputClass}
                     />
                   </div>
                 </div>
@@ -2976,8 +2984,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 {formData.task_type === 'CABIN' ? (
                   <>
                     <div>
-                      <label className="block text-[11px] font-semibold mb-1">근무/점검명</label>
-                      <input type="text" required placeholder="예) 메인 캐빈 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
+                      <label className="block text-[11px] font-semibold mb-1 text-[#1F2937]">근무/점검명</label>
+                      <input type="text" required placeholder="예) 메인 캐빈 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className={inputClass} />
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <CalendarDatePicker
@@ -2991,20 +2999,20 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         onChange={(date) => { if (date) setFormData({ ...formData, end_date: date }); }}
                       />
                     </div>
-                    <div className="space-y-3 rounded-lg border bg-slate-50 p-3">
+                    <div className="space-y-3 rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3">
                       <div className="space-y-1.5">
-                        <label className="block text-[11px] font-semibold">주간 근무자 ({dayWorkerList.length}명)</label>
+                        <label className="block text-[11px] font-semibold text-[#1F2937]">주간 근무자 ({dayWorkerList.length}명)</label>
                         <div className="flex gap-2">
-                          <input type="text" placeholder="주간 근무자 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('DAY'); } }} className="flex-1 px-3 py-1.5 border rounded-lg text-xs bg-white" />
-                          <button type="button" onClick={() => handleAddWorkerSingle('DAY')} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg">추가</button>
+                          <input type="text" placeholder="주간 근무자 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('DAY'); } }} className={inputClass} />
+                          <button type="button" onClick={() => handleAddWorkerSingle('DAY')} className="px-3 py-1.5 bg-[#243B5A] text-white text-xs font-semibold rounded-lg hover:bg-[#1B2F49] transition-colors">추가</button>
                         </div>
                         <div className="flex flex-wrap gap-1 pt-1">{dayWorkerList.length ? dayWorkerList.map(name => <span key={`day-${name}`} className="bg-blue-50 text-[#1F2937] border border-blue-100 text-[11px] px-2 py-1 rounded-full flex items-center gap-1">{name}<button type="button" onClick={() => handleRemoveWorker(name, 'DAY')} aria-label={`${name} 주간 근무자 삭제`}><X className="h-3 w-3" /></button></span>) : <span className="text-[11px] text-[#64748B]">주간 근무자가 지정되지 않았습니다.</span>}</div>
                       </div>
                       <div className="space-y-1.5">
-                        <label className="block text-[11px] font-semibold">야간 근무자 ({nightWorkerList.length}명)</label>
+                        <label className="block text-[11px] font-semibold text-[#1F2937]">야간 근무자 ({nightWorkerList.length}명)</label>
                         <div className="flex gap-2">
-                          <input type="text" placeholder="야간 근무자 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('NIGHT'); } }} className="flex-1 px-3 py-1.5 border rounded-lg text-xs bg-white" />
-                          <button type="button" onClick={() => handleAddWorkerSingle('NIGHT')} className="px-3 py-1.5 bg-violet-700 text-white text-xs font-semibold rounded-lg">추가</button>
+                          <input type="text" placeholder="야간 근무자 이름 입력" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('NIGHT'); } }} className={inputClass} />
+                          <button type="button" onClick={() => handleAddWorkerSingle('NIGHT')} className="px-3 py-1.5 bg-violet-700 text-white text-xs font-semibold rounded-lg hover:bg-violet-800 transition-colors">추가</button>
                         </div>
                         <div className="flex flex-wrap gap-1 pt-1">{nightWorkerList.length ? nightWorkerList.map(name => <span key={`night-${name}`} className="bg-violet-50 text-[#1F2937] border border-violet-100 text-[11px] px-2 py-1 rounded-full flex items-center gap-1">{name}<button type="button" onClick={() => handleRemoveWorker(name, 'NIGHT')} aria-label={`${name} 야간 근무자 삭제`}><X className="h-3 w-3" /></button></span>) : <span className="text-[11px] text-[#64748B]">야간 근무자가 지정되지 않았습니다.</span>}</div>
                       </div>
@@ -3013,8 +3021,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 ) : (
                   <>
                     <div>
-                      <label className="block text-[11px] font-semibold mb-1">업무명</label>
-                      <input type="text" required placeholder="예) 시설 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
+                      <label className="block text-[11px] font-semibold mb-1 text-[#1F2937]">업무명</label>
+                      <input type="text" required placeholder="예) 시설 정기 점검" value={formData.title} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className={inputClass} />
                     </div>
 
                     <div className="grid grid-cols-2 gap-3">
@@ -3024,7 +3032,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         onChange={(date) => { if (date) setFormData({ ...formData, start_date: date }); }}
                       />
                       <div>
-                        <label className="block text-[11px] font-semibold mb-1">시간대</label>
+                        <label className="block text-[11px] font-semibold mb-1 text-[#1F2937]">시간대</label>
                         <AppStyledSelect
                           ariaLabel="시간대 선택"
                           value={formData.time_slot}
@@ -3040,22 +3048,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
                     {formData.task_type === 'DAILY_OTHER' ? (
                       <div className="space-y-1.5">
-                        <label className="block text-[11px] font-semibold">인원 (작성자 본인)</label>
-                        <div className="inline-flex items-center gap-2 bg-slate-100 text-[#243B5A] border border-slate-200 text-xs font-semibold px-3 py-2 rounded-lg">
+                        <label className="block text-[11px] font-semibold text-[#1F2937]">인원 (작성자 본인)</label>
+                        <div className="inline-flex items-center gap-2 bg-[#EEF2F7] text-[#243B5A] border border-[#E2E5E9] text-xs font-semibold px-3 py-2 rounded-lg">
                           <User className="h-3.5 w-3.5" /> {editingTask?.created_by_name || currentUser?.name || '로그인 사용자'}
                         </div>
                       </div>
                     ) : (
                       <div className="space-y-1.5">
                         <div className="flex justify-between items-center gap-2">
-                          <label className="block text-[11px] font-semibold">인원 추가</label>
-                          <button type="button" onClick={() => setIsTeamManagerOpen(true)} className="rounded-md px-2 py-1 text-[10px] text-[#243B5A] hover:bg-[#EEF2F7] font-semibold">Team 관리</button>
+                          <label className="block text-[11px] font-semibold text-[#1F2937]">인원 추가</label>
+                          <button type="button" onClick={() => setIsTeamManagerOpen(true)} className="rounded-md px-2 py-1 text-[10px] text-[#243B5A] hover:bg-[#EEF2F7] font-semibold transition-colors">Team 관리</button>
                         </div>
                         <div className="flex gap-2">
-                          <input type="text" placeholder="이름 입력 (여러 명은 쉼표로 구분)" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('ASSIGNED'); } }} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10" />
-                          <button type="button" onClick={() => handleAddWorkerSingle('ASSIGNED')} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-[#304D73]">추가</button>
+                          <input type="text" placeholder="이름 입력 (여러 명은 쉼표로 구분)" value={singleWorkerInput} onChange={(e) => setSingleWorkerInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAddWorkerSingle('ASSIGNED'); } }} className={inputClass} />
+                          <button type="button" onClick={() => handleAddWorkerSingle('ASSIGNED')} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white transition-colors hover:bg-[#1B2F49]">추가</button>
                         </div>
-                        <div className="flex gap-2 rounded-lg border border-[#E2E5E9] bg-[#FCFCFD] p-2">
+                        <div className="flex gap-2 rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-2">
                           <div className="min-w-0 flex-1">
                             <AppStyledSelect
                               ariaLabel="Team 선택"
@@ -3065,22 +3073,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                               options={presetTeams.map(team => ({ value: team.id, label: `${team.name} (${team.members?.length || 0}명)` }))}
                             />
                           </div>
-                          <button type="button" onClick={handleAddPresetTeamToTask} className="shrink-0 rounded-lg border border-[#243B5A] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] transition hover:bg-[#EEF2F7]">Team 추가</button>
+                          <button type="button" onClick={handleAddPresetTeamToTask} className="shrink-0 rounded-lg border border-[#243B5A] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] transition-colors hover:bg-[#EEF2F7]">Team 추가</button>
                         </div>
                         <div className="flex flex-wrap gap-1 pt-1">
                           {assignedList.length === 0 ? (
                             <span className="text-[11px] text-[#64748B]">지정된 인원이 없습니다.</span>
                           ) : (
                             assignedList.map(name => (
-                              <span key={name} className="bg-slate-100 text-[#1F2937] border text-[11px] px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <span key={name} className="bg-slate-100 text-[#1F2937] border border-[#E2E5E9] text-[11px] px-2 py-0.5 rounded-full flex items-center gap-1">
                                 {name}
-                                <button type="button" onClick={() => handleRemoveWorker(name, 'ASSIGNED')}><X className="h-3 w-3" /></button>
+                                <button type="button" onClick={() => handleRemoveWorker(name, 'ASSIGNED')} aria-label={`${name} 인원 삭제`}><X className="h-3 w-3" /></button>
                               </span>
                             ))
                           )}
                         </div>
                         {formData.task_type === 'DAILY' && (
-                          <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 p-2.5">
+                          <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/70 p-2.5">
                             <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-900">
                               <AlertCircle className="h-3.5 w-3.5 shrink-0" />
                               {formatShortTimeSlot(formData.time_slot)} 미배정 공정인원 ({unassignedWorkersForForm.length}명)
@@ -3099,13 +3107,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 )}
 
                 <div>
-                  <label className="block text-[11px] font-semibold mb-1">상세 설명 / 업무 내용</label>
-                  <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition focus:border-[#243B5A] focus:bg-white focus:ring-2 focus:ring-[#243B5A]/10 resize-none" />
+                  <label className="block text-[11px] font-semibold mb-1 text-[#1F2937]">상세 설명 / 업무 내용</label>
+                  <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition-colors focus:border-[#243B5A] focus:bg-white resize-none" />
                 </div>
 
-                <div className="flex justify-end space-x-2 pt-3 border-t">
-                  <button type="button" onClick={() => setIsModalOpen(false)} className="px-3.5 py-1.5 text-xs border rounded-lg">취소</button>
-                  <button type="submit" className="px-4 py-1.5 text-xs bg-[#243B5A] text-white rounded-lg font-semibold">저장</button>
+                <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9]">
+                  <button type="button" onClick={() => setIsModalOpen(false)} className="px-3.5 py-1.5 text-xs border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">취소</button>
+                  <button type="submit" className="px-4 py-1.5 text-xs bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">저장</button>
                 </div>
               </form>
             </div>
