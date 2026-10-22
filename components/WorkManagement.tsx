@@ -1541,8 +1541,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     for (const wName of workersToCheck) {
       const u = appUsers.find(user => user.name?.trim().toLowerCase() === wName.trim().toLowerCase());
-      if (isUserOffOnDate(u, formData.start_date)) {
-        showCustomAlert('업무 등록 제한', `${u.name} 휴무입니다.`);
+      if (u !== undefined && isUserOffOnDate(u, formData.start_date)) {
+        showCustomAlert('업무 등록 제한', `${u?.name || wName} 휴무입니다.`);
         return;
       }
       
