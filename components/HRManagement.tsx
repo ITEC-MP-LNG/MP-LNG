@@ -1553,7 +1553,7 @@ export default function HRManagement({
       const { data: existingAbsenceRows, error: absenceReadError } = await supabase.from('user_day_status').select('status_date').eq('user_id', targetUserId).eq('status', '휴무');
       if (absenceReadError) throw absenceReadError;
       const existingDates = new Set((existingAbsenceRows || []).map((row: any) => String(row.status_date)));
-      const nextDates = new Set(formData.work_status === '휴무' ? formData.absence_dates : []);
+      const nextDates = new Set(formData.absence_dates);
       const datesToAdd = Array.from(nextDates).filter(date => !existingDates.has(date)).map(status_date => ({ user_id: targetUserId, status_date, status: '휴무' }));
       const datesToRemove = Array.from(existingDates).filter(date => !nextDates.has(date));
       if (datesToAdd.length) { const { error } = await supabase.from('user_day_status').upsert(datesToAdd, { onConflict: 'user_id,status_date' }); if (error) throw error; }
@@ -2707,11 +2707,11 @@ export default function HRManagement({
                   <button type="button" onClick={() => setFormData(prev => ({ ...prev, work_status: '휴무' }))} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${formData.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
                 </div>
                 <p className="mt-1 text-[10px] text-[#64748B]">별도 상태가 등록되지 않은 구성원은 근무중으로 표시됩니다.</p>
-                {formData.work_status === '휴무' && <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/60 p-2.5 space-y-2">
-                  <div className="text-[11px] font-bold text-blue-800">휴무 날짜 (여러 날짜 선택 가능)</div>
+                <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/60 p-2.5 space-y-2">
+                  <div className="text-[11px] font-bold text-blue-800">날짜별 휴무 (여러 날짜 선택 가능)</div>
                   {absenceDatesLoading ? <div className="text-[11px] text-blue-700">등록된 휴무 날짜를 불러오는 중...</div> : <MultiDateCalendar value={formData.absence_dates} onChange={(dates) => setFormData(prev => ({ ...prev, absence_dates: dates }))} />}
-                  <p className="text-[10px] text-blue-700">선택한 날짜는 업무현황에서 날짜별 휴무자로 조회할 수 있도록 별도 저장됩니다.</p>
-                </div>}
+                  <p className="text-[10px] text-blue-700">근무 상태가 ‘근무중’이어도 특정 날짜만 휴무로 등록할 수 있습니다. 선택한 날짜는 업무현황에서 해당 날짜의 휴무자로 처리됩니다.</p>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2.5">
