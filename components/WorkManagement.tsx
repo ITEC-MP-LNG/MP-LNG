@@ -1089,9 +1089,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     absenceReconcileInFlightRef.current = true;
     void (async () => {
       const changedTasks: Task[] = [];
+      const excludedNames = new Set<string>();
       try {
         for (const task of candidates) {
           const originalNames = task.assigned_names || [];
+          const removedNames = originalNames.filter(name => {
+            const user = appUsers.find(item => item.name?.trim().toLowerCase() === name.trim().toLowerCase());
+            return isUserOffOnDate(user, task.start_date);
+          });
           const nextNames = originalNames.filter(name => {
             const user = appUsers.find(item => item.name?.trim().toLowerCase() === name.trim().toLowerCase());
             return !isUserOffOnDate(user, task.start_date);
@@ -1102,11 +1107,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             console.error('휴무자 업무 배정 자동 제외 실패:', task.id, error);
             continue;
           }
+          removedNames.forEach(name => excludedNames.add(name));
           changedTasks.push({ ...task, assigned_names: nextNames });
         }
         if (changedTasks.length) {
           setTasks(prev => prev.map(task => changedTasks.find(changed => changed.id === task.id) || task));
-          showCustomAlert('휴무자 자동 제외', '해당인원은 휴무자로 업무에서 배제되었습니다');
+          showCustomAlert('휴무자 자동 제외', `${Array.from(excludedNames).join(', ')}는 휴무자로 업무에서 제외되었습니다.`);
         }
       } finally {
         absenceReconcileInFlightRef.current = false;
