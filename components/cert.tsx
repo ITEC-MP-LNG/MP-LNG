@@ -431,6 +431,9 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         const sourceKey = `${cat}:${person.id}:${index}`;
         const snapshot = sourceSnapshot(cat, person.id, index, payload);
         const base = {
+          // cert_management_records.id 컬럼에 기본값이 없는 환경에서도 신규 동기화가 실패하지 않도록
+          // 브라우저에서 UUID를 생성합니다. 기존 레코드의 id는 업데이트 시 그대로 유지됩니다.
+          id: crypto.randomUUID(),
           user_id: person.id, category: cat, source_key: sourceKey,
           title: '', obtained_date: null, expiry_date: null, method: null, level: null,
           sticker_no: null, education_completed: null,
@@ -671,7 +674,7 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
         notify('자격정보를 수정했습니다. HRManagement 원본에는 변경사항을 보내지 않았습니다.');
       } else {
         const { data, error } = await supabase.from('cert_management_records')
-          .insert({ ...dbValues, source_key: null }).select('*').single();
+          .insert({ ...dbValues, id: crypto.randomUUID(), source_key: null }).select('*').single();
         if (error) throw error;
         const savedRecord = { ...(data as CertRecord), cert_no: form.category === 'NDT' ? (form.cert_no.trim() || null) : null };
         setRecords(prev => [...prev, savedRecord]);
