@@ -21,6 +21,14 @@ import {
   CheckCircle2,
   AlertTriangle
 } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import InventoryHistoryFilters from './InventoryHistoryFilters';
 import { supabase } from '@/lib/supabase';
 
 // 자체 정의된 타입
@@ -151,6 +159,8 @@ export default function MaterialManagement({
   const [returnQty, setReturnQty] = useState<number>(1);
   const [returnHasIssue, setReturnHasIssue] = useState<boolean>(false);
   const [returnMemo, setReturnMemo] = useState<string>('');
+  const [returnBatchItems, setReturnBatchItems] = useState<any[]>([]);
+  const [returnIssueItemIds, setReturnIssueItemIds] = useState<string[]>([]);
   const returnSubmittingRef = useRef(false);
 
   // 이력 수정 모달 상태
@@ -184,6 +194,7 @@ export default function MaterialManagement({
   const [showCabinBatchReturnModal, setShowCabinBatchReturnModal] = useState<boolean>(false);
   const [cabinBatchReturnMemo, setCabinBatchReturnMemo] = useState<string>('');
   const [cabinBatchReturnHasIssue, setCabinBatchReturnHasIssue] = useState<boolean>(false);
+  const [cabinBatchIssueIds, setCabinBatchIssueIds] = useState<string[]>([]);
   const [batchReturnProcessingId, setBatchReturnProcessingId] = useState<string | null>(null);
 
   const [fixedSubCategories, setFixedSubCategories] = useState<string[]>([
@@ -311,6 +322,9 @@ export default function MaterialManagement({
   const [logMemo, setLogMemo] = useState('');
 
   const [selectedLogIds, setSelectedLogIds] = useState<string[]>([]);
+  const [historyTypeFilter, setHistoryTypeFilter] = useState<'전체' | '기자재' | '소모성' | '교정' | '교정반입완료' | 'CABIN'>('전체');
+  const [historyCategoryFilter, setHistoryCategoryFilter] = useState<string>('전체');
+  const [returnHistoryCategoryFilter, setReturnHistoryCategoryFilter] = useState<string>('전체');
   const [isReturnHistoryOpen, setIsReturnHistoryOpen] = useState(false);
   const [returnHistories, setReturnHistories] = useState<InventoryReturnHistory[]>([]);
   const [loadingReturnHistories, setLoadingReturnHistories] = useState(false);
@@ -462,18 +476,21 @@ export default function MaterialManagement({
         calDateStr = parts.length >= 2 ? parts[1] : parts[0];
       }
 
-      if (calDateStr) {
+      // 교정 반출 상태인 장비는 교정 예정 목록에서 제외합니다.
+      // 교정 반입 로그가 이후에 기록되면 다시 예정 목록에 표시됩니다.
+      const itemCalibrationLogs = inventoryLogs
+        .filter((log: any) => String(log.inventory_id ?? '') === String(item.id) && String(log.type || '').includes('교정'))
+        .sort((a: any, b: any) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
+      const latestCalibrationLog = itemCalibrationLogs[itemCalibrationLogs.length - 1];
+      const isCurrentlyOutForCalibration = Boolean(latestCalibrationLog && String(latestCalibrationLog.type || '').includes('교정 반출'));
+
+      if (calDateStr && !isCurrentlyOutForCalibration) {
         const nextCalDate = new Date(calDateStr);
         if (!isNaN(nextCalDate.getTime())) {
           nextCalDate.setHours(0, 0, 0, 0);
           const diffDays = Math.ceil((nextCalDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-          const isCurrentlyOutForCalibration = inventoryTab !== 'CABIN' && inventoryLogs.some((log: any) =>
-            String(log.inventory_id) === String(item.id) &&
-            String(log.type || '').split(',').map((part: string) => part.trim()).includes('교정') &&
-            !String(log.type || '').includes('반납완료')
-          );
 
-          if (diffDays <= 30 && !isCurrentlyOutForCalibration) {
+          if (diffDays <= 30) {
             upcomingCalibrations.push({
               item,
               daysLeft: diffDays,
@@ -495,12 +512,6 @@ export default function MaterialManagement({
       return { calDate: parts[0], nextCalDate: parts[1] };
     }
     return { calDate: subEquipment, nextCalDate: '' };
-  };
-
-  const isCalibrationFixedItem = (item: any) => {
-    if (item?.type !== '고정') return false;
-    const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
-    return Boolean(calDate || nextCalDate);
   };
 
   const [itemSubCategoryRows, setItemSubCategoryRows] = useState<any[]>([]);
@@ -776,6 +787,12 @@ export default function MaterialManagement({
   const [itemMinQty, setItemMinQty] = useState<number>(0);
   const [itemLocation, setItemLocation] = useState('장비실 A');
 
+  // 기자재/소모성 자재 추가 입고 처리
+  const [inboundItem, setInboundItem] = useState<any | null>(null);
+  const [inboundQty, setInboundQty] = useState<number>(1);
+  const [inboundMemo, setInboundMemo] = useState('');
+  const [inboundSubmitting, setInboundSubmitting] = useState(false);
+
   const [cabinSheetName, setCabinSheetName] = useState('');
   const [cabinLocationSection, setCabinLocationSection] = useState('');
   const [cabinMakerModel, setCabinMakerModel] = useState('');
@@ -977,12 +994,90 @@ export default function MaterialManagement({
     });
   };
 
+  const isCalibrationItem = (item: any) => {
+    if (!item) return false;
+    const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+    return item.category === '교정' || Boolean(item.calibration_date || calDate || nextCalDate);
+  };
+
+  const handleOpenInboundModal = (item: any) => {
+    if (!isAdmin) return showCenterToast('관리자만 자재 입고를 처리할 수 있습니다.');
+    if (!item || (item.type !== '고정' && item.type !== '소모성')) return;
+    setInboundItem(item);
+    setInboundQty(1);
+    setInboundMemo('');
+  };
+
+  const handleSubmitInbound = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !inboundItem || inboundSubmitting) return;
+    const quantityToAdd = Number(inboundQty);
+    if (!Number.isInteger(quantityToAdd) || quantityToAdd < 1) {
+      showCenterToast('입고 수량은 1 이상의 정수로 입력해주세요.');
+      return;
+    }
+
+    setInboundSubmitting(true);
+    const operationAt = new Date().toISOString();
+    const currentQty = Number(inboundItem.quantity || 0);
+    let stockUpdated = false;
+    let inboundLogCreated = false;
+    try {
+      const { data: updatedRows, error: inventoryError } = await supabase
+        .from('inventory')
+        .update({ quantity: currentQty + quantityToAdd, updated_at: operationAt })
+        .eq('id', inboundItem.id)
+        .eq('quantity', currentQty)
+        .select('id, quantity');
+      if (inventoryError) throw inventoryError;
+      if (!updatedRows || updatedRows.length === 0) {
+        showCenterToast('보유수량이 변경되었습니다. 목록을 새로고침한 후 다시 입고해주세요.');
+        await fetchInventory();
+        return;
+      }
+      stockUpdated = true;
+
+      const { error: logError } = await supabase.from('inventory_logs').insert([{
+        inventory_id: inboundItem.id,
+        item_code: inboundItem.code || null,
+        item_name: inboundItem.name || inboundItem.item || null,
+        type: '입고',
+        quantity: quantityToAdd,
+        worker_name: currentUser?.name || '작업자',
+        issued_by: currentUser?.name || '작업자',
+        returned_by: null,
+        memo: inboundMemo.trim() || null,
+        is_new: true,
+        created_at: operationAt,
+      }]);
+      if (logError) throw logError;
+      inboundLogCreated = true;
+
+      showCenterToast(`${inboundItem.name || inboundItem.item || '자재'} ${quantityToAdd}${inboundItem.unit || 'EA'} 입고가 완료되었습니다.`);
+      setInboundItem(null);
+      await fetchInventory();
+      await fetchInventoryLogs();
+    } catch (err: any) {
+      if (stockUpdated && !inboundLogCreated) {
+        // 이력 저장에 실패한 경우 수량이 중복 반영되지 않도록 가능한 범위에서 원상 복구합니다.
+        await supabase.from('inventory')
+          .update({ quantity: currentQty, updated_at: new Date().toISOString() })
+          .eq('id', inboundItem.id)
+          .eq('quantity', currentQty + quantityToAdd);
+      }
+      showCenterToast('입고 처리 실패: ' + (err?.message || '알 수 없는 오류'));
+      await fetchInventory();
+    } finally {
+      setInboundSubmitting(false);
+    }
+  };
+
   const handleOpenLogModal = (item: any, type: string) => {
-    if (item.type === '소모성' && type === '반납') {
+    if (item.type === '소모성' && (type === '반납' || type === '교정 반입')) {
       showCenterToast('소모성 자재는 반납 프로세스가 존재하지 않습니다.');
       return;
     }
-    if (type === '반납' && item.type !== '소모성') {
+    if ((type === '반납' || type === '교정 반입') && item.type !== '소모성') {
       const currentQty = Number(item.quantity || 0);
       const initialQty = Number(item.initial_quantity);
       if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty >= initialQty) {
@@ -1009,8 +1104,7 @@ export default function MaterialManagement({
         showCenterToast('수량은 1 이상이어야 합니다.');
         return;
       }
-
-      const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
+const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
       const operationAt = new Date().toISOString();
@@ -1018,13 +1112,13 @@ export default function MaterialManagement({
       let currentQty = targetItem.quantity || 0;
       let newQty = currentQty;
 
-      if (logType === '불출' || logType === '교정' || logType === '소모성 사용') {
+      if (logType === '불출' || logType === '교정 반출' || logType === '소모성 사용') {
         if (currentQty < qtyChange) {
           showCenterToast('현재 보유 재고보다 불출(사용) 수량이 많습니다.');
           return;
         }
         newQty = currentQty - qtyChange;
-      } else if (logType === '반납') {
+      } else if (logType === '반납' || logType === '교정 반입') {
         const initialQty = Number(targetItem.initial_quantity);
         if (!Number.isFinite(initialQty) || initialQty < 0) {
           showCenterToast('최초 보유수량이 등록되지 않은 자재입니다. 관리자에게 최초 보유수량을 확인해주세요.');
@@ -1038,21 +1132,47 @@ export default function MaterialManagement({
       }
 
       let openIssueLogForReturn: any | null = null;
-      if (logType === '반납') {
-        // 가장 최근의 미반납 불출/교정 이력을 기준으로 반납 대상을 선택합니다.
-        // 교정 처리는 일괄 불출 배치에 넣지 않으므로, 기존 불출 배치가 있더라도 잘못 연결하지 않습니다.
-        const { data: openIssueLog, error: openIssueLogError } = await supabase
-          .from('inventory_logs')
-          .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
+      if (logType === '반납' || logType === '교정 반입') {
+        const { data: openBatchItem, error: openBatchItemError } = await supabase
+          .from('inventory_batch_items')
+          .select('batch_id, inventory_id, quantity, issued_by, issued_at, memo')
           .eq('inventory_id', targetItem.id)
-          .in('type', ['불출', '교정'])
-          .not('type', 'ilike', '%반납완료%')
-          .order('created_at', { ascending: false })
+          .eq('inventory_type', '고정')
+          .eq('status', 'ISSUED')
+          .order('issued_at', { ascending: false })
           .limit(1)
           .maybeSingle();
 
-        if (openIssueLogError) throw openIssueLogError;
-        openIssueLogForReturn = openIssueLog;
+        if (openBatchItemError) throw openBatchItemError;
+
+        if (openBatchItem?.batch_id) {
+          const { data: batchLog, error: batchLogError } = await supabase
+            .from('inventory_logs')
+            .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
+            .eq('batch_id', openBatchItem.batch_id)
+            .in('type', ['불출', '교정 반출'])
+            .not('type', 'ilike', '%반납완료%')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          if (batchLogError) throw batchLogError;
+          openIssueLogForReturn = batchLog;
+        }
+
+        if (!openIssueLogForReturn) {
+          const { data: openIssueLog, error: openIssueLogError } = await supabase
+            .from('inventory_logs')
+            .select('id, item_name, quantity, type, worker_name, issued_by, returned_by, memo, batch_id, created_at')
+            .eq('inventory_id', targetItem.id)
+            .in('type', ['불출', '교정 반출'])
+            .not('type', 'ilike', '%반납완료%')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (openIssueLogError) throw openIssueLogError;
+          openIssueLogForReturn = openIssueLog;
+        }
 
         if (!openIssueLogForReturn) {
           showCenterToast('반납 처리할 미반납 불출 이력을 찾을 수 없습니다. 먼저 불출 이력을 확인해주세요.');
@@ -1069,24 +1189,21 @@ export default function MaterialManagement({
         .update({ quantity: newQty, updated_at: operationAt })
         .eq('id', targetItem.id);
 
-      if (logType === '반납') {
+      if (logType === '반납' || logType === '교정 반입') {
         updateQuery = updateQuery.lte('quantity', Number(targetItem.initial_quantity) - qtyChange);
       }
 
       const { data: updatedRows, error: invError } = await updateQuery.select('id, quantity');
 
       if (invError) throw invError;
-      if (logType === '반납' && (!updatedRows || updatedRows.length === 0)) {
+      if ((logType === '반납' || logType === '교정 반입') && (!updatedRows || updatedRows.length === 0)) {
         showCenterToast(`반납 후 수량이 최초 보유수량(${targetItem.initial_quantity} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
         return;
       }
 
       let finalLogType = logType === '소모성 사용' ? '소모성 사용' : logType;
-      if (logType === '반납') {
-        const returnedFromCalibration = String(openIssueLogForReturn?.type || '').split(',').map((part: string) => part.trim()).includes('교정');
-        finalLogType = returnedFromCalibration
-          ? (logHasIssue ? '교정, 반납완료, 이상알림' : '교정, 반납완료')
-          : (logHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료');
+      if (logType === '반납' || logType === '교정 반입') {
+        finalLogType = logType === '교정 반입' ? (logHasIssue ? '교정 반입, 이상알림' : '교정 반입') : (logHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료');
 
         const returnMemoText = logMemo.trim()
           ? `${openIssueLogForReturn.memo ? `${openIssueLogForReturn.memo} / ` : ''}반납메모: ${logMemo.trim()}`
@@ -1094,21 +1211,40 @@ export default function MaterialManagement({
         const returnedAt = operationAt;
         const returnedBy = currentUser?.name || '작업자';
 
-        const { error: logUpdateError } = await supabase
-          .from('inventory_logs')
-          .update({
-            type: finalLogType,
-            quantity: qtyChange,
-            worker_name: openIssueLogForReturn.worker_name || openIssueLogForReturn.issued_by || '불출자 미기록',
-            issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
-            returned_by: returnedBy,
-            memo: returnMemoText,
-            is_new: true,
-            updated_at: returnedAt
-          })
-          .eq('id', openIssueLogForReturn.id);
-
-        if (logUpdateError) throw logUpdateError;
+        if (logType === '교정 반입') {
+          const { error: calibrationReturnLogError } = await supabase
+            .from('inventory_logs')
+            .insert([{
+              inventory_id: targetItem.id,
+              item_code: targetItem.code || null,
+              item_name: targetItem.name || targetItem.item || openIssueLogForReturn.item_name,
+              type: finalLogType,
+              quantity: qtyChange,
+              worker_name: returnedBy,
+              issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
+              returned_by: returnedBy,
+              memo: returnMemoText,
+              batch_id: openIssueLogForReturn.batch_id || operationBatchId,
+              is_new: true,
+              created_at: returnedAt
+            }]);
+          if (calibrationReturnLogError) throw calibrationReturnLogError;
+        } else {
+          const { error: logUpdateError } = await supabase
+            .from('inventory_logs')
+            .update({
+              type: finalLogType,
+              quantity: qtyChange,
+              worker_name: openIssueLogForReturn.worker_name || openIssueLogForReturn.issued_by || '불출자 미기록',
+              issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
+              returned_by: returnedBy,
+              memo: returnMemoText,
+              is_new: true,
+              updated_at: returnedAt
+            })
+            .eq('id', openIssueLogForReturn.id);
+          if (logUpdateError) throw logUpdateError;
+        }
 
         if (openIssueLogForReturn.batch_id) {
           const { error: batchItemUpdateError } = await supabase
@@ -1124,22 +1260,24 @@ export default function MaterialManagement({
           if (batchItemUpdateError) throw batchItemUpdateError;
         }
 
-        const { error: returnHistoryError } = await supabase
-          .from('inventory_return_history')
-          .insert([{
-            inventory_id: targetItem.id,
-            item_code: targetItem.type === 'CABIN' ? (targetItem.no || targetItem.code || null) : (targetItem.code || null),
-            item_name: targetItem.name || targetItem.item || null,
-            quantity: qtyChange,
-            issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
-            returned_by: returnedBy,
-            issued_at: openIssueLogForReturn.created_at || null,
-            returned_at: returnedAt,
-            memo: returnMemoText,
-            created_at: returnedAt
-          }]);
-
-        if (returnHistoryError) throw returnHistoryError;
+        // 교정 반입은 일반 기자재 반납 이력과 분리하여 inventory_logs의 교정 이력에서만 관리합니다.
+        if (logType !== '교정 반입') {
+          const { error: returnHistoryError } = await supabase
+            .from('inventory_return_history')
+            .insert([{
+              inventory_id: targetItem.id,
+              item_code: targetItem.type === 'CABIN' ? (targetItem.no || targetItem.code || null) : (targetItem.code || null),
+              item_name: targetItem.name || targetItem.item || null,
+              quantity: qtyChange,
+              issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
+              returned_by: returnedBy,
+              issued_at: openIssueLogForReturn.created_at || null,
+              returned_at: returnedAt,
+              memo: returnMemoText,
+              created_at: returnedAt
+            }]);
+          if (returnHistoryError) throw returnHistoryError;
+        }
       } else {
         const { error: logError } = await supabase
           .from('inventory_logs')
@@ -1153,14 +1291,14 @@ export default function MaterialManagement({
             issued_by: currentUser?.name || '작업자',
             returned_by: null,
             memo: logMemo.trim() || null,
-            batch_id: logType === '교정' ? null : operationBatchId,
+            batch_id: operationBatchId,
             is_new: true,
             created_at: operationAt
           }]);
 
         if (logError) throw logError;
 
-        if (logType === '불출' && targetItem.type === '고정') {
+        if ((logType === '불출' || logType === '교정 반출') && targetItem.type === '고정') {
           const { error: batchItemError } = await supabase
             .from('inventory_batch_items')
             .insert([{
@@ -1470,7 +1608,7 @@ export default function MaterialManagement({
     }
   }, []);
 
-  const handleBatchReturnById = async (batchId: string, customMemo?: string, hasIssue: boolean = false) => {
+  const handleBatchReturnById = async (batchId: string, customMemo?: string, hasIssue: boolean = false, perItemIssueIds?: string[]) => {
     if (!batchId || batchReturnProcessingId) return;
 
     const cleanBatchId = String(batchId).trim();
@@ -1483,12 +1621,24 @@ export default function MaterialManagement({
 
     try {
       const returnedBy = currentUser?.name || '작업자';
+      let selectedIssueRows: any[] = [];
+      if (perItemIssueIds && perItemIssueIds.length > 0) {
+        const { data: batchRows, error: batchRowsError } = await supabase
+          .from('inventory_batch_items')
+          .select('inventory_id, inventory_type, item_code, item_name, quantity')
+          .eq('batch_id', cleanBatchId)
+          .eq('status', 'ISSUED')
+          .in('inventory_id', perItemIssueIds);
+        if (batchRowsError) throw batchRowsError;
+        selectedIssueRows = batchRows || [];
+      }
 
       const { data, error } = await supabase.rpc('return_inventory_batch', {
         p_batch_id: cleanBatchId,
         p_returned_by: returnedBy,
         p_memo: customMemo?.trim() || null,
-        p_has_issue: hasIssue,
+        // 개별 이상 체크가 지정된 경우 전체 일괄 이력에 이상 표시하지 않고 품목별 기록을 남깁니다.
+        p_has_issue: perItemIssueIds ? false : hasIssue,
       });
 
       if (error) {
@@ -1498,6 +1648,29 @@ export default function MaterialManagement({
       }
 
       const returnedCount = Number(data?.returned_count || 0);
+
+      if (perItemIssueIds && selectedIssueRows.length > 0) {
+        const issueAt = new Date().toISOString();
+        const issueLogs = selectedIssueRows.map((row: any) => ({
+          inventory_id: row.inventory_id,
+          item_code: row.item_code || null,
+          item_name: row.item_name || '품목명 미확인',
+          type: '이상알림',
+          quantity: Number(row.quantity || 1),
+          worker_name: returnedBy,
+          issued_by: returnedBy,
+          returned_by: returnedBy,
+          memo: `${customMemo?.trim() ? `${customMemo.trim()} / ` : ''}반납 시 개별 이상(결함) 체크`,
+          batch_id: cleanBatchId,
+          is_new: true,
+          created_at: issueAt,
+        }));
+        const { error: issueLogError } = await supabase.from('inventory_logs').insert(issueLogs);
+        if (issueLogError) {
+          console.error('개별 이상알림 이력 저장 실패:', issueLogError);
+          showCenterToast('반납은 완료됐지만 일부 이상알림 저장에 실패했습니다. 권한/RLS 설정을 확인해주세요.');
+        }
+      }
 
       showCenterToast(
         returnedCount > 0
@@ -1623,11 +1796,12 @@ export default function MaterialManagement({
         return;
       }
 
-      await handleBatchReturnById(targetBatchId, cabinBatchReturnMemo, cabinBatchReturnHasIssue);
+      await handleBatchReturnById(targetBatchId, cabinBatchReturnMemo, cabinBatchReturnHasIssue, cabinBatchReturnHasIssue ? cabinBatchIssueIds : undefined);
       setShowCabinBatchReturnModal(false);
       setSelectedCabinIds([]);
       setCabinBatchReturnMemo('');
       setCabinBatchReturnHasIssue(false);
+      setCabinBatchIssueIds([]);
     } catch (err: any) {
       showCenterToast('CABIN 일괄 반납 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
     }
@@ -1729,9 +1903,11 @@ export default function MaterialManagement({
           return;
         }
 
-        await handleBatchReturnById(batchId, returnMemo, returnHasIssue);
+        await handleBatchReturnById(batchId, returnMemo, returnHasIssue, returnBatchItems.length > 0 ? (returnHasIssue ? returnIssueItemIds : []) : undefined);
         setShowReturnModal(false);
         setTargetReturnLog(null);
+        setReturnBatchItems([]);
+        setReturnIssueItemIds([]);
         return;
       }
 
@@ -1785,10 +1961,7 @@ export default function MaterialManagement({
         if (invErr) throw invErr;
       }
 
-      const returnedFromCalibration = String(targetReturnLog.type || '').split(',').map((part: string) => part.trim()).includes('교정');
-      const finalLogType = returnedFromCalibration
-        ? (returnHasIssue ? '교정, 반납완료, 이상알림' : '교정, 반납완료')
-        : (returnHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료');
+      const finalLogType = returnHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료';
       const memoText = returnMemo.trim() ? `반납메모: ${returnMemo.trim()}` : targetReturnLog.memo;
       const returnHistoryIssuedBy = targetReturnLog.issued_by || targetReturnLog.worker_name || '불출자 미기록';
       const returnHistoryItemCode = targetReturnLog.item_code || foundItem.code || foundItem.no || null;
@@ -1839,12 +2012,28 @@ export default function MaterialManagement({
     }
   };
 
-  const handleOpenReturnModal = (log: InventoryLog) => {
+  const handleOpenReturnModal = async (log: InventoryLog) => {
     setTargetReturnLog(log);
     setReturnQty(log.quantity || 1);
     setReturnHasIssue(false);
     setReturnMemo('');
+    setReturnBatchItems([]);
+    setReturnIssueItemIds([]);
     setShowReturnModal(true);
+    if (log.batch_id) {
+      try {
+        const { data, error } = await supabase
+          .from('inventory_batch_items')
+          .select('inventory_id, inventory_type, item_code, item_name, quantity')
+          .eq('batch_id', String(log.batch_id))
+          .eq('status', 'ISSUED')
+          .order('item_name', { ascending: true });
+        if (error) throw error;
+        setReturnBatchItems(data || []);
+      } catch (error: any) {
+        showCenterToast('불출 품목 목록 조회 실패: ' + (error?.message || '알 수 없는 오류'));
+      }
+    }
   };
 
   const handleOpenEditLog = (log: InventoryLog) => {
@@ -1989,7 +2178,7 @@ export default function MaterialManagement({
         }
 
         if (selectedFixedSubCategory === 'VBT') {
-          if (cat !== 'VBT') return false;
+if (cat !== 'VBT') return false;
           const fullText = `${vbtType} ${name} ${item.sub_equipment || ''}`.toUpperCase();
           const knownVbtTypes = ['1L', '1S', '2L', '2S', 'FLAT'];
 
@@ -2071,11 +2260,53 @@ export default function MaterialManagement({
   };
 
   const currentActiveSubCatName = getCurrentSelectedCategory();
-  // 반납완료 건은 별도 '반납 이력' 화면에서 확인하므로 최근 불출/반납 목록에서는 제외합니다.
+  // 반납완료 건은 별도 반납 이력 화면에서 확인합니다. 화면 필터는 이미 받아온 데이터에만 적용해 추가 Supabase 호출을 만들지 않습니다.
   const recentInventoryLogs = useMemo(
     () => inventoryLogs.filter(log => !log.type.includes('반납완료')),
     [inventoryLogs]
   );
+  const equipmentHistoryCategories = useMemo(() => Array.from(new Set(
+    inventoryList.filter(item => item.type === '고정' && item.category).map(item => String(item.category))
+  )).sort((a, b) => a.localeCompare(b, 'ko-KR')), [inventoryList]);
+  const filteredRecentInventoryLogs = useMemo(() => recentInventoryLogs.filter(log => {
+    const matched = findInventoryItemForLog(log);
+    const name = String(log.item_name || '');
+    const isConsumable = matched?.type === '소모성' || log.type.includes('소모성 사용') || name.startsWith('[소모성 사용]');
+    const isCabin = name.startsWith('[CABIN') || matched?.type === 'CABIN';
+    const isEquipment = matched?.type === '고정' || name.startsWith('[기자재 불출]') || log.type.includes('교정');
+    const isCalibration = log.type.includes('교정') || (matched?.type === '고정' && isCalibrationItem(matched));
+    if (historyTypeFilter === '기자재' && (!isEquipment || isCalibration)) return false;
+    if (historyTypeFilter === '소모성' && !isConsumable) return false;
+    // 상단 '교정 반입' 바로가기는 교정 반입 완료 기록만 표시합니다.
+    if (historyTypeFilter === '교정반입완료' && !log.type.includes('교정 반입')) return false;
+    // 필터 탭 '교정 반출'은 교정 반출 기록만 표시합니다.
+    if (historyTypeFilter === '교정' && !log.type.includes('교정 반출')) return false;
+    if (historyTypeFilter === 'CABIN' && !isCabin) return false;
+    if (historyCategoryFilter !== '전체' && historyTypeFilter === '기자재') {
+      // 일괄 불출 로그는 inventory_id가 없으므로 종류 필터에서도 숨기지 않습니다.
+      if (matched && String(matched.category || '기타') !== historyCategoryFilter) return false;
+    }
+    return true;
+  }), [recentInventoryLogs, findInventoryItemForLog, historyTypeFilter, historyCategoryFilter]);
+  const filteredReturnHistories = useMemo(() => returnHistories.filter(history => {
+    // 교정 반입 기록은 inventory_logs의 교정 반입 내역에서만 보여주고, 기자재 반납 이력에서는 제외합니다.
+    const isCalibrationInbound = inventoryLogs.some(log => {
+      if (!String(log.type || '').includes('교정 반입')) return false;
+      if (history.inventory_id != null && log.inventory_id != null && String(history.inventory_id) !== String(log.inventory_id)) return false;
+      if (Number(history.quantity || 0) !== Number(log.quantity || 0)) return false;
+      if (history.returned_at && log.created_at) {
+        return Math.abs(new Date(history.returned_at).getTime() - new Date(log.created_at).getTime()) < 3000;
+      }
+      return Boolean(history.item_code && log.item_code && history.item_code === log.item_code);
+    });
+    if (isCalibrationInbound) return false;
+    if (returnHistoryCategoryFilter === '전체') return true;
+    const matched = inventoryList.find(item =>
+      (history.inventory_id != null && String(item.id) === String(history.inventory_id)) ||
+      (history.item_code && String(item.code || item.no || '') === String(history.item_code))
+    );
+    return String(matched?.category || matched?.sheet_name || '기타') === returnHistoryCategoryFilter;
+  }), [returnHistories, inventoryList, inventoryLogs, returnHistoryCategoryFilter]);
   return (
     <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
       
@@ -2279,17 +2510,29 @@ export default function MaterialManagement({
                 <p className="font-bold text-blue-900 text-sm">총 {selectedCabinIds.length}개 품목 일괄 반납</p>
               </div>
 
-              <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 flex items-center space-x-2">
-                <input 
-                  type="checkbox" 
-                  id="cabinBatchReturnHasIssue"
-                  checked={cabinBatchReturnHasIssue} 
-                  onChange={e => setCabinBatchReturnHasIssue(e.target.checked)} 
-                  className="w-4 h-4 accent-amber-600 rounded"
-                />
-                <label htmlFor="cabinBatchReturnHasIssue" className="text-amber-900 font-semibold cursor-pointer select-none">
-                  선택 품목 중 장비 이상(결함) 있음 체크
+              <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 space-y-2">
+                <label htmlFor="cabinBatchReturnHasIssue" className="flex items-center gap-2 text-amber-900 font-semibold cursor-pointer select-none">
+                  <input type="checkbox" id="cabinBatchReturnHasIssue" checked={cabinBatchReturnHasIssue} onChange={e => { setCabinBatchReturnHasIssue(e.target.checked); if (!e.target.checked) setCabinBatchIssueIds([]); }} className="h-4 w-4 accent-amber-600 rounded" />
+                  이상 유무 확인
                 </label>
+                {cabinBatchReturnHasIssue && (
+                  <>
+                    <p className="text-[10px] text-amber-800">선택된 불출 품목 중 이상이 있는 자재에만 체크하세요.</p>
+                    <div className="max-h-36 overflow-y-auto space-y-1.5">
+                      {cabinInventoryList.filter(item => selectedCabinIds.includes(String(item.id))).map(item => {
+                        const id = String(item.id);
+                        const checked = cabinBatchIssueIds.includes(id);
+                        return (
+                          <label key={id} className="flex items-start gap-2 rounded-md border border-amber-200 bg-white p-2 cursor-pointer">
+                            <input type="checkbox" checked={checked} onChange={e => setCabinBatchIssueIds(prev => e.target.checked ? Array.from(new Set([...prev, id])) : prev.filter(value => value !== id))} className="mt-0.5 h-4 w-4 accent-amber-600 rounded" />
+                            <span className="min-w-0 flex-1 text-[11px] text-[#1F2937]">{item.item || item.no || '품목명 미확인'} <span className="text-[#64748B]">({item.no || '-'})</span></span>
+                            {checked && <span className="shrink-0 text-[10px] font-bold text-amber-800">이상 있음</span>}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div>
@@ -2340,18 +2583,42 @@ export default function MaterialManagement({
                 <span className="text-[10px] text-[#64748B] mt-1 block">불출된 수량과 실제 반납 수량이 일치하는지 확인해주세요.</span>
               </div>
 
-              <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 flex items-center space-x-2">
-                <input 
-                  type="checkbox" 
-                  id="returnHasIssue"
-                  checked={returnHasIssue} 
-                  onChange={e => setReturnHasIssue(e.target.checked)} 
-                  className="w-4 h-4 accent-amber-600 rounded"
-                />
-                <label htmlFor="returnHasIssue" className="text-amber-900 font-semibold cursor-pointer select-none">
-                  장비 이상(결함) 있음 체크 (체크 시 이상알림 표시)
-                </label>
-              </div>
+              {targetReturnLog.batch_id && returnBatchItems.length > 0 ? (
+                <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 space-y-2">
+                  <label htmlFor="returnHasIssue" className="flex items-center gap-2 text-amber-900 font-semibold cursor-pointer select-none">
+                    <input type="checkbox" id="returnHasIssue" checked={returnHasIssue} onChange={e => { setReturnHasIssue(e.target.checked); if (!e.target.checked) setReturnIssueItemIds([]); }} className="h-4 w-4 accent-amber-600 rounded" />
+                    이상 유무 확인
+                  </label>
+                  {returnHasIssue && (
+                    <>
+                      <p className="text-[10px] text-amber-800">불출된 자재 전체가 표시됩니다. 이상이 있는 자재에만 개별 체크하세요.</p>
+                      <div className="max-h-40 overflow-y-auto space-y-1.5">
+                        {returnBatchItems.map((row: any) => {
+                          const id = String(row.inventory_id);
+                          const checked = returnIssueItemIds.includes(id);
+                          return (
+                            <label key={id} className="flex items-start gap-2 rounded-md border border-amber-200 bg-white p-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={e => setReturnIssueItemIds(prev => e.target.checked ? Array.from(new Set([...prev, id])) : prev.filter(value => value !== id))}
+                                className="mt-0.5 h-4 w-4 accent-amber-600 rounded"
+                              />
+                              <span className="min-w-0 flex-1 text-[11px] text-[#1F2937]">{row.item_name || row.item_code || '품목명 미확인'} <span className="text-[#64748B]">({row.quantity || 1}개)</span></span>
+                              {checked && <span className="shrink-0 text-[10px] font-bold text-amber-800">이상 있음</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : (
+                <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 flex items-center space-x-2">
+                  <input type="checkbox" id="returnHasIssue" checked={returnHasIssue} onChange={e => setReturnHasIssue(e.target.checked)} className="w-4 h-4 accent-amber-600 rounded" />
+                  <label htmlFor="returnHasIssue" className="text-amber-900 font-semibold cursor-pointer select-none">장비 이상(결함) 있음 체크</label>
+                </div>
+              )}
 
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">반납 메모 / 특이사항</label>
@@ -2852,9 +3119,20 @@ export default function MaterialManagement({
                     </div>
                     <span className="text-[10px] text-[#64748B] block truncate">만료 예정: {nextCalDate}</span>
                   </div>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white shrink-0">
-                    {daysLeft <= 0 ? 'D-DAY' : `D-${daysLeft}`}
-                  </span>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500 text-white">
+                      {daysLeft <= 0 ? 'D-DAY' : `D-${daysLeft}`}
+                    </span>
+                    {item.type !== 'CABIN' && (
+                      <button
+                        type="button"
+                        onClick={(event) => { event.stopPropagation(); handleOpenLogModal(item, '교정 반출'); }}
+                        className="px-2 py-1 rounded border border-amber-300 bg-white text-amber-800 hover:bg-amber-100 text-[10px] font-semibold whitespace-nowrap"
+                      >
+                        교정 반출
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -2958,42 +3236,24 @@ export default function MaterialManagement({
         </div>
       ) : (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
-          <div 
-            className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
-            style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
-          >
-            {(inventoryTab === '고정' || inventoryTab === '소모성') && (
-              <button
-                onClick={() => { setCurrentSelectedCategory('전체 보기'); setSelectedItemSubCategory('전체 보기'); }}
-                className={`px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition shrink-0 ${getCurrentSelectedCategory() === '전체 보기' ? 'bg-[#243B5A] text-white shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9]'}`}
-              >
-                전체 보기
-              </button>
-            )}
-            {getCurrentSubCategories().map((cat) => {
-              const isSelected = getCurrentSelectedCategory() === cat;
-              const isCalib = cat === '교정';
-
-              return (
-                <button
-                  key={cat}
-                  onClick={() => {
-                    setCurrentSelectedCategory(cat);
-                    setSelectedItemSubCategory('전체 보기');
-                    if (cat === 'VBT') setSelectedVbtSubCategory('1L');
-                  }}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
-                    isSelected
-                      ? 'bg-[#243B5A] text-white font-semibold shadow-2xs'
-                      : isCalib
-                      ? 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
-                      : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
-                  }`}
-                >
-                  {isCalib ? '🔬 교정 대상' : cat}
-                </button>
-              );
-            })}
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            <label className="text-xs font-semibold text-[#64748B] shrink-0">카테고리</label>
+            <Select
+              value={getCurrentSelectedCategory() || '전체 보기'}
+              onValueChange={value => {
+                setCurrentSelectedCategory(value);
+                setSelectedItemSubCategory('전체 보기');
+                if (value === 'VBT') setSelectedVbtSubCategory('1L');
+              }}
+            >
+              <SelectTrigger aria-label="카테고리 선택" className="h-9 min-w-0 flex-1 border-[#E2E5E9] bg-white text-xs font-medium text-[#1F2937] shadow-sm focus:ring-[#243B5A]/10">
+                <SelectValue placeholder="카테고리 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="전체 보기">전체 보기</SelectItem>
+                {getCurrentSubCategories().map(cat => <SelectItem key={cat} value={cat}>{cat === '교정' ? '🔬 교정 대상' : cat}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
 
           {isAdmin && (
@@ -3014,33 +3274,16 @@ export default function MaterialManagement({
             <Package className="h-3.5 w-3.5 text-[#243B5A]" />
             <span>자재명:</span>
           </div>
-          <div
-            className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
-            style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
-          >
-            <button
-              onClick={() => setSelectedItemSubCategory('전체 보기')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${selectedItemSubCategory === '전체 보기' ? 'bg-slate-700 text-white font-semibold shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'}`}
-            >
-              전체 보기
-            </button>
-            {currentItemSubCategoryOptions.map((name) => {
-              const isSelected = selectedItemSubCategory === name;
-              return (
-                <button
-                  key={name}
-                  onClick={() => setSelectedItemSubCategory(name)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
-                    isSelected
-                      ? 'bg-slate-700 text-white font-semibold shadow-2xs'
-                      : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
-                  }`}
-                  title={name}
-                >
-                  {name}
-                </button>
-              );
-            })}
+          <div className="flex-1 min-w-0">
+            <Select value={selectedItemSubCategory || '전체 보기'} onValueChange={setSelectedItemSubCategory}>
+              <SelectTrigger aria-label="자재명 선택" className="h-9 w-full min-w-0 border-[#E2E5E9] bg-white text-xs font-medium text-[#1F2937] shadow-sm focus:ring-[#243B5A]/10">
+                <SelectValue placeholder="자재명 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="전체 보기">전체 보기</SelectItem>
+                {currentItemSubCategoryOptions.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           {isAdmin && (
             <button
@@ -3076,33 +3319,16 @@ export default function MaterialManagement({
             <Package className="h-3.5 w-3.5 text-[#243B5A]" />
             <span>자재명:</span>
           </div>
-          <div
-            className="flex items-center gap-1.5 overflow-x-auto flex-1 py-0.5 min-w-0"
-            style={{ scrollbarWidth: 'thin', scrollbarColor: '#CBD5E1 transparent' }}
-          >
-            <button
-              onClick={() => setSelectedItemSubCategory('전체 보기')}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${selectedItemSubCategory === '전체 보기' ? 'bg-slate-700 text-white font-semibold shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'}`}
-            >
-              전체 보기
-            </button>
-            {currentItemSubCategoryOptions.map((name) => {
-              const isSelected = selectedItemSubCategory === name;
-              return (
-                <button
-                  key={name}
-                  onClick={() => setSelectedItemSubCategory(name)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition shrink-0 ${
-                    isSelected
-                      ? 'bg-slate-700 text-white font-semibold shadow-2xs'
-                      : 'bg-[#F5F6F8] text-[#64748B] hover:bg-[#E2E5E9] hover:text-[#1F2937]'
-                  }`}
-                  title={name}
-                >
-                  {name}
-                </button>
-              );
-            })}
+          <div className="flex-1 min-w-0">
+            <Select value={selectedItemSubCategory || '전체 보기'} onValueChange={setSelectedItemSubCategory}>
+              <SelectTrigger aria-label="CABIN 자재명 선택" className="h-9 w-full min-w-0 border-[#E2E5E9] bg-white text-xs font-medium text-[#1F2937] shadow-sm focus:ring-[#243B5A]/10">
+                <SelectValue placeholder="자재명 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="전체 보기">전체 보기</SelectItem>
+                {currentItemSubCategoryOptions.map(name => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </div>
           {isAdmin && (
             <button
@@ -3279,30 +3505,33 @@ export default function MaterialManagement({
                 )}
 
                 <div className="flex items-center space-x-1.5">
+                  {isAdmin && !isCabin && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenInboundModal(item)}
+                      className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded text-xs font-medium transition border border-emerald-200 flex items-center space-x-1"
+                      title="현재 보유수량에 입고 수량을 추가합니다"
+                    >
+                      <ArrowDownRight className="h-3 w-3" />
+                      <span>입고</span>
+                    </button>
+                  )}
                   {!isCabin && (
                     <>
-                      {isCalibrationFixedItem(item) && (
-                        <button
-                          onClick={() => handleOpenLogModal(item, '교정')}
-                          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-xs font-medium transition shadow-2xs flex items-center space-x-1"
-                        >
-                          <span>교정</span>
-                        </button>
-                      )}
                       <button
-                        onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : '불출')}
+                        onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : (isCalibrationItem(item) ? '교정 반출' : '불출'))}
                         className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-medium transition shadow-2xs flex items-center space-x-1"
                       >
                         <ArrowUpRight className="h-3 w-3" />
-                        <span>{item.type === '소모성' ? '사용' : '불출'}</span>
+                        <span>{item.type === '소모성' ? '사용' : isCalibrationItem(item) ? '교정 반출' : '불출'}</span>
                       </button>
                       {item.type !== '소모성' && (
                         <button
-                          onClick={() => handleOpenLogModal(item, '반납')}
+                          onClick={() => handleOpenLogModal(item, isCalibrationItem(item) ? '교정 반입' : '반납')}
                           className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-[#1F2937] rounded text-xs font-medium transition flex items-center space-x-1 border border-[#E2E5E9]"
                         >
                           <ArrowDownRight className="h-3 w-3 text-emerald-600" />
-                          <span>반납</span>
+                          <span>{isCalibrationItem(item) ? '교정 반입' : '반납'}</span>
                         </button>
                       )}
                     </>
@@ -3337,17 +3566,26 @@ export default function MaterialManagement({
         <div className="px-3.5 py-2.5 bg-[#F5F6F8] border-b border-[#E2E5E9] flex justify-between items-center">
           <div className="flex items-center space-x-2">
             <History className="h-4 w-4 text-[#243B5A]" />
-            <h2 className="text-xs font-bold text-[#1F2937]">최근 불출 / 반납 이력 </h2>
+            <h2 className="text-xs font-bold text-[#1F2937]">불출 · 소모성 · 교정 이력</h2>
             <span className="text-[10px] bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded font-semibold">
-              {recentInventoryLogs.length}건
+              {filteredRecentInventoryLogs.length}건
             </span>
-            <button
-              type="button"
-              onClick={handleOpenReturnHistory}
-              className="px-2 py-1 bg-white border border-[#E2E5E9] hover:bg-gray-50 text-[#243B5A] rounded text-[10px] font-semibold transition"
-            >
-              반납 완료 이력
-            </button>
+            <div className="flex flex-wrap items-center gap-1">
+              <button
+                type="button"
+                onClick={() => { setHistoryTypeFilter('교정반입완료'); setHistoryCategoryFilter('전체'); setSelectedLogIds([]); setIsHistorySectionOpen(true); }}
+                className="px-2 py-1 bg-white border border-[#E2E5E9] hover:bg-gray-50 text-[#243B5A] rounded text-[10px] font-semibold transition"
+              >
+                교정 반입
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenReturnHistory}
+                className="px-2 py-1 bg-white border border-[#E2E5E9] hover:bg-gray-50 text-[#243B5A] rounded text-[10px] font-semibold transition"
+              >
+                기자재 반납 이력
+              </button>
+            </div>
           </div>
 
           <div className="flex items-center space-x-2">
@@ -3371,13 +3609,21 @@ export default function MaterialManagement({
 
         {isHistorySectionOpen && (
           <div className="p-3 space-y-2">
+            <InventoryHistoryFilters
+              historyTypeFilter={historyTypeFilter}
+              setHistoryTypeFilter={setHistoryTypeFilter}
+              historyCategoryFilter={historyCategoryFilter}
+              setHistoryCategoryFilter={setHistoryCategoryFilter}
+              setSelectedLogIds={setSelectedLogIds}
+              equipmentHistoryCategories={equipmentHistoryCategories}
+            />
             <div className="flex items-center justify-between pb-2 border-b border-[#E2E5E9] text-[11px] font-semibold text-[#64748B]">
               {isAdmin && (
                 <div className="flex items-center space-x-2">
                   <input
                     type="checkbox"
-                    checked={recentInventoryLogs.length > 0 && recentInventoryLogs.every(log => selectedLogIds.includes(String(log.id)))}
-                    onChange={toggleSelectAllLogs}
+                    checked={filteredRecentInventoryLogs.length > 0 && filteredRecentInventoryLogs.every(log => selectedLogIds.includes(String(log.id)))}
+                    onChange={() => { const visibleIds = filteredRecentInventoryLogs.map(log => String(log.id)); const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedLogIds.includes(id)); setSelectedLogIds(prev => allVisibleSelected ? prev.filter(id => !visibleIds.includes(id)) : Array.from(new Set([...prev, ...visibleIds]))); }}
                     className="h-3.5 w-3.5 rounded accent-[#243B5A] cursor-pointer"
                   />
                   <span>전체 선택</span>
@@ -3387,9 +3633,9 @@ export default function MaterialManagement({
             </div>
 
             <div className="space-y-1.5 max-h-80 overflow-y-auto pr-1">
-              {recentInventoryLogs.map((log) => {
+              {filteredRecentInventoryLogs.map((log) => {
                 const isSelected = selectedLogIds.includes(String(log.id));
-                const isReturnCompleted = log.type.includes('반납완료');
+                const isReturnCompleted = log.type.includes('반납완료') || log.type.includes('교정 반입');
                 const isIssueAlert = log.type.includes('이상알림');
                 const isConsumableUsage = log.type.includes('소모성 사용');
                 const matchedHistoryItem = findInventoryItemForLog(log);
@@ -3462,7 +3708,7 @@ export default function MaterialManagement({
                         <button
                           type="button"
                           disabled={batchReturnProcessingId === log.batch_id}
-                          onClick={() => handleBatchReturnById(log.batch_id!)}
+                          onClick={() => handleOpenReturnModal(log)}
                           className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 text-white rounded text-[10px] font-semibold transition"
                         >
                           {batchReturnProcessingId === log.batch_id ? '처리중...' : '일괄 반납'}
@@ -3475,12 +3721,12 @@ export default function MaterialManagement({
                         >
                           소모성 사용 완료
                         </button>
-                      ) : !isReturnCompleted && !log.item_name?.includes('[CABIN') ? (
+                      ) : !isReturnCompleted && !log.type.includes('입고') && !log.item_name?.includes('[CABIN') ? (
                         <button
                           onClick={() => handleOpenReturnModal(log)}
                           className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold transition"
                         >
-                          반납처리
+                          {log.type.includes('교정 반출') ? '교정 반입' : '반납처리'}
                         </button>
                       ) : null}
 
@@ -3507,9 +3753,9 @@ export default function MaterialManagement({
                 );
               })}
 
-              {recentInventoryLogs.length === 0 && (
+              {filteredRecentInventoryLogs.length === 0 && (
                 <div className="text-center py-6 text-[#64748B] text-xs">
-                  최근 불출 이력이 없습니다. 반납완료 항목은 별도의 반납 이력에서 확인할 수 있습니다.
+                  선택한 조건에 해당하는 이력이 없습니다. 교정 반입 완료 내역은 상단의 교정 반입, 기자재 반납 내역은 기자재 반납 이력에서 확인하세요.
                 </div>
               )}
             </div>
@@ -3559,8 +3805,8 @@ export default function MaterialManagement({
             <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9] shrink-0">
               <div className="flex items-center space-x-2">
                 <History className="h-4 w-4 text-[#243B5A]" />
-                <h3 className="text-sm font-bold">반납 이력</h3>
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold">{returnHistories.length}건</span>
+                <h3 className="text-sm font-bold">기자재 반납 이력</h3>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-semibold">{filteredReturnHistories.length}건</span>
               </div>
               <div className="flex items-center space-x-2">
                 {isAdmin && selectedReturnHistoryIds.length > 0 && (
@@ -3577,27 +3823,41 @@ export default function MaterialManagement({
               </div>
             </div>
 
-            {isAdmin && returnHistories.length > 0 && (
+            {isAdmin && filteredReturnHistories.length > 0 && (
               <div className="flex items-center justify-between bg-[#F5F6F8] px-3 py-1.5 rounded-md border border-[#E2E5E9] text-xs shrink-0">
                 <label className="flex items-center space-x-2 font-semibold text-[#64748B] cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={returnHistories.length > 0 && selectedReturnHistoryIds.length === returnHistories.length}
-                    onChange={toggleSelectAllReturnHistories}
+                    checked={filteredReturnHistories.length > 0 && filteredReturnHistories.every(history => selectedReturnHistoryIds.includes(String(history.id)))}
+                    onChange={() => { const visibleIds = filteredReturnHistories.map(history => String(history.id)); const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedReturnHistoryIds.includes(id)); setSelectedReturnHistoryIds(prev => allVisibleSelected ? prev.filter(id => !visibleIds.includes(id)) : Array.from(new Set([...prev, ...visibleIds]))); }}
                     className="h-3.5 w-3.5 rounded accent-[#243B5A] cursor-pointer"
                   />
-                  <span>전체 선택 ({selectedReturnHistoryIds.length}/{returnHistories.length})</span>
+                  <span>전체 선택 ({filteredReturnHistories.filter(history => selectedReturnHistoryIds.includes(String(history.id))).length}/{filteredReturnHistories.length})</span>
                 </label>
               </div>
             )}
 
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <label htmlFor="return-history-category" className="text-[11px] font-semibold text-[#64748B]">기자재 종류</label>
+              <Select value={returnHistoryCategoryFilter} onValueChange={value => { setReturnHistoryCategoryFilter(value); setSelectedReturnHistoryIds([]); }}>
+                <SelectTrigger id="return-history-category" className="h-8 min-w-0 max-w-full border-[#E2E5E9] bg-white text-xs text-[#1F2937]">
+                  <SelectValue placeholder="전체 종류" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="전체">전체 종류</SelectItem>
+                  {Array.from(new Set(inventoryList.filter(item => item.type === '고정' && (item.category || item.sheet_name)).map(item => String(item.category || item.sheet_name)))).sort((a, b) => a.localeCompare(b, 'ko-KR')).map(category => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              {returnHistoryCategoryFilter !== '전체' && <button type="button" onClick={() => { setReturnHistoryCategoryFilter('전체'); setSelectedReturnHistoryIds([]); }} className="text-[11px] text-[#64748B] underline">필터 초기화</button>}
+            </div>
+
             <div className="overflow-y-auto max-h-[65vh] space-y-1.5 flex-1 pr-1">
               {loadingReturnHistories ? (
                 <div className="text-center py-8 text-[#64748B] text-xs">반납 이력을 불러오는 중입니다.</div>
-              ) : returnHistories.length === 0 ? (
-                <div className="text-center py-8 text-[#64748B] text-xs">등록된 반납 이력이 없습니다.</div>
+              ) : filteredReturnHistories.length === 0 ? (
+                <div className="text-center py-8 text-[#64748B] text-xs">등록된 기자재 반납 이력이 없습니다. 교정 반입 내역은 상단의 교정 반입에서 확인하세요.</div>
               ) : (
-                returnHistories.map((history) => {
+                filteredReturnHistories.map((history) => {
                   const isSelected = selectedReturnHistoryIds.includes(String(history.id));
                   return (
                     <div 
@@ -3642,6 +3902,36 @@ export default function MaterialManagement({
                 })
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 기자재/소모성 추가 입고 모달 */}
+      {inboundItem && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <div>
+                <h3 className="text-sm font-bold">자재 입고</h3>
+                <p className="text-[11px] text-[#64748B] mt-1">{inboundItem.name || inboundItem.item} · 현재 보유 {inboundItem.quantity} {inboundItem.unit || 'EA'}</p>
+              </div>
+              <button type="button" onClick={() => setInboundItem(null)} disabled={inboundSubmitting}><X className="h-4 w-4" /></button>
+            </div>
+            <form onSubmit={handleSubmitInbound} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">추가 입고 수량</label>
+                <input type="number" min="1" step="1" required autoFocus value={inboundQty} onChange={e => setInboundQty(Number(e.target.value))} className="w-full px-2.5 py-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                <p className="text-[11px] text-emerald-700 mt-1">입고 후 보유수량: {Number(inboundItem.quantity || 0) + (Number(inboundQty) > 0 ? Number(inboundQty) : 0)} {inboundItem.unit || 'EA'}</p>
+              </div>
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">메모 (선택)</label>
+                <textarea value={inboundMemo} onChange={e => setInboundMemo(e.target.value)} rows={2} placeholder="입고 사유 또는 참고사항" className="w-full px-2.5 py-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] resize-y" />
+              </div>
+              <div className="flex space-x-2 pt-3 border-t border-[#E2E5E9]">
+                <button type="button" disabled={inboundSubmitting} onClick={() => setInboundItem(null)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition disabled:opacity-50">취소</button>
+                <button type="submit" disabled={inboundSubmitting} className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs rounded-lg transition disabled:opacity-50">{inboundSubmitting ? '처리 중...' : '입고 처리'}</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -3780,15 +4070,14 @@ export default function MaterialManagement({
                   </div>
                   <div>
                     <label className="block text-[#64748B] font-semibold mb-1">서브 카테고리</label>
-                    <select
-                      value={itemCategory}
-                      onChange={e => setItemCategory(e.target.value)}
-                      className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]"
-                    >
-                      {getCurrentSubCategories().map(cat => (
-                        <option key={cat} value={cat}>{cat}</option>
-                      ))}
-                    </select>
+                    <Select value={itemCategory || getCurrentSubCategories()[0] || '기타'} onValueChange={setItemCategory}>
+                      <SelectTrigger className="h-9 w-full border-[#E2E5E9] bg-[#F5F6F8] text-xs text-[#1F2937]">
+                        <SelectValue placeholder="서브 카테고리 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getCurrentSubCategories().map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                   {itemType === '고정' && itemCategory === 'VBT' && (
                     <div>
@@ -3918,7 +4207,7 @@ export default function MaterialManagement({
                 <input 
                   type="number" 
                   min="1" 
-                  max={logType === '반납' ? undefined : targetItem.quantity}
+                  max={(logType === '반납' || logType === '교정 반입') ? undefined : targetItem.quantity}
                   required 
                   value={logQty} 
                   onChange={e => setLogQty(Number(e.target.value))} 
