@@ -2161,8 +2161,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         )}
 
         {taskTab === 'CABIN' && (
-          <div className="flex items-center justify-between bg-[#F5F6F8] p-1.5 rounded-xl border border-[#E2E5E9]">
-            <div className="flex items-center space-x-1 overflow-x-auto pb-1 sm:pb-0 [&::-webkit-scrollbar]:h-1">
+          <div className="flex flex-wrap items-start gap-2 bg-[#F5F6F8] p-2 rounded-xl border border-[#E2E5E9]">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
               <Tag className="h-3.5 w-3.5 text-[#64748B] ml-1 shrink-0" />
               <span className="text-xs font-bold text-[#1F2937] mr-1 shrink-0">호선:</span>
               <button
@@ -2187,7 +2187,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             {isAdmin && (
               <button
                 onClick={() => setIsVesselManagerOpen(true)}
-                className="flex items-center space-x-1 text-xs text-[#243B5A] font-semibold bg-white border px-2 py-1 rounded-lg shrink-0 hover:bg-slate-50 ml-1 transition-colors"
+                className="flex items-center space-x-1 text-xs text-[#243B5A] font-semibold bg-white border px-2 py-1 rounded-lg shrink-0 hover:bg-slate-50 ml-auto transition-colors"
               >
                 <Settings className="h-3 w-3" />
                 <span className="hidden sm:inline">관리</span>
