@@ -318,6 +318,63 @@ function calculateAge(birthStr?: string) {
   return isNaN(age) ? null : age;
 }
 
+type HROrgCategoryOption = { value: string; label: string };
+
+/** CERT 자격관리와 동일한 모달형 드롭다운 스타일 */
+function HROrgCategorySelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: string;
+  options: HROrgCategoryOption[];
+  onChange: (value: string) => void;
+  ariaLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [open]);
+
+  const selected = options.find(option => option.value === value);
+  const selectClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white';
+
+  return <>
+    <button
+      type="button"
+      className={`${selectClass} flex items-center justify-between gap-2 text-left hover:border-[#243B5A]`}
+      onClick={() => setOpen(true)}
+      aria-label={ariaLabel}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+    >
+      <span className="min-w-0 flex-1 truncate text-[#1F2937]">{selected?.label || '선택해주세요'}</span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+    </button>
+    {open && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/25 p-4" onClick={() => setOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={event => event.stopPropagation()} className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3">
+          <span className="text-sm font-bold text-[#243B5A]">{ariaLabel}</span>
+          <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#E2E8F0]" aria-label="선택 메뉴 닫기"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="max-h-[60dvh] overflow-y-auto p-2">
+          {options.map(option => <button key={option.value} type="button" onClick={() => { onChange(option.value); setOpen(false); }} className={`mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}>
+            <span className="min-w-0 break-words">{option.label}</span>
+            {option.value === value && <span aria-hidden="true" className="shrink-0">✓</span>}
+          </button>)}
+          {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#64748B]">선택 가능한 항목이 없습니다.</p>}
+        </div>
+      </div>
+    </div>}
+  </>;
+}
+
 const DEPT_ORDER = ['운영', '관리', '1팀', '2팀', '3팀', '4팀'];
 
 function getNationalCertLabels(user: HRUser): string[] {
@@ -1794,43 +1851,29 @@ export default function HRManagement({
             </div>}
           </div>
 
-          {subGroupType !== 'DORM' && <div className="flex items-center gap-1.5 overflow-x-auto py-0.5 scrollbar-none">
-            <span className="text-xs font-bold text-[#64748B] shrink-0 flex items-center gap-0.5">
+          {subGroupType !== 'DORM' && <div className="flex items-center gap-2 py-0.5">
+            <span className="shrink-0 flex items-center gap-1 text-xs font-bold text-[#64748B]">
               <ChevronRight className="h-3.5 w-3.5" />
+              파트 선택:
             </span>
-
-            <button
-              onClick={() => setSelectedSubCategory('ALL')}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
-                selectedSubCategory === 'ALL'
-                  ? 'bg-[#243B5A] text-white border-[#243B5A]'
-                  : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
-              }`}
-            >
-              전체 보기 ({filteredUsers.length}명)
-            </button>
-
-            {availableSubCategories.map((subCat) => {
-              const count = filteredUsers.filter((u) => 
-                subGroupType === 'DEPT' 
-                  ? (u.department || '미지정 파트') === subCat 
-                  : (u.position || '미지정 직급') === subCat
-              ).length;
-
-              return (
-                <button
-                  key={subCat}
-                  onClick={() => setSelectedSubCategory(subCat)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold whitespace-nowrap transition border ${
-                    selectedSubCategory === subCat
-                      ? 'bg-[#243B5A] text-white border-[#243B5A]'
-                      : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'
-                  }`}
-                >
-                  {subCat} ({count})
-                </button>
-              );
-            })}
+            <div className="w-full max-w-xs min-w-0">
+              <HROrgCategorySelect
+                value={selectedSubCategory}
+                onChange={setSelectedSubCategory}
+                ariaLabel={subGroupType === 'DEPT' ? '파트별 조직도 선택' : '직급별 조직도 선택'}
+                options={[
+                  { value: 'ALL', label: `전체 보기 (${filteredUsers.length}명)` },
+                  ...availableSubCategories.map((subCat) => {
+                    const count = filteredUsers.filter((u) =>
+                      subGroupType === 'DEPT'
+                        ? (u.department || '미지정 파트') === subCat
+                        : (u.position || '미지정 직급') === subCat
+                    ).length;
+                    return { value: subCat, label: `${subCat} (${count}명)` };
+                  }),
+                ]}
+              />
+            </div>
           </div>}
         </div>
       )}
