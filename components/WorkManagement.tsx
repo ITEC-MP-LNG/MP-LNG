@@ -776,6 +776,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [isWeeklyImportModalOpen, setIsWeeklyImportModalOpen] = useState(false);
   const [importTargetDate, setImportTargetDate] = useState<string>(() => formatDateToYYYYMMDD(new Date()));
   const [selectedWeeklyIdsToImport, setSelectedWeeklyIdsToImport] = useState<string[]>([]);
+  const [isOffUserModalOpen, setIsOffUserModalOpen] = useState(false);
+  const [offUserViewMode, setOffUserViewMode] = useState<'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'CUSTOM'>('TODAY_TOMORROW');
+  const [offUserSelectedDate, setOffUserSelectedDate] = useState<string>(() => formatDateToYYYYMMDD(new Date()));
 
   const [isQuickVesselInputOpen, setIsQuickVesselInputOpen] = useState(false);
   const [quickVesselName, setQuickVesselName] = useState('');
@@ -2197,13 +2200,107 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <span>휴무: <strong className="text-blue-600">{offUsers.length}명</strong></span>
               </div>
 
-              <div className="text-[11px] text-[#64748B] flex items-center gap-1 flex-wrap pt-0.5 border-t border-[#E2E5E9]">
-                <span className="font-semibold text-[#1F2937]">휴무자 명단:</span>
-                {offUsers.length > 0 ? (
-                  <span className="text-blue-700 font-medium">{offUsers.map(u => u.name).join(', ')}</span>
-                ) : (
-                  <span>없음</span>
-                )}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E2E5E9] pt-1.5">
+                <div className="flex min-w-0 flex-wrap items-center gap-1 text-[11px] text-[#64748B]">
+                  <span className="font-semibold text-[#1F2937]">휴무자 명단:</span>
+                  {offUsers.length > 0 ? (
+                    <span className="text-blue-700 font-medium">{offUsers.map(u => u.name).join(', ')}</span>
+                  ) : (
+                    <span>없음</span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { setOffUserViewMode('TODAY_TOMORROW'); setOffUserSelectedDate(todayForUserStatus); setIsOffUserModalOpen(true); }}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[#243B5A] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A] transition-colors hover:bg-[#F5F6F8]"
+                >
+                  <CalendarIcon className="h-3.5 w-3.5" /> 휴무자 조회
+                </button>
+              </div>
+            </div>
+          );
+        })()}
+
+        {isOffUserModalOpen && (() => {
+          const today = todayForUserStatus;
+          const tomorrowDate = new Date();
+          tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+          const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
+          const datesToShow = offUserViewMode === 'TODAY_TOMORROW'
+            ? [today, tomorrow]
+            : offUserViewMode === 'TODAY'
+              ? [today]
+              : offUserViewMode === 'TOMORROW'
+                ? [tomorrow]
+                : offUserSelectedDate
+                  ? [offUserSelectedDate]
+                  : [];
+          const formatKoreanDate = (date: string) => {
+            const parsed = new Date(`${date}T00:00:00`);
+            const weekday = ['일', '월', '화', '수', '목', '금', '토'][parsed.getDay()];
+            return `${parsed.getFullYear()}년 ${parsed.getMonth() + 1}월 ${parsed.getDate()}일 (${weekday})`;
+          };
+          return (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/30 p-3 sm:p-4" onClick={() => setIsOffUserModalOpen(false)}>
+              <div role="dialog" aria-modal="true" aria-label="휴무자 조회" onClick={event => event.stopPropagation()} className="flex max-h-[min(88dvh,760px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.2)]">
+                <div className="flex items-center justify-between gap-3 border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3">
+                  <div>
+                    <h3 className="text-sm font-bold text-[#243B5A]">휴무자 조회</h3>
+                    <p className="mt-0.5 text-[11px] text-[#64748B]">날짜별로 휴무 등록된 인원을 확인합니다.</p>
+                  </div>
+                  <button type="button" onClick={() => setIsOffUserModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#E2E8F0]" aria-label="휴무자 조회 닫기"><X className="h-4 w-4" /></button>
+                </div>
+                <div className="space-y-3 overflow-y-auto p-4">
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <div className="min-w-0 space-y-1">
+                      <label className="block text-[11px] font-semibold text-[#1F2937]">조회 범위</label>
+                      <AppStyledSelect
+                        ariaLabel="휴무자 조회 범위 선택"
+                        value={offUserViewMode}
+                        onChange={(value) => setOffUserViewMode(value as 'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'CUSTOM')}
+                        options={[
+                          { value: 'TODAY_TOMORROW', label: '오늘 + 내일' },
+                          { value: 'TODAY', label: '오늘 휴무자' },
+                          { value: 'TOMORROW', label: '내일 휴무자' },
+                          { value: 'CUSTOM', label: '날짜 직접 선택' },
+                        ]}
+                        className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs font-semibold text-[#243B5A] outline-none transition-colors focus:border-[#243B5A]"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <CalendarDatePicker
+                        label="조회 날짜"
+                        value={offUserSelectedDate}
+                        onChange={(date) => { setOffUserSelectedDate(date); setOffUserViewMode('CUSTOM'); }}
+                        className="h-9 rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs text-[#1F2937] outline-none focus:border-[#243B5A]"
+                      />
+                    </div>
+                  </div>
+                  {datesToShow.map(date => {
+                    const people = activeUsers.filter(user => isUserOffOnDate(user, date)).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+                    const dateLabel = date === today ? '오늘' : date === tomorrow ? '내일' : '선택 날짜';
+                    return (
+                      <section key={date} className="overflow-hidden rounded-xl border border-[#E2E5E9]">
+                        <div className="flex items-center justify-between gap-2 bg-[#F8FAFC] px-3 py-2">
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-[#243B5A]">{dateLabel} · {formatKoreanDate(date)}</div>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[10px] font-bold text-blue-700">{people.length}명</span>
+                        </div>
+                        <div className="p-3">
+                          {people.length > 0 ? (
+                            <div className="flex flex-wrap gap-1.5">
+                              {people.map(user => <span key={user.id || user.name} className="rounded-lg border border-blue-100 bg-blue-50 px-2.5 py-1.5 text-xs font-medium text-blue-800">{user.name}</span>)}
+                            </div>
+                          ) : <p className="text-xs text-[#64748B]">등록된 휴무자가 없습니다.</p>}
+                        </div>
+                      </section>
+                    );
+                  })}
+                </div>
+                <div className="flex justify-end border-t border-[#E2E5E9] bg-white px-4 py-3">
+                  <button type="button" onClick={() => setIsOffUserModalOpen(false)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1B2F49]">닫기</button>
+                </div>
               </div>
             </div>
           );
