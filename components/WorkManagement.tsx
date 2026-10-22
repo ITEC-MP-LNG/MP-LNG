@@ -320,6 +320,67 @@ function CalendarDatePicker({
   );
 }
 
+type CompactTimeOption = { value: string; label: string };
+
+/** 앱 입력창 스타일을 유지하는 작은 시간 선택 메뉴 */
+function CompactTimeSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: string;
+  options: CompactTimeOption[];
+  onChange: (value: string) => void;
+  ariaLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = options.find(option => option.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+    const closeOutside = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) setOpen(false);
+    };
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', closeOutside);
+    document.addEventListener('touchstart', closeOutside);
+    document.addEventListener('keydown', closeEscape);
+    return () => {
+      document.removeEventListener('mousedown', closeOutside);
+      document.removeEventListener('touchstart', closeOutside);
+      document.removeEventListener('keydown', closeEscape);
+    };
+  }, [open]);
+
+  return <div ref={rootRef} className="relative min-w-0">
+    <button
+      type="button"
+      aria-label={ariaLabel}
+      aria-haspopup="listbox"
+      aria-expanded={open}
+      onClick={() => setOpen(current => !current)}
+      className="flex h-9 w-full min-w-0 items-center justify-between gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold tabular-nums text-[#1F2937] outline-none transition-colors hover:border-[#243B5A] focus:border-[#243B5A] focus:bg-white"
+    >
+      <span className="truncate">{selected?.label || value}</span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+    </button>
+    {open && <div role="listbox" aria-label={ariaLabel} className="absolute left-0 top-[calc(100%+4px)] z-[80] max-h-48 w-full min-w-[76px] overflow-y-auto rounded-lg border border-[#E2E5E9] bg-white p-1 shadow-[0_8px_20px_rgba(15,23,42,0.16)]">
+      {options.map(option => <button
+        key={option.value}
+        type="button"
+        role="option"
+        aria-selected={option.value === value}
+        onClick={() => { onChange(option.value); setOpen(false); }}
+        className={`mb-0.5 flex w-full items-center justify-center rounded-md px-2 py-2 text-xs tabular-nums last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}
+      >{option.label}</button>)}
+    </div>}
+  </div>;
+}
+
 type StyledSelectOption = { value: string; label: string };
 
 /** cert.tsx 스타일을 참조한 앱 공통 드롭메뉴 (셀렉트 박스) 컴포넌트 */
@@ -616,36 +677,30 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
           />
           <div className="space-y-1 min-w-0">
             <label className="block text-[11px] font-semibold text-[#1F2937]">사용 시간</label>
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-              <select
-                aria-label="사용 시간 시"
+            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+              <CompactTimeSelect
+                ariaLabel="사용 시간 시"
                 value={(usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : '09:00').split(':')[0] || '09'}
-                onChange={e => setUsageForm(p => {
+                options={Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0')).map(hour => ({ value: hour, label: `${hour}시` }))}
+                onChange={hour => setUsageForm(p => {
                   const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
                   const currentTime = p.used_at.split('T')[1] || '09:00';
                   const minute = currentTime.split(':')[1] || '00';
-                  return { ...p, used_at: `${date}T${e.target.value}:${minute}` };
+                  return { ...p, used_at: `${date}T${hour}:${minute}` };
                 })}
-                required
-                className={`${inputClass} h-9 min-w-0 cursor-pointer text-center tabular-nums`}
-              >
-                {Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0')).map(hour => <option key={hour} value={hour}>{hour}시</option>)}
-              </select>
+              />
               <span className="text-sm font-bold text-[#64748B]">:</span>
-              <select
-                aria-label="사용 시간 분"
+              <CompactTimeSelect
+                ariaLabel="사용 시간 분"
                 value={(usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : '09:00').split(':')[1] || '00'}
-                onChange={e => setUsageForm(p => {
+                options={Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, '0')).map(minute => ({ value: minute, label: `${minute}분` }))}
+                onChange={minute => setUsageForm(p => {
                   const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
                   const currentTime = p.used_at.split('T')[1] || '09:00';
                   const hour = currentTime.split(':')[0] || '09';
-                  return { ...p, used_at: `${date}T${hour}:${e.target.value}` };
+                  return { ...p, used_at: `${date}T${hour}:${minute}` };
                 })}
-                required
-                className={`${inputClass} h-9 min-w-0 cursor-pointer text-center tabular-nums`}
-              >
-                {Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, '0')).map(minute => <option key={minute} value={minute}>{minute}분</option>)}
-              </select>
+              />
             </div>
             <p className="text-[10px] text-[#64748B]">시와 분을 선택하세요.</p>
           </div>
@@ -2183,36 +2238,27 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         )}
 
         {taskTab === 'CABIN' && (
-          <div className="flex flex-wrap items-start gap-2 bg-[#F5F6F8] p-2 rounded-xl border border-[#E2E5E9]">
-            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1">
-              <Tag className="h-3.5 w-3.5 text-[#64748B] ml-1 shrink-0" />
-              <span className="text-xs font-bold text-[#1F2937] mr-1 shrink-0">호선:</span>
-              <button
-                onClick={() => setCabinSubTab('ALL')}
-                className={`px-2.5 py-1 text-xs font-semibold rounded-lg shrink-0 ${cabinSubTab === 'ALL' ? 'bg-white border text-[#243B5A] font-bold shadow-2xs' : 'text-[#64748B]'}`}
-              >
-                전체
-              </button>
-              {vessels.map((v) => (
-                <button
-                  key={v.id}
-                  onClick={() => setCabinSubTab(v.name)}
-                  className={`px-2.5 py-1 text-xs font-semibold rounded-lg shrink-0 flex items-center gap-1 transition ${
-                    cabinSubTab === v.name ? 'bg-[#243B5A] text-white font-bold shadow-2xs' : 'bg-white border text-[#243B5A] hover:bg-slate-100'
-                  }`}
-                >
-                  <span>{v.name}</span>
-                </button>
-              ))}
-            </div>
-
+          <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[#E2E5E9] bg-[#F5F6F8] p-2">
+            <Tag className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+            <label htmlFor="cabin-vessel-filter" className="shrink-0 text-xs font-bold text-[#1F2937]">호선</label>
+            <select
+              id="cabin-vessel-filter"
+              aria-label="CABIN 호선 선택"
+              value={cabinSubTab}
+              onChange={event => setCabinSubTab(event.target.value)}
+              className="h-9 min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs font-semibold text-[#243B5A] outline-none transition-colors focus:border-[#243B5A]"
+            >
+              <option value="ALL">전체 호선</option>
+              {vessels.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
+            </select>
             {isAdmin && (
               <button
+                type="button"
                 onClick={() => setIsVesselManagerOpen(true)}
-                className="flex items-center space-x-1 text-xs text-[#243B5A] font-semibold bg-white border px-2 py-1 rounded-lg shrink-0 hover:bg-slate-50 ml-auto transition-colors"
+                className="flex h-9 shrink-0 items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-2.5 text-xs font-semibold text-[#243B5A] transition-colors hover:bg-slate-50"
               >
-                <Settings className="h-3 w-3" />
-                <span className="hidden sm:inline">관리</span>
+                <Settings className="h-3.5 w-3.5" />
+                <span>호선 관리</span>
               </button>
             )}
           </div>
