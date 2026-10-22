@@ -4207,7 +4207,7 @@ if (cat !== 'VBT') return false;
                 <input 
                   type="number" 
                   min="1" 
-                  max={(logType === '반납' || logType === '교정 반입') ? undefined : targetItem.quantity}
+                  max={(logType === '반납' || logType === '교정 반입') ? undefined : Math.max(1, Number(targetItem.quantity) || 0)}
                   required 
                   value={logQty} 
                   onChange={e => setLogQty(Number(e.target.value))} 
