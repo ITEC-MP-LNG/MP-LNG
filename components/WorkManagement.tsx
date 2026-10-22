@@ -57,6 +57,7 @@ export interface AppUser {
   field?: string;
   phone?: string;
   work_status?: '근무중' | '휴무' | string;
+  absence_dates?: string[];
 }
 
 const C = { navy: '#243B5A', pale: '#F5F6F8', border: '#E2E5E9', text: '#1F2937', muted: '#64748B' };
@@ -98,6 +99,14 @@ function isFormerEmployee(user: AppUser): boolean {
   const values = [user.department, user.position, user.job_title, user.field]
     .map(value => String(value || '').trim().toLowerCase());
   return values.some(value => /퇴사|퇴직|퇴사자|퇴직자/.test(value));
+}
+
+function isUserOffOnDate(user: AppUser | undefined, date: string): boolean {
+  if (!user || !date) return false;
+  const today = formatDateToYYYYMMDD(new Date());
+  // 전체 근무 상태는 오늘에만 적용하고, 다른 날짜는 날짜별 휴무 기록으로 판정합니다.
+  return (date === today && user.work_status === '휴무') ||
+    (Array.isArray(user.absence_dates) && user.absence_dates.includes(date));
 }
 
 function isOperationsOrManagement(user: AppUser): boolean {
@@ -615,7 +624,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
                 return { ...p, used_at: `${date}T${e.target.value}` };
               })}
               required
-              className={`${inputClass} font-mono`}
+              className={`${inputClass} h-9 min-w-0 appearance-none text-center tabular-nums`}
             />
           </div>
         </div>
@@ -645,6 +654,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [presetTeams, setPresetTeams] = useState<PresetTeam[]>([]);
   const [selectedPresetTeamId, setSelectedPresetTeamId] = useState('');
   const [appUsers, setAppUsers] = useState<AppUser[]>([]);
+  const [absenceStatusLoaded, setAbsenceStatusLoaded] = useState(false);
+  const absenceReconcileInFlightRef = useRef(false);
   const [departments, setDepartments] = useState<string[]>([]);
   const [validUserNames, setValidUserNames] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -764,10 +775,37 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const fetchAppUsers = useCallback(async () => {
     try {
-      const { data, error } = await supabase.from('app_users').select('name, department, position, job_title, field, phone, work_status');
+      const { data, error } = await supabase.from('app_users').select('id, name, department, position, job_title, field, phone, work_status');
       if (error) throw error;
       if (data) {
-        setAppUsers(data);
+        const today = formatDateToYYYYMMDD(new Date());
+        let absenceRows: any[] = [];
+        try {
+          const { data: statusData, error: statusError } = await supabase
+            .from('user_day_status')
+            .select('user_id, status_date')
+            .gte('status_date', today);
+          if (statusError) throw statusError;
+          absenceRows = statusData || [];
+        } catch (statusError) {
+          console.warn('날짜별 휴무 조회 실패:', statusError);
+        }
+
+        const absenceByUser = new Map<string, string[]>();
+        absenceRows.forEach((row: any) => {
+          const key = String(row.user_id || '');
+          const date = String(row.status_date || '').slice(0, 10);
+          if (!key || !date) return;
+          const dates = absenceByUser.get(key) || [];
+          dates.push(date);
+          absenceByUser.set(key, dates);
+        });
+        const usersWithAbsences = data.map((user: any) => ({
+          ...user,
+          absence_dates: absenceByUser.get(String(user.id || '')) || [],
+        }));
+        setAppUsers(usersWithAbsences);
+        setAbsenceStatusLoaded(true);
         const names = data.map((u: any) => u.name?.trim()).filter(Boolean);
         setValidUserNames(names);
 
@@ -940,8 +978,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [fetchTasks]);
 
   const activeUsers = useMemo(() => appUsers.filter(u => !isFormerEmployee(u)), [appUsers]);
-  const workingUsers = useMemo(() => activeUsers.filter(u => u.work_status !== '휴무'), [activeUsers]);
-  const offUsers = useMemo(() => activeUsers.filter(u => u.work_status === '휴무'), [activeUsers]);
+  const todayForUserStatus = formatDateToYYYYMMDD(new Date());
+  const workingUsers = useMemo(() => activeUsers.filter(u => !isUserOffOnDate(u, todayForUserStatus)), [activeUsers, todayForUserStatus]);
+  const offUsers = useMemo(() => activeUsers.filter(u => isUserOffOnDate(u, todayForUserStatus)), [activeUsers, todayForUserStatus]);
   const activeCabinTasks = useMemo(
     () => tasks.filter(t => t.task_type === 'CABIN' && t.status !== 'COMPLETED'),
     [tasks]
@@ -1010,13 +1049,70 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           }, 300);
         }
       )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'user_day_status' },
+        () => {
+          void fetchAppUsers();
+        }
+      )
       .subscribe();
+
+    const refreshAbsencesWhenVisible = () => {
+      if (document.visibilityState === 'visible') void fetchAppUsers();
+    };
+    window.addEventListener('focus', refreshAbsencesWhenVisible);
+    document.addEventListener('visibilitychange', refreshAbsencesWhenVisible);
 
     return () => {
       if (refreshTimer) clearTimeout(refreshTimer);
+      window.removeEventListener('focus', refreshAbsencesWhenVisible);
+      document.removeEventListener('visibilitychange', refreshAbsencesWhenVisible);
       supabase.removeChannel(channel);
     };
   }, []);
+
+  useEffect(() => {
+    if (!absenceStatusLoaded || isLoading || absenceReconcileInFlightRef.current) return;
+    const today = formatDateToYYYYMMDD(new Date());
+    const candidates = tasks.filter(task =>
+      task.task_type === 'DAILY' &&
+      task.status !== 'COMPLETED' &&
+      task.start_date >= today &&
+      (task.assigned_names || []).some(name => {
+        const user = appUsers.find(item => item.name?.trim().toLowerCase() === name.trim().toLowerCase());
+        return isUserOffOnDate(user, task.start_date);
+      })
+    );
+    if (!candidates.length) return;
+
+    absenceReconcileInFlightRef.current = true;
+    void (async () => {
+      const changedTasks: Task[] = [];
+      try {
+        for (const task of candidates) {
+          const originalNames = task.assigned_names || [];
+          const nextNames = originalNames.filter(name => {
+            const user = appUsers.find(item => item.name?.trim().toLowerCase() === name.trim().toLowerCase());
+            return !isUserOffOnDate(user, task.start_date);
+          });
+          if (nextNames.length === originalNames.length) continue;
+          const { error } = await supabase.from('tasks').update({ assigned_names: nextNames }).eq('id', task.id).neq('status', 'COMPLETED');
+          if (error) {
+            console.error('휴무자 업무 배정 자동 제외 실패:', task.id, error);
+            continue;
+          }
+          changedTasks.push({ ...task, assigned_names: nextNames });
+        }
+        if (changedTasks.length) {
+          setTasks(prev => prev.map(task => changedTasks.find(changed => changed.id === task.id) || task));
+          showCustomAlert('휴무자 자동 제외', '해당인원은 휴무자로 업무에서 배제되었습니다');
+        }
+      } finally {
+        absenceReconcileInFlightRef.current = false;
+      }
+    })();
+  }, [absenceStatusLoaded, isLoading, tasks, appUsers, showCustomAlert]);
 
   const canModifyTaskStatus = useCallback((task: Task) => {
     if (isAdmin) return true;
@@ -1341,7 +1437,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     const accepted: string[] = [];
     const rejected: string[] = [];
-    const today = formatDateToYYYYMMDD(new Date());
 
     for (const name of names) {
       const alreadyAdded = target === 'ASSIGNED' ? assignedList.includes(name)
@@ -1349,8 +1444,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       if (alreadyAdded) continue;
 
       const foundUser = appUsers.find(u => u.name?.trim().toLowerCase() === name.toLowerCase());
-      if (foundUser && foundUser.work_status === '휴무' &&
-          (formData.task_type !== 'DAILY' || formData.start_date === today)) {
+      if (isUserOffOnDate(foundUser, formData.start_date)) {
         rejected.push(`${name}(휴무)`);
         continue;
       }
@@ -1395,11 +1489,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     const accepted: string[] = [];
     const rejected: string[] = [];
-    const today = formatDateToYYYYMMDD(new Date());
     for (const name of names) {
       if (assignedList.some(existing => existing.toLowerCase() === name.toLowerCase()) || accepted.some(existing => existing.toLowerCase() === name.toLowerCase())) continue;
       const foundUser = appUsers.find(user => user.name?.trim().toLowerCase() === name.toLowerCase());
-      if (foundUser?.work_status === '휴무' && (formData.task_type !== 'DAILY' || formData.start_date === today)) {
+      if (isUserOffOnDate(foundUser, formData.start_date)) {
         rejected.push(`${name}(휴무)`);
         continue;
       }
@@ -1448,7 +1541,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     for (const wName of workersToCheck) {
       const u = appUsers.find(user => user.name?.trim().toLowerCase() === wName.trim().toLowerCase());
-      if (u && u.work_status === '휴무') {
+      if (isUserOffOnDate(u, formData.start_date)) {
         showCustomAlert('업무 등록 제한', `${u.name} 휴무입니다.`);
         return;
       }
