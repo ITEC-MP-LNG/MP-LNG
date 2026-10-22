@@ -616,16 +616,38 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
           />
           <div className="space-y-1 min-w-0">
             <label className="block text-[11px] font-semibold text-[#1F2937]">사용 시간</label>
-            <input
-              type="time"
-              value={usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : ''}
-              onChange={e => setUsageForm(p => {
-                const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
-                return { ...p, used_at: `${date}T${e.target.value}` };
-              })}
-              required
-              className={`${inputClass} h-9 min-w-0 appearance-none text-center tabular-nums`}
-            />
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+              <select
+                aria-label="사용 시간 시"
+                value={(usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : '09:00').split(':')[0] || '09'}
+                onChange={e => setUsageForm(p => {
+                  const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
+                  const currentTime = p.used_at.split('T')[1] || '09:00';
+                  const minute = currentTime.split(':')[1] || '00';
+                  return { ...p, used_at: `${date}T${e.target.value}:${minute}` };
+                })}
+                required
+                className={`${inputClass} h-9 min-w-0 cursor-pointer text-center tabular-nums`}
+              >
+                {Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0')).map(hour => <option key={hour} value={hour}>{hour}시</option>)}
+              </select>
+              <span className="text-sm font-bold text-[#64748B]">:</span>
+              <select
+                aria-label="사용 시간 분"
+                value={(usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : '09:00').split(':')[1] || '00'}
+                onChange={e => setUsageForm(p => {
+                  const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
+                  const currentTime = p.used_at.split('T')[1] || '09:00';
+                  const hour = currentTime.split(':')[0] || '09';
+                  return { ...p, used_at: `${date}T${hour}:${e.target.value}` };
+                })}
+                required
+                className={`${inputClass} h-9 min-w-0 cursor-pointer text-center tabular-nums`}
+              >
+                {Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, '0')).map(minute => <option key={minute} value={minute}>{minute}분</option>)}
+              </select>
+            </div>
+            <p className="text-[10px] text-[#64748B]">시와 분을 선택하세요.</p>
           </div>
         </div>
         <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className={inputClass}/></div>
