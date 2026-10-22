@@ -970,14 +970,14 @@ export default function HRManagement({
     const filtered = filteredDormitoryRows;
     const rows: any[][] = [
       ['기숙사 현황', '', '', '', '', '', '', '', ''],
-      ['성명', '기숙사명', '호실', '입주날짜', '공과금 납입', '', '', '', '비고'],
+      ['기숙사명', '호실', '성명', '입주날짜', '공과금 납입', '', '', '', '비고'],
       ['', '', '', '', '관리비 납부일', '납부자', '가스비 납부일', '납부자', '']
     ];
     filtered.forEach((row) => {
       const person = users.find((u) => String(u.id) === String(row.user_id));
       const managementEditor = row.management_fee_date ? (users.find((u) => String(u.id) === String(row.management_fee_updated_by))?.name || (String(currentUser?.id || '') === String(row.management_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
       const gasEditor = row.gas_fee_date ? (users.find((u) => String(u.id) === String(row.gas_fee_updated_by))?.name || (String(currentUser?.id || '') === String(row.gas_fee_updated_by || '') ? currentUser?.name : '') || '확인 필요') : '미납';
-      rows.push([person?.name || row.user_id || '', row.dormitory_name || '', row.room || '', row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '', row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '', managementEditor, row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '', gasEditor, row.condition_note || '']);
+      rows.push([row.dormitory_name || '', row.room || '', person?.name || row.user_id || '', row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '', row.management_fee_date ? String(row.management_fee_date).slice(0,10).replace(/-/g,'/') : '', managementEditor, row.gas_fee_date ? String(row.gas_fee_date).slice(0,10).replace(/-/g,'/') : '', gasEditor, row.condition_note || '']);
     });
     const ws = XLSX.utils.aoa_to_sheet(rows);
     ws['!merges'] = [
@@ -993,13 +993,13 @@ export default function HRManagement({
       let j = i + 1;
       while (j < filtered.length && filtered[j].dormitory_name === filtered[i].dormitory_name && filtered[j].room === filtered[i].room) j++;
       if (j - i > 1) {
+        ws['!merges'].push({ s: { r: i + 3, c: 0 }, e: { r: j + 2, c: 0 } });
         ws['!merges'].push({ s: { r: i + 3, c: 1 }, e: { r: j + 2, c: 1 } });
-        ws['!merges'].push({ s: { r: i + 3, c: 2 }, e: { r: j + 2, c: 2 } });
       }
       i = j;
     }
     ws['!rows'] = [{ hpx: 56 }, { hpx: 30 }, { hpx: 30 }, ...filtered.map(() => ({ hpx: 26 }))];
-    ws['!cols'] = [{ wch: 14 }, { wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 28 }];
+    ws['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 28 }];
     ws['!autofilter'] = { ref: `A3:I${Math.max(3, rows.length)}` };
     for (let r = 0; r < rows.length; r++) {
       for (let c = 0; c < 9; c++) {
@@ -1915,9 +1915,9 @@ export default function HRManagement({
                   <thead className="bg-[#F5F6F8] text-[#243B5A]">
                     <tr>
                       <th rowSpan={2} className="border border-[#CBD5E1] p-2"><input type="checkbox" aria-label="전체 선택" checked={filteredDormitoryRows.length > 0 && filteredDormitoryRows.every((row) => selectedDormitoryIds.includes(String(row.id)))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? Array.from(new Set([...prev, ...filteredDormitoryRows.map((row) => String(row.id))])) : prev.filter((id) => !filteredDormitoryRows.some((row) => String(row.id) === id)))} /></th>
-                      <th rowSpan={2} className="border border-[#CBD5E1] p-2">성명</th>
                       <th rowSpan={2} className="border border-[#CBD5E1] p-2">기숙사명</th>
                       <th rowSpan={2} className="border border-[#CBD5E1] p-2">호실</th>
+                      <th rowSpan={2} className="border border-[#CBD5E1] p-2">성명</th>
                       <th rowSpan={2} className="border border-[#CBD5E1] p-2">입주날짜</th>
                       <th colSpan={2} className="border border-[#CBD5E1] p-2">관리비 납부현황</th>
                       <th colSpan={2} className="border border-[#CBD5E1] p-2">가스비 납부현황</th>
@@ -2015,8 +2015,6 @@ export default function HRManagement({
                             <td className="border border-[#E2E5E9] p-2">
                               <input type="checkbox" aria-label={`${person?.name || row.user_id} 선택`} checked={selectedDormitoryIds.includes(String(row.id))} onChange={(e) => setSelectedDormitoryIds((prev) => e.target.checked ? [...prev, String(row.id)] : prev.filter((id) => id !== String(row.id)))} />
                             </td>
-                            <td className="border border-[#E2E5E9] p-2">{person?.name || row.user_id}</td>
-                            
                             {dSpan > 0 && (
                               <td rowSpan={dSpan} className="border border-[#E2E5E9] p-2 font-semibold bg-white align-middle">
                                 {row.dormitory_name || '-'}
@@ -2029,6 +2027,7 @@ export default function HRManagement({
                               </td>
                             )}
 
+                            <td className="border border-[#E2E5E9] p-2">{person?.name || row.user_id}</td>
                             <td className="border border-[#E2E5E9] p-2">{row.move_in_date ? String(row.move_in_date).slice(0,10).replace(/-/g,'/') : '-'}</td>
                             
                             {mdSpan > 0 && (
