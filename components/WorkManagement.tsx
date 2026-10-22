@@ -2241,16 +2241,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[#E2E5E9] bg-[#F5F6F8] p-2">
             <Tag className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
             <label htmlFor="cabin-vessel-filter" className="shrink-0 text-xs font-bold text-[#1F2937]">호선</label>
-            <select
-              id="cabin-vessel-filter"
-              aria-label="CABIN 호선 선택"
-              value={cabinSubTab}
-              onChange={event => setCabinSubTab(event.target.value)}
-              className="h-9 min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs font-semibold text-[#243B5A] outline-none transition-colors focus:border-[#243B5A]"
-            >
-              <option value="ALL">전체 호선</option>
-              {vessels.map(v => <option key={v.id} value={v.name}>{v.name}</option>)}
-            </select>
+            <div className="min-w-0 flex-1">
+              <AppStyledSelect
+                ariaLabel="CABIN 호선 선택"
+                value={cabinSubTab}
+                onChange={setCabinSubTab}
+                options={[{ value: 'ALL', label: '전체 호선' }, ...vessels.map(v => ({ value: v.name, label: v.name }))]}
+                className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs font-semibold text-[#243B5A] outline-none transition-colors focus:border-[#243B5A]"
+              />
+            </div>
             {isAdmin && (
               <button
                 type="button"
