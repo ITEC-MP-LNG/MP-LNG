@@ -777,8 +777,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [importTargetDate, setImportTargetDate] = useState<string>(() => formatDateToYYYYMMDD(new Date()));
   const [selectedWeeklyIdsToImport, setSelectedWeeklyIdsToImport] = useState<string[]>([]);
   const [isOffUserModalOpen, setIsOffUserModalOpen] = useState(false);
-  const [offUserViewMode, setOffUserViewMode] = useState<'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'DAY_AFTER_TOMORROW' | 'CUSTOM'>('TODAY_TOMORROW');
+  const [offUserViewMode, setOffUserViewMode] = useState<'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'DAY_AFTER_TOMORROW' | 'CUSTOM' | 'RANGE'>('TODAY_TOMORROW');
   const [offUserSelectedDate, setOffUserSelectedDate] = useState<string>(() => formatDateToYYYYMMDD(new Date()));
+  const [offUserRangeStartDate, setOffUserRangeStartDate] = useState<string>(() => { const date = new Date(); date.setDate(date.getDate() + 1); return formatDateToYYYYMMDD(date); });
+  const [offUserRangeEndDate, setOffUserRangeEndDate] = useState<string>(() => { const date = new Date(); date.setDate(date.getDate() + 2); return formatDateToYYYYMMDD(date); });
 
   const [isQuickVesselInputOpen, setIsQuickVesselInputOpen] = useState(false);
   const [quickVesselName, setQuickVesselName] = useState('');
@@ -2237,9 +2239,21 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 ? [tomorrow]
                 : offUserViewMode === 'DAY_AFTER_TOMORROW'
                   ? [dayAfterTomorrow]
-                  : offUserSelectedDate
-                  ? [offUserSelectedDate]
-                  : [];
+                  : offUserViewMode === 'RANGE'
+                    ? (() => {
+                        if (!offUserRangeStartDate || !offUserRangeEndDate || offUserRangeStartDate > offUserRangeEndDate) return [];
+                        const dates: string[] = [];
+                        const cursor = new Date(`${offUserRangeStartDate}T00:00:00`);
+                        const end = new Date(`${offUserRangeEndDate}T00:00:00`);
+                        while (cursor <= end && dates.length < 366) {
+                          dates.push(formatDateToYYYYMMDD(cursor));
+                          cursor.setDate(cursor.getDate() + 1);
+                        }
+                        return dates;
+                      })()
+                    : offUserSelectedDate
+                      ? [offUserSelectedDate]
+                      : [];
           const formatKoreanDate = (date: string) => {
             const parsed = new Date(`${date}T00:00:00`);
             const weekday = ['일', '월', '화', '수', '목', '금', '토'][parsed.getDay()];
@@ -2262,29 +2276,57 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <AppStyledSelect
                         ariaLabel="휴무자 조회 범위 선택"
                         value={offUserViewMode}
-                        onChange={(value) => setOffUserViewMode(value as 'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'DAY_AFTER_TOMORROW' | 'CUSTOM')}
+                        onChange={(value) => setOffUserViewMode(value as 'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'DAY_AFTER_TOMORROW' | 'CUSTOM' | 'RANGE')}
                         options={[
                           { value: 'TODAY_TOMORROW', label: '내일 + 모레' },
                           { value: 'TODAY', label: '오늘 휴무자' },
                           { value: 'TOMORROW', label: '내일 휴무자' },
                           { value: 'DAY_AFTER_TOMORROW', label: '모레 휴무자' },
-                          { value: 'CUSTOM', label: '날짜 직접 선택' },
+                          { value: 'CUSTOM', label: '하루 날짜 선택' },
+                          { value: 'RANGE', label: '기간 선택 (시작일 ~ 종료일)' },
                         ]}
                         className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs font-semibold text-[#243B5A] outline-none transition-colors focus:border-[#243B5A]"
                       />
                     </div>
-                    <div className="min-w-0">
-                      <CalendarDatePicker
-                        label="조회 날짜"
-                        value={offUserSelectedDate}
-                        onChange={(date) => { setOffUserSelectedDate(date); setOffUserViewMode('CUSTOM'); }}
-                        className="h-9 rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs text-[#1F2937] outline-none focus:border-[#243B5A]"
-                      />
-                    </div>
+                    {offUserViewMode === 'RANGE' ? (
+                      <>
+                        <div className="min-w-0">
+                          <CalendarDatePicker
+                            label="시작일"
+                            value={offUserRangeStartDate}
+                            onChange={setOffUserRangeStartDate}
+                            className="h-9 rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs text-[#1F2937] outline-none focus:border-[#243B5A]"
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <CalendarDatePicker
+                            label="종료일"
+                            value={offUserRangeEndDate}
+                            onChange={setOffUserRangeEndDate}
+                            className="h-9 rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs text-[#1F2937] outline-none focus:border-[#243B5A]"
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="min-w-0">
+                        <CalendarDatePicker
+                          label="조회 날짜"
+                          value={offUserSelectedDate}
+                          onChange={(date) => { setOffUserSelectedDate(date); setOffUserViewMode('CUSTOM'); }}
+                          className="h-9 rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs text-[#1F2937] outline-none focus:border-[#243B5A]"
+                        />
+                      </div>
+                    )}
                   </div>
+                  {offUserViewMode === 'RANGE' && offUserRangeStartDate > offUserRangeEndDate && (
+                    <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">종료일은 시작일보다 빠를 수 없습니다.</p>
+                  )}
+                  {offUserViewMode === 'RANGE' && datesToShow.length === 0 && offUserRangeStartDate <= offUserRangeEndDate && (
+                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">조회할 기간을 선택해 주세요.</p>
+                  )}
                   {datesToShow.map(date => {
                     const people = activeUsers.filter(user => isUserOffOnDate(user, date)).sort((a, b) => a.name.localeCompare(b.name, 'ko'));
-                    const dateLabel = date === today ? '오늘' : date === tomorrow ? '내일' : '선택 날짜';
+                    const dateLabel = date === today ? '오늘' : date === tomorrow ? '내일' : date === dayAfterTomorrow ? '모레' : '조회 날짜';
                     return (
                       <section key={date} className="overflow-hidden rounded-xl border border-[#E2E5E9]">
                         <div className="flex items-center justify-between gap-2 bg-[#F8FAFC] px-3 py-2">
