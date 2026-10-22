@@ -777,7 +777,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [importTargetDate, setImportTargetDate] = useState<string>(() => formatDateToYYYYMMDD(new Date()));
   const [selectedWeeklyIdsToImport, setSelectedWeeklyIdsToImport] = useState<string[]>([]);
   const [isOffUserModalOpen, setIsOffUserModalOpen] = useState(false);
-  const [offUserViewMode, setOffUserViewMode] = useState<'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'CUSTOM'>('TODAY_TOMORROW');
+  const [offUserViewMode, setOffUserViewMode] = useState<'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'DAY_AFTER_TOMORROW' | 'CUSTOM'>('TODAY_TOMORROW');
   const [offUserSelectedDate, setOffUserSelectedDate] = useState<string>(() => formatDateToYYYYMMDD(new Date()));
 
   const [isQuickVesselInputOpen, setIsQuickVesselInputOpen] = useState(false);
@@ -2226,13 +2226,18 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           const tomorrowDate = new Date();
           tomorrowDate.setDate(tomorrowDate.getDate() + 1);
           const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
+          const dayAfterTomorrowDate = new Date();
+          dayAfterTomorrowDate.setDate(dayAfterTomorrowDate.getDate() + 2);
+          const dayAfterTomorrow = formatDateToYYYYMMDD(dayAfterTomorrowDate);
           const datesToShow = offUserViewMode === 'TODAY_TOMORROW'
-            ? [today, tomorrow]
+            ? [tomorrow, dayAfterTomorrow]
             : offUserViewMode === 'TODAY'
               ? [today]
               : offUserViewMode === 'TOMORROW'
                 ? [tomorrow]
-                : offUserSelectedDate
+                : offUserViewMode === 'DAY_AFTER_TOMORROW'
+                  ? [dayAfterTomorrow]
+                  : offUserSelectedDate
                   ? [offUserSelectedDate]
                   : [];
           const formatKoreanDate = (date: string) => {
@@ -2257,11 +2262,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <AppStyledSelect
                         ariaLabel="휴무자 조회 범위 선택"
                         value={offUserViewMode}
-                        onChange={(value) => setOffUserViewMode(value as 'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'CUSTOM')}
+                        onChange={(value) => setOffUserViewMode(value as 'TODAY_TOMORROW' | 'TODAY' | 'TOMORROW' | 'DAY_AFTER_TOMORROW' | 'CUSTOM')}
                         options={[
-                          { value: 'TODAY_TOMORROW', label: '오늘 + 내일' },
+                          { value: 'TODAY_TOMORROW', label: '내일 + 모레' },
                           { value: 'TODAY', label: '오늘 휴무자' },
                           { value: 'TOMORROW', label: '내일 휴무자' },
+                          { value: 'DAY_AFTER_TOMORROW', label: '모레 휴무자' },
                           { value: 'CUSTOM', label: '날짜 직접 선택' },
                         ]}
                         className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs font-semibold text-[#243B5A] outline-none transition-colors focus:border-[#243B5A]"
