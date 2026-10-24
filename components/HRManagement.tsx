@@ -1886,10 +1886,15 @@ export default function HRManagement({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm font-extrabold text-[#243B5A]">기숙사 현황</h2>
-                <select value={dormitoryFilter} onChange={(e) => setDormitoryFilter(e.target.value)} className="rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 py-2 text-xs">
+                <StyledDropdown
+                  value={dormitoryFilter}
+                  onChange={(e) => setDormitoryFilter(e.target.value)}
+                  className="min-w-[112px]"
+                  aria-label="기숙사 필터"
+                >
                   <option value="전체 보기">전체 보기</option>
                   {dormitoryLocations.map((name) => <option key={name} value={name}>{name}</option>)}
-                </select>
+                </StyledDropdown>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={exportDormitoryExcel} className="rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8]">Excel 저장</button>
@@ -2165,16 +2170,27 @@ export default function HRManagement({
                   </div>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <label className="text-xs font-bold text-[#475569]">구성원
-                      <select value={dormitoryForm.user_id} onChange={(e) => setDormitoryForm((f) => ({...f,user_id:e.target.value}))} disabled={!canManageDormitories} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-2.5 text-xs text-[#1F2937] font-normal outline-none focus:bg-white focus:border-[#243B5A]">
+                      <StyledDropdown
+                        value={dormitoryForm.user_id}
+                        onChange={(e) => setDormitoryForm((f) => ({...f,user_id:e.target.value}))}
+                        disabled={!canManageDormitories}
+                        className="mt-1 w-full"
+                        aria-label="구성원 선택"
+                      >
                         <option value="">구성원 선택</option>
                         {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.id})</option>)}
-                      </select>
+                      </StyledDropdown>
                     </label>
                     <label className="text-xs font-bold text-[#475569]">기숙사명
-                      <select value={dormitoryForm.dormitory_name} onChange={(e) => setDormitoryForm((f) => ({...f,dormitory_name:e.target.value}))} className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-2.5 text-xs text-[#1F2937] font-normal outline-none focus:bg-white focus:border-[#243B5A]">
+                      <StyledDropdown
+                        value={dormitoryForm.dormitory_name}
+                        onChange={(e) => setDormitoryForm((f) => ({...f,dormitory_name:e.target.value}))}
+                        className="mt-1 w-full"
+                        aria-label="기숙사명 선택"
+                      >
                         <option value="">기숙사 선택</option>
                         {dormitoryLocations.map((name) => <option key={name} value={name}>{name}</option>)}
-                      </select>
+                      </StyledDropdown>
                     </label>
                     <label className="text-xs font-bold text-[#475569]">호실
                       <input value={dormitoryForm.room} onChange={(e) => setDormitoryForm((f) => ({...f,room:e.target.value}))} placeholder="예: 302호" className="mt-1 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-2.5 text-xs text-[#1F2937] font-normal outline-none focus:bg-white focus:border-[#243B5A]" />
