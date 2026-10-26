@@ -1841,7 +1841,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         cell.font = { ...(cell.font || {}), size: 7 };
         cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
       });
-      row.height = undefined;
     });
     worksheet.columns.forEach((column) => {
       let maxLength = String(column.header || '').length;
@@ -1934,7 +1933,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
         }
       });
-      row.height = undefined;
     });
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
