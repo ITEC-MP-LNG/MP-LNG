@@ -645,6 +645,7 @@ export default function MaterialManagement({
   const [selectedItemSubCategory, setSelectedItemSubCategory] = useState<string>('전체 보기');
   const [isItemSubCatModalOpen, setIsItemSubCatModalOpen] = useState<boolean>(false);
   const [isInventoryListOpen, setIsInventoryListOpen] = useState<boolean>(false);
+  const [inventoryListPage, setInventoryListPage] = useState<number>(1);
   const [newItemSubCatName, setNewItemSubCatName] = useState<string>('');
   const [newItemSubCatMaterialNames, setNewItemSubCatMaterialNames] = useState<string[]>([]);
   const [editingItemSubCatId, setEditingItemSubCatId] = useState<string | number | null>(null);
@@ -2348,6 +2349,13 @@ if (cat !== 'VBT') return false;
     currentItemSubCategoryEntries
   ]);
 
+  const inventoryListPageSize = 20;
+  const inventoryListPageCount = Math.max(1, Math.ceil(filteredInventory.length / inventoryListPageSize));
+  const paginatedInventory = filteredInventory.slice((inventoryListPage - 1) * inventoryListPageSize, inventoryListPage * inventoryListPageSize);
+
+  useEffect(() => { setInventoryListPage(1); }, [inventoryTab, selectedFixedSubCategory, selectedConsumableCategory, selectedCabinSheet, selectedItemSubCategory, selectedVbtSubCategory, cabinCalibrationOnly]);
+  useEffect(() => { if (inventoryListPage > inventoryListPageCount) setInventoryListPage(inventoryListPageCount); }, [inventoryListPage, inventoryListPageCount]);
+
   const toggleSelectAllConsumable = () => {
     if (selectedConsumableIds.length === filteredInventory.length) {
       setSelectedConsumableIds([]);
@@ -3515,13 +3523,15 @@ if (cat !== 'VBT') return false;
           const totalQuantity = filteredInventory.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
           const quantityGroups = new Map<string, number>();
           filteredInventory.forEach((item: any) => {
-            const groupName = String(item.vbt_type || item.name || item.category || '기타').trim();
+            const categoryName = String(item.category || '기타').trim();
+            const subtype = String(item.vbt_type || '').trim();
+            const groupName = subtype ? `${categoryName} · ${subtype}` : categoryName;
             quantityGroups.set(groupName, (quantityGroups.get(groupName) || 0) + (Number(item.quantity) || 0));
           });
           return (
             <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-2.5">
               <div className="flex flex-wrap items-center gap-2 mb-1.5">
-                <span className="text-[11px] font-bold text-[#243B5A]">선택 목록 총 수량</span>
+                <span className="text-[11px] font-bold text-[#243B5A]">현재 목록 총 수량</span>
                 <span className="text-xs font-bold text-[#243B5A]">{totalQuantity.toLocaleString()} EA</span>
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -3534,7 +3544,7 @@ if (cat !== 'VBT') return false;
             </div>
           );
         })()}
-        {filteredInventory.map((item) => {
+        {paginatedInventory.map((item) => {
           const isCabin = inventoryTab === 'CABIN';
           const isFixed = inventoryTab === '고정';
           const isSelected = isCabin
@@ -3626,7 +3636,7 @@ if (cat !== 'VBT') return false;
                   </div>
                 )}
 
-                <div className="flex items-center space-x-1.5">
+                <div className="flex flex-wrap items-center justify-end gap-1.5 max-w-full">
                   {isAdmin && !isCabin && (
                     <button
                       type="button"
@@ -3658,7 +3668,7 @@ if (cat !== 'VBT') return false;
                       )}
                       {item.type !== '소모성' && isCalibrationItem(item) && (
                         <Select value="" onValueChange={(value) => handleOpenLogModal(item, value as '교정 반출' | '교정 반입')}>
-                          <SelectTrigger aria-label="교정 작업 선택" className="h-7 w-[88px] border-amber-200 bg-amber-50 px-2 text-xs font-semibold text-amber-800 shadow-none focus:ring-amber-200">
+                          <SelectTrigger aria-label="교정 작업 선택" className="h-8 w-[76px] sm:w-[92px] max-w-full border-amber-200 bg-amber-50 px-1.5 sm:px-2 text-[11px] sm:text-xs font-semibold text-amber-800 shadow-none focus:ring-amber-200">
                             <SelectValue placeholder="교정 ▾" />
                           </SelectTrigger>
                           <SelectContent>
@@ -3684,6 +3694,19 @@ if (cat !== 'VBT') return false;
             </div>
           );
         })}
+
+        {filteredInventory.length > inventoryListPageSize && (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[#E2E5E9] px-2 py-3">
+            <span className="text-[11px] text-[#64748B]">총 {filteredInventory.length}개 중 {((inventoryListPage - 1) * inventoryListPageSize) + 1}–{Math.min(inventoryListPage * inventoryListPageSize, filteredInventory.length)}개</span>
+            <div className="flex items-center gap-1">
+              <button type="button" disabled={inventoryListPage <= 1} onClick={() => setInventoryListPage(1)} className="rounded-md border border-[#E2E5E9] px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] disabled:opacity-40">처음</button>
+              <button type="button" disabled={inventoryListPage <= 1} onClick={() => setInventoryListPage(page => Math.max(1, page - 1))} className="rounded-md border border-[#E2E5E9] px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] disabled:opacity-40">이전</button>
+              <span className="min-w-[54px] text-center text-xs font-bold text-[#243B5A]">{inventoryListPage} / {inventoryListPageCount}</span>
+              <button type="button" disabled={inventoryListPage >= inventoryListPageCount} onClick={() => setInventoryListPage(page => Math.min(inventoryListPageCount, page + 1))} className="rounded-md border border-[#E2E5E9] px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] disabled:opacity-40">다음</button>
+              <button type="button" disabled={inventoryListPage >= inventoryListPageCount} onClick={() => setInventoryListPage(inventoryListPageCount)} className="rounded-md border border-[#E2E5E9] px-2.5 py-1.5 text-xs font-semibold text-[#243B5A] disabled:opacity-40">끝</button>
+            </div>
+          </div>
+        )}
 
         {filteredInventory.length === 0 && (
           <div className="bg-white rounded-lg border border-[#E2E5E9] p-8 text-center text-[#64748B] text-xs">
@@ -4207,12 +4230,12 @@ if (cat !== 'VBT') return false;
                       </SelectContent>
                     </Select>
                   </div>
-                  {itemType === '고정' && itemCategory === 'VBT' && (
+                  {itemType === '고정' && (itemCategory === 'VBT' || itemCategory === '압력계') && (
                     <div>
-                      <label className="block text-[#64748B] font-semibold mb-1">VBT 타입</label>
+                      <label className="block text-[#64748B] font-semibold mb-1">{itemCategory === '압력계' ? '구분' : 'VBT 타입'}</label>
                       <input 
                         type="text" 
-                        placeholder="예: 1L, 2S 등" 
+                        placeholder={itemCategory === '압력계' ? '예: VBT, MINI 등' : '예: 1L, 2S 등'} 
                         value={itemVbtType} 
                         onChange={e => setItemVbtType(e.target.value)} 
                         className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" 
@@ -4359,7 +4382,27 @@ if (cat !== 'VBT') return false;
         aria-hidden={!((inventoryTab === '고정' && selectedFixedIds.length > 0) || (inventoryTab === '소모성' && selectedConsumableIds.length > 0) || (inventoryTab === 'CABIN' && selectedCabinIds.length > 0))}
       >
         <div className="mx-auto flex w-full max-w-xl flex-col gap-2 rounded-2xl border border-[#D8DEE8] bg-white/95 p-3 shadow-[0_-8px_30px_rgba(15,23,42,0.16)] backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
-          <div className="flex min-w-0 items-center justify-between gap-2 sm:justify-start">
+          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 sm:justify-start">
+            {inventoryTab === '고정' && (
+              <div className="flex min-w-0 items-center gap-1.5">
+                <label className="shrink-0 text-[10px] sm:text-xs font-semibold text-[#64748B]">카테고리</label>
+                <Select value={selectedFixedSubCategory || '전체 보기'} onValueChange={(value) => {
+                  setSelectedFixedSubCategory(value);
+                  setSelectedItemSubCategory('전체 보기');
+                  setSelectedFixedIds([]);
+                  setFixedBatchQuantities({});
+                  if (value === 'VBT') setSelectedVbtSubCategory('1L');
+                }}>
+                  <SelectTrigger aria-label="플로팅바 카테고리 이동" className="h-8 w-[118px] sm:w-[150px] min-w-0 border-[#E2E5E9] bg-white px-2 text-[11px] font-semibold text-[#243B5A]">
+                    <SelectValue placeholder="카테고리 이동" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="전체 보기">전체 보기</SelectItem>
+                    {fixedSubCategories.map(cat => <SelectItem key={cat} value={cat}>{cat === '교정' ? '교정 대상' : cat}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <span className="text-xs sm:text-sm font-bold text-[#243B5A] whitespace-nowrap">
               {inventoryTab === '고정' ? selectedFixedIds.length : inventoryTab === '소모성' ? selectedConsumableIds.length : selectedCabinIds.length}건 선택됨
             </span>
