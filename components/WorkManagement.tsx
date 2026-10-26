@@ -1896,7 +1896,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     worksheet.eachRow((row, rowNumber) => {
       if (rowNumber <= 3) return;
       row.eachCell((cell) => {
-        cell.font = { ...(cell.font || {}), size: 7 };
+        cell.font = { ...(cell.font || {}), size: 9 };
         cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
       });
     });
@@ -1968,7 +1968,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         const inMonth = day.getMonth() + 1 === month;
         const dateCell = dateRow.getCell(col);
         dateCell.value = inMonth ? `${day.getDate()}일` : `(${day.getDate()}일)`;
-        dateCell.font = { bold: true, color: { argb: dayIndex === 5 ? 'FF2563EB' : dayIndex === 6 ? 'FFDC2626' : inMonth ? 'FF1F2937' : 'FF9CA3AF' } };
+        dateCell.font = { bold: true, color: { argb: dayIndex === 5 ? 'FF1D4ED8' : dayIndex === 6 ? 'FFDC2626' : inMonth ? 'FF1F2937' : 'FF9CA3AF' } };
+        dateCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFDBEAFE' } };
+        dateCell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
         
         const dateStr = formatDateToYYYYMMDD(day);
         const dayTasks = inMonth ? monthlyWeeklyTasks.filter((task) => task.start_date === dateStr) : [];
@@ -1983,11 +1985,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       cursor.setDate(cursor.getDate() + 7);
     }
     worksheet.eachRow((row, rowNumber) => {
-      // 날짜 행은 기존 서식을 유지하고, 업무 내용 행만 7pt/위쪽·왼쪽 정렬로 적용
+      // 날짜 행은 연한 파란색 채우기를 유지하고, 업무 내용 행은 9pt/위쪽·왼쪽 정렬로 적용
       if (rowNumber <= 2 || rowNumber % 2 !== 0) return;
       row.eachCell((cell) => {
         if (cell.value !== null && cell.value !== undefined && String(cell.value).trim() !== '') {
-          cell.font = { ...(cell.font || {}), size: 7 };
+          cell.font = { ...(cell.font || {}), size: 9 };
           cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
         }
       });
