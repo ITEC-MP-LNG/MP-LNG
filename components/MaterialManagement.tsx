@@ -2308,7 +2308,7 @@ if (cat !== 'VBT') return false;
     return String(matched?.category || matched?.sheet_name || '기타') === returnHistoryCategoryFilter;
   }), [returnHistories, inventoryList, inventoryLogs, returnHistoryCategoryFilter]);
   return (
-    <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative">
+    <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative pb-28">
       
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
@@ -2330,14 +2330,17 @@ if (cat !== 'VBT') return false;
         </div>
       )}
 
-      {toastMessage && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-slate-900/35 backdrop-blur-xs p-4">
-          <div className="bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-start space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 w-full max-w-lg text-center">
-            <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
-            <span className="whitespace-normal break-words leading-relaxed flex-1">{toastMessage}</span>
+      <div
+        aria-live="polite"
+        className={`fixed right-3 bottom-24 sm:bottom-5 z-[200] w-[calc(100%-1.5rem)] sm:w-auto sm:max-w-sm transition-all duration-300 ease-out ${toastMessage ? 'translate-y-0 opacity-100' : 'translate-y-3 opacity-0 pointer-events-none'}`}
+      >
+        {toastMessage && (
+          <div className="bg-[#243B5A] text-white px-4 py-3 rounded-xl shadow-xl flex items-start gap-2.5 text-xs sm:text-sm font-semibold border border-slate-600">
+            <CheckCircle2 className="h-4 w-4 text-emerald-300 shrink-0 mt-0.5" />
+            <span className="whitespace-normal break-words leading-relaxed min-w-0">{toastMessage}</span>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* 소모성 자재 일괄 사용 모달 */}
       {showConsumableBatchModal && (
@@ -3365,56 +3368,7 @@ if (cat !== 'VBT') return false;
           </button>
         )}
 
-        {inventoryTab === '소모성' && (
-          <div className="flex items-center space-x-1 shrink-0">
-            {selectedConsumableIds.length > 0 && (
-              <button
-                onClick={openConsumableBatchModal}
-                className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-semibold shadow-2xs transition flex items-center gap-1"
-              >
-                <ArrowUpRight className="h-3.5 w-3.5" />
-                <span>일괄 사용 ({selectedConsumableIds.length})</span>
-              </button>
-            )}
-          </div>
-        )}
 
-        {inventoryTab === '고정' && (
-          <div className="flex items-center space-x-1 shrink-0">
-            {selectedFixedIds.length > 0 && (
-              <button
-                onClick={openFixedBatchModal}
-                className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-semibold shadow-2xs transition flex items-center gap-1"
-              >
-                <ArrowUpRight className="h-3.5 w-3.5" />
-                <span>일괄 불출 ({selectedFixedIds.length})</span>
-              </button>
-            )}
-          </div>
-        )}
-
-        {inventoryTab === 'CABIN' && (
-          <div className="flex items-center space-x-1 shrink-0">
-            {selectedCabinIds.length > 0 && (
-              <>
-                <button
-                  onClick={() => setShowCabinBatchModal(true)}
-                  className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-semibold shadow-2xs transition flex items-center gap-1"
-                >
-                  <ArrowUpRight className="h-3.5 w-3.5" />
-                  <span>일괄 불출 ({selectedCabinIds.length})</span>
-                </button>
-                <button
-                  onClick={() => setShowCabinBatchReturnModal(true)}
-                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold shadow-2xs transition flex items-center gap-1"
-                >
-                  <ArrowDownRight className="h-3.5 w-3.5" />
-                  <span>일괄 반납 ({selectedCabinIds.length})</span>
-                </button>
-              </>
-            )}
-          </div>
-        )}
       </div>
 
       {/* 전체 목록 표시 구역 */}
@@ -4234,6 +4188,29 @@ if (cat !== 'VBT') return false;
           </div>
         </div>
       )}
+
+      {/* 선택된 자재 일괄 처리 플로팅 액션 바 */}
+      <div
+        className={`fixed inset-x-0 bottom-0 z-[55] px-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)] pt-2 transition-all duration-300 ease-out ${((inventoryTab === '고정' && selectedFixedIds.length > 0) || (inventoryTab === '소모성' && selectedConsumableIds.length > 0) || (inventoryTab === 'CABIN' && selectedCabinIds.length > 0)) ? 'translate-y-0 opacity-100' : 'translate-y-full opacity-0 pointer-events-none'}`}
+        aria-hidden={!((inventoryTab === '고정' && selectedFixedIds.length > 0) || (inventoryTab === '소모성' && selectedConsumableIds.length > 0) || (inventoryTab === 'CABIN' && selectedCabinIds.length > 0))}
+      >
+        <div className="mx-auto flex w-full max-w-xl flex-col gap-2 rounded-2xl border border-[#D8DEE8] bg-white/95 p-3 shadow-[0_-8px_30px_rgba(15,23,42,0.16)] backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
+          <div className="flex min-w-0 items-center justify-between gap-2 sm:justify-start">
+            <span className="text-xs sm:text-sm font-bold text-[#243B5A] whitespace-nowrap">
+              {inventoryTab === '고정' ? selectedFixedIds.length : inventoryTab === '소모성' ? selectedConsumableIds.length : selectedCabinIds.length}건 선택됨
+            </span>
+            <button type="button" onClick={() => { setSelectedFixedIds([]); setFixedBatchQuantities({}); setSelectedConsumableIds([]); setConsumableBatchQuantities({}); setSelectedCabinIds([]); }} className="px-2.5 py-1.5 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[11px] sm:text-xs font-semibold text-[#64748B] hover:bg-[#EEF0F3] whitespace-nowrap">선택 해제</button>
+          </div>
+          <div className={`grid gap-2 ${inventoryTab === 'CABIN' ? 'grid-cols-2' : 'grid-cols-1'} sm:flex sm:flex-1 sm:justify-end`}>
+            {inventoryTab === '소모성' && <button type="button" onClick={openConsumableBatchModal} className="min-h-11 w-full rounded-xl bg-[#243B5A] px-3 py-2.5 text-xs sm:text-sm font-bold leading-tight text-white shadow-sm transition hover:bg-[#1d3049] whitespace-normal break-keep">일괄 사용 ({selectedConsumableIds.length})</button>}
+            {inventoryTab === '고정' && <button type="button" onClick={openFixedBatchModal} className="min-h-11 w-full rounded-xl bg-[#243B5A] px-3 py-2.5 text-xs sm:text-sm font-bold leading-tight text-white shadow-sm transition hover:bg-[#1d3049] whitespace-normal break-keep">일괄 불출 ({selectedFixedIds.length})</button>}
+            {inventoryTab === 'CABIN' && <>
+              <button type="button" onClick={() => setShowCabinBatchModal(true)} className="min-h-11 w-full rounded-xl bg-[#243B5A] px-2 py-2.5 text-xs sm:text-sm font-bold leading-tight text-white shadow-sm transition hover:bg-[#1d3049] whitespace-normal break-keep">일괄 불출 ({selectedCabinIds.length})</button>
+              <button type="button" onClick={() => setShowCabinBatchReturnModal(true)} className="min-h-11 w-full rounded-xl bg-blue-600 px-2 py-2.5 text-xs sm:text-sm font-bold leading-tight text-white shadow-sm transition hover:bg-blue-700 whitespace-normal break-keep">일괄 반납 ({selectedCabinIds.length})</button>
+            </>}
+          </div>
+        </div>
+      </div>
 
     </div>
   );
