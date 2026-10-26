@@ -628,6 +628,9 @@ export default function HRManagement({
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('ALL');
   const [partManagerOpen, setPartManagerOpen] = useState(false);
   const [newPartName, setNewPartName] = useState('');
+  const [newPartMembers, setNewPartMembers] = useState('');
+  const [managedPartNames, setManagedPartNames] = useState<string[]>([]);
+  useEffect(() => { try { const saved = window.localStorage.getItem('hr_managed_part_names'); if (saved) setManagedPartNames(JSON.parse(saved).filter((name: unknown) => typeof name === 'string')); } catch {} }, []);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [dormListCollapsed, setDormListCollapsed] = useState(true);
@@ -1663,7 +1666,7 @@ export default function HRManagement({
   );
 
   const availableSubCategories = subGroupType === 'DEPT' 
-    ? rawSubCategories.sort((a, b) => {
+    ? Array.from(new Set([...rawSubCategories, ...managedPartNames])).sort((a, b) => {
         const indexA = DEPT_ORDER.indexOf(a);
         const indexB = DEPT_ORDER.indexOf(b);
         if (indexA !== -1 && indexB !== -1) return indexA - indexB;
@@ -3017,25 +3020,33 @@ export default function HRManagement({
                   const partName = newPartName.trim();
                   if (!partName) return;
                   if (availableSubCategories.some(part => part.toLowerCase() === partName.toLowerCase())) { window.alert('이미 존재하는 파트명입니다.'); return; }
-                  const memberNames = window.prompt(`'${partName}' 파트에 배정할 직원 이름을 쉼표로 입력하세요. (예: 홍길동, 김철수)`);
-                  if (!memberNames?.trim()) { window.alert('파트를 생성하려면 최소 1명의 직원을 배정해야 합니다.'); return; }
-                  const names = memberNames.split(',').map(name => name.trim()).filter(Boolean);
-                  const targets = users.filter(user => names.some(name => name.toLowerCase() === user.name.trim().toLowerCase()));
-                  if (targets.length !== names.length) { window.alert('직원 이름을 찾을 수 없습니다. 이름을 확인해 주세요.'); return; }
+                  const names = newPartMembers.split(',').map(name => name.trim()).filter(Boolean);
+                  const targets = names.length ? users.filter(user => names.some(name => name.toLowerCase() === user.name.trim().toLowerCase())) : [];
+                  if (names.length && targets.length !== names.length) { window.alert('직원 이름을 찾을 수 없습니다. 이름을 확인해 주세요.'); return; }
                   try {
                     for (const user of targets) {
                       const { error } = await supabase.from('app_users').update({ department: partName }).eq('id', user.id);
                       if (error) throw error;
                     }
                     setUsers(prev => prev.map(user => targets.some(target => target.id === user.id) ? { ...user, department: partName } : user));
+                    setManagedPartNames(prev => {
+                      const next = Array.from(new Set([...prev, partName]));
+                      try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {}
+                      return next;
+                    });
                     setNewPartName('');
-                    window.alert(`'${partName}' 파트가 추가되었습니다.`);
+                    setNewPartMembers('');
+                    window.alert(`'${partName}' 파트가 추가되었습니다.${targets.length ? ` ${targets.length}명의 직원을 배정했습니다.` : ' 직원은 나중에 배정할 수 있습니다.'}`);
                   } catch (error: any) { window.alert(`파트 추가 실패: ${error?.message || '오류'}`); }
                 }}>
-                  <input value={newPartName} onChange={(e) => setNewPartName(e.target.value)} placeholder="예: 5팀" aria-label="추가할 파트명" className="min-w-0 flex-1 rounded-lg border border-[#D7DDE5] bg-white px-3 py-2 text-xs outline-none focus:border-[#243B5A]" />
+                  <input value={newPartName} onChange={(e) => setNewPartName(e.target.value)} placeholder="파트명 (예: 5팀)" aria-label="추가할 파트명" className="min-w-0 flex-1 rounded-lg border border-[#D7DDE5] bg-white px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/10" />
                   <button type="submit" className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1D3049]">추가</button>
                 </form>
-                <p className="mt-2 text-[10px] text-[#64748B]">추가 시 해당 파트에 배정할 직원 이름을 입력합니다.</p>
+                <div className="mt-2">
+                  <label className="mb-1 block text-[10px] font-semibold text-[#475569]">초기 배정 직원 <span className="font-normal text-[#94A3B8]">(선택사항, 쉼표로 구분)</span></label>
+                  <input value={newPartMembers} onChange={(e) => setNewPartMembers(e.target.value)} placeholder="예: 홍길동, 김철수 (입력하지 않아도 됩니다)" aria-label="초기 배정 직원 이름" className="w-full rounded-lg border border-[#D7DDE5] bg-white px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/10" />
+                </div>
+                <p className="mt-2 text-[10px] text-[#64748B]">직원은 파트 생성 시 배정하거나 나중에 구성원 정보 수정에서 배정할 수 있습니다.</p>
               </div>
               <div className="max-h-[45vh] space-y-2 overflow-y-auto">
                 {availableSubCategories.filter(part => part !== '미지정 파트').map(part => (
@@ -3050,6 +3061,7 @@ export default function HRManagement({
                           const members = users.filter(user => (user.department || '') === part);
                           for (const user of members) { const { error } = await supabase.from('app_users').update({ department: nextName.trim() }).eq('id', user.id); if (error) throw error; }
                           setUsers(prev => prev.map(user => user.department === part ? { ...user, department: nextName.trim() } : user));
+                          setManagedPartNames(prev => { const next = prev.map(name => name === part ? nextName.trim() : name); try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {} return next; });
                           setSelectedSubCategory('ALL');
                         } catch (error: any) { window.alert(`파트 수정 실패: ${error?.message || '오류'}`); }
                       }} className="rounded-md border border-[#D7DDE5] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#243B5A] hover:bg-slate-100">수정</button>
@@ -3059,6 +3071,7 @@ export default function HRManagement({
                           const members = users.filter(user => (user.department || '') === part);
                           for (const user of members) { const { error } = await supabase.from('app_users').update({ department: null }).eq('id', user.id); if (error) throw error; }
                           setUsers(prev => prev.map(user => user.department === part ? { ...user, department: '' } : user));
+                          setManagedPartNames(prev => { const next = prev.filter(name => name !== part); try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {} return next; });
                           setSelectedSubCategory('ALL');
                         } catch (error: any) { window.alert(`파트 삭제 실패: ${error?.message || '오류'}`); }
                       }} className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-100">삭제</button>
