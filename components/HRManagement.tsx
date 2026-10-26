@@ -1874,6 +1874,59 @@ export default function HRManagement({
                 ]}
               />
             </div>
+            {isAdmin && subGroupType === 'DEPT' && <div className="mt-2 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] p-2.5 space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-[#243B5A]">파트 관리</span>
+                <button type="button" onClick={async () => {
+                  const partName = window.prompt('추가할 파트명을 입력하세요.');
+                  if (!partName?.trim()) return;
+                  const memberNames = window.prompt('해당 파트에 배정할 직원 이름을 쉼표로 입력하세요. (예: 홍길동, 김철수)');
+                  if (!memberNames?.trim()) { window.alert('파트를 생성하려면 최소 1명의 직원을 배정해야 합니다.'); return; }
+                  const names = memberNames.split(',').map(name => name.trim()).filter(Boolean);
+                  const targets = users.filter(user => names.some(name => name.toLowerCase() === user.name.trim().toLowerCase()));
+                  if (targets.length !== names.length) { window.alert('직원 이름을 찾을 수 없습니다. 이름을 확인해 주세요.'); return; }
+                  try {
+                    for (const user of targets) {
+                      const { error } = await supabase.from('app_users').update({ department: partName.trim() }).eq('id', user.id);
+                      if (error) throw error;
+                    }
+                    setUsers(prev => prev.map(user => targets.some(target => target.id === user.id) ? { ...user, department: partName.trim() } : user));
+                    window.alert(`'${partName.trim()}' 파트가 추가되었습니다.`);
+                  } catch (error: any) { window.alert(`파트 추가 실패: ${error?.message || '오류'}`); }
+                }} className="rounded-lg bg-[#243B5A] px-3 py-1.5 text-xs font-bold text-white">파트 추가</button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {availableSubCategories.filter(part => part !== '미지정 파트').map(part => <div key={part} className="inline-flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-2 py-1">
+                  <span className="text-[11px] font-semibold">{part}</span>
+                  <button type="button" title={`${part} 수정`} onClick={async () => {
+                    const nextName = window.prompt(`'${part}' 파트의 새 이름을 입력하세요.`, part);
+                    if (!nextName?.trim() || nextName.trim() === part) return;
+                    try {
+                      const members = users.filter(user => (user.department || '') === part);
+                      for (const user of members) {
+                        const { error } = await supabase.from('app_users').update({ department: nextName.trim() }).eq('id', user.id);
+                        if (error) throw error;
+                      }
+                      setUsers(prev => prev.map(user => user.department === part ? { ...user, department: nextName.trim() } : user));
+                      setSelectedSubCategory('ALL');
+                    } catch (error: any) { window.alert(`파트 수정 실패: ${error?.message || '오류'}`); }
+                  }} className="rounded px-1 text-[#243B5A] hover:bg-slate-100">수정</button>
+                  <button type="button" title={`${part} 삭제`} onClick={async () => {
+                    if (!window.confirm(`'${part}' 파트를 삭제하시겠습니까? 소속 직원은 '미지정 파트'로 변경됩니다.`)) return;
+                    try {
+                      const members = users.filter(user => (user.department || '') === part);
+                      for (const user of members) {
+                        const { error } = await supabase.from('app_users').update({ department: null }).eq('id', user.id);
+                        if (error) throw error;
+                      }
+                      setUsers(prev => prev.map(user => user.department === part ? { ...user, department: '' } : user));
+                      setSelectedSubCategory('ALL');
+                    } catch (error: any) { window.alert(`파트 삭제 실패: ${error?.message || '오류'}`); }
+                  }} className="rounded px-1 text-red-600 hover:bg-red-50">삭제</button>
+                </div>)}
+              </div>
+              <p className="text-[10px] text-[#64748B]">파트 정보는 직원의 소속(department)에 저장됩니다. 추가 시 직원 이름을 지정해야 하며, 수정·삭제는 해당 파트 소속 직원에게 반영됩니다.</p>
+            </div>}
           </div>}
         </div>
       )}

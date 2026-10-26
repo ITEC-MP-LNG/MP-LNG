@@ -1550,7 +1550,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         }
       }
       if (cabinConflict) {
-        rejected.push(`${name}(${cabinConflict})`);
+        showCustomConfirm('CABIN 근무자 확인', `${name} 는 Cabin 근무자 입니다. 일일업무에 등록하시겠습니까?`, () => {
+          setAssignedList(prev => Array.from(new Set([...prev, name])));
+        });
         continue;
       }
       accepted.push(name);
@@ -1561,7 +1563,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (target === 'NIGHT' && accepted.length) setNightWorkerList(prev => Array.from(new Set([...prev, ...accepted])));
     setSingleWorkerInput('');
     if (rejected.length) showCustomAlert('일부 인원 제외', `다음 인원은 추가하지 않았습니다: ${rejected.join(', ')}`);
-  }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList, appUsers, showCustomAlert, formData.task_type, formData.start_date, tasks]);
+  }, [singleWorkerInput, assignedList, dayWorkerList, nightWorkerList, appUsers, showCustomAlert, showCustomConfirm, formData.task_type, formData.start_date, tasks]);
 
   const handleAddPresetTeamToTask = useCallback(() => {
     const team = presetTeams.find(item => item.id === selectedPresetTeamId);
@@ -1594,7 +1596,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           }
         }
       }
-      if (cabinConflict) { rejected.push(`${name}(${cabinConflict})`); continue; }
+      if (cabinConflict) {
+        showCustomConfirm('CABIN 근무자 확인', `${name} 는 Cabin 근무자 입니다. 일일업무에 등록하시겠습니까?`, () => {
+          setAssignedList(prev => Array.from(new Set([...prev, name])));
+        });
+        continue;
+      }
       accepted.push(name);
     }
     if (accepted.length) setAssignedList(prev => Array.from(new Set([...prev, ...accepted])));
@@ -1602,7 +1609,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (rejected.length) showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${accepted.length}명이 추가되었습니다.`);
     else if (accepted.length) showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${accepted.length}명이 추가되었습니다.`);
     else showCustomAlert('추가할 인원 없음', '선택한 Team의 구성원은 이미 모두 추가되어 있습니다.');
-  }, [presetTeams, selectedPresetTeamId, assignedList, appUsers, formData.task_type, formData.start_date, tasks, showCustomAlert]);
+  }, [presetTeams, selectedPresetTeamId, assignedList, appUsers, formData.task_type, formData.start_date, tasks, showCustomAlert, showCustomConfirm]);
 
   const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
@@ -1634,23 +1641,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         return;
       }
       
-      if (formData.task_type === 'DAILY') {
-        for (const t of tasks) {
-          const cabinDateMatches = formData.start_date >= t.start_date && formData.start_date <= (t.end_date || t.start_date);
-          if (t.task_type === 'CABIN' && t.status !== 'COMPLETED' && cabinDateMatches && (!editingTask || t.id !== editingTask.id)) {
-            const isDay = (t.day_workers || []).some(w => w.trim().toLowerCase() === wName.toLowerCase());
-            const isNight = (t.night_workers || []).some(w => w.trim().toLowerCase() === wName.toLowerCase());
-            if (isDay) {
-              showCustomAlert('업무 등록 제한', `Cabin 주간 근무 입니다`);
-              return;
-            }
-            if (isNight) {
-              showCustomAlert('업무 등록 제한', `Cabin 야간 근무 입니다`);
-              return;
-            }
-          }
-        }
-      }
     }
 
     let payload: any = {
@@ -1845,6 +1835,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF243B5A' } };
       cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
     });
+    worksheet.eachRow((row, rowNumber) => {
+      if (rowNumber <= 3) return;
+      row.eachCell((cell) => {
+        cell.font = { ...(cell.font || {}), size: 7 };
+        cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+      });
+      row.height = undefined;
+    });
+    worksheet.columns.forEach((column) => {
+      let maxLength = String(column.header || '').length;
+      column.eachCell?.({ includeEmpty: true }, (cell: any) => {
+        const text = String(cell.value ?? '');
+        maxLength = Math.max(maxLength, ...text.split('\\n').map(part => part.length));
+      });
+      column.width = Math.min(60, Math.max(10, maxLength + 2));
+    });
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
@@ -1919,6 +1925,17 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }
       cursor.setDate(cursor.getDate() + 7);
     }
+    worksheet.eachRow((row, rowNumber) => {
+      // 날짜 행은 기존 서식을 유지하고, 업무 내용 행만 7pt/위쪽·왼쪽 정렬로 적용
+      if (rowNumber <= 2 || rowNumber % 2 !== 0) return;
+      row.eachCell((cell) => {
+        if (cell.value !== null && cell.value !== undefined && String(cell.value).trim() !== '') {
+          cell.font = { ...(cell.font || {}), size: 7 };
+          cell.alignment = { vertical: 'top', horizontal: 'left', wrapText: true };
+        }
+      });
+      row.height = undefined;
+    });
     const buffer = await workbook.xlsx.writeBuffer();
     const blob = new Blob([buffer as BlobPart], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
@@ -2715,7 +2732,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 {isAdmin && (
                   <>
                     <input type="month" value={selectedExportMonth} onChange={(e) => setSelectedExportMonth(e.target.value)} className="px-2 py-1 text-xs border rounded-lg font-mono bg-[#F5F6F8]" />
-                    <button onClick={() => { void handleExportWeeklyExcel(); }} className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><FileSpreadsheet className="h-3.5 w-3.5" /><span>엑셀 저장</span></button>
+                    <button onClick={() => { void handleExportWeeklyExcel(); }} className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><FileSpreadsheet className="h-3.5 w-3.5" /><span>Excel 내려받기</span></button>
                     <button onClick={handleRequestMonthlyWeeklyDelete} className="flex items-center space-x-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><Trash2 className="h-3.5 w-3.5" /><span>월 삭제</span></button>
                   </>
                 )}
@@ -2732,23 +2749,23 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   {weekDays.map((day) => {
                     const dayTasks = filteredTasks.filter((t) => t.start_date === day.dateStr);
                     return (
-                      <div key={day.dateStr} className={`rounded-xl border p-2 min-h-[420px] flex flex-col ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
-                        <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b">
-                          <span className="font-bold text-xs">{day.label} <span className="text-[10px] text-[#64748B] font-mono">{day.displayDate}</span></span>
+                      <div key={day.dateStr} className={`rounded-lg border p-1 sm:p-2 min-h-[260px] sm:min-h-[360px] min-w-0 flex flex-col ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
+                        <div className="flex items-center justify-between gap-0.5 pb-1 mb-1 border-b min-w-0">
+                          <span className="font-bold text-[9px] sm:text-xs truncate">{day.label} <span className="text-[10px] text-[#64748B] font-mono">{day.displayDate}</span></span>
                           {isAdmin && (
                             <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="p-0.5 text-[#243B5A] hover:bg-slate-200 rounded"><Plus className="h-3.5 w-3.5" /></button>
                           )}
                         </div>
-                        <div className="space-y-2 flex-1 overflow-y-auto">
+                        <div className="space-y-1 sm:space-y-2 flex-1 min-w-0">
                           {dayTasks.map((t) => (
-                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="bg-white border rounded-lg p-2 text-xs space-y-1 shadow-2xs cursor-pointer hover:border-[#243B5A] transition-colors">
+                            <div key={t.id} onClick={() => handleOpenTaskDetail(t)} className="bg-white border rounded-md p-1 sm:p-2 text-[9px] sm:text-xs space-y-1 min-w-0 break-words shadow-2xs cursor-pointer hover:border-[#243B5A] transition-colors">
                               <div className="flex justify-between items-center">
                                 {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} onClick={(e) => e.stopPropagation()} className="accent-[#243B5A]" />}
                                 {t.category && <span className="text-[9px] font-bold text-[#243B5A] bg-blue-50 px-1.5 py-0.2 rounded">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
                                 {renderStatusBadge(t)}
                               </div>
                               <div className="font-bold text-[#1F2937] leading-tight line-clamp-2">{t.title}{renderTaskNewBadge(t)}</div>
-                              <div className="text-[10px] text-[#64748B]">{t.assigned_names?.join(', ') || '미지정'}</div>
+                              <div className="text-[8px] sm:text-[10px] text-[#64748B] break-words">{t.assigned_names?.join(', ') || '미지정'}</div>
                             </div>
                           ))}
                         </div>
@@ -2764,7 +2781,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   return (
                     <div key={day.dateStr} className={`border rounded-xl p-3 ${day.isToday ? 'border-[#243B5A] bg-[#243B5A]/5' : 'bg-white'}`}>
                       <div className="flex items-center justify-between pb-2 mb-2 border-b">
-                        <span className="font-bold text-xs">{day.label} ({day.displayDate})</span>
+                        <span className="font-bold text-[9px] sm:text-xs truncate">{day.label} ({day.displayDate})</span>
                         {isAdmin && (
                           <button onClick={() => handleOpenCreateModal(day.dateStr, 'WEEKLY')} className="flex items-center gap-1 text-xs text-[#243B5A] font-semibold hover:underline"><Plus className="h-3.5 w-3.5" /><span>추가</span></button>
                         )}
