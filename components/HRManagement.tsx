@@ -14,6 +14,7 @@ import {
   Check,
   Phone,
   Layers,
+  Settings,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -626,6 +627,7 @@ export default function HRManagement({
   const [newDormitoryName, setNewDormitoryName] = useState('');
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('ALL');
   const [partManagerOpen, setPartManagerOpen] = useState(false);
+  const [newPartName, setNewPartName] = useState('');
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [dormListCollapsed, setDormListCollapsed] = useState(true);
@@ -1836,9 +1838,11 @@ export default function HRManagement({
               </button>
               {isAdmin && <button
                 type="button"
-                onClick={() => { setSubGroupType('DEPT'); setPartManagerOpen(open => !open); }}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition border ${partManagerOpen ? 'bg-[#243B5A] text-white border-[#243B5A] shadow-xs' : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'}`}
-              ><Layers className="h-3.5 w-3.5" /><span>파트 추가/관리</span></button>}
+                onClick={() => setPartManagerOpen(true)}
+                title="파트 추가 / 수정 / 삭제"
+                aria-label="파트 설정"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-white text-[#243B5A] transition hover:bg-[#F5F6F8]"
+              ><Settings className="h-4 w-4" /></button>}
             </div>
 
             {subGroupType !== 'DORM' && <div className="flex items-center space-x-2 text-xs">
@@ -1880,59 +1884,6 @@ export default function HRManagement({
                 ]}
               />
             </div>
-            {isAdmin && subGroupType === 'DEPT' && partManagerOpen && <div className="mt-2 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] p-2.5 space-y-2">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-bold text-[#243B5A]">파트 관리</span>
-                <button type="button" onClick={async () => {
-                  const partName = window.prompt('추가할 파트명을 입력하세요.');
-                  if (!partName?.trim()) return;
-                  const memberNames = window.prompt('해당 파트에 배정할 직원 이름을 쉼표로 입력하세요. (예: 홍길동, 김철수)');
-                  if (!memberNames?.trim()) { window.alert('파트를 생성하려면 최소 1명의 직원을 배정해야 합니다.'); return; }
-                  const names = memberNames.split(',').map(name => name.trim()).filter(Boolean);
-                  const targets = users.filter(user => names.some(name => name.toLowerCase() === user.name.trim().toLowerCase()));
-                  if (targets.length !== names.length) { window.alert('직원 이름을 찾을 수 없습니다. 이름을 확인해 주세요.'); return; }
-                  try {
-                    for (const user of targets) {
-                      const { error } = await supabase.from('app_users').update({ department: partName.trim() }).eq('id', user.id);
-                      if (error) throw error;
-                    }
-                    setUsers(prev => prev.map(user => targets.some(target => target.id === user.id) ? { ...user, department: partName.trim() } : user));
-                    window.alert(`'${partName.trim()}' 파트가 추가되었습니다.`);
-                  } catch (error: any) { window.alert(`파트 추가 실패: ${error?.message || '오류'}`); }
-                }} className="rounded-lg bg-[#243B5A] px-3 py-1.5 text-xs font-bold text-white">파트 추가</button>
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {availableSubCategories.filter(part => part !== '미지정 파트').map(part => <div key={part} className="inline-flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-white px-2 py-1">
-                  <span className="text-[11px] font-semibold">{part}</span>
-                  <button type="button" title={`${part} 수정`} onClick={async () => {
-                    const nextName = window.prompt(`'${part}' 파트의 새 이름을 입력하세요.`, part);
-                    if (!nextName?.trim() || nextName.trim() === part) return;
-                    try {
-                      const members = users.filter(user => (user.department || '') === part);
-                      for (const user of members) {
-                        const { error } = await supabase.from('app_users').update({ department: nextName.trim() }).eq('id', user.id);
-                        if (error) throw error;
-                      }
-                      setUsers(prev => prev.map(user => user.department === part ? { ...user, department: nextName.trim() } : user));
-                      setSelectedSubCategory('ALL');
-                    } catch (error: any) { window.alert(`파트 수정 실패: ${error?.message || '오류'}`); }
-                  }} className="rounded px-1 text-[#243B5A] hover:bg-slate-100">수정</button>
-                  <button type="button" title={`${part} 삭제`} onClick={async () => {
-                    if (!window.confirm(`'${part}' 파트를 삭제하시겠습니까? 소속 직원은 '미지정 파트'로 변경됩니다.`)) return;
-                    try {
-                      const members = users.filter(user => (user.department || '') === part);
-                      for (const user of members) {
-                        const { error } = await supabase.from('app_users').update({ department: null }).eq('id', user.id);
-                        if (error) throw error;
-                      }
-                      setUsers(prev => prev.map(user => user.department === part ? { ...user, department: '' } : user));
-                      setSelectedSubCategory('ALL');
-                    } catch (error: any) { window.alert(`파트 삭제 실패: ${error?.message || '오류'}`); }
-                  }} className="rounded px-1 text-red-600 hover:bg-red-50">삭제</button>
-                </div>)}
-              </div>
-              <p className="text-[10px] text-[#64748B]">파트 정보는 직원의 소속(department)에 저장됩니다. 추가 시 직원 이름을 지정해야 하며, 수정·삭제는 해당 파트 소속 직원에게 반영됩니다.</p>
-            </div>}
           </div>}
         </div>
       )}
@@ -3045,6 +2996,79 @@ export default function HRManagement({
                 확인
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {partManagerOpen && isAdmin && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/40 p-3 backdrop-blur-xs sm:p-4" onClick={() => setPartManagerOpen(false)}>
+          <div role="dialog" aria-modal="true" aria-label="파트 추가 및 관리" className="w-full max-w-lg overflow-hidden rounded-xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-[#E2E5E9] px-4 py-3">
+              <div>
+                <h3 className="text-sm font-extrabold text-[#1F2937]">파트 추가 / 수정 / 삭제</h3>
+                <p className="mt-1 text-[11px] text-[#64748B]">파트명을 관리합니다. 수정·삭제는 해당 파트 소속 직원에게 반영됩니다.</p>
+              </div>
+              <button type="button" onClick={() => setPartManagerOpen(false)} aria-label="파트 설정 닫기" className="rounded-md p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-4 p-4">
+              <div className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] p-3">
+                <form className="flex gap-2" onSubmit={async (e) => {
+                  e.preventDefault();
+                  const partName = newPartName.trim();
+                  if (!partName) return;
+                  if (availableSubCategories.some(part => part.toLowerCase() === partName.toLowerCase())) { window.alert('이미 존재하는 파트명입니다.'); return; }
+                  const memberNames = window.prompt(`'${partName}' 파트에 배정할 직원 이름을 쉼표로 입력하세요. (예: 홍길동, 김철수)`);
+                  if (!memberNames?.trim()) { window.alert('파트를 생성하려면 최소 1명의 직원을 배정해야 합니다.'); return; }
+                  const names = memberNames.split(',').map(name => name.trim()).filter(Boolean);
+                  const targets = users.filter(user => names.some(name => name.toLowerCase() === user.name.trim().toLowerCase()));
+                  if (targets.length !== names.length) { window.alert('직원 이름을 찾을 수 없습니다. 이름을 확인해 주세요.'); return; }
+                  try {
+                    for (const user of targets) {
+                      const { error } = await supabase.from('app_users').update({ department: partName }).eq('id', user.id);
+                      if (error) throw error;
+                    }
+                    setUsers(prev => prev.map(user => targets.some(target => target.id === user.id) ? { ...user, department: partName } : user));
+                    setNewPartName('');
+                    window.alert(`'${partName}' 파트가 추가되었습니다.`);
+                  } catch (error: any) { window.alert(`파트 추가 실패: ${error?.message || '오류'}`); }
+                }}>
+                  <input value={newPartName} onChange={(e) => setNewPartName(e.target.value)} placeholder="예: 5팀" aria-label="추가할 파트명" className="min-w-0 flex-1 rounded-lg border border-[#D7DDE5] bg-white px-3 py-2 text-xs outline-none focus:border-[#243B5A]" />
+                  <button type="submit" className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1D3049]">추가</button>
+                </form>
+                <p className="mt-2 text-[10px] text-[#64748B]">추가 시 해당 파트에 배정할 직원 이름을 입력합니다.</p>
+              </div>
+              <div className="max-h-[45vh] space-y-2 overflow-y-auto">
+                {availableSubCategories.filter(part => part !== '미지정 파트').map(part => (
+                  <div key={part} className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2.5">
+                    <div className="min-w-0"><div className="text-xs font-bold text-[#243B5A]">{part}</div><div className="mt-0.5 text-[10px] text-[#64748B]">{users.filter(user => (user.department || '') === part).length}명 소속</div></div>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <button type="button" onClick={async () => {
+                        const nextName = window.prompt(`'${part}' 파트의 새 이름을 입력하세요.`, part);
+                        if (!nextName?.trim() || nextName.trim() === part) return;
+                        if (availableSubCategories.some(existing => existing.toLowerCase() === nextName.trim().toLowerCase())) { window.alert('이미 존재하는 파트명입니다.'); return; }
+                        try {
+                          const members = users.filter(user => (user.department || '') === part);
+                          for (const user of members) { const { error } = await supabase.from('app_users').update({ department: nextName.trim() }).eq('id', user.id); if (error) throw error; }
+                          setUsers(prev => prev.map(user => user.department === part ? { ...user, department: nextName.trim() } : user));
+                          setSelectedSubCategory('ALL');
+                        } catch (error: any) { window.alert(`파트 수정 실패: ${error?.message || '오류'}`); }
+                      }} className="rounded-md border border-[#D7DDE5] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#243B5A] hover:bg-slate-100">수정</button>
+                      <button type="button" onClick={async () => {
+                        if (!window.confirm(`'${part}' 파트를 삭제하시겠습니까? 소속 직원은 '미지정 파트'로 변경됩니다.`)) return;
+                        try {
+                          const members = users.filter(user => (user.department || '') === part);
+                          for (const user of members) { const { error } = await supabase.from('app_users').update({ department: null }).eq('id', user.id); if (error) throw error; }
+                          setUsers(prev => prev.map(user => user.department === part ? { ...user, department: '' } : user));
+                          setSelectedSubCategory('ALL');
+                        } catch (error: any) { window.alert(`파트 삭제 실패: ${error?.message || '오류'}`); }
+                      }} className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-100">삭제</button>
+                    </div>
+                  </div>
+                ))}
+                {availableSubCategories.filter(part => part !== '미지정 파트').length === 0 && <p className="py-5 text-center text-xs text-[#64748B]">등록된 파트가 없습니다.</p>}
+              </div>
+            </div>
+            <div className="flex justify-end border-t border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3"><button type="button" onClick={() => setPartManagerOpen(false)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">닫기</button></div>
           </div>
         </div>
       )}
