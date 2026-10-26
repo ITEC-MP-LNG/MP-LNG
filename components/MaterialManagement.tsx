@@ -715,41 +715,6 @@ export default function MaterialManagement({
     return uniqueNames.sort((a,b)=>a.localeCompare(b,'ko'));
   }, [inventoryTab, inventoryList, cabinInventoryList, selectedFixedSubCategory, selectedConsumableCategory, selectedCabinSheet]);
 
-  const currentItemSubCategoryEntries = useMemo(() => {
-    const parentCategory = inventoryTab === '고정' ? selectedFixedSubCategory : inventoryTab === '소모성' ? selectedConsumableCategory : selectedCabinSheet;
-    const rows = itemSubCategoryRows.filter(row => row.inventory_type === inventoryTab && row.parent_category === parentCategory && row.is_active !== false);
-
-    if (inventoryTab === 'CABIN' && rows.length === 0) {
-      return currentMaterialNames.map((name, index) => ({
-        name,
-        materialNames: [name],
-        id: `cabin-material-${index}`,
-        sortOrder: index
-      }));
-    }
-
-    const map = new Map<string, { name:string; materialNames:string[]; id:any; sortOrder:number }>();
-    rows.forEach(row => {
-      const name = String(row.name || '').trim();
-      if (!name) return;
-      if (!map.has(name)) map.set(name, { name, materialNames: [], id: row.id, sortOrder: Number(row.sort_order ?? 0) });
-      const materialName = String(row.material_name || '').trim();
-      if (materialName && currentMaterialNames.includes(materialName)) {
-        const entry = map.get(name)!;
-        if (!entry.materialNames.includes(materialName)) entry.materialNames.push(materialName);
-      }
-    });
-    return Array.from(map.values()).sort((a,b)=>a.sortOrder - b.sortOrder || a.name.localeCompare(b.name,'ko'));
-  }, [itemSubCategoryRows, inventoryTab, selectedFixedSubCategory, selectedConsumableCategory, selectedCabinSheet, currentMaterialNames]);
-
-  const currentItemSubCategoryOptions = currentItemSubCategoryEntries.map(entry => entry.name);
-
-  useEffect(() => {
-    if (selectedItemSubCategory !== '전체 보기' && !currentItemSubCategoryOptions.includes(selectedItemSubCategory)) {
-      setSelectedItemSubCategory('전체 보기');
-    }
-  }, [currentItemSubCategoryOptions, selectedItemSubCategory]);
-
   const getCurrentItemSubCategoryContext = () => {
     // 등록창에서 관리창을 열었으면, 폼에서 선택한 서브 카테고리를 기준으로 자재명 카테고리를 관리합니다.
     const parentCategory = showInventorySheet && itemType !== 'CABIN'
@@ -933,6 +898,47 @@ export default function MaterialManagement({
   const [cabinSerialNo, setCabinSerialNo] = useState('');
   const [cabinCertNo, setCabinCertNo] = useState('');
   const [cabinCalibrationDate, setCabinCalibrationDate] = useState('');
+
+  const currentItemSubCategoryEntries = useMemo(() => {
+    const activeType = showInventorySheet ? itemType : inventoryTab;
+    const parentCategory = showInventorySheet && itemType !== 'CABIN'
+      ? itemCategory
+      : activeType === '고정' ? selectedFixedSubCategory : activeType === '소모성' ? selectedConsumableCategory : selectedCabinSheet;
+    const rows = itemSubCategoryRows.filter(row => row.inventory_type === activeType && row.parent_category === parentCategory && row.is_active !== false);
+
+    if (inventoryTab === 'CABIN' && rows.length === 0) {
+      return currentMaterialNames.map((name, index) => ({
+        name,
+        materialNames: [name],
+        id: `cabin-material-${index}`,
+        sortOrder: index
+      }));
+    }
+
+    const map = new Map<string, { name:string; materialNames:string[]; id:any; sortOrder:number }>();
+    rows.forEach(row => {
+      const name = String(row.name || '').trim();
+      if (!name) return;
+      if (!map.has(name)) map.set(name, { name, materialNames: [], id: row.id, sortOrder: Number(row.sort_order ?? 0) });
+      const materialName = String(row.material_name || '').trim();
+      if (materialName && currentMaterialNames.includes(materialName)) {
+        const entry = map.get(name)!;
+        if (!entry.materialNames.includes(materialName)) entry.materialNames.push(materialName);
+      }
+    });
+    return Array.from(map.values()).sort((a,b)=>a.sortOrder - b.sortOrder || a.name.localeCompare(b.name,'ko'));
+  }, [itemSubCategoryRows, inventoryTab, selectedFixedSubCategory, selectedConsumableCategory, selectedCabinSheet, currentMaterialNames, showInventorySheet, itemType, itemCategory]);
+
+  const currentItemSubCategoryOptions = currentItemSubCategoryEntries.map(entry => entry.name);
+
+  useEffect(() => {
+    // 등록창을 여는 동안에는 목록 화면의 선택값을 등록 폼 기준으로 초기화하지 않습니다.
+    if (showInventorySheet) return;
+    if (selectedItemSubCategory !== '전체 보기' && !currentItemSubCategoryOptions.includes(selectedItemSubCategory)) {
+      setSelectedItemSubCategory('전체 보기');
+    }
+  }, [currentItemSubCategoryOptions, selectedItemSubCategory, showInventorySheet]);
+
 
   const getCurrentSubCategories = () => {
     if (inventoryTab === '고정') return fixedSubCategories;
@@ -4391,7 +4397,11 @@ if (cat !== 'VBT') return false;
                       <label className="block text-[#64748B] font-semibold">서브 카테고리</label>
                       {isAdmin && <button type="button" onClick={() => setIsSubCatModalOpen(true)} className="text-[10px] font-semibold text-[#243B5A] underline">추가 · 수정 · 삭제</button>}
                     </div>
-                    <Select value={itemCategory || getCurrentSubCategories()[0] || '기타'} onValueChange={setItemCategory}>
+                    <Select value={itemCategory || getCurrentSubCategories()[0] || '기타'} onValueChange={value => {
+                      setItemCategory(value);
+                      // 서브 카테고리가 바뀌면 이전 카테고리에 연결된 자재명 카테고리를 초기화합니다.
+                      setItemNameCategory('');
+                    }}>
                       <SelectTrigger className="h-9 w-full border-[#E2E5E9] bg-[#F5F6F8] text-xs text-[#1F2937]">
                         <SelectValue placeholder="서브 카테고리 선택" />
                       </SelectTrigger>
