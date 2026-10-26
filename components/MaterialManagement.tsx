@@ -3511,6 +3511,29 @@ if (cat !== 'VBT') return false;
 
         {isInventoryListOpen && (
           <div className="p-2.5 space-y-2">
+        {inventoryTab !== 'CABIN' && filteredInventory.length > 0 && (() => {
+          const totalQuantity = filteredInventory.reduce((sum, item) => sum + (Number(item.quantity) || 0), 0);
+          const quantityGroups = new Map<string, number>();
+          filteredInventory.forEach((item: any) => {
+            const groupName = String(item.vbt_type || item.name || item.category || '기타').trim();
+            quantityGroups.set(groupName, (quantityGroups.get(groupName) || 0) + (Number(item.quantity) || 0));
+          });
+          return (
+            <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-2.5">
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                <span className="text-[11px] font-bold text-[#243B5A]">선택 목록 총 수량</span>
+                <span className="text-xs font-bold text-[#243B5A]">{totalQuantity.toLocaleString()} EA</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {Array.from(quantityGroups.entries()).map(([name, quantity]) => (
+                  <span key={name} className="inline-flex items-center gap-1 rounded-md border border-[#E2E5E9] bg-white px-2 py-1 text-[10px] text-[#475569]">
+                    <span>{name}</span><strong className="text-[#1F2937]">{quantity.toLocaleString()}</strong>
+                  </span>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         {filteredInventory.map((item) => {
           const isCabin = inventoryTab === 'CABIN';
           const isFixed = inventoryTab === '고정';
@@ -3582,6 +3605,24 @@ if (cat !== 'VBT') return false;
                     <span className="font-bold text-sm text-[#1F2937]">
                       {item.quantity} <span className="text-xs font-normal text-[#64748B]">{item.unit}</span>
                     </span>
+                    {(() => {
+                      const itemLogs = inventoryLogs.filter((log: any) => String(log.inventory_id ?? '') === String(item.id));
+                      const issuedQty = itemLogs.filter((log: any) => {
+                        const type = String(log.type || '');
+                        return (type.includes('불출') && !type.includes('반납완료')) || type.includes('교정 반출') || type.includes('소모성 사용');
+                      }).reduce((sum: number, log: any) => sum + (Number(log.quantity) || 0), 0);
+                      const returnedQty = itemLogs.filter((log: any) => {
+                        const type = String(log.type || '');
+                        return type.includes('반납완료') || type.includes('교정 반입');
+                      }).reduce((sum: number, log: any) => sum + (Number(log.quantity) || 0), 0);
+                      return (
+                        <div className="mt-1 flex flex-wrap justify-end gap-1 text-[10px]">
+                          <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">미반납 불출 {issuedQty}</span>
+                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">반입/반납 {returnedQty}</span>
+                          <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-700">잔여 {Number(item.quantity) || 0}</span>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 
@@ -3600,20 +3641,31 @@ if (cat !== 'VBT') return false;
                   {!isCabin && (
                     <>
                       <button
-                        onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : (isCalibrationItem(item) ? '교정 반출' : '불출'))}
+                        onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : '불출')}
                         className="px-2.5 py-1 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded text-xs font-medium transition shadow-2xs flex items-center space-x-1"
                       >
                         <ArrowUpRight className="h-3 w-3" />
-                        <span>{item.type === '소모성' ? '사용' : isCalibrationItem(item) ? '교정 반출' : '불출'}</span>
+                        <span>{item.type === '소모성' ? '사용' : '불출'}</span>
                       </button>
                       {item.type !== '소모성' && (
                         <button
-                          onClick={() => handleOpenLogModal(item, isCalibrationItem(item) ? '교정 반입' : '반납')}
+                          onClick={() => handleOpenLogModal(item, '반납')}
                           className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-[#1F2937] rounded text-xs font-medium transition flex items-center space-x-1 border border-[#E2E5E9]"
                         >
                           <ArrowDownRight className="h-3 w-3 text-emerald-600" />
-                          <span>{isCalibrationItem(item) ? '교정 반입' : '반납'}</span>
+                          <span>반납</span>
                         </button>
+                      )}
+                      {item.type !== '소모성' && isCalibrationItem(item) && (
+                        <Select value="" onValueChange={(value) => handleOpenLogModal(item, value as '교정 반출' | '교정 반입')}>
+                          <SelectTrigger aria-label="교정 작업 선택" className="h-7 w-[88px] border-amber-200 bg-amber-50 px-2 text-xs font-semibold text-amber-800 shadow-none focus:ring-amber-200">
+                            <SelectValue placeholder="교정 ▾" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="교정 반출">교정 반출</SelectItem>
+                            <SelectItem value="교정 반입">교정 반입</SelectItem>
+                          </SelectContent>
+                        </Select>
                       )}
                     </>
                   )}
