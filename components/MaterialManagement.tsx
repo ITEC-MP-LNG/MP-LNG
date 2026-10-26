@@ -2051,7 +2051,10 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
         return;
       }
 
-      if (targetReturnLog.batch_id) {
+      // 교정 반출은 일반 일괄 불출/반납 처리와 완전히 분리합니다.
+      // 교정 반출 로그에도 batch_id가 있을 수 있으므로, 교정 건은 아래 별도 처리로 보냅니다.
+      const isCalibrationReturn = String(targetReturnLog.type || '').includes('교정 반출');
+      if (targetReturnLog.batch_id && !isCalibrationReturn) {
         const batchId = String(targetReturnLog.batch_id).trim();
         const batchQuantity = Number(targetReturnLog.quantity || 0);
 
@@ -2104,6 +2107,76 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
 
       if (foundItem.type === '소모성') {
         showCenterToast('소모성 자재는 반납 처리를 할 수 없습니다.');
+        return;
+      }
+
+      // 교정 반입은 교정 반출 로그와 별도의 교정 반입 로그로 기록합니다.
+      // inventory_return_history에는 절대 INSERT하지 않으며 일반 반납 RPC도 호출하지 않습니다.
+      if (isCalibrationReturn) {
+        const returnedAt = new Date().toISOString();
+        const returnedBy = currentUser?.name || '작업자';
+        const quantity = Number(qtyToReturn);
+
+        if (foundItem.type !== 'CABIN') {
+          const currentQty = Number(foundItem.quantity || 0);
+          const initialQty = Number(foundItem.initial_quantity);
+          if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty + quantity > initialQty) {
+            showCenterToast(`교정 반입 후 수량이 최초 보유수량(${initialQty} ${foundItem.unit || 'EA'})을 초과할 수 없습니다.`);
+            return;
+          }
+          const { error: inventoryUpdateError } = await supabase
+            .from('inventory')
+            .update({ quantity: currentQty + quantity, updated_at: returnedAt })
+            .eq('id', foundItem.id);
+          if (inventoryUpdateError) throw inventoryUpdateError;
+        }
+
+        const { error: calibrationInboundError } = await supabase
+          .from('inventory_logs')
+          .insert([{
+            inventory_id: targetReturnLog.inventory_id || foundItem.id || null,
+            item_code: targetReturnLog.item_code || foundItem.code || foundItem.no || null,
+            item_name: targetReturnLog.item_name || foundItem.name || foundItem.item || '교정 자재',
+            type: returnHasIssue ? '교정 반입, 이상알림' : '교정 반입',
+            quantity,
+            worker_name: returnedBy,
+            issued_by: targetReturnLog.issued_by || targetReturnLog.worker_name || '불출자 미기록',
+            returned_by: returnedBy,
+            memo: returnMemo.trim() ? `교정 반입 메모: ${returnMemo.trim()}` : targetReturnLog.memo || null,
+            batch_id: targetReturnLog.batch_id || null,
+            is_new: true,
+            created_at: returnedAt
+          }]);
+        if (calibrationInboundError) throw calibrationInboundError;
+
+        // 원래 교정 반출 로그를 완료 상태로 표시해 재반입 버튼이 다시 나타나지 않게 합니다.
+        const { error: calibrationOutboundUpdateError } = await supabase
+          .from('inventory_logs')
+          .update({
+            type: '교정 반출, 교정 반입완료',
+            returned_by: returnedBy,
+            is_new: true,
+            updated_at: returnedAt
+          })
+          .eq('id', targetReturnLog.id);
+        if (calibrationOutboundUpdateError) throw calibrationOutboundUpdateError;
+
+        if (targetReturnLog.batch_id) {
+          const { error: batchItemUpdateError } = await supabase
+            .from('inventory_batch_items')
+            .update({ status: 'RETURNED', returned_by: returnedBy, returned_at: returnedAt })
+            .eq('batch_id', String(targetReturnLog.batch_id))
+            .eq('inventory_id', targetReturnLog.inventory_id)
+            .eq('status', 'ISSUED');
+          if (batchItemUpdateError) throw batchItemUpdateError;
+        }
+
+        showCenterToast('교정 반입이 완료되었습니다. 교정 이력에 별도로 기록했습니다.');
+        setShowReturnModal(false);
+        setTargetReturnLog(null);
+        if (foundItem.type === 'CABIN') await fetchCabinInventory();
+        else await fetchInventory();
+        await fetchInventoryLogs();
         return;
       }
 
@@ -3303,7 +3376,7 @@ if (cat !== 'VBT') return false;
                       <button
                         type="button"
                         onClick={(event) => { event.stopPropagation(); handleOpenLogModal(item, '교정 반출'); }}
-                        className="px-2 py-1 rounded border border-amber-300 bg-white text-amber-800 hover:bg-amber-100 text-[10px] font-semibold whitespace-nowrap"
+                        className="px-2 py-1 rounded border border-blue-300 bg-blue-50 text-blue-700 hover:bg-blue-100 text-[10px] font-semibold whitespace-nowrap"
                       >
                         교정 반출
                       </button>
@@ -3666,7 +3739,7 @@ if (cat !== 'VBT') return false;
                       return (
                         <div className="mt-1 flex flex-wrap justify-end gap-1 text-[10px]">
                           <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">미반납 불출 {issuedQty}</span>
-                          <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">반입/반납 {returnedQty}</span>
+                          <span className="rounded bg-blue-50 px-1.5 py-0.5 text-blue-700">반입/반납 {returnedQty}</span>
                           <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-700">잔여 {Number(item.quantity) || 0}</span>
                         </div>
                       );
@@ -3880,7 +3953,7 @@ if (cat !== 'VBT') return false;
                             <span className="text-red-600 font-extrabold text-xs leading-none" title="신규/변경 이력">N</span>
                           )}
                           <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold ${
-                            isReturnCompleted ? 'bg-emerald-100 text-emerald-800' : isConsumableUsage ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-800'
+                            String(log.type || '').includes('교정') ? 'bg-blue-100 text-blue-800' : isReturnCompleted ? 'bg-emerald-100 text-emerald-800' : isConsumableUsage ? 'bg-slate-100 text-slate-700' : 'bg-blue-100 text-blue-800'
                           }`}>
                             {log.type}
                           </span>
@@ -3899,12 +3972,12 @@ if (cat !== 'VBT') return false;
                         <div className="text-[11px] text-[#64748B] flex flex-wrap items-center gap-x-2">
                           {isReturnCompleted ? (
                             <>
-                              <span>불출: <strong className="text-[#1F2937]">{issuedBy || '-'}</strong></span>
+                              <span>{String(log.type || '').includes('교정') ? '교정 반출: ' : '불출: '}<strong className="text-[#1F2937]">{issuedBy || '-'}</strong></span>
                               <span>|</span>
-                              <span>반납: <strong className="text-[#1F2937]">{returnedBy || '-'}</strong></span>
+                              <span>{String(log.type || '').includes('교정') ? '교정 반입: ' : '반납: '}<strong className="text-[#1F2937]">{returnedBy || '-'}</strong></span>
                             </>
                           ) : (
-                            <span>{isConsumableUsage ? '사용: ' : '불출: '}<strong className="text-[#1F2937]">{log.issued_by || log.worker_name}</strong></span>
+                            <span>{isConsumableUsage ? '사용: ' : String(log.type || '').includes('교정 반출') ? '교정 반출: ' : '불출: '}<strong className="text-[#1F2937]">{log.issued_by || log.worker_name}</strong></span>
                           )}
                           <span>|</span>
                           <span>일시: {new Date(log.created_at).toLocaleString('ko-KR')}</span>
@@ -3939,7 +4012,7 @@ if (cat !== 'VBT') return false;
                       ) : !isReturnCompleted && !log.type.includes('입고') && !log.item_name?.includes('[CABIN') ? (
                         <button
                           onClick={() => handleOpenReturnModal(log)}
-                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold transition"
+                          className={`px-2 py-1 ${log.type.includes('교정 반출') ? 'bg-blue-600 hover:bg-blue-700' : 'bg-emerald-600 hover:bg-emerald-700'} text-white rounded text-[10px] font-semibold transition`}
                         >
                           {log.type.includes('교정 반출') ? '교정 반입' : '반납처리'}
                         </button>
