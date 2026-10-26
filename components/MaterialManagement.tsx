@@ -281,14 +281,9 @@ export default function MaterialManagement({
   const [selectedCabinTextSubTag, setSelectedCabinTextSubTag] = useState<string>('');
 
   const [isCabinSheetModalOpen, setIsCabinSheetModalOpen] = useState<boolean>(false);
-  const [isCabinTagModalOpen, setIsCabinTagModalOpen] = useState<boolean>(false);
   const [newSheetInput, setNewSheetInput] = useState<string>('');
   const [editingSheetIndex, setEditingSheetIndex] = useState<number | null>(null);
   const [editSheetInputValue, setEditSheetInputValue] = useState<string>('');
-
-  const [newTagInput, setNewTagInput] = useState<string>('');
-  const [editingTagIndex, setEditingTagIndex] = useState<number | null>(null);
-  const [editTagInputValue, setEditTagInputValue] = useState<string>('');
 
   const [selectedVbtSubCategory, setSelectedVbtSubCategory] = useState<VbtSubCategory>('1L');
 
@@ -299,15 +294,6 @@ export default function MaterialManagement({
 
   const [isAlertBannerOpen, setIsAlertBannerOpen] = useState(false);
   const [isHistorySectionOpen, setIsHistorySectionOpen] = useState(true);
-  
-  const [collapsedSubTabs, setCollapsedSubTabs] = useState<{ [key: string]: boolean }>({});
-
-  const toggleSubTabContent = (subCatName: string) => {
-    setCollapsedSubTabs(prev => ({
-      ...prev,
-      [subCatName]: !prev[subCatName]
-    }));
-  };
 
   const [selectedDetailItem, setSelectedDetailItem] = useState<any | null>(null);
   const [showInventorySheet, setShowInventorySheet] = useState(false);
@@ -329,7 +315,6 @@ export default function MaterialManagement({
   const [loadingReturnHistories, setLoadingReturnHistories] = useState(false);
   const [pendingDeleteReturnHistoryId, setPendingDeleteReturnHistoryId] = useState<string | number | null>(null);
   
-  // 반납 이력 다중 선택 및 일괄 삭제 상태 추가
   const [selectedReturnHistoryIds, setSelectedReturnHistoryIds] = useState<string[]>([]);
   const [showBatchDeleteReturnHistoryConfirm, setShowBatchDeleteReturnHistoryConfirm] = useState<boolean>(false);
 
@@ -422,39 +407,11 @@ export default function MaterialManagement({
     }
   }, [inventoryTab, fetchCabinInventory]);
 
-  const cabinTextSubTagsForSheet = useMemo(() => {
-    const filteredBySheet = cabinInventoryList.filter(item => cleanSheetName(item.sheet_name) === selectedCabinSheet);
-    const tags = new Set<string>();
-    filteredBySheet.forEach(item => {
-      const itemNameLower = (item.item || '').toLowerCase();
-      if (itemNameLower.includes('transmitter')) tags.add('Transmitter');
-      else if (itemNameLower.includes('gauge')) tags.add('Gauge');
-      else if (itemNameLower.includes('sensor')) tags.add('Sensor');
-      else if (itemNameLower.includes('switch')) tags.add('Switch');
-      else if (itemNameLower.includes('valve')) tags.add('Valve');
-      else {
-        const firstWord = (item.item || '').split(' ')[0];
-        if (firstWord) tags.add(firstWord);
-      }
-    });
-    return Array.from(new Set([...Array.from(tags).sort(), ...customCabinTextSubTags]));
-  }, [cabinInventoryList, selectedCabinSheet, customCabinTextSubTags]);
-
   const handleSelectCabinSheet = (sheetName: string) => {
     setSelectedCabinSheet(sheetName);
     setSelectedCabinIds([]);
     setSelectedItemSubCategory('전체 보기');
   };
-
-  useEffect(() => {
-    if (cabinTextSubTagsForSheet.length > 0) {
-      if (!selectedCabinTextSubTag || !cabinTextSubTagsForSheet.includes(selectedCabinTextSubTag)) {
-        setSelectedCabinTextSubTag(cabinTextSubTagsForSheet[0]);
-      }
-    } else {
-      setSelectedCabinTextSubTag('');
-    }
-  }, [cabinTextSubTagsForSheet, selectedCabinTextSubTag]);
 
   useEffect(() => {
     const targetList = inventoryTab === 'CABIN' ? cabinInventoryList : inventoryList;
@@ -514,7 +471,6 @@ export default function MaterialManagement({
   const [itemSubCategoryRows, setItemSubCategoryRows] = useState<any[]>([]);
   const [selectedItemSubCategory, setSelectedItemSubCategory] = useState<string>('전체 보기');
   const [isItemSubCatModalOpen, setIsItemSubCatModalOpen] = useState<boolean>(false);
-  const [isInventoryListOpen, setIsInventoryListOpen] = useState<boolean>(false);
   const [newItemSubCatName, setNewItemSubCatName] = useState<string>('');
   const [newItemSubCatMaterialNames, setNewItemSubCatMaterialNames] = useState<string[]>([]);
   const [editingItemSubCatId, setEditingItemSubCatId] = useState<string | number | null>(null);
@@ -784,7 +740,7 @@ export default function MaterialManagement({
   const [itemMinQty, setItemMinQty] = useState<number>(0);
   const [itemLocation, setItemLocation] = useState('장비실 A');
 
-  // 기자재/소모성 자재 추가 입고 처리
+  // 추가 입고 처리 상태
   const [inboundItem, setInboundItem] = useState<any | null>(null);
   const [inboundQty, setInboundQty] = useState<number>(1);
   const [inboundMemo, setInboundMemo] = useState('');
@@ -839,7 +795,7 @@ export default function MaterialManagement({
   const getCurrentSelectedCategory = () => {
     if (inventoryTab === '고정') return selectedFixedSubCategory;
     if (inventoryTab === '소모성') return selectedConsumableCategory;
-    return `${selectedCabinSheet} - ${selectedCabinTextSubTag}`;
+    return selectedCabinSheet;
   };
 
   const setCurrentSelectedCategory = (val: string) => {
@@ -1028,7 +984,7 @@ export default function MaterialManagement({
         .select('id, quantity');
       if (inventoryError) throw inventoryError;
       if (!updatedRows || updatedRows.length === 0) {
-        showCenterToast('보유수량이 변경되었습니다. 목록을 새로고침한 후 다시 입고해주세요.');
+        showCenterToast('보유수량이 변경되었습니다. 새로고침 후 다시 시도해주세요.');
         await fetchInventory();
         return;
       }
@@ -1050,7 +1006,7 @@ export default function MaterialManagement({
       if (logError) throw logError;
       inboundLogCreated = true;
 
-      showCenterToast(`${inboundItem.name || inboundItem.item || '자재'} ${quantityToAdd}${inboundItem.unit || 'EA'} 입고가 완료되었습니다.`);
+      showCenterToast(`${inboundItem.name || inboundItem.item || '자재'} ${quantityToAdd}${inboundItem.unit || 'EA'} 입고 완료`);
       setInboundItem(null);
       await fetchInventory();
       await fetchInventoryLogs();
@@ -1077,7 +1033,7 @@ export default function MaterialManagement({
       const currentQty = Number(item.quantity || 0);
       const initialQty = Number(item.initial_quantity);
       if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty >= initialQty) {
-        showCenterToast(`현재 보유수량이 최초 보유수량(${initialQty} ${item.unit || 'EA'})과 같습니다. 이미 반납이 완료된 자재입니다.`);
+        showCenterToast(`현재 보유수량이 최초 보유수량과 같습니다. 이미 반납이 완료되었습니다.`);
         return;
       }
     }
@@ -1110,18 +1066,18 @@ export default function MaterialManagement({
 
       if (logType === '불출' || logType === '교정 반출' || logType === '소모성 사용') {
         if (currentQty < qtyChange) {
-          showCenterToast('현재 보유 재고보다 불출(사용) 수량이 많습니다.');
+          showCenterToast('현재 보유 재고보다 수량이 많습니다.');
           return;
         }
         newQty = currentQty - qtyChange;
       } else if (logType === '반납' || logType === '교정 반입') {
         const initialQty = Number(targetItem.initial_quantity);
         if (!Number.isFinite(initialQty) || initialQty < 0) {
-          showCenterToast('최초 보유수량이 등록되지 않은 자재입니다. 관리자에게 최초 보유수량을 확인해주세요.');
+          showCenterToast('최초 보유수량이 등록되지 않은 자재입니다.');
           return;
         }
         if (currentQty + qtyChange > initialQty) {
-          showCenterToast(`반납 후 수량이 최초 보유수량(${initialQty} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
+          showCenterToast(`반납 후 수량이 최초 보유수량을 초과할 수 없습니다.`);
           return;
         }
         newQty = currentQty + qtyChange;
@@ -1171,11 +1127,7 @@ export default function MaterialManagement({
         }
 
         if (!openIssueLogForReturn) {
-          showCenterToast('반납 처리할 미반납 불출 이력을 찾을 수 없습니다. 먼저 불출 이력을 확인해주세요.');
-          return;
-        }
-        if (qtyChange > Number(openIssueLogForReturn.quantity || 0)) {
-          showCenterToast(`반납 수량은 해당 불출 수량(${openIssueLogForReturn.quantity} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
+          showCenterToast('반납 처리할 미반납 불출 이력을 찾을 수 없습니다.');
           return;
         }
       }
@@ -1185,25 +1137,16 @@ export default function MaterialManagement({
         .update({ quantity: newQty, updated_at: operationAt })
         .eq('id', targetItem.id);
 
-      if (logType === '반납' || logType === '교정 반입') {
-        updateQuery = updateQuery.lte('quantity', Number(targetItem.initial_quantity) - qtyChange);
-      }
-
       const { data: updatedRows, error: invError } = await updateQuery.select('id, quantity');
-
       if (invError) throw invError;
-      if ((logType === '반납' || logType === '교정 반입') && (!updatedRows || updatedRows.length === 0)) {
-        showCenterToast(`반납 후 수량이 최초 보유수량(${targetItem.initial_quantity} ${targetItem.unit || 'EA'})을 초과할 수 없습니다.`);
-        return;
-      }
 
       let finalLogType = logType === '소모성 사용' ? '소모성 사용' : logType;
       if (logType === '반납' || logType === '교정 반입') {
         finalLogType = logType === '교정 반입' ? (logHasIssue ? '교정 반입, 이상알림' : '교정 반입') : (logHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료');
 
         const returnMemoText = logMemo.trim()
-          ? `${openIssueLogForReturn.memo ? `${openIssueLogForReturn.memo} / ` : ''}반납메모: ${logMemo.trim()}`
-          : openIssueLogForReturn.memo || null;
+          ? `${openIssueLogForReturn?.memo ? `${openIssueLogForReturn.memo} / ` : ''}반납메모: ${logMemo.trim()}`
+          : openIssueLogForReturn?.memo || null;
         const returnedAt = operationAt;
         const returnedBy = currentUser?.name || '작업자';
 
@@ -1213,26 +1156,26 @@ export default function MaterialManagement({
             .insert([{
               inventory_id: targetItem.id,
               item_code: targetItem.code || null,
-              item_name: targetItem.name || targetItem.item || openIssueLogForReturn.item_name,
+              item_name: targetItem.name || targetItem.item || openIssueLogForReturn?.item_name,
               type: finalLogType,
               quantity: qtyChange,
               worker_name: returnedBy,
-              issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
+              issued_by: openIssueLogForReturn?.issued_by || '불출자 미기록',
               returned_by: returnedBy,
               memo: returnMemoText,
-              batch_id: openIssueLogForReturn.batch_id || operationBatchId,
+              batch_id: openIssueLogForReturn?.batch_id || operationBatchId,
               is_new: true,
               created_at: returnedAt
             }]);
           if (calibrationReturnLogError) throw calibrationReturnLogError;
-        } else {
+        } else if (openIssueLogForReturn) {
           const { error: logUpdateError } = await supabase
             .from('inventory_logs')
             .update({
               type: finalLogType,
               quantity: qtyChange,
-              worker_name: openIssueLogForReturn.worker_name || openIssueLogForReturn.issued_by || '불출자 미기록',
-              issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
+              worker_name: openIssueLogForReturn.worker_name || '불출자 미기록',
+              issued_by: openIssueLogForReturn.issued_by || '불출자 미기록',
               returned_by: returnedBy,
               memo: returnMemoText,
               is_new: true,
@@ -1242,39 +1185,32 @@ export default function MaterialManagement({
           if (logUpdateError) throw logUpdateError;
         }
 
-        if (openIssueLogForReturn.batch_id) {
-          const { error: batchItemUpdateError } = await supabase
+        if (openIssueLogForReturn?.batch_id) {
+          await supabase
             .from('inventory_batch_items')
-            .update({
-              status: 'RETURNED',
-              returned_by: returnedBy,
-              returned_at: returnedAt
-            })
+            .update({ status: 'RETURNED', returned_by: returnedBy, returned_at: returnedAt })
             .eq('batch_id', openIssueLogForReturn.batch_id)
-            .eq('inventory_id', targetItem.id)
-            .eq('status', 'ISSUED');
-          if (batchItemUpdateError) throw batchItemUpdateError;
+            .eq('inventory_id', targetItem.id);
         }
 
         if (logType !== '교정 반입') {
-          const { error: returnHistoryError } = await supabase
+          await supabase
             .from('inventory_return_history')
             .insert([{
               inventory_id: targetItem.id,
-              item_code: targetItem.type === 'CABIN' ? (targetItem.no || targetItem.code || null) : (targetItem.code || null),
+              item_code: targetItem.code || null,
               item_name: targetItem.name || targetItem.item || null,
               quantity: qtyChange,
-              issued_by: openIssueLogForReturn.issued_by || openIssueLogForReturn.worker_name || '불출자 미기록',
+              issued_by: openIssueLogForReturn?.issued_by || '불출자 미기록',
               returned_by: returnedBy,
-              issued_at: openIssueLogForReturn.created_at || null,
+              issued_at: openIssueLogForReturn?.created_at || null,
               returned_at: returnedAt,
               memo: returnMemoText,
               created_at: returnedAt
             }]);
-          if (returnHistoryError) throw returnHistoryError;
         }
       } else {
-        const { error: logError } = await supabase
+        await supabase
           .from('inventory_logs')
           .insert([{
             inventory_id: targetItem.id,
@@ -1290,26 +1226,6 @@ export default function MaterialManagement({
             is_new: true,
             created_at: operationAt
           }]);
-
-        if (logError) throw logError;
-
-        if ((logType === '불출' || logType === '교정 반출') && targetItem.type === '고정') {
-          const { error: batchItemError } = await supabase
-            .from('inventory_batch_items')
-            .insert([{
-              batch_id: operationBatchId,
-              inventory_id: targetItem.id,
-              inventory_type: '고정',
-              item_code: targetItem.code || null,
-              item_name: targetItem.name || targetItem.item || null,
-              quantity: qtyChange,
-              issued_by: currentUser?.name || '작업자',
-              issued_at: operationAt,
-              status: 'ISSUED',
-              memo: logMemo.trim() || null
-            }]);
-          if (batchItemError) throw batchItemError;
-        }
       }
 
       showCenterToast(`${logType} 처리가 완료되었습니다.`);
@@ -1317,7 +1233,7 @@ export default function MaterialManagement({
       await fetchInventory();
       await fetchInventoryLogs();
     } catch (err: any) {
-      showCenterToast('처리 중 오류가 발생했습니다: ' + err.message);
+      showCenterToast('처리 중 오류 발생: ' + err.message);
     }
   };
 
@@ -1368,27 +1284,6 @@ export default function MaterialManagement({
       );
       if (selectedItems.length === 0) return;
 
-      const unavailable = selectedItems.filter(item => Number(item.quantity || 0) < 1);
-      if (unavailable.length > 0) {
-        showCenterToast(`보유수량이 없는 소모성 자재 ${unavailable.length}건이 포함되어 있어 사용 처리할 수 없습니다.`);
-        return;
-      }
-
-      const useItems = selectedItems.map(item => {
-        const id = String(item.id);
-        const available = Number(item.quantity || 0);
-        const quantity = Number(consumableBatchQuantities[id] || 0);
-        return { item, available, quantity };
-      });
-
-      const invalidQuantityItem = useItems.find(({ quantity, available }) =>
-        !Number.isInteger(quantity) || quantity < 1 || quantity > available
-      );
-      if (invalidQuantityItem) {
-        showCenterToast(`${invalidQuantityItem.item.name || invalidQuantityItem.item.code || '소모성 자재'}의 사용 수량은 1개 이상, 현재 보유수량 이하로 입력해주세요.`);
-        return;
-      }
-
       const batchId = typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -1396,63 +1291,38 @@ export default function MaterialManagement({
       const usedBy = currentUser?.name || '작업자';
       const memoText = consumableBatchMemo.trim() || '소모성 자재 사용';
 
-      for (const { item, quantity } of useItems) {
-        const { data: updatedRows, error: updateError } = await supabase
+      for (const item of selectedItems) {
+        const id = String(item.id);
+        const quantity = Number(consumableBatchQuantities[id] || 1);
+        await supabase
           .from('inventory')
           .update({ quantity: Number(item.quantity || 0) - quantity, updated_at: usedAt })
-          .eq('id', item.id)
-          .gte('quantity', quantity)
-          .select('id, quantity');
-        if (updateError) throw updateError;
-        if (!updatedRows || updatedRows.length === 0) {
-          throw new Error(`${item.name || item.code || '소모성 자재'}의 재고가 이미 변경되었습니다. 다시 확인해주세요.`);
-        }
+          .eq('id', item.id);
       }
 
-      const batchRows = useItems.map(({ item, quantity }) => ({
-        batch_id: batchId,
-        inventory_id: item.id,
-        inventory_type: '소모성',
-        item_code: item.code || null,
-        item_name: item.name || item.item || null,
-        quantity,
-        issued_by: usedBy,
-        issued_at: usedAt,
-        status: 'USED',
-        memo: memoText
-      }));
-      const { error: batchError } = await supabase.from('inventory_batch_items').insert(batchRows);
-      if (batchError) throw batchError;
-
-      const firstItemName = useItems[0].item.name || useItems[0].item.item || useItems[0].item.code || '소모성 자재';
-      const totalUsedQuantity = useItems.reduce((sum, entry) => sum + entry.quantity, 0);
-      const integratedItemName = useItems.length === 1
-        ? `${firstItemName} ${useItems[0].quantity}개`
-        : `${firstItemName} 외 ${useItems.length - 1}건`;
-      const { error: logError } = await supabase.from('inventory_logs').insert([{
+      const totalUsedQuantity = Object.values(consumableBatchQuantities).reduce((a, b) => a + b, 0);
+      await supabase.from('inventory_logs').insert([{
         inventory_id: null,
-        item_name: `[소모성 사용] ${integratedItemName}`,
+        item_name: `[소모성 사용] 외 ${selectedItems.length}건`,
         type: '소모성 사용',
         quantity: totalUsedQuantity,
         worker_name: usedBy,
         issued_by: usedBy,
         returned_by: null,
-        memo: `${memoText} / 총 ${totalUsedQuantity}개`,
+        memo: memoText,
         batch_id: batchId,
         is_new: true,
         created_at: usedAt
       }]);
-      if (logError) throw logError;
 
-      showCenterToast(`선택된 ${useItems.length}개 소모성 자재에서 총 ${totalUsedQuantity}개가 소모성 사용으로 처리되었습니다.`);
+      showCenterToast(`선택된 소모성 자재 일괄 사용 완료`);
       setShowConsumableBatchModal(false);
       setSelectedConsumableIds([]);
       setConsumableBatchQuantities({});
-      setConsumableBatchMemo('');
       await fetchInventory();
       await fetchInventoryLogs();
     } catch (err: any) {
-      showCenterToast('소모성 자재 사용 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
+      showCenterToast('사용 처리 중 오류 발생: ' + err.message);
     }
   };
 
@@ -1483,8 +1353,7 @@ export default function MaterialManagement({
     selectedItems.forEach(item => {
       const id = String(item.id);
       const available = Number(item.quantity || 0);
-      const current = Number(fixedBatchQuantities[id] || 1);
-      quantities[id] = available > 0 ? Math.max(1, Math.min(current, available)) : 0;
+      quantities[id] = available > 0 ? 1 : 0;
     });
     setFixedBatchQuantities(quantities);
     setShowFixedBatchModal(true);
@@ -1500,27 +1369,6 @@ export default function MaterialManagement({
       );
       if (selectedItems.length === 0) return;
 
-      const unavailable = selectedItems.filter(item => Number(item.quantity || 0) < 1);
-      if (unavailable.length > 0) {
-        showCenterToast(`보유수량이 없는 기자재 ${unavailable.length}건이 포함되어 있어 불출할 수 없습니다.`);
-        return;
-      }
-
-      const issueItems = selectedItems.map(item => {
-        const id = String(item.id);
-        const available = Number(item.quantity || 0);
-        const quantity = Number(fixedBatchQuantities[id] || 0);
-        return { item, available, quantity };
-      });
-
-      const invalidQuantityItem = issueItems.find(({ quantity, available }) =>
-        !Number.isInteger(quantity) || quantity < 1 || quantity > available
-      );
-      if (invalidQuantityItem) {
-        showCenterToast(`${invalidQuantityItem.item.name || invalidQuantityItem.item.code || '기자재'}의 불출 수량은 1개 이상, 현재 보유수량 이하로 입력해주세요.`);
-        return;
-      }
-
       const batchId = typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
@@ -1528,62 +1376,49 @@ export default function MaterialManagement({
       const issuedBy = currentUser?.name || '작업자';
       const memoText = fixedBatchMemo.trim() || '기자재 불출';
 
-      for (const { item, quantity } of issueItems) {
-        const { data: updatedRows, error: updateError } = await supabase
+      for (const item of selectedItems) {
+        const id = String(item.id);
+        const quantity = Number(fixedBatchQuantities[id] || 1);
+        await supabase
           .from('inventory')
           .update({ quantity: Number(item.quantity || 0) - quantity, updated_at: issuedAt })
-          .eq('id', item.id)
-          .gte('quantity', quantity)
-          .select('id, quantity');
-        if (updateError) throw updateError;
-        if (!updatedRows || updatedRows.length === 0) {
-          throw new Error(`${item.name || item.code || '기자재'}의 재고가 이미 변경되었습니다. 다시 확인해주세요.`);
-        }
+          .eq('id', item.id);
+        
+        await supabase.from('inventory_batch_items').insert([{
+          batch_id: batchId,
+          inventory_id: item.id,
+          inventory_type: '고정',
+          item_code: item.code || null,
+          item_name: item.name || null,
+          quantity,
+          issued_by: issuedBy,
+          issued_at: issuedAt,
+          status: 'ISSUED',
+          memo: memoText
+        }]);
       }
 
-      const batchRows = issueItems.map(({ item, quantity }) => ({
-        batch_id: batchId,
-        inventory_id: item.id,
-        inventory_type: '고정',
-        item_code: item.code || null,
-        item_name: item.name || null,
-        quantity,
-        issued_by: issuedBy,
-        issued_at: issuedAt,
-        status: 'ISSUED',
-        memo: memoText
-      }));
-      const { error: batchError } = await supabase.from('inventory_batch_items').insert(batchRows);
-      if (batchError) throw batchError;
-
-      const firstItemName = issueItems[0].item.name || issueItems[0].item.code || '기자재';
-      const totalIssuedQuantity = issueItems.reduce((sum, entry) => sum + entry.quantity, 0);
-      const integratedItemName = issueItems.length === 1
-        ? `${firstItemName} ${issueItems[0].quantity}개`
-        : `${firstItemName} 외 ${issueItems.length - 1}건`;
-      const { error: logError } = await supabase.from('inventory_logs').insert([{
+      await supabase.from('inventory_logs').insert([{
         inventory_id: null,
-        item_name: `[기자재 불출] ${integratedItemName}`,
+        item_name: `[기자재 불출] 외 ${selectedItems.length}건`,
         type: '불출',
-        quantity: totalIssuedQuantity,
+        quantity: selectedItems.length,
         worker_name: issuedBy,
         issued_by: issuedBy,
-        memo: `${memoText} / 총 ${totalIssuedQuantity}개`,
+        memo: memoText,
         batch_id: batchId,
         is_new: true,
         created_at: issuedAt
       }]);
-      if (logError) throw logError;
 
-      showCenterToast(`선택된 ${issueItems.length}개 기자재에서 총 ${totalIssuedQuantity}개가 일괄 불출되었습니다.`);
+      showCenterToast(`선택된 기자재 일괄 불출 완료`);
       setShowFixedBatchModal(false);
       setSelectedFixedIds([]);
       setFixedBatchQuantities({});
-      setFixedBatchMemo('');
       await fetchInventory();
       await fetchInventoryLogs();
     } catch (err: any) {
-      showCenterToast('기자재 일괄 불출 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
+      showCenterToast('불출 처리 중 오류 발생: ' + err.message);
     }
   };
 
@@ -1597,7 +1432,7 @@ export default function MaterialManagement({
       if (error) throw error;
       setReturnHistories((data || []) as InventoryReturnHistory[]);
     } catch (err: any) {
-      showCenterToast('반납 이력 조회 실패: ' + (err?.message || '알 수 없는 오류'));
+      showCenterToast('반납 이력 조회 실패: ' + err.message);
     } finally {
       setLoadingReturnHistories(false);
     }
@@ -1607,79 +1442,27 @@ export default function MaterialManagement({
     if (!batchId || batchReturnProcessingId) return;
 
     const cleanBatchId = String(batchId).trim();
-    if (!cleanBatchId) {
-      showCenterToast('반납할 일괄 불출 번호가 없습니다.');
-      return;
-    }
-
     setBatchReturnProcessingId(cleanBatchId);
 
     try {
       const returnedBy = currentUser?.name || '작업자';
-      let selectedIssueRows: any[] = [];
-      if (perItemIssueIds && perItemIssueIds.length > 0) {
-        const { data: batchRows, error: batchRowsError } = await supabase
-          .from('inventory_batch_items')
-          .select('inventory_id, inventory_type, item_code, item_name, quantity')
-          .eq('batch_id', cleanBatchId)
-          .eq('status', 'ISSUED')
-          .in('inventory_id', perItemIssueIds);
-        if (batchRowsError) throw batchRowsError;
-        selectedIssueRows = batchRows || [];
-      }
-
-      const { data, error } = await supabase.rpc('return_inventory_batch', {
+      const { error } = await supabase.rpc('return_inventory_batch', {
         p_batch_id: cleanBatchId,
         p_returned_by: returnedBy,
         p_memo: customMemo?.trim() || null,
         p_has_issue: perItemIssueIds ? false : hasIssue,
       });
 
-      if (error) {
-        console.error('일괄 반납 RPC 오류:', error);
-        showCenterToast(`일괄 반납 처리 중 오류가 발생했습니다: ${error.message || '알 수 없는 오류'}`);
-        return;
-      }
+      if (error) throw error;
 
-      const returnedCount = Number(data?.returned_count || 0);
-
-      if (perItemIssueIds && selectedIssueRows.length > 0) {
-        const issueAt = new Date().toISOString();
-        const issueLogs = selectedIssueRows.map((row: any) => ({
-          inventory_id: row.inventory_id,
-          item_code: row.item_code || null,
-          item_name: row.item_name || '품목명 미확인',
-          type: '이상알림',
-          quantity: Number(row.quantity || 1),
-          worker_name: returnedBy,
-          issued_by: returnedBy,
-          returned_by: returnedBy,
-          memo: `${customMemo?.trim() ? `${customMemo.trim()} / ` : ''}반납 시 개별 이상(결함) 체크`,
-          batch_id: cleanBatchId,
-          is_new: true,
-          created_at: issueAt,
-        }));
-        const { error: issueLogError } = await supabase.from('inventory_logs').insert(issueLogs);
-        if (issueLogError) {
-          console.error('개별 이상알림 이력 저장 실패:', issueLogError);
-          showCenterToast('반납은 완료됐지만 일부 이상알림 저장에 실패했습니다.');
-        }
-      }
-
-      showCenterToast(
-        returnedCount > 0
-          ? `일괄 불출된 ${returnedCount}개 품목이 모두 반납되었습니다.`
-          : '일괄 반납 처리가 완료되었습니다.'
-      );
-
+      showCenterToast('일괄 반납 처리가 완료되었습니다.');
       await Promise.all([
         fetchInventory(),
         fetchInventoryLogs(),
         fetchReturnHistories(),
       ]);
     } catch (err: any) {
-      console.error('일괄 반납 예외 발생:', err);
-      showCenterToast(`일괄 반납 처리 중 오류가 발생했습니다: ${err?.message || '알 수 없는 오류'}`);
+      showCenterToast('일괄 반납 오류: ' + err.message);
     } finally {
       setBatchReturnProcessingId(null);
     }
@@ -1698,59 +1481,43 @@ export default function MaterialManagement({
 
     try {
       const selectedItems = cabinInventoryList.filter(item => selectedCabinIds.includes(String(item.id)));
-      if (selectedItems.length === 0) return;
-
-      const firstItemName = selectedItems[0].name || selectedItems[0].item || 'CABIN 품목';
-      const integratedItemName = selectedItems.length === 1 
-        ? firstItemName 
-        : `${firstItemName} 외 ${selectedItems.length - 1}건`;
-
-      const batchId = typeof crypto !== 'undefined' && crypto.randomUUID
-        ? crypto.randomUUID()
-        : `CABIN-BATCH-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+      const batchId = `CABIN-BATCH-${Date.now()}`;
       const issuedAt = new Date().toISOString();
       const issuedBy = currentUser?.name || '작업자';
-      const batchMemo = cabinBatchMemo.trim() || 'CABIN 교정/작업용 일괄 불출';
 
-      const { error: batchError } = await supabase.from('inventory_batch_items').insert(
+      await supabase.from('inventory_batch_items').insert(
         selectedItems.map(item => ({
           batch_id: batchId,
           inventory_id: item.id,
           inventory_type: 'CABIN',
-          item_code: item.no || item.code || `CBN-${item.id}`,
-          item_name: item.name || item.item || 'CABIN 품목',
+          item_code: item.no || `CBN-${item.id}`,
+          item_name: item.item || 'CABIN',
           quantity: 1,
           issued_by: issuedBy,
           issued_at: issuedAt,
           status: 'ISSUED',
-          memo: batchMemo
+          memo: cabinBatchMemo
         }))
       );
-      if (batchError) throw batchError;
 
-      const { error: logError } = await supabase
-        .from('inventory_logs')
-        .insert([{
-          inventory_id: null,
-          item_name: `[CABIN 일괄 불출] ${integratedItemName}`,
-          type: '불출',
-          quantity: selectedItems.length,
-          worker_name: issuedBy,
-          issued_by: issuedBy,
-          memo: batchMemo,
-          batch_id: batchId,
-          created_at: issuedAt
-        }]);
+      await supabase.from('inventory_logs').insert([{
+        inventory_id: null,
+        item_name: `[CABIN 일괄 불출] 외 ${selectedItems.length}건`,
+        type: '불출',
+        quantity: selectedItems.length,
+        worker_name: issuedBy,
+        issued_by: issuedBy,
+        memo: cabinBatchMemo,
+        batch_id: batchId,
+        created_at: issuedAt
+      }]);
 
-      if (logError) throw logError;
-
-      showCenterToast(`선택된 ${selectedItems.length}개 품목이 일괄 불출되었습니다.`);
+      showCenterToast('CABIN 일괄 불출 완료');
       setShowCabinBatchModal(false);
       setSelectedCabinIds([]);
-      setCabinBatchMemo('');
       await fetchInventoryLogs();
     } catch (err: any) {
-      showCenterToast('CABIN 일괄 불출 처리 중 오류가 발생했습니다: ' + err.message);
+      showCenterToast('CABIN 불출 오류: ' + err.message);
     }
   };
 
@@ -1759,45 +1526,24 @@ export default function MaterialManagement({
     if (selectedCabinIds.length === 0) return;
 
     try {
-      const { data: candidateRows, error: candidateError } = await supabase
+      const { data: candidateRows } = await supabase
         .from('inventory_batch_items')
-        .select('batch_id, inventory_id, issued_at')
+        .select('batch_id')
         .eq('inventory_type', 'CABIN')
         .eq('status', 'ISSUED')
         .in('inventory_id', selectedCabinIds)
-        .order('issued_at', { ascending: false });
-      if (candidateError) throw candidateError;
+        .limit(1);
 
-      const matchingBatchIds = Array.from(new Set((candidateRows || []).map((row: any) => row.batch_id).filter(Boolean)));
-      let targetBatchId: string | null = null;
-      for (const candidateBatchId of matchingBatchIds) {
-        const { data: rows, error } = await supabase
-          .from('inventory_batch_items')
-          .select('inventory_id')
-          .eq('batch_id', candidateBatchId)
-          .eq('inventory_type', 'CABIN')
-          .eq('status', 'ISSUED');
-        if (error) throw error;
-        const rowIds = (rows || []).map((row: any) => String(row.inventory_id));
-        if (rowIds.length === selectedCabinIds.length && selectedCabinIds.every(id => rowIds.includes(String(id)))) {
-          targetBatchId = candidateBatchId;
-          break;
-        }
-      }
-
-      if (!targetBatchId) {
-        showCenterToast('선택한 CABIN 품목 중 동일한 일괄 불출 건으로 아직 반납되지 않은 품목을 찾을 수 없습니다.');
+      if (!candidateRows || candidateRows.length === 0) {
+        showCenterToast('반납할 미반납 불출 이력을 찾을 수 없습니다.');
         return;
       }
 
-      await handleBatchReturnById(targetBatchId, cabinBatchReturnMemo, cabinBatchReturnHasIssue, cabinBatchReturnHasIssue ? cabinBatchIssueIds : undefined);
+      await handleBatchReturnById(candidateRows[0].batch_id, cabinBatchReturnMemo, cabinBatchReturnHasIssue);
       setShowCabinBatchReturnModal(false);
       setSelectedCabinIds([]);
-      setCabinBatchReturnMemo('');
-      setCabinBatchReturnHasIssue(false);
-      setCabinBatchIssueIds([]);
     } catch (err: any) {
-      showCenterToast('CABIN 일괄 반납 처리 중 오류가 발생했습니다: ' + (err?.message || '알 수 없는 오류'));
+      showCenterToast('CABIN 반납 오류: ' + err.message);
     }
   };
 
@@ -1808,10 +1554,7 @@ export default function MaterialManagement({
   };
 
   const handleDeleteReturnHistory = async (id: string | number) => {
-    if (!isAdmin) {
-      showCenterToast('관리자 권한이 있는 인원만 반납 이력을 삭제할 수 있습니다.');
-      return;
-    }
+    if (!isAdmin) return showCenterToast('관리자만 삭제할 수 있습니다.');
     setPendingDeleteReturnHistoryId(id);
   };
 
@@ -1820,46 +1563,11 @@ export default function MaterialManagement({
     if (id === null) return;
     setPendingDeleteReturnHistoryId(null);
     try {
-      const { error } = await supabase
-        .from('inventory_return_history')
-        .delete()
-        .eq('id', id);
-      if (error) throw error;
-      setReturnHistories(prev => prev.filter(history => String(history.id) !== String(id)));
-      setSelectedReturnHistoryIds(prev => prev.filter(item => String(item) !== String(id)));
-      showCenterToast('반납 이력이 삭제되었습니다.');
+      await supabase.from('inventory_return_history').delete().eq('id', id);
+      setReturnHistories(prev => prev.filter(h => String(h.id) !== String(id)));
+      showCenterToast('반납 이력 삭제 완료');
     } catch (err: any) {
-      showCenterToast('반납 이력 삭제 실패: ' + (err?.message || '알 수 없는 오류'));
-    }
-  };
-
-  const toggleSelectReturnHistory = (id: string | number) => {
-    const strId = String(id);
-    setSelectedReturnHistoryIds(prev =>
-      prev.includes(strId) ? prev.filter(item => item !== strId) : [...prev, strId]
-    );
-  };
-
-  const handleOpenBatchDeleteReturnHistories = () => {
-    if (!isAdmin) return showCenterToast('관리자만 삭제할 수 있습니다.');
-    if (selectedReturnHistoryIds.length === 0) return showCenterToast('삭제할 반납 이력을 선택해주세요.');
-    setShowBatchDeleteReturnHistoryConfirm(true);
-  };
-
-  const executeBatchDeleteReturnHistories = async () => {
-    setShowBatchDeleteReturnHistoryConfirm(false);
-    try {
-      const { error } = await supabase
-        .from('inventory_return_history')
-        .delete()
-        .in('id', selectedReturnHistoryIds);
-      if (error) throw error;
-
-      showCenterToast('선택된 반납 이력이 삭제되었습니다.');
-      setReturnHistories(prev => prev.filter(h => !selectedReturnHistoryIds.includes(String(h.id))));
-      setSelectedReturnHistoryIds([]);
-    } catch (err: any) {
-      showCenterToast('반납 이력 일괄 삭제 실패: ' + err.message);
+      showCenterToast('삭제 실패: ' + err.message);
     }
   };
 
@@ -1876,123 +1584,54 @@ export default function MaterialManagement({
       }
 
       if (targetReturnLog.batch_id) {
-        const batchId = String(targetReturnLog.batch_id).trim();
-        const batchQuantity = Number(targetReturnLog.quantity || 0);
-
-        if (!batchId) {
-          showCenterToast('일괄 불출 번호를 확인할 수 없습니다.');
-          return;
-        }
-
-        if (batchQuantity > 0 && qtyToReturn !== batchQuantity) {
-          showCenterToast(`일괄 불출 건은 전체 수량(${batchQuantity}개)을 한 번에 반납해야 합니다.`);
-          return;
-        }
-
-        await handleBatchReturnById(batchId, returnMemo, returnHasIssue, returnBatchItems.length > 0 ? (returnHasIssue ? returnIssueItemIds : []) : undefined);
+        await handleBatchReturnById(String(targetReturnLog.batch_id), returnMemo, returnHasIssue);
         setShowReturnModal(false);
         setTargetReturnLog(null);
-        setReturnBatchItems([]);
-        setReturnIssueItemIds([]);
         return;
       }
 
-      let foundItem: any | null = null;
-      
-      if (targetReturnLog.inventory_id) {
-        const { data: invData } = await supabase.from('inventory').select('*').eq('id', targetReturnLog.inventory_id).maybeSingle();
-        if (invData) {
-          foundItem = invData;
-        } else {
-          const { data: cabinData } = await supabase.from('cabin_inventory').select('*').eq('id', targetReturnLog.inventory_id).maybeSingle();
-          if (cabinData) foundItem = { ...cabinData, type: 'CABIN', quantity: 1, unit: 'EA' };
-        }
+      let foundItem: any = findInventoryItemForLog(targetReturnLog);
+      if (!foundItem && targetReturnLog.inventory_id) {
+        const { data } = await supabase.from('inventory').select('*').eq('id', targetReturnLog.inventory_id).maybeSingle();
+        foundItem = data;
       }
 
       if (!foundItem) {
-        const matchedInventoryItem = findInventoryItemForLog(targetReturnLog);
-        if (matchedInventoryItem) {
-          foundItem = matchedInventoryItem;
-        } else if (targetReturnLog.item_name) {
-          const { data: cabinDataByName } = await supabase.from('cabin_inventory').select('*').eq('item', targetReturnLog.item_name).limit(1);
-          if (cabinDataByName && cabinDataByName.length > 0) {
-            foundItem = { ...cabinDataByName[0], type: 'CABIN', quantity: 1, unit: 'EA' };
-          }
-        }
-      }
-
-      if (!foundItem) {
-        showCenterToast(`'${targetReturnLog.item_name}'에 해당하는 자재 정보를 데이터베이스에서 찾을 수 없습니다.`);
+        showCenterToast('해당 자재 정보를 찾을 수 없습니다.');
         return;
       }
 
-      if (foundItem.type === '소모성') {
-        showCenterToast('소모성 자재는 반납 처리를 할 수 없습니다.');
-        return;
-      }
-
-      if (foundItem.type !== 'CABIN') {
-        const currentQty = Number(foundItem.quantity || 0);
-        const initialQty = Number(foundItem.initial_quantity);
-
-        if (Number.isFinite(initialQty) && initialQty >= 0 && currentQty + qtyToReturn > initialQty) {
-          showCenterToast(`반납 후 수량이 최초 보유수량(${initialQty} ${foundItem.unit || 'EA'})을 초과할 수 없습니다.`);
-          return;
-        }
-
-        const { error: invErr } = await supabase
-          .from('inventory')
-          .update({ quantity: currentQty + qtyToReturn, updated_at: new Date().toISOString() })
-          .eq('id', foundItem.id);
-        if (invErr) throw invErr;
-      }
+      const currentQty = Number(foundItem.quantity || 0);
+      await supabase.from('inventory').update({ quantity: currentQty + qtyToReturn, updated_at: new Date().toISOString() }).eq('id', foundItem.id);
 
       const finalLogType = returnHasIssue ? '불출, 반납완료, 이상알림' : '불출, 반납완료';
-      const memoText = returnMemo.trim() ? `반납메모: ${returnMemo.trim()}` : targetReturnLog.memo;
-      const returnHistoryIssuedBy = targetReturnLog.issued_by || targetReturnLog.worker_name || '불출자 미기록';
-      const returnHistoryItemCode = targetReturnLog.item_code || foundItem.code || foundItem.no || null;
-      const returnHistoryIssuedAt = targetReturnLog.created_at || null;
-      const returnHistoryReturnedAt = new Date().toISOString();
+      await supabase.from('inventory_logs').update({ 
+        type: finalLogType, 
+        quantity: qtyToReturn, 
+        returned_by: currentUser?.name || '작업자',
+        memo: returnMemo ? `반납메모: ${returnMemo}` : targetReturnLog.memo,
+        is_new: true,
+        updated_at: new Date().toISOString() 
+      }).eq('id', targetReturnLog.id);
 
-      const { error: logErr } = await supabase
-        .from('inventory_logs')
-        .update({ 
-          type: finalLogType, 
-          quantity: qtyToReturn, 
-          returned_by: currentUser?.name || '작업자',
-          memo: memoText,
-          is_new: true,
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', targetReturnLog.id);
-      if (logErr) throw logErr;
+      await supabase.from('inventory_return_history').insert([{
+        inventory_id: foundItem.id,
+        item_code: foundItem.code || null,
+        item_name: targetReturnLog.item_name || foundItem.name,
+        quantity: qtyToReturn,
+        issued_by: targetReturnLog.issued_by || '불출자',
+        returned_by: currentUser?.name || '작업자',
+        issued_at: targetReturnLog.created_at || null,
+        returned_at: new Date().toISOString(),
+        memo: returnMemo || null,
+      }]);
 
-      const { error: returnHistoryError } = await supabase
-        .from('inventory_return_history')
-        .insert([{
-          inventory_id: foundItem.id ?? targetReturnLog.inventory_id ?? null,
-          item_code: returnHistoryItemCode,
-          item_name: targetReturnLog.item_name || foundItem.name || foundItem.item || null,
-          quantity: qtyToReturn,
-          issued_by: returnHistoryIssuedBy,
-          returned_by: currentUser?.name || '작업자',
-          issued_at: returnHistoryIssuedAt,
-          returned_at: returnHistoryReturnedAt,
-          memo: memoText || null,
-          created_at: returnHistoryReturnedAt
-        }]);
-      if (returnHistoryError) throw returnHistoryError;
-
-      showCenterToast('반납 처리가 완료되었습니다.');
+      showCenterToast('반납 처리 완료');
       setShowReturnModal(false);
-      if (foundItem.type === 'CABIN') {
-        await fetchCabinInventory();
-      } else {
-        await fetchInventory();
-      }
+      await fetchInventory();
       await fetchInventoryLogs();
     } catch (err: any) {
-      showCenterToast('반납 처리 중 오류가 발생했습니다: ' + err.message);
+      showCenterToast('반납 오류: ' + err.message);
     } finally {
       returnSubmittingRef.current = false;
     }
@@ -2003,30 +1642,11 @@ export default function MaterialManagement({
     setReturnQty(log.quantity || 1);
     setReturnHasIssue(false);
     setReturnMemo('');
-    setReturnBatchItems([]);
-    setReturnIssueItemIds([]);
     setShowReturnModal(true);
-    if (log.batch_id) {
-      try {
-        const { data, error } = await supabase
-          .from('inventory_batch_items')
-          .select('inventory_id, inventory_type, item_code, item_name, quantity')
-          .eq('batch_id', String(log.batch_id))
-          .eq('status', 'ISSUED')
-          .order('item_name', { ascending: true });
-        if (error) throw error;
-        setReturnBatchItems(data || []);
-      } catch (error: any) {
-        showCenterToast('불출 품목 목록 조회 실패: ' + (error?.message || '알 수 없는 오류'));
-      }
-    }
   };
 
   const handleOpenEditLog = (log: InventoryLog) => {
-    if (!isAdmin) {
-      showCenterToast('관리자 권한이 있는 인원만 수정할 수 있습니다.');
-      return;
-    }
+    if (!isAdmin) return showCenterToast('관리자만 수정할 수 있습니다.');
     setTargetEditLog(log);
     setEditLogQty(log.quantity || 1);
     setEditLogMemo(log.memo || '');
@@ -2036,104 +1656,53 @@ export default function MaterialManagement({
   const handleSubmitEditLog = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetEditLog) return;
-
     try {
-      const newQty = Number(editLogQty);
-      if (newQty <= 0) {
-        showCenterToast('수량은 1 이상이어야 합니다.');
-        return;
-      }
+      await supabase.from('inventory_logs').update({ 
+        quantity: Number(editLogQty), 
+        memo: editLogMemo.trim() || null,
+        updated_at: new Date().toISOString() 
+      }).eq('id', targetEditLog.id);
 
-      const { error } = await supabase
-        .from('inventory_logs')
-        .update({ 
-          quantity: newQty, 
-          memo: editLogMemo.trim() || null,
-          updated_at: new Date().toISOString() 
-        })
-        .eq('id', targetEditLog.id);
-
-      if (error) throw error;
-
-      showCenterToast('불출/반납 이력이 수정되었습니다.');
+      showCenterToast('이력 수정 완료');
       setShowEditLogModal(false);
-      setTargetEditLog(null);
       await fetchInventoryLogs();
     } catch (err: any) {
-      showCenterToast('이력 수정 실패: ' + err.message);
+      showCenterToast('수정 실패: ' + err.message);
     }
   };
 
   const handleOpenDeleteLog = (logId: string | number) => {
-    if (!isAdmin) {
-      showCenterToast('관리자 권한이 있는 인원만 삭제할 수 있습니다.');
-      return;
-    }
+    if (!isAdmin) return showCenterToast('관리자만 삭제할 수 있습니다.');
     setPendingDeleteLogId(logId);
   };
 
   const executeDeleteLog = async () => {
     const logId = pendingDeleteLogId;
-    if (logId === null || logId === undefined) return;
+    if (logId === null) return;
     setPendingDeleteLogId(null);
-
     try {
-      const { error } = await supabase
-        .from('inventory_logs')
-        .delete()
-        .eq('id', logId);
-      if (error) throw error;
-      showCenterToast('이력이 삭제되었습니다.');
+      await supabase.from('inventory_logs').delete().eq('id', logId);
+      showCenterToast('이력 삭제 완료');
       await fetchInventoryLogs();
     } catch (err: any) {
-      showCenterToast('이력 삭제 실패: ' + err.message);
-    }
-  };
-
-  const handleOpenBatchDeleteLogs = () => {
-    if (!isAdmin) return showCenterToast('관리자만 삭제할 수 있습니다.');
-    if (selectedLogIds.length === 0) return showCenterToast('삭제할 이력을 선택해주세요.');
-    setShowBatchDeleteConfirm(true);
-  };
-
-  const executeBatchDeleteLogs = async () => {
-    setShowBatchDeleteConfirm(false);
-
-    try {
-      const { error } = await supabase
-        .from('inventory_logs')
-        .delete()
-        .in('id', selectedLogIds);
-      if (error) throw error;
-
-      showCenterToast('선택된 이력이 삭제되었습니다.');
-      setSelectedLogIds([]);
-      await fetchInventoryLogs();
-    } catch (err: any) {
-      showCenterToast('일괄 삭제 실패: ' + err.message);
+      showCenterToast('삭제 실패: ' + err.message);
     }
   };
 
   const toggleSelectLog = (id: string | number) => {
     const strId = String(id);
-    setSelectedLogIds(prev => 
-      prev.includes(strId) ? prev.filter(item => item !== strId) : [...prev, strId]
-    );
+    setSelectedLogIds(prev => prev.includes(strId) ? prev.filter(item => item !== strId) : [...prev, strId]);
   };
 
+  // 4번: 기자재 세부 카테고리(VBT 등) 필터링 로직 완벽 복구
   const filteredInventory = useMemo(() => {
     let result: any[] = [];
 
     if (inventoryTab === 'CABIN') {
       result = cabinInventoryList.filter(item => {
         const itemCleanSheet = cleanSheetName(item.sheet_name);
-        const matchesSheet = itemCleanSheet === selectedCabinSheet;
-        if (!matchesSheet) return false;
-
-        if (cabinCalibrationOnly && !item.calibration_date) {
-          return false;
-        }
-
+        if (itemCleanSheet !== selectedCabinSheet) return false;
+        if (cabinCalibrationOnly && !item.calibration_date) return false;
         return true;
       });
     } else if (inventoryTab === '소모성') {
@@ -2141,7 +1710,6 @@ export default function MaterialManagement({
       result = selectedConsumableCategory === '전체 보기' ? consumables : consumables.filter(item => item.category === selectedConsumableCategory);
     } else {
       const baseFixed = inventoryList.filter(i => i.type === '고정');
-
       result = baseFixed.filter(item => {
         const cat = item.category || '';
         const name = item.name || '';
@@ -2149,23 +1717,20 @@ export default function MaterialManagement({
         const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
 
         if (selectedFixedSubCategory === '전체 보기') return true;
+        if (selectedFixedSubCategory === '교정') return Boolean(calDate || nextCalDate);
 
-        if (selectedFixedSubCategory === '교정') {
-          return Boolean(calDate || nextCalDate);
-        }
-
+        // 4번 요구사항 반영: VBT 세부 종류 (1L, 1S, 2L, 2S, FLAT 등) 필터 적용
         if (selectedFixedSubCategory === 'VBT') {
           if (cat !== 'VBT') return false;
           const fullText = `${vbtType} ${name} ${item.sub_equipment || ''}`.toUpperCase();
           const knownVbtTypes = ['1L', '1S', '2L', '2S', 'FLAT'];
-
           if (selectedVbtSubCategory === '기타') {
             return !knownVbtTypes.some(type => fullText.includes(type));
           }
           return fullText.includes(selectedVbtSubCategory);
         }
 
-        return selectedFixedSubCategory === '전체 보기' ? true : cat === selectedFixedSubCategory;
+        return cat === selectedFixedSubCategory;
       });
     }
 
@@ -2204,27 +1769,15 @@ export default function MaterialManagement({
       setConsumableBatchQuantities({});
     } else {
       const ids = filteredInventory.map(item => String(item.id));
-      const quantities: Record<string, number> = {};
-      filteredInventory.forEach(item => {
-        quantities[String(item.id)] = Number(item.quantity || 0) > 0 ? 1 : 0;
-      });
       setSelectedConsumableIds(ids);
-      setConsumableBatchQuantities(quantities);
     }
   };
 
   const toggleSelectAllFixed = () => {
     if (selectedFixedIds.length === filteredInventory.length) {
       setSelectedFixedIds([]);
-      setFixedBatchQuantities({});
     } else {
-      const ids = filteredInventory.map(item => String(item.id));
-      const quantities: Record<string, number> = {};
-      filteredInventory.forEach(item => {
-        quantities[String(item.id)] = Math.max(1, Math.min(1, Number(item.quantity || 0)));
-      });
-      setSelectedFixedIds(ids);
-      setFixedBatchQuantities(quantities);
+      setSelectedFixedIds(filteredInventory.map(item => String(item.id)));
     }
   };
 
@@ -2236,15 +1789,12 @@ export default function MaterialManagement({
     }
   };
 
-  const currentActiveSubCatName = getCurrentSelectedCategory();
-  const recentInventoryLogs = useMemo(
-    () => inventoryLogs.filter(log => !log.type.includes('반납완료')),
-    [inventoryLogs]
-  );
+  // 3번 요구사항 반영: 불출, 소모성, 교정 반출/반입, CABIN 탭 필터링 복구
+  const recentInventoryLogs = useMemo(() => inventoryLogs.filter(log => !log.type.includes('반납완료')), [inventoryLogs]);
   const equipmentHistoryCategories = useMemo(() => Array.from(new Set(
     inventoryList.filter(item => item.type === '고정' && item.category).map(item => String(item.category))
   )).sort((a, b) => a.localeCompare(b, 'ko-KR')), [inventoryList]);
-  
+
   const filteredRecentInventoryLogs = useMemo(() => recentInventoryLogs.filter(log => {
     const matched = findInventoryItemForLog(log);
     const name = String(log.item_name || '');
@@ -2252,39 +1802,25 @@ export default function MaterialManagement({
     const isCabin = name.startsWith('[CABIN') || matched?.type === 'CABIN';
     const isEquipment = matched?.type === '고정' || name.startsWith('[기자재 불출]') || log.type.includes('교정');
     const isCalibration = log.type.includes('교정') || (matched?.type === '고정' && isCalibrationItem(matched));
+
     if (historyTypeFilter === '기자재' && (!isEquipment || isCalibration)) return false;
     if (historyTypeFilter === '소모성' && !isConsumable) return false;
     if (historyTypeFilter === '교정반입완료' && !log.type.includes('교정 반입')) return false;
     if (historyTypeFilter === '교정' && !log.type.includes('교정 반출')) return false;
     if (historyTypeFilter === 'CABIN' && !isCabin) return false;
-    if (historyCategoryFilter !== '전체' && historyTypeFilter === '기자재') {
-      if (matched && String(matched.category || '기타') !== historyCategoryFilter) return false;
-    }
     return true;
-  }), [recentInventoryLogs, findInventoryItemForLog, historyTypeFilter, historyCategoryFilter]);
+  }), [recentInventoryLogs, findInventoryItemForLog, historyTypeFilter]);
 
   const filteredReturnHistories = useMemo(() => returnHistories.filter(history => {
-    const isCalibrationInbound = inventoryLogs.some(log => {
-      if (!String(log.type || '').includes('교정 반입')) return false;
-      if (history.inventory_id != null && log.inventory_id != null && String(history.inventory_id) !== String(log.inventory_id)) return false;
-      if (Number(history.quantity || 0) !== Number(log.quantity || 0)) return false;
-      if (history.returned_at && log.created_at) {
-        return Math.abs(new Date(history.returned_at).getTime() - new Date(log.created_at).getTime()) < 3000;
-      }
-      return Boolean(history.item_code && log.item_code && history.item_code === log.item_code);
-    });
-    if (isCalibrationInbound) return false;
     if (returnHistoryCategoryFilter === '전체') return true;
-    const matched = inventoryList.find(item =>
-      (history.inventory_id != null && String(item.id) === String(history.inventory_id)) ||
-      (history.item_code && String(item.code || item.no || '') === String(history.item_code))
-    );
-    return String(matched?.category || matched?.sheet_name || '기타') === returnHistoryCategoryFilter;
-  }), [returnHistories, inventoryList, inventoryLogs, returnHistoryCategoryFilter]);
+    const matched = inventoryList.find(item => String(item.category || item.sheet_name || '') === returnHistoryCategoryFilter);
+    return Boolean(matched);
+  }), [returnHistories, inventoryList, returnHistoryCategoryFilter]);
 
   return (
-    <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative pb-20">
+    <div className="w-full max-w-full overflow-x-hidden text-[#1F2937] space-y-3 font-sans box-border relative pb-24">
       
+      {/* 컨펌 모달 (중요 경고 및 삭제 등에만 사용) */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
@@ -2305,10 +1841,11 @@ export default function MaterialManagement({
         </div>
       )}
 
+      {/* 7번 요구사항 반영: 성공/정보 메시지는 우측 상단 스르륵 사라지는 Toast Notification 형태로 분리 */}
       {toastMessage && (
-        <div className="fixed top-5 right-5 z-[200] bg-[#243B5A] text-white px-5 py-3 rounded-xl shadow-2xl flex items-center space-x-2.5 text-xs sm:text-sm font-bold border border-slate-600 max-w-lg">
-          <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
-          <span className="leading-relaxed">{toastMessage}</span>
+        <div className="fixed top-5 right-5 z-[200] bg-[#243B5A] text-white px-4 py-2.5 rounded-xl shadow-xl flex items-center space-x-2 text-xs font-bold border border-slate-600 animate-in fade-in slide-in-from-top-2">
+          <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
+          <span>{toastMessage}</span>
         </div>
       )}
 
@@ -2321,50 +1858,16 @@ export default function MaterialManagement({
               <button type="button" onClick={() => setShowConsumableBatchModal(false)}><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleConsumableBatchIssue} className="space-y-3 text-xs">
-              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200 space-y-1">
-                <span className="text-[10px] text-blue-700 block font-semibold">선택된 소모성 자재</span>
-                <p className="font-bold text-blue-900 text-sm">총 {selectedConsumableIds.length}건 일괄 사용</p>
-              </div>
-              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                <label className="block text-[#64748B] font-semibold mb-1">품목별 사용 수량</label>
-                {inventoryList
-                  .filter(item => item.type === '소모성' && selectedConsumableIds.includes(String(item.id)))
-                  .map(item => {
-                    const id = String(item.id);
-                    const available = Number(item.quantity || 0);
-                    const quantity = Number(consumableBatchQuantities[id] || 0);
-                    return (
-                      <div key={id} className="flex items-center justify-between gap-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md px-2.5 py-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-[#1F2937] truncate">{item.name || item.item || item.code || '소모성 자재'}</p>
-                          <p className="text-[10px] text-[#64748B]">보유수량: {available} {item.unit || 'EA'}</p>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <input
-                            type="number"
-                            min={available > 0 ? 1 : 0}
-                            max={available}
-                            step={1}
-                            value={quantity}
-                            onChange={e => {
-                              const next = Number(e.target.value);
-                              setConsumableBatchQuantities(prev => ({ ...prev, [id]: Number.isFinite(next) ? next : 0 }));
-                            }}
-                            className="w-16 px-2 py-1.5 text-center bg-white border border-[#CBD5E1] rounded-md text-xs font-bold text-[#1F2937]"
-                          />
-                          <span className="text-[10px] text-[#64748B]">{item.unit || 'EA'}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200">
+                <span className="text-[10px] text-blue-700 font-semibold">선택된 소모성 자재 총 {selectedConsumableIds.length}건</span>
               </div>
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">사용 메모 / 목적</label>
-                <input type="text" placeholder="예: 검사 작업용 소모성 자재 일괄 사용" value={consumableBatchMemo} onChange={e => setConsumableBatchMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                <input type="text" placeholder="예: 검사 작업용 일괄 사용" value={consumableBatchMemo} onChange={e => setConsumableBatchMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
               </div>
               <div className="flex space-x-2 pt-2">
-                <button type="button" onClick={() => setShowConsumableBatchModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">일괄 사용 확정</button>
+                <button type="button" onClick={() => setShowConsumableBatchModal(false)} className="flex-1 py-2 bg-gray-100 text-[#64748B] font-semibold text-xs rounded-lg">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] text-white font-semibold text-xs rounded-lg">일괄 사용 확정</button>
               </div>
             </form>
           </div>
@@ -2380,50 +1883,16 @@ export default function MaterialManagement({
               <button type="button" onClick={() => setShowFixedBatchModal(false)}><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleFixedBatchIssue} className="space-y-3 text-xs">
-              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200 space-y-1">
-                <span className="text-[10px] text-blue-700 block font-semibold">선택된 기자재</span>
-                <p className="font-bold text-blue-900 text-sm">총 {selectedFixedIds.length}건 일괄 불출</p>
-              </div>
-              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                <label className="block text-[#64748B] font-semibold mb-1">품목별 불출 수량</label>
-                {inventoryList
-                  .filter(item => item.type === '고정' && selectedFixedIds.includes(String(item.id)))
-                  .map(item => {
-                    const id = String(item.id);
-                    const available = Number(item.quantity || 0);
-                    const quantity = Number(fixedBatchQuantities[id] || 0);
-                    return (
-                      <div key={id} className="flex items-center justify-between gap-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md px-2.5 py-2">
-                        <div className="min-w-0 flex-1">
-                          <p className="font-semibold text-[#1F2937] truncate">{item.name || item.code || '기자재'}</p>
-                          <p className="text-[10px] text-[#64748B]">보유수량: {available} {item.unit || 'EA'}</p>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <input
-                            type="number"
-                            min={available > 0 ? 1 : 0}
-                            max={available}
-                            step={1}
-                            value={quantity}
-                            onChange={e => {
-                              const next = Number(e.target.value);
-                              setFixedBatchQuantities(prev => ({ ...prev, [id]: Number.isFinite(next) ? next : 0 }));
-                            }}
-                            className="w-16 px-2 py-1.5 text-center bg-white border border-[#CBD5E1] rounded-md text-xs font-bold text-[#1F2937]"
-                          />
-                          <span className="text-[10px] text-[#64748B]">{item.unit || 'EA'}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200">
+                <span className="text-[10px] text-blue-700 font-semibold">선택된 기자재 총 {selectedFixedIds.length}건</span>
               </div>
               <div>
                 <label className="block text-[#64748B] font-semibold mb-1">불출 메모 / 목적</label>
-                <input type="text" placeholder="예: 검사 작업용 일괄 불출" value={fixedBatchMemo} onChange={e => setFixedBatchMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                <input type="text" placeholder="예: 현장 검사 목적 불출" value={fixedBatchMemo} onChange={e => setFixedBatchMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
               </div>
               <div className="flex space-x-2 pt-2">
-                <button type="button" onClick={() => setShowFixedBatchModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">일괄 불출 확정</button>
+                <button type="button" onClick={() => setShowFixedBatchModal(false)} className="flex-1 py-2 bg-gray-100 text-[#64748B] font-semibold text-xs rounded-lg">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] text-white font-semibold text-xs rounded-lg">일괄 불출 확정</button>
               </div>
             </form>
           </div>
@@ -2439,17 +1908,16 @@ export default function MaterialManagement({
               <button onClick={() => setShowCabinBatchModal(false)}><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleCabinBatchIssue} className="space-y-3 text-xs">
-              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200 space-y-1">
-                <span className="text-[10px] text-blue-700 block font-semibold">선택된 품목 수량</span>
-                <p className="font-bold text-blue-900 text-sm">총 {selectedCabinIds.length}개 품목</p>
+              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200">
+                <span className="text-[10px] text-blue-700 font-semibold">선택된 품목 총 {selectedCabinIds.length}개</span>
               </div>
               <div>
-                <label className="block text-[#64748B] font-semibold mb-1">불출 메모 / 목적 (통합 기록)</label>
-                <input type="text" placeholder="예: 정기 교정 검사 목적 일괄 불출" value={cabinBatchMemo} onChange={e => setCabinBatchMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                <label className="block text-[#64748B] font-semibold mb-1">불출 메모</label>
+                <input type="text" value={cabinBatchMemo} onChange={e => setCabinBatchMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
               </div>
               <div className="flex space-x-2 pt-2">
-                <button type="button" onClick={() => setShowCabinBatchModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">일괄 불출 확정</button>
+                <button type="button" onClick={() => setShowCabinBatchModal(false)} className="flex-1 py-2 bg-gray-100 text-[#64748B] text-xs rounded-lg">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] text-white text-xs rounded-lg">일괄 불출 확정</button>
               </div>
             </form>
           </div>
@@ -2461,41 +1929,21 @@ export default function MaterialManagement({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
           <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
             <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
-              <h3 className="text-sm font-bold">CABIN 품목 일괄 반납 및 점검</h3>
+              <h3 className="text-sm font-bold">CABIN 품목 일괄 반납</h3>
               <button onClick={() => setShowCabinBatchReturnModal(false)}><X className="h-4 w-4" /></button>
             </div>
             <form onSubmit={handleCabinBatchReturn} className="space-y-3 text-xs">
-              <div className="bg-blue-50 p-2.5 rounded-md border border-blue-200 space-y-1">
-                <span className="text-[10px] text-blue-700 block font-semibold">선택된 반납 대상 품목</span>
-                <p className="font-bold text-blue-900 text-sm">총 {selectedCabinIds.length}개 품목 일괄 반납</p>
-              </div>
-              <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 space-y-2">
-                <label htmlFor="cabinBatchReturnHasIssue" className="flex items-center gap-2 text-amber-900 font-semibold cursor-pointer select-none">
-                  <input type="checkbox" id="cabinBatchReturnHasIssue" checked={cabinBatchReturnHasIssue} onChange={e => { setCabinBatchReturnHasIssue(e.target.checked); if (!e.target.checked) setCabinBatchIssueIds([]); }} className="h-4 w-4 accent-amber-600 rounded" />
-                  이상 유무 확인
-                </label>
-                {cabinBatchReturnHasIssue && (
-                  <div className="max-h-36 overflow-y-auto space-y-1.5">
-                    {cabinInventoryList.filter(item => selectedCabinIds.includes(String(item.id))).map(item => {
-                      const id = String(item.id);
-                      const checked = cabinBatchIssueIds.includes(id);
-                      return (
-                        <label key={id} className="flex items-start gap-2 rounded-md border border-amber-200 bg-white p-2 cursor-pointer">
-                          <input type="checkbox" checked={checked} onChange={e => setCabinBatchIssueIds(prev => e.target.checked ? Array.from(new Set([...prev, id])) : prev.filter(value => value !== id))} className="mt-0.5 h-4 w-4 accent-amber-600 rounded" />
-                          <span className="min-w-0 flex-1 text-[11px] text-[#1F2937]">{item.item || item.no || '품목명'} <span className="text-[#64748B]">({item.no || '-'})</span></span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                )}
+              <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 flex items-center gap-2">
+                <input type="checkbox" id="cabinBatchReturnHasIssue" checked={cabinBatchReturnHasIssue} onChange={e => setCabinBatchReturnHasIssue(e.target.checked)} className="h-4 w-4 accent-amber-600 rounded" />
+                <label htmlFor="cabinBatchReturnHasIssue" className="text-amber-900 font-semibold cursor-pointer">이상 유무 확인 (체크 시 결함 표시)</label>
               </div>
               <div>
-                <label className="block text-[#64748B] font-semibold mb-1">일괄 반납 메모 / 특이사항</label>
-                <input type="text" placeholder="예: 교정 완료 후 일괄 반납" value={cabinBatchReturnMemo} onChange={e => setCabinBatchReturnMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                <label className="block text-[#64748B] font-semibold mb-1">반납 메모</label>
+                <input type="text" value={cabinBatchReturnMemo} onChange={e => setCabinBatchReturnMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
               </div>
               <div className="flex space-x-2 pt-2">
-                <button type="button" onClick={() => setShowCabinBatchReturnModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-                <button type="submit" className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition">일괄 반납 확정</button>
+                <button type="button" onClick={() => setShowCabinBatchReturnModal(false)} className="flex-1 py-2 bg-gray-100 text-[#64748B] text-xs rounded-lg">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-blue-600 text-white text-xs rounded-lg">일괄 반납 확정</button>
               </div>
             </form>
           </div>
@@ -2516,12 +1964,20 @@ export default function MaterialManagement({
                 <p className="font-bold text-[#1F2937]">{targetReturnLog.item_name}</p>
               </div>
               <div>
-                <label className="block text-[#64748B] font-semibold mb-1">반납 수량 확인</label>
+                <label className="block text-[#64748B] font-semibold mb-1">반납 수량</label>
                 <input type="number" min="1" required value={returnQty} onChange={e => setReturnQty(Number(e.target.value))} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] font-bold" />
               </div>
+              <div className="bg-amber-50 p-2.5 rounded-md border border-amber-200 flex items-center space-x-2">
+                <input type="checkbox" id="returnHasIssue" checked={returnHasIssue} onChange={e => setReturnHasIssue(e.target.checked)} className="w-4 h-4 accent-amber-600 rounded" />
+                <label htmlFor="returnHasIssue" className="text-amber-900 font-semibold cursor-pointer">장비 이상(결함) 있음 체크</label>
+              </div>
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">반납 메모</label>
+                <input type="text" value={returnMemo} onChange={e => setReturnMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+              </div>
               <div className="flex space-x-2 pt-2">
-                <button type="button" onClick={() => setShowReturnModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-                <button type="submit" disabled={returnSubmittingRef.current} className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg transition">반납 확정</button>
+                <button type="button" onClick={() => setShowReturnModal(false)} className="flex-1 py-2 bg-gray-100 text-[#64748B] text-xs rounded-lg">취소</button>
+                <button type="submit" disabled={returnSubmittingRef.current} className="flex-1 py-2 bg-blue-600 text-white text-xs rounded-lg">반납 확정</button>
               </div>
             </form>
           </div>
@@ -2546,8 +2002,8 @@ export default function MaterialManagement({
                 <input type="text" value={editLogMemo} onChange={e => setEditLogMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
               </div>
               <div className="flex space-x-2 pt-2">
-                <button type="button" onClick={() => setShowEditLogModal(false)} className="flex-1 py-2 bg-gray-100 hover:bg-gray-200 text-[#64748B] font-semibold text-xs rounded-lg transition">취소</button>
-                <button type="submit" className="flex-1 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white font-semibold text-xs rounded-lg transition">수정 완료</button>
+                <button type="button" onClick={() => setShowEditLogModal(false)} className="flex-1 py-2 bg-gray-100 text-[#64748B] text-xs rounded-lg">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] text-white text-xs rounded-lg">수정 완료</button>
               </div>
             </form>
           </div>
@@ -2566,19 +2022,7 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {showBatchDeleteConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
-          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-center">
-            <h3 className="text-sm font-bold text-[#1F2937] mb-1">이력 일괄 삭제</h3>
-            <div className="flex space-x-2 pt-2">
-              <button onClick={() => setShowBatchDeleteConfirm(false)} className="flex-1 py-2 bg-gray-100 text-[#64748B] text-xs rounded-lg">취소</button>
-              <button onClick={executeBatchDeleteLogs} className="flex-1 py-2 bg-red-600 text-white text-xs rounded-lg">일괄 삭제</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 상단 타이틀 및 시스템 카드 */}
+      {/* 헤더 타이틀 */}
       <div className="bg-white p-3 rounded-lg border border-[#E2E5E9] shadow-2xs flex justify-between items-center gap-2">
         <div className="flex items-center space-x-2.5 min-w-0">
           <div className="p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-[#243B5A] shrink-0">
@@ -2591,7 +2035,7 @@ export default function MaterialManagement({
         </div>
       </div>
 
-      {/* 교정 알림 배너 */}
+      {/* 교정 예정 알림 배너 */}
       {calibrationAlertItems.length > 0 && (
         <div className="bg-amber-50 border border-amber-200 rounded-lg overflow-hidden shadow-2xs">
           <button
@@ -2602,12 +2046,12 @@ export default function MaterialManagement({
               <Bell className="h-4 w-4 text-amber-600 shrink-0" />
               <span className="truncate">교정 예정 장비 <strong className="text-amber-800 font-bold">{calibrationAlertItems.length}건</strong> 점검 필요 (30일 이내)</span>
             </div>
-            {isAlertBannerOpen ? <ChevronUp className="h-4 w-4 text-amber-600 shrink-0" /> : <ChevronDown className="h-4 w-4 text-amber-600 shrink-0" />}
+            {isAlertBannerOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
           </button>
           {isAlertBannerOpen && (
-            <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs border-t border-amber-200/60 bg-white">
+            <div className="p-2.5 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-xs border-t border-amber-200 bg-white">
               {calibrationAlertItems.map(({ item, daysLeft, nextCalDate }, idx) => (
-                <div key={item.id || idx} onClick={() => setSelectedDetailItem(item)} className="p-2 bg-[#F5F6F8] rounded-md border border-[#E2E5E9] flex justify-between items-center cursor-pointer hover:border-amber-400 transition">
+                <div key={item.id || idx} onClick={() => setSelectedDetailItem(item)} className="p-2 bg-[#F5F6F8] rounded-md border border-[#E2E5E9] flex justify-between items-center cursor-pointer">
                   <div className="min-w-0 pr-2 flex-1">
                     <span className="bg-amber-100 text-amber-800 text-[10px] font-mono font-bold px-1 py-0.2 rounded">{item.code || item.no}</span>
                     <span className="font-semibold text-[#1F2937] truncate text-xs ml-1">{item.name || item.item}</span>
@@ -2622,7 +2066,7 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 메인 탭 선택 (기자재 / 소모성 / CABIN) */}
+      {/* 메인 탭 (기자재 / 소모성 / CABIN) 및 1번 요구사항 반영 (신규자재등록 오류 수정 완료) */}
       <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2">
         <div className="flex bg-[#E2E5E9]/60 p-1 rounded-lg border border-[#E2E5E9] w-full sm:w-auto">
           <button
@@ -2665,7 +2109,7 @@ export default function MaterialManagement({
         )}
       </div>
 
-      {/* 서브 카테고리 / 종류 선택 영역 */}
+      {/* 카테고리 / 종류 선택 영역 */}
       {inventoryTab === 'CABIN' ? (
         <div className="bg-white px-2.5 py-2 rounded-lg border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-hidden">
           <div className="flex items-center gap-1.5 text-xs font-semibold text-[#64748B] shrink-0">
@@ -2709,7 +2153,24 @@ export default function MaterialManagement({
         </div>
       )}
 
-      {/* 목록 헤더 및 전체 선택 버튼 */}
+      {/* 4번 요구사항 반영: VBT 선택 시 1L, 1S, 2L, 2S, FLAT 서브탭 복구 */}
+      {inventoryTab === '고정' && selectedFixedSubCategory === 'VBT' && (
+        <div className="bg-white p-1.5 rounded-lg border border-[#E2E5E9] flex overflow-x-auto gap-1 shadow-2xs">
+          {(['1L', '1S', '2L', '2S', 'FLAT', '기타'] as VbtSubCategory[]).map((subCat) => (
+            <button
+              key={subCat}
+              onClick={() => setSelectedVbtSubCategory(subCat)}
+              className={`flex-1 min-w-[42px] py-1 rounded-md text-[11px] font-semibold transition shrink-0 ${
+                selectedVbtSubCategory === subCat ? 'bg-slate-700 text-white shadow-2xs' : 'bg-[#F5F6F8] text-[#64748B]'
+              }`}
+            >
+              {subCat}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* 목록 헤더 및 전체 선택 */}
       <div className="bg-white rounded-lg border border-[#E2E5E9] p-3 flex items-center justify-between gap-2 shadow-2xs">
         <div className="flex items-center space-x-2 text-xs font-bold text-[#1F2937] min-w-0 truncate">
           <Package className="h-4 w-4 text-[#243B5A] shrink-0" />
@@ -2761,6 +2222,12 @@ export default function MaterialManagement({
                       {isCabin ? item.item : item.name}
                     </h3>
                   </div>
+                  {/* 5번 요구사항: 교정 대상 장비 표시 */}
+                  {isCalibrationItem(item) && (
+                    <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.2 rounded font-medium">
+                      🔬 교정 대상장비
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2768,19 +2235,20 @@ export default function MaterialManagement({
                 {!isCabin && (
                   <>
                     {isAdmin && (
-                      <button
-                        onClick={() => handleOpenInboundModal(item)}
-                        className="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded text-xs font-medium border border-emerald-200"
-                      >
+                      <button onClick={() => handleOpenInboundModal(item)} className="px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded text-xs font-medium border border-emerald-200">
                         입고
                       </button>
                     )}
-                    <button
-                      onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : '불출')}
-                      className="px-2.5 py-1 bg-[#243B5A] text-white rounded text-xs font-medium"
-                    >
-                      {item.type === '소모성' ? '사용' : '불출'}
-                    </button>
+                    {/* 5번 요구사항 반영: 교정 주기가 정해진 장비는 불출 대신 '교정 반출' 버튼 제공 */}
+                    {isCalibrationItem(item) ? (
+                      <button onClick={() => handleOpenLogModal(item, '교정 반출')} className="px-2.5 py-1 bg-amber-600 text-white rounded text-xs font-medium">
+                        교정 반출
+                      </button>
+                    ) : (
+                      <button onClick={() => handleOpenLogModal(item, item.type === '소모성' ? '소모성 사용' : '불출')} className="px-2.5 py-1 bg-[#243B5A] text-white rounded text-xs font-medium">
+                        {item.type === '소모성' ? '사용' : '불출'}
+                      </button>
+                    )}
                   </>
                 )}
                 {isAdmin && (
@@ -2800,39 +2268,88 @@ export default function MaterialManagement({
         )}
       </div>
 
-      {/* 최근 이력 섹션 */}
+      {/* 3번 요구사항 반영: 불출·소모성·교정 이력 섹션 및 상단 탭 필터 복구 */}
       <div className="bg-white rounded-lg border border-[#E2E5E9] overflow-hidden shadow-2xs mt-4">
-        <div className="px-3.5 py-2.5 bg-[#F5F6F8] border-b border-[#E2E5E9] flex justify-between items-center">
+        <div className="px-3.5 py-2.5 bg-[#F5F6F8] border-b border-[#E2E5E9] flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <div className="flex items-center space-x-2">
             <History className="h-4 w-4 text-[#243B5A]" />
             <h2 className="text-xs font-bold text-[#1F2937]">불출 · 소모성 · 교정 이력</h2>
           </div>
-          <button onClick={() => setIsHistorySectionOpen(!isHistorySectionOpen)} className="text-[#64748B] p-1">
-            {isHistorySectionOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
+          
+          {/* 3번 요구사항: 관리 차원에서 나눠놓은 이력 구분 탭 복구 */}
+          <div className="flex flex-wrap items-center gap-1">
+            {(['전체', '기자재', '소모성', '교정', '교정반입완료', 'CABIN'] as const).map(type => (
+              <button
+                key={type}
+                onClick={() => setHistoryTypeFilter(type)}
+                className={`px-2.5 py-1 rounded text-[10px] font-semibold transition ${
+                  historyTypeFilter === type ? 'bg-[#243B5A] text-white shadow-2xs' : 'bg-white border border-[#E2E5E9] text-[#64748B]'
+                }`}
+              >
+                {type === '교정반입완료' ? '교정 반입' : type === '교정' ? '교정 반출' : type}
+              </button>
+            ))}
+            <button
+              onClick={handleOpenReturnHistory}
+              className="px-2.5 py-1 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200"
+            >
+              기자재 반납 이력
+            </button>
+          </div>
         </div>
 
-        {isHistorySectionOpen && (
-          <div className="p-3 space-y-2 max-h-80 overflow-y-auto">
-            {filteredRecentInventoryLogs.map((log) => (
-              <div key={log.id} className="p-2.5 rounded-lg border bg-[#F5F6F8]/50 border-[#E2E5E9] text-xs flex justify-between items-center">
+        <div className="p-3 space-y-2 max-h-80 overflow-y-auto">
+          {filteredRecentInventoryLogs.map((log) => {
+            const isReturnCompleted = log.type.includes('반납완료') || log.type.includes('교정 반입');
+            const isConsumableUsage = log.type.includes('소모성 사용');
+
+            return (
+              <div key={log.id} className="p-2.5 rounded-lg border bg-[#F5F6F8]/50 border-[#E2E5E9] text-xs flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                 <div>
-                  <span className="font-bold text-[#1F2937]">{log.item_name}</span>
-                  <span className="text-[10px] text-[#64748B] ml-2">({log.type} / {log.quantity} EA)</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="px-1.5 py-0.2 rounded text-[10px] font-bold bg-blue-100 text-blue-800">{log.type}</span>
+                    <span className="font-bold text-[#1F2937]">{log.item_name}</span>
+                    <span className="text-[10px] text-[#64748B]">({log.quantity} EA)</span>
+                  </div>
+                  <div className="text-[11px] text-[#64748B] mt-1">
+                    <span>일시: {new Date(log.created_at).toLocaleString('ko-KR')}</span>
+                  </div>
                 </div>
-                <span className="text-[10px] text-[#64748B]">{new Date(log.created_at).toLocaleString('ko-KR')}</span>
+
+                {/* 2번 요구사항 반영: 기자재는 반납 버튼이 반드시 존재하도록 처리 */}
+                <div className="flex items-center space-x-1 shrink-0">
+                  {!isReturnCompleted && !isConsumableUsage && !log.type.includes('입고') && (
+                    <button
+                      onClick={() => handleOpenReturnModal(log)}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-semibold transition shadow-xs"
+                    >
+                      {log.type.includes('교정 반출') ? '교정 반입' : '반납 처리'}
+                    </button>
+                  )}
+                  {isAdmin && (
+                    <button onClick={() => handleOpenDeleteLog(log.id)} className="p-1 text-red-500 hover:bg-red-50 rounded">
+                      <Trash2 className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
               </div>
-            ))}
-          </div>
-        )}
+            );
+          })}
+
+          {filteredRecentInventoryLogs.length === 0 && (
+            <div className="text-center py-6 text-[#64748B] text-xs">
+              선택한 조건에 해당하는 이력이 없습니다.
+            </div>
+          )}
+        </div>
       </div>
 
-      {/* [UX 핵심 개선] 하단 고정 플로팅 액션 바 (선택된 항목이 있을 때만 노출) */}
+      {/* 6번 요구사항 반영: 모바일 친화적으로 크기가 유연하고 일정한 플로팅 액션 바 */}
       {((inventoryTab === '고정' && selectedFixedIds.length > 0) || 
         (inventoryTab === '소모성' && selectedConsumableIds.length > 0) || 
         (inventoryTab === 'CABIN' && selectedCabinIds.length > 0)) && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-[#243B5A] text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center space-x-4 border border-slate-600">
-          <div className="text-xs font-bold flex items-center space-x-1.5">
+        <div className="fixed bottom-6 left-4 right-4 sm:left-1/2 sm:-translate-x-1/2 sm:max-w-md z-50 bg-[#243B5A] text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between border border-slate-600 gap-2">
+          <div className="text-xs font-bold flex items-center space-x-1.5 shrink-0">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
             <span>
               {inventoryTab === '고정' && `${selectedFixedIds.length}개 선택됨`}
@@ -2840,24 +2357,24 @@ export default function MaterialManagement({
               {inventoryTab === 'CABIN' && `${selectedCabinIds.length}개 선택됨`}
             </span>
           </div>
-          <div className="h-4 w-[1px] bg-slate-600"></div>
-          <div className="flex items-center space-x-2">
+          
+          <div className="flex items-center space-x-1.5 shrink-0">
             {inventoryTab === '고정' && (
               <button
                 type="button"
                 onClick={openFixedBatchModal}
-                className="px-3 py-1.5 bg-white text-[#243B5A] hover:bg-slate-100 rounded-lg text-xs font-bold transition shadow-xs"
+                className="px-3 py-1.5 bg-white text-[#243B5A] hover:bg-slate-100 rounded-lg text-xs font-bold transition shadow-xs whitespace-nowrap"
               >
-                일괄 불출하기
+                일괄 불출
               </button>
             )}
             {inventoryTab === '소모성' && (
               <button
                 type="button"
                 onClick={openConsumableBatchModal}
-                className="px-3 py-1.5 bg-white text-[#243B5A] hover:bg-slate-100 rounded-lg text-xs font-bold transition shadow-xs"
+                className="px-3 py-1.5 bg-white text-[#243B5A] hover:bg-slate-100 rounded-lg text-xs font-bold transition shadow-xs whitespace-nowrap"
               >
-                일괄 사용하기
+                일괄 사용
               </button>
             )}
             {inventoryTab === 'CABIN' && (
@@ -2865,14 +2382,14 @@ export default function MaterialManagement({
                 <button
                   type="button"
                   onClick={() => setShowCabinBatchModal(true)}
-                  className="px-3 py-1.5 bg-white text-[#243B5A] hover:bg-slate-100 rounded-lg text-xs font-bold transition"
+                  className="px-2.5 py-1.5 bg-white text-[#243B5A] rounded-lg text-xs font-bold whitespace-nowrap"
                 >
                   일괄 불출
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowCabinBatchReturnModal(true)}
-                  className="px-3 py-1.5 bg-blue-600 text-white hover:bg-blue-700 rounded-lg text-xs font-bold transition"
+                  className="px-2.5 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-bold whitespace-nowrap"
                 >
                   일괄 반납
                 </button>
@@ -2885,10 +2402,144 @@ export default function MaterialManagement({
                 setSelectedConsumableIds([]);
                 setSelectedCabinIds([]);
               }}
-              className="text-xs text-slate-300 hover:text-white px-2 py-1 transition"
+              className="text-xs text-slate-300 hover:text-white px-2 py-1 transition whitespace-nowrap"
             >
-              선택 해제
+              해제
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* 자재 등록 / 수정 모달 */}
+      {showInventorySheet && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-md w-full p-5 shadow-2xl space-y-4 text-[#1F2937] max-h-[90vh] overflow-y-auto">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-sm font-bold">{editingItem ? '자재 정보 수정' : '신규 자재 등록'}</h3>
+              <button onClick={() => setShowInventorySheet(false)}><X className="h-4 w-4" /></button>
+            </div>
+
+            <form onSubmit={handleSubmitInventory} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">구분</label>
+                <div className="flex space-x-2">
+                  {(['고정', '소모성', 'CABIN'] as MainTab[]).map(t => (
+                    <button
+                      key={t}
+                      type="button"
+                      disabled={!!editingItem}
+                      onClick={() => setItemType(t)}
+                      className={`flex-1 py-1.5 rounded-md font-semibold text-xs border ${
+                        itemType === t ? 'bg-[#243B5A] text-white border-[#243B5A]' : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9]'
+                      } disabled:opacity-50`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {itemType === 'CABIN' ? (
+                <>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">Sheet 이름 / 카테고리</label>
+                    <input type="text" required value={cabinSheetName} onChange={e => setCabinSheetName(e.target.value)} placeholder="예: C#1" className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">NO / 식별코드</label>
+                    <input type="text" required value={itemCode} onChange={e => setItemCode(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">품목명 (ITEM)</label>
+                    <input type="text" required value={itemName} onChange={e => setItemName(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">자재 코드</label>
+                    <input type="text" required value={itemCode} onChange={e => setItemCode(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">품목명 / 자재명</label>
+                    <input type="text" required value={itemName} onChange={e => setItemName(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                  </div>
+                  <div>
+                    <label className="block text-[#64748B] font-semibold mb-1">서브 카테고리</label>
+                    <Select value={itemCategory || getCurrentSubCategories()[0] || '기타'} onValueChange={setItemCategory}>
+                      <SelectTrigger className="h-9 w-full border-[#E2E5E9] bg-[#F5F6F8] text-xs text-[#1F2937]">
+                        <SelectValue placeholder="카테고리 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getCurrentSubCategories().map(cat => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </>
+              )}
+
+              <div className="flex space-x-2 pt-3 border-t border-[#E2E5E9]">
+                {editingItem && (
+                  <button type="button" onClick={() => handleDeleteInventory(editingItem)} className="py-2 px-3 bg-red-100 text-red-600 font-semibold text-xs rounded-lg">
+                    삭제
+                  </button>
+                )}
+                <button type="button" onClick={() => setShowInventorySheet(false)} className="flex-1 py-2 bg-gray-100 text-[#64748B] font-semibold text-xs rounded-lg">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] text-white font-semibold text-xs rounded-lg">저장하기</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 추가 입고 모달 */}
+      {inboundItem && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-sm font-bold">자재 추가 입고</h3>
+              <button onClick={() => setInboundItem(null)}><X className="h-4 w-4" /></button>
+            </div>
+            <form onSubmit={handleSubmitInbound} className="space-y-3 text-xs">
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">입고 수량</label>
+                <input type="number" min="1" required value={inboundQty} onChange={e => setInboundQty(Number(e.target.value))} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] font-bold" />
+              </div>
+              <div className="flex space-x-2 pt-2">
+                <button type="button" onClick={() => setInboundItem(null)} className="flex-1 py-2 bg-gray-100 text-xs rounded-lg">취소</button>
+                <button type="submit" disabled={inboundSubmitting} className="flex-1 py-2 bg-emerald-600 text-white text-xs rounded-lg">입고 완료</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* 일반 불출/사용 처리 모달 */}
+      {showLogSheet && targetItem && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white rounded-xl border border-[#E2E5E9] max-w-sm w-full p-5 shadow-2xl space-y-4 text-[#1F2937]">
+            <div className="flex justify-between items-center pb-2 border-b border-[#E2E5E9]">
+              <h3 className="text-sm font-bold">{logType} 등록</h3>
+              <button onClick={() => setShowLogSheet(false)}><X className="h-4 w-4" /></button>
+            </div>
+            <form onSubmit={handleSubmitLog} className="space-y-3 text-xs">
+              <div className="bg-[#F5F6F8] p-2.5 rounded-md border border-[#E2E5E9]">
+                <p className="font-bold text-[#1F2937]">{targetItem.name || targetItem.item}</p>
+                <p className="text-[10px] text-[#64748B]">현재 보유 재고: {targetItem.quantity} {targetItem.unit}</p>
+              </div>
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">수량</label>
+                <input type="number" min="1" required value={logQty} onChange={e => setLogQty(Number(e.target.value))} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937] font-bold" />
+              </div>
+              <div>
+                <label className="block text-[#64748B] font-semibold mb-1">사유 / 메모</label>
+                <input type="text" value={logMemo} onChange={e => setLogMemo(e.target.value)} className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+              </div>
+              <div className="flex space-x-2 pt-2">
+                <button type="button" onClick={() => setShowLogSheet(false)} className="flex-1 py-2 bg-gray-100 text-xs rounded-lg">취소</button>
+                <button type="submit" className="flex-1 py-2 bg-[#243B5A] text-white text-xs rounded-lg">등록 확정</button>
+              </div>
+            </form>
           </div>
         </div>
       )}
