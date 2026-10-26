@@ -1001,8 +1001,9 @@ export default function MaterialManagement({
     if (!isAdmin) return showCenterToast('관리자만 자재를 등록할 수 있습니다.');
     setEditingItem(null);
     setItemType(inventoryTab);
-    const codePrefix = inventoryTab === '고정' ? 'FIX-' : inventoryTab === '소모성' ? 'MAT-' : 'CBN-';
-    setItemCode(codePrefix + String(Math.floor(Math.random() * 900) + 100));
+    // 일반 자재는 임의 자재코드를 생성하지 않습니다.
+    // 연결된 자재명 카테고리(예: 몽키)는 저장 시 내부 code 값으로 사용합니다.
+    setItemCode('');
     setItemName('');
     setItemSerialNo('');
     setItemVbtType('');
@@ -1094,8 +1095,14 @@ export default function MaterialManagement({
 
         const payload = {
           type: itemType,
-          // 자재코드는 화면에서 입력하지 않습니다. 기존 DB 호환을 위해 내부 값만 유지합니다.
-          code: String(editingItem?.code || itemCode || `${itemType === '고정' ? 'FIX' : 'MAT'}-${Date.now()}`),
+          // 연결된 자재명 카테고리가 있으면 해당 이름을 code로 사용합니다.
+          // 임의 번호는 생성하지 않으며, 기존 자재 수정 시에는 기존 code를 보존합니다.
+          code: String(
+            itemNameCategory.trim() ||
+            editingItem?.code ||
+            itemCode.trim() ||
+            itemName.trim()
+          ),
           name: itemName.trim(),
           serial_number: itemSerialNo.trim() || null,
           category: itemCategory,
