@@ -2519,8 +2519,13 @@ if (cat !== 'VBT') return false;
     const isCalibration = log.type.includes('교정') || (matched?.type === '고정' && isCalibrationItem(matched));
     if (historyTypeFilter === '기자재' && (!isEquipment || isCalibration)) return false;
     if (historyTypeFilter === '소모성' && !isConsumable) return false;
-    // 상단 '교정 반입' 바로가기는 교정 반입 완료 기록만 표시합니다.
-    if (historyTypeFilter === '교정반입완료' && !log.type.includes('교정 반입')) return false;
+    // 상단 '교정 반입' 바로가기는 실제 교정 반입 완료 행만 표시합니다.
+    // 원래 교정 반출 행은 재처리를 막기 위해 '교정 반입완료' 상태로 갱신되지만,
+    // 교정 반입 이력에는 포함하지 않습니다. 반입 기록 1건만 보여줍니다.
+    if (historyTypeFilter === '교정반입완료') {
+      const logType = String(log.type || '');
+      if (!logType.includes('교정 반입') || logType.includes('교정 반출')) return false;
+    }
     // 필터 탭 '교정 반출'은 교정 반출 기록만 표시합니다.
     if (historyTypeFilter === '교정' && !log.type.includes('교정 반출')) return false;
     if (historyTypeFilter === 'CABIN' && !isCabin) return false;
