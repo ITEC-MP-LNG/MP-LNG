@@ -625,6 +625,7 @@ export default function HRManagement({
   const [utilityForm, setUtilityForm] = useState({ management_fee_date: '', gas_fee_date: '' });
   const [newDormitoryName, setNewDormitoryName] = useState('');
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('ALL');
+  const [partManagerOpen, setPartManagerOpen] = useState(false);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [dormListCollapsed, setDormListCollapsed] = useState(true);
@@ -1833,6 +1834,11 @@ export default function HRManagement({
                 <Building2 className="h-3.5 w-3.5" />
                 <span>기숙사 현황</span>
               </button>
+              {isAdmin && <button
+                type="button"
+                onClick={() => { setSubGroupType('DEPT'); setPartManagerOpen(open => !open); }}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition border ${partManagerOpen ? 'bg-[#243B5A] text-white border-[#243B5A] shadow-xs' : 'bg-[#F5F6F8] text-[#64748B] border-[#E2E5E9] hover:bg-[#E2E5E9]'}`}
+              ><Layers className="h-3.5 w-3.5" /><span>파트 추가/관리</span></button>}
             </div>
 
             {subGroupType !== 'DORM' && <div className="flex items-center space-x-2 text-xs">
@@ -1874,7 +1880,7 @@ export default function HRManagement({
                 ]}
               />
             </div>
-            {isAdmin && subGroupType === 'DEPT' && <div className="mt-2 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] p-2.5 space-y-2">
+            {isAdmin && subGroupType === 'DEPT' && partManagerOpen && <div className="mt-2 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] p-2.5 space-y-2">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="text-xs font-bold text-[#243B5A]">파트 관리</span>
                 <button type="button" onClick={async () => {
@@ -2833,12 +2839,7 @@ export default function HRManagement({
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                     className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
                   >
-                    <option value="운영">운영</option>
-                    <option value="관리">관리</option>
-                    <option value="1팀">1팀</option>
-                    <option value="2팀">2팀</option>
-                    <option value="3팀">3팀</option>
-                    <option value="4팀">4팀</option>
+                    {Array.from(new Set(['운영', '관리', '1팀', '2팀', '3팀', '4팀', ...users.map(user => String(user.department || '').trim()).filter(Boolean), formData.department].filter(Boolean))).map(part => <option key={part} value={part}>{part}</option>)}
                   </StyledDropdown>
                 </div>
                 <div>

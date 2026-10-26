@@ -60,6 +60,11 @@ export interface AppUser {
   absence_dates?: string[];
 }
 
+const isFormerAppUser = (user?: AppUser | null) => {
+  if (!user) return true;
+  return [user.department, user.position, user.job_title, user.field].some(value => /퇴사|퇴직|퇴사자|퇴직자/.test(String(value || '')));
+};
+
 const C = { navy: '#243B5A', pale: '#F5F6F8', border: '#E2E5E9', text: '#1F2937', muted: '#64748B' };
 const inputClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white transition-colors';
 
@@ -318,6 +323,51 @@ function CalendarDatePicker({
       )}
     </div>
   );
+}
+
+/** 앱 공통 달력과 동일한 팝업 스타일의 월 전용 선택기 */
+function MonthOnlyPicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const parsed = /^\d{4}-\d{2}$/.test(value) ? value.split('-').map(Number) : [new Date().getFullYear(), new Date().getMonth() + 1];
+  const [year, setYear] = useState(parsed[0]);
+  const [month, setMonth] = useState(parsed[1]);
+  useEffect(() => {
+    if (/^\d{4}-\d{2}$/.test(value)) {
+      const [y, m] = value.split('-').map(Number);
+      setYear(y); setMonth(m);
+    }
+  }, [value]);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', close);
+    return () => document.removeEventListener('keydown', close);
+  }, [open]);
+  return <>
+    <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open} className="flex items-center gap-2 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-semibold text-[#243B5A] hover:border-[#243B5A]">
+      <CalendarIcon className="h-3.5 w-3.5" />{value.replace('-', '년 ')}월
+    </button>
+    {open && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/25 p-4" onClick={() => setOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label="월 선택" onClick={event => event.stopPropagation()} className="w-[min(320px,calc(100vw-32px))] rounded-2xl border border-[#E2E5E9] bg-white p-3 text-[#1F2937] shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+        <div className="mb-3 flex items-center justify-between border-b border-[#E2E5E9] pb-2">
+          <span className="text-sm font-bold text-[#243B5A]">월 선택</span>
+          <button type="button" onClick={() => setOpen(false)} aria-label="월 선택 닫기" className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="flex items-center gap-2">
+          <select aria-label="연도 선택" value={year} onChange={event => setYear(Number(event.target.value))} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]">
+            {Array.from({ length: 81 }, (_, i) => new Date().getFullYear() - 60 + i).map(y => <option key={y} value={y}>{y}년</option>)}
+          </select>
+          <select aria-label="월 선택" value={month} onChange={event => setMonth(Number(event.target.value))} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]">
+            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
+          </select>
+        </div>
+        <div className="mt-3 flex justify-between border-t border-[#E2E5E9] pt-2">
+          <button type="button" onClick={() => { const now = new Date(); setYear(now.getFullYear()); setMonth(now.getMonth() + 1); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">이번 달</button>
+          <button type="button" onClick={() => { onChange(`${year}-${String(month).padStart(2, '0')}`); setOpen(false); }} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]">선택</button>
+        </div>
+      </div>
+    </div>}
+  </>;
 }
 
 type CompactTimeOption = { value: string; label: string };
@@ -927,6 +977,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       console.error('preset_teams 로드 실패:', err);
     }
   }, []);
+
+  const getCurrentTeamMembers = useCallback((team: PresetTeam) => {
+    const department = String(team.department || team.name || '').trim().toLowerCase();
+    const departmentMembers = appUsers.filter(user => !isFormerAppUser(user) && String(user.department || '').trim().toLowerCase() === department && user.name?.trim());
+    if (departmentMembers.length) return Array.from(new Set(departmentMembers.map(user => user.name.trim())));
+    return Array.from(new Set((team.members || []).map(name => String(name || '').trim()).filter(Boolean)))
+      .filter(name => appUsers.some(user => !isFormerAppUser(user) && user.name.trim().toLowerCase() === name.toLowerCase()));
+  }, [appUsers]);
 
   const getTaskReadKey = useCallback((taskId: string) => {
     const userKey = currentUser?.id || currentUser?.name || 'guest';
@@ -1571,7 +1629,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       showCustomAlert('Team 선택', '추가할 Team을 먼저 선택해주세요.');
       return;
     }
-    const names = Array.from(new Set((team.members || []).flatMap(member => String(member || '').split(',')).map(name => name.trim()).filter(Boolean)));
+    const names = getCurrentTeamMembers(team);
     if (!names.length) {
       showCustomAlert('Team 인원 없음', `“${team.name}”에 등록된 구성원이 없습니다.`);
       return;
@@ -1609,7 +1667,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (rejected.length) showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${accepted.length}명이 추가되었습니다.`);
     else if (accepted.length) showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${accepted.length}명이 추가되었습니다.`);
     else showCustomAlert('추가할 인원 없음', '선택한 Team의 구성원은 이미 모두 추가되어 있습니다.');
-  }, [presetTeams, selectedPresetTeamId, assignedList, appUsers, formData.task_type, formData.start_date, tasks, showCustomAlert, showCustomConfirm]);
+  }, [presetTeams, selectedPresetTeamId, assignedList, appUsers, formData.task_type, formData.start_date, tasks, showCustomAlert, showCustomConfirm, getCurrentTeamMembers]);
 
   const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
@@ -2729,7 +2787,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
               <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
                 {isAdmin && (
                   <>
-                    <input type="month" value={selectedExportMonth} onChange={(e) => setSelectedExportMonth(e.target.value)} className="px-2 py-1 text-xs border rounded-lg font-mono bg-[#F5F6F8]" />
+                    <MonthOnlyPicker value={selectedExportMonth} onChange={setSelectedExportMonth} />
                     <button onClick={() => { void handleExportWeeklyExcel(); }} className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><FileSpreadsheet className="h-3.5 w-3.5" /><span>Excel 내려받기</span></button>
                     <button onClick={handleRequestMonthlyWeeklyDelete} className="flex items-center space-x-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><Trash2 className="h-3.5 w-3.5" /><span>월 삭제</span></button>
                   </>
@@ -3396,7 +3454,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                               value={selectedPresetTeamId}
                               onChange={(val) => setSelectedPresetTeamId(val)}
                               placeholder={presetTeams.length ? 'Team 선택 후 인원 추가' : '등록된 Team이 없습니다'}
-                              options={presetTeams.map(team => ({ value: team.id, label: `${team.name} (${team.members?.length || 0}명)` }))}
+                              options={presetTeams.map(team => ({ value: team.id, label: `${team.name} (${getCurrentTeamMembers(team).length}명)` }))}
                             />
                           </div>
                           <button type="button" onClick={handleAddPresetTeamToTask} className="shrink-0 rounded-lg border border-[#243B5A] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] transition-colors hover:bg-[#EEF2F7]">Team 추가</button>
