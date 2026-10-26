@@ -978,6 +978,19 @@ export default function MaterialManagement({
     else if (inventoryTab === '소모성') setSelectedConsumableCategory(val);
   };
 
+  const handleCalibrationDateChange = (value: string) => {
+    setItemCalDate(value);
+    if (!value || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      setItemNextCalDate('');
+      return;
+    }
+    const [year, month, day] = value.split('-').map(Number);
+    const nextDate = new Date(year + 1, month - 1, day);
+    // 윤년 2월 29일 등 다음 해에 존재하지 않는 날짜는 해당 월의 마지막 날로 맞춥니다.
+    if (nextDate.getMonth() !== month - 1) nextDate.setDate(0);
+    setItemNextCalDate(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-${String(nextDate.getDate()).padStart(2, '0')}`);
+  };
+
   const handleOpenInventoryCreate = () => {
     if (!isAdmin) return showCenterToast('관리자만 자재를 등록할 수 있습니다.');
     setEditingItem(null);
@@ -1232,10 +1245,31 @@ export default function MaterialManagement({
         showCenterToast('수량은 1 이상이어야 합니다.');
         return;
       }
+      const operationAt = new Date().toISOString();
+      if (targetItem.type === 'CABIN' && (logType === '교정 반출' || logType === '교정 반입')) {
+        const { error } = await supabase.from('inventory_logs').insert([{
+          inventory_id: targetItem.id,
+          item_code: targetItem.no || targetItem.code || null,
+          item_name: targetItem.item || targetItem.name || 'CABIN 품목',
+          type: logType,
+          quantity: 1,
+          worker_name: currentUser?.name || '작업자',
+          issued_by: logType === '교정 반출' ? (currentUser?.name || '작업자') : null,
+          returned_by: logType === '교정 반입' ? (currentUser?.name || '작업자') : null,
+          memo: logMemo.trim() || null,
+          batch_id: null,
+          is_new: true,
+          created_at: operationAt
+        }]);
+        if (error) throw error;
+        showCenterToast(`CABIN ${logType} 기록이 저장되었습니다.`);
+        setShowLogSheet(false);
+        await fetchInventoryLogs();
+        return;
+      }
 const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
         ? crypto.randomUUID()
         : `LOG-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-      const operationAt = new Date().toISOString();
 
       let currentQty = targetItem.quantity || 0;
       let newQty = currentQty;
@@ -2424,15 +2458,19 @@ if (cat !== 'VBT') return false;
     return true;
   }), [recentInventoryLogs, findInventoryItemForLog, historyTypeFilter, historyCategoryFilter]);
   const filteredReturnHistories = useMemo(() => returnHistories.filter(history => {
-    // 교정 반입 기록은 inventory_logs의 교정 반입 내역에서만 보여주고, 기자재 반납 이력에서는 제외합니다.
+    // 교정 반입 기록은 별도 교정 이력에서만 보여줍니다. 과거에 반납 이력에도 잘못 저장된 건은
+    // 자재 ID/코드, 수량, 기록 시각을 함께 비교해 중복 노출을 막습니다.
     const isCalibrationInbound = inventoryLogs.some(log => {
       if (!String(log.type || '').includes('교정 반입')) return false;
-      if (history.inventory_id != null && log.inventory_id != null && String(history.inventory_id) !== String(log.inventory_id)) return false;
       if (Number(history.quantity || 0) !== Number(log.quantity || 0)) return false;
+      const sameId = history.inventory_id != null && log.inventory_id != null && String(history.inventory_id) === String(log.inventory_id);
+      const sameCode = Boolean(history.item_code && log.item_code && String(history.item_code) === String(log.item_code));
+      if (!sameId && !sameCode) return false;
       if (history.returned_at && log.created_at) {
-        return Math.abs(new Date(history.returned_at).getTime() - new Date(log.created_at).getTime()) < 3000;
+        const delta = Math.abs(new Date(history.returned_at).getTime() - new Date(log.created_at).getTime());
+        return Number.isFinite(delta) && delta < 5 * 60 * 1000;
       }
-      return Boolean(history.item_code && log.item_code && history.item_code === log.item_code);
+      return sameId || sameCode;
     });
     if (isCalibrationInbound) return false;
     if (returnHistoryCategoryFilter === '전체') return true;
@@ -3668,7 +3706,7 @@ if (cat !== 'VBT') return false;
                       )}
                       {item.type !== '소모성' && isCalibrationItem(item) && (
                         <Select value="" onValueChange={(value) => handleOpenLogModal(item, value as '교정 반출' | '교정 반입')}>
-                          <SelectTrigger aria-label="교정 작업 선택" className="h-8 w-[76px] sm:w-[92px] max-w-full border-amber-200 bg-amber-50 px-1.5 sm:px-2 text-[11px] sm:text-xs font-semibold text-amber-800 shadow-none focus:ring-amber-200">
+                          <SelectTrigger aria-label="교정 작업 선택" className="h-8 w-[76px] sm:w-[92px] max-w-full border-blue-200 bg-blue-50 px-1.5 sm:px-2 text-[11px] sm:text-xs font-semibold text-blue-700 shadow-none focus:ring-blue-200">
                             <SelectValue placeholder="교정 ▾" />
                           </SelectTrigger>
                           <SelectContent>
@@ -3677,6 +3715,27 @@ if (cat !== 'VBT') return false;
                           </SelectContent>
                         </Select>
                       )}
+                    </>
+                  )}
+
+                  {isCabin && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenLogModal(item, '교정 반출')}
+                        className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded text-xs font-semibold transition border border-blue-200 flex items-center space-x-1"
+                      >
+                        <ArrowUpRight className="h-3 w-3" />
+                        <span>교정 반출</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenLogModal(item, '교정 반입')}
+                        className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-semibold transition border border-blue-700 flex items-center space-x-1"
+                      >
+                        <ArrowDownRight className="h-3 w-3" />
+                        <span>교정 반입</span>
+                      </button>
                     </>
                   )}
 
@@ -4255,7 +4314,7 @@ if (cat !== 'VBT') return false;
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <label className="block text-[#64748B] font-semibold mb-1">교정일자</label>
-                        <CalendarDatePicker value={itemCalDate} onChange={setItemCalDate} label="교정일자" className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
+                        <CalendarDatePicker value={itemCalDate} onChange={handleCalibrationDateChange} label="교정일자" className="w-full px-2.5 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-md text-[#1F2937]" />
                       </div>
                       <div>
                         <label className="block text-[#64748B] font-semibold mb-1">차기 교정예정일</label>
@@ -4383,22 +4442,28 @@ if (cat !== 'VBT') return false;
       >
         <div className="mx-auto flex w-full max-w-xl flex-col gap-2 rounded-2xl border border-[#D8DEE8] bg-white/95 p-3 shadow-[0_-8px_30px_rgba(15,23,42,0.16)] backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2 sm:justify-start">
-            {inventoryTab === '고정' && (
+            {(inventoryTab === '고정' || inventoryTab === '소모성') && (
               <div className="flex min-w-0 items-center gap-1.5">
                 <label className="shrink-0 text-[10px] sm:text-xs font-semibold text-[#64748B]">카테고리</label>
-                <Select value={selectedFixedSubCategory || '전체 보기'} onValueChange={(value) => {
-                  setSelectedFixedSubCategory(value);
-                  setSelectedItemSubCategory('전체 보기');
-                  setSelectedFixedIds([]);
-                  setFixedBatchQuantities({});
-                  if (value === 'VBT') setSelectedVbtSubCategory('1L');
-                }}>
+                <Select
+                  value={(inventoryTab === '고정' ? selectedFixedSubCategory : selectedConsumableCategory) || '전체 보기'}
+                  onValueChange={(value) => {
+                    if (inventoryTab === '고정') {
+                      setSelectedFixedSubCategory(value);
+                      if (value === 'VBT') setSelectedVbtSubCategory('1L');
+                    } else {
+                      setSelectedConsumableCategory(value);
+                    }
+                    setSelectedItemSubCategory('전체 보기');
+                    // 선택된 품목과 수량은 카테고리 이동 후에도 유지합니다.
+                  }}
+                >
                   <SelectTrigger aria-label="플로팅바 카테고리 이동" className="h-8 w-[118px] sm:w-[150px] min-w-0 border-[#E2E5E9] bg-white px-2 text-[11px] font-semibold text-[#243B5A]">
                     <SelectValue placeholder="카테고리 이동" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="전체 보기">전체 보기</SelectItem>
-                    {fixedSubCategories.map(cat => <SelectItem key={cat} value={cat}>{cat === '교정' ? '교정 대상' : cat}</SelectItem>)}
+                    {(inventoryTab === '고정' ? fixedSubCategories : consumableSubCategories).map(cat => <SelectItem key={cat} value={cat}>{cat === '교정' ? '교정 대상' : cat}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
