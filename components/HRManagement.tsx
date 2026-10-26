@@ -627,6 +627,9 @@ export default function HRManagement({
   const [newDormitoryName, setNewDormitoryName] = useState('');
   const [selectedSubCategory, setSelectedSubCategory] = useState<string>('ALL');
   const [partManagerOpen, setPartManagerOpen] = useState(false);
+  const [partEditTarget, setPartEditTarget] = useState<string | null>(null);
+  const [partEditName, setPartEditName] = useState('');
+  const [partDeleteTarget, setPartDeleteTarget] = useState<string | null>(null);
   const [newPartName, setNewPartName] = useState('');
   const [newPartMembers, setNewPartMembers] = useState('');
   const [managedPartNames, setManagedPartNames] = useState<string[]>([]);
@@ -1687,7 +1690,7 @@ export default function HRManagement({
   return (
     <div className="w-full min-h-screen bg-[#F5F6F8] text-[#1F2937] p-2 sm:p-3 space-y-3 font-sans box-border">
       {notice && (
-        <div className="fixed top-3 left-3 right-3 sm:top-5 sm:left-auto sm:right-5 z-[100] w-auto sm:w-[min(92vw,420px)] pt-[env(safe-area-inset-top)]">
+        <div className="fixed top-3 left-3 right-3 sm:top-5 sm:left-auto sm:right-5 z-[160] w-auto sm:w-[min(92vw,420px)] pt-[env(safe-area-inset-top)]">
           <div role="status" aria-live="polite" className={`overflow-hidden rounded-xl border bg-white shadow-[0_12px_32px_rgba(15,23,42,0.16)] ${
             notice.type === 'success' ? 'border-emerald-200' :
             notice.type === 'error' ? 'border-rose-200' :
@@ -3019,10 +3022,10 @@ export default function HRManagement({
                   e.preventDefault();
                   const partName = newPartName.trim();
                   if (!partName) return;
-                  if (availableSubCategories.some(part => part.toLowerCase() === partName.toLowerCase())) { window.alert('이미 존재하는 파트명입니다.'); return; }
+                  if (availableSubCategories.some(part => part.toLowerCase() === partName.toLowerCase())) { showNotice('이미 존재하는 파트명입니다.', 'warning'); return; }
                   const names = newPartMembers.split(',').map(name => name.trim()).filter(Boolean);
                   const targets = names.length ? users.filter(user => names.some(name => name.toLowerCase() === user.name.trim().toLowerCase())) : [];
-                  if (names.length && targets.length !== names.length) { window.alert('직원 이름을 찾을 수 없습니다. 이름을 확인해 주세요.'); return; }
+                  if (names.length && targets.length !== names.length) { showNotice('직원 이름을 찾을 수 없습니다. 이름을 확인해 주세요.', 'warning'); return; }
                   try {
                     for (const user of targets) {
                       const { error } = await supabase.from('app_users').update({ department: partName }).eq('id', user.id);
@@ -3036,8 +3039,8 @@ export default function HRManagement({
                     });
                     setNewPartName('');
                     setNewPartMembers('');
-                    window.alert(`'${partName}' 파트가 추가되었습니다.${targets.length ? ` ${targets.length}명의 직원을 배정했습니다.` : ' 직원은 나중에 배정할 수 있습니다.'}`);
-                  } catch (error: any) { window.alert(`파트 추가 실패: ${error?.message || '오류'}`); }
+                    showNotice(`'${partName}' 파트가 추가되었습니다.${targets.length ? ` ${targets.length}명의 직원을 배정했습니다.` : ' 직원은 나중에 배정할 수 있습니다.'}`, 'success');
+                  } catch (error: any) { showNotice(`파트 추가 실패: ${error?.message || '오류'}`, 'error'); }
                 }}>
                   <input value={newPartName} onChange={(e) => setNewPartName(e.target.value)} placeholder="파트명 (예: 5팀)" aria-label="추가할 파트명" className="min-w-0 flex-1 rounded-lg border border-[#D7DDE5] bg-white px-3 py-2 text-xs outline-none focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/10" />
                   <button type="submit" className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1D3049]">추가</button>
@@ -3053,28 +3056,8 @@ export default function HRManagement({
                   <div key={part} className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2.5">
                     <div className="min-w-0"><div className="text-xs font-bold text-[#243B5A]">{part}</div><div className="mt-0.5 text-[10px] text-[#64748B]">{users.filter(user => (user.department || '') === part).length}명 소속</div></div>
                     <div className="flex shrink-0 items-center gap-1.5">
-                      <button type="button" onClick={async () => {
-                        const nextName = window.prompt(`'${part}' 파트의 새 이름을 입력하세요.`, part);
-                        if (!nextName?.trim() || nextName.trim() === part) return;
-                        if (availableSubCategories.some(existing => existing.toLowerCase() === nextName.trim().toLowerCase())) { window.alert('이미 존재하는 파트명입니다.'); return; }
-                        try {
-                          const members = users.filter(user => (user.department || '') === part);
-                          for (const user of members) { const { error } = await supabase.from('app_users').update({ department: nextName.trim() }).eq('id', user.id); if (error) throw error; }
-                          setUsers(prev => prev.map(user => user.department === part ? { ...user, department: nextName.trim() } : user));
-                          setManagedPartNames(prev => { const next = prev.map(name => name === part ? nextName.trim() : name); try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {} return next; });
-                          setSelectedSubCategory('ALL');
-                        } catch (error: any) { window.alert(`파트 수정 실패: ${error?.message || '오류'}`); }
-                      }} className="rounded-md border border-[#D7DDE5] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#243B5A] hover:bg-slate-100">수정</button>
-                      <button type="button" onClick={async () => {
-                        if (!window.confirm(`'${part}' 파트를 삭제하시겠습니까? 소속 직원은 '미지정 파트'로 변경됩니다.`)) return;
-                        try {
-                          const members = users.filter(user => (user.department || '') === part);
-                          for (const user of members) { const { error } = await supabase.from('app_users').update({ department: null }).eq('id', user.id); if (error) throw error; }
-                          setUsers(prev => prev.map(user => user.department === part ? { ...user, department: '' } : user));
-                          setManagedPartNames(prev => { const next = prev.filter(name => name !== part); try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {} return next; });
-                          setSelectedSubCategory('ALL');
-                        } catch (error: any) { window.alert(`파트 삭제 실패: ${error?.message || '오류'}`); }
-                      }} className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-100">삭제</button>
+                      <button type="button" onClick={() => { setPartEditTarget(part); setPartEditName(part); }} className="rounded-md border border-[#D7DDE5] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#243B5A] hover:bg-slate-100">수정</button>
+                      <button type="button" onClick={() => setPartDeleteTarget(part)} className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-100">삭제</button>
                     </div>
                   </div>
                 ))}
@@ -3082,6 +3065,52 @@ export default function HRManagement({
               </div>
             </div>
             <div className="flex justify-end border-t border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3"><button type="button" onClick={() => setPartManagerOpen(false)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white">닫기</button></div>
+          </div>
+        </div>
+      )}
+
+      {partEditTarget && isAdmin && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/40 p-3 backdrop-blur-xs sm:p-4" onClick={() => setPartEditTarget(null)}>
+          <div role="dialog" aria-modal="true" aria-label="파트명 수정" className="w-full max-w-sm overflow-hidden rounded-xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between bg-[#243B5A] px-3.5 py-2.5"><span className="text-xs font-bold tracking-wide text-white">파트명 수정</span><button type="button" onClick={() => setPartEditTarget(null)} aria-label="닫기" className="rounded-md px-1.5 text-lg leading-none text-white/80 hover:bg-white/10">×</button></div>
+            <form className="space-y-4 p-4" onSubmit={async (e) => {
+              e.preventDefault();
+              const nextName = partEditName.trim();
+              if (!nextName) { showNotice('파트명을 입력해 주세요.', 'warning'); return; }
+              if (nextName === partEditTarget) { setPartEditTarget(null); return; }
+              if (availableSubCategories.some(existing => existing.toLowerCase() === nextName.toLowerCase())) { showNotice('이미 존재하는 파트명입니다.', 'warning'); return; }
+              try {
+                const oldName = partEditTarget;
+                const members = users.filter(user => (user.department || '') === oldName);
+                for (const user of members) { const { error } = await supabase.from('app_users').update({ department: nextName }).eq('id', user.id); if (error) throw error; }
+                setUsers(prev => prev.map(user => user.department === oldName ? { ...user, department: nextName } : user));
+                setManagedPartNames(prev => { const next = prev.map(name => name === oldName ? nextName : name); try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {} return next; });
+                setSelectedSubCategory('ALL'); setPartEditTarget(null); showNotice(`'${oldName}' 파트명이 '${nextName}'(으)로 수정되었습니다.`, 'success');
+              } catch (error: any) { showNotice(`파트 수정 실패: ${error?.message || '오류'}`, 'error'); }
+            }}>
+              <label className="block text-xs font-semibold text-[#475569]">파트명</label>
+              <input autoFocus value={partEditName} onChange={(e) => setPartEditName(e.target.value)} className="mt-1 w-full rounded-lg border border-[#D7DDE5] bg-white px-3 py-2.5 text-sm text-[#1F2937] outline-none focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/10" />
+              <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={() => setPartEditTarget(null)} className="rounded-lg border border-[#E2E5E9] bg-white px-4 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">취소</button><button type="submit" className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1D3049]">저장</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {partDeleteTarget && isAdmin && (
+        <div className="fixed inset-0 z-[140] flex items-center justify-center bg-slate-900/40 p-3 backdrop-blur-xs sm:p-4" onClick={() => setPartDeleteTarget(null)}>
+          <div role="dialog" aria-modal="true" aria-label="파트 삭제 확인" className="w-full max-w-sm overflow-hidden rounded-xl border border-rose-200 bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between bg-[#243B5A] px-3.5 py-2.5"><span className="text-xs font-bold tracking-wide text-white">현장관리 알림</span><button type="button" onClick={() => setPartDeleteTarget(null)} aria-label="닫기" className="rounded-md px-1.5 text-lg leading-none text-white/80 hover:bg-white/10">×</button></div>
+            <div className="flex items-start gap-3 px-4 py-4"><div className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-rose-600 text-[11px] font-extrabold text-white">!</div><div><h3 className="text-sm font-bold text-[#1F2937]">파트 삭제 확인</h3><p className="mt-1 text-xs leading-5 text-[#475569]">'{partDeleteTarget}' 파트를 삭제하시겠습니까?<br />소속 직원은 '미지정 파트'로 변경됩니다.</p></div></div>
+            <div className="flex justify-end gap-2 border-t border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3"><button type="button" onClick={() => setPartDeleteTarget(null)} className="rounded-lg border border-[#E2E5E9] bg-white px-4 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]">취소</button><button type="button" onClick={async () => {
+              const part = partDeleteTarget;
+              try {
+                const members = users.filter(user => (user.department || '') === part);
+                for (const user of members) { const { error } = await supabase.from('app_users').update({ department: null }).eq('id', user.id); if (error) throw error; }
+                setUsers(prev => prev.map(user => user.department === part ? { ...user, department: '' } : user));
+                setManagedPartNames(prev => { const next = prev.filter(name => name !== part); try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {} return next; });
+                setSelectedSubCategory('ALL'); setPartDeleteTarget(null); showNotice(`'${part}' 파트가 삭제되었습니다.`, 'success');
+              } catch (error: any) { setPartDeleteTarget(null); showNotice(`파트 삭제 실패: ${error?.message || '오류'}`, 'error'); }
+            }} className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700">삭제</button></div>
           </div>
         </div>
       )}
