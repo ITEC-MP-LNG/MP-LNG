@@ -108,10 +108,9 @@ function isFormerEmployee(user: AppUser): boolean {
 
 function isUserOffOnDate(user: AppUser | undefined, date: string): boolean {
   if (!user || !date) return false;
-  const today = formatDateToYYYYMMDD(new Date());
-  // 전체 근무 상태는 오늘에만 적용하고, 다른 날짜는 날짜별 휴무 기록으로 판정합니다.
-  return (date === today && user.work_status === '휴무') ||
-    (Array.isArray(user.absence_dates) && user.absence_dates.includes(date));
+  // 날짜별 user_day_status 기록만 기준으로 판정합니다.
+  // app_users.work_status는 이전 날짜의 값이 남을 수 있으므로 휴무 판정에 사용하지 않습니다.
+  return Array.isArray(user.absence_dates) && user.absence_dates.includes(date);
 }
 
 function isOperationsOrManagement(user: AppUser): boolean {
