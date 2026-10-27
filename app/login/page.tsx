@@ -14,7 +14,7 @@ function cn(...inputs: (string | undefined | null | false)[]) {
 export default function LoginPage() {
   const [userCode, setUserCode] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false); // 비밀번호 표시 여부 상태
+  const [showPassword, setShowPassword] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -48,7 +48,6 @@ export default function LoginPage() {
         .ilike('id', cleanUserCode)
         .maybeSingle();
 
-      // 만약 'id' 컬럼 에러가 난다면 'user_id' 컬럼으로 재시도 (대소문자 무시)
       if (dbError && dbError.message?.includes('column')) {
         const retryResult = await supabase
           .from('app_users')
@@ -82,6 +81,15 @@ export default function LoginPage() {
         setAlertMessage('비밀번호(생년월일)가 일치하지 않습니다.');
         return;
       }
+
+      // ✅ [추가됨] 로그인 성공 시 기존 login_count에 1을 더해서 업데이트 (로그 용량 걱정 없음!)
+      const currentCount = data.login_count || 0;
+      const primaryKeyId = data.id !== undefined ? data.id : data.user_id;
+
+      await supabase
+        .from('app_users')
+        .update({ login_count: currentCount + 1 })
+        .eq('id', data.id ? 'id' : 'user_id', primaryKeyId); // 안전한 업데이트 처리
 
       // 3. 로그인 성공 처리
       const userInfo = {
@@ -158,14 +166,13 @@ export default function LoginPage() {
                 <input
                   id="password"
                   name="password"
-                  type={showPassword ? 'text' : 'password'} // 상태에 따라 텍스트/비밀번호 전환
+                  type={showPassword ? 'text' : 'password'}
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full pl-9 pr-10 py-2 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] placeholder-[#64748B]/60 focus:bg-white focus:border-[#243B5A] focus:ring-1 focus:ring-[#243B5A] focus:outline-hidden transition font-medium"
                   placeholder="예: 19980101"
                 />
-                {/* 비밀번호 보기/숨기기 토글 버튼 */}
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -228,18 +235,17 @@ export default function LoginPage() {
             </p>
 
             <button
-  onClick={() => {
-    const isSuccess = alertMessage.includes('로그인 되었습니다');
-    setAlertMessage(null);
-    if (isSuccess) {
-      // ✅ router.push 대신 router.replace를 사용해 로그인 페이지 뒤로가기 방지 및 깔끔한 이동
-      router.replace('/main');
-    }
-  }}
-  className="w-full py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer"
->
-  확인
-</button>
+              onClick={() => {
+                const isSuccess = alertMessage.includes('로그인 되었습니다');
+                setAlertMessage(null);
+                if (isSuccess) {
+                  router.replace('/main');
+                }
+              }}
+              className="w-full py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold transition shadow-xs cursor-pointer"
+            >
+              확인
+            </button>
           </div>
         </div>
       )}
