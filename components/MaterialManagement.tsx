@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/select';
 import InventoryHistoryFilters from './InventoryHistoryFilters';
 import { supabase } from '@/lib/supabase';
+import ExcelJS from 'exceljs';
 
 // 자체 정의된 타입
 export interface AppUser {
@@ -247,6 +248,7 @@ export default function MaterialManagement({
   fetchInventoryLogs,
 }: MaterialManagementProps) {
   const [inventoryTab, setInventoryTab] = useState<MainTab>('고정');
+  const [showExcelDownloadMenu, setShowExcelDownloadMenu] = useState(false);
   const [cabinInventoryList, setCabinInventoryList] = useState<any[]>([]);
   const [loadingCabin, setLoadingCabin] = useState<boolean>(false);
 
@@ -2416,6 +2418,162 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
     );
   };
 
+  // 현재 화면의 목록과 무관하게 전체 등록 데이터를 기준으로 Excel을 생성합니다.
+  const exportInventoryExcel = async (target: '전체' | '기자재' | 'CABIN') => {
+    try {
+      const workbook = new ExcelJS.Workbook();
+      workbook.creator = 'MP-LNG 기자재 관리';
+      workbook.subject = '기자재 및 CABIN 현황';
+      workbook.title = target === 'CABIN' ? 'Instrument calibration certificate' : '기자재 현황';
+
+      const safeSheetName = (raw: string, used: Set<string>) => {
+        let base = String(raw || '기타').replace(/[\\/*?:\[\]]/g, '_').trim() || '기타';
+        base = base.slice(0, 31);
+        let name = base;
+        let index = 2;
+        while (used.has(name.toLowerCase())) {
+          const suffix = `_${index++}`;
+          name = `${base.slice(0, 31 - suffix.length)}${suffix}`;
+        }
+        used.add(name.toLowerCase());
+        return name;
+      };
+      const usedSheetNames = new Set<string>();
+      const centerAlignment = { vertical: 'middle' as const, horizontal: 'center' as const, wrapText: true };
+      const grayFill = { type: 'pattern' as const, pattern: 'solid' as const, fgColor: { argb: 'FFE7E9EC' } };
+      const border = {
+        top: { style: 'thin' as const, color: { argb: 'FFB8BEC7' } },
+        bottom: { style: 'thin' as const, color: { argb: 'FFB8BEC7' } },
+        left: { style: 'thin' as const, color: { argb: 'FFB8BEC7' } },
+        right: { style: 'thin' as const, color: { argb: 'FFB8BEC7' } },
+      };
+      const setTableCellStyle = (cell: ExcelJS.Cell, bold = false, gray = false) => {
+        cell.font = { name: '맑은 고딕', size: 9, bold };
+        cell.alignment = centerAlignment;
+        cell.border = border;
+        if (gray) cell.fill = grayFill;
+      };
+      const autoWidth = (sheet: ExcelJS.Worksheet, minWidth = 8, maxWidth = 42) => {
+        sheet.columns.forEach((column) => {
+          let maxLength = 0;
+          column.eachCell?.({ includeEmpty: true }, (cell) => {
+            const value = cell.value == null ? '' : String(cell.value);
+            maxLength = Math.max(maxLength, ...value.split('\n').map(line => line.length));
+          });
+          column.width = Math.min(maxWidth, Math.max(minWidth, maxLength + 3));
+        });
+      };
+
+      if (target === '전체' || target === '기자재') {
+        const equipment = inventoryList.filter(item => item.type === '고정');
+        const categories = Array.from(new Set(equipment.map(item => String(item.category || '기타').trim() || '기타')))
+          .sort((a, b) => a.localeCompare(b, 'ko-KR'));
+        // 등록된 세부 카테고리가 아직 품목이 없어도 시트로 보이도록 포함합니다.
+        const equipmentSheets = Array.from(new Set([...categories, ...fixedSubCategories]))
+          .filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko-KR'));
+        for (const category of equipmentSheets) {
+          const rows = equipment.filter(item => String(item.category || '기타').trim() === category);
+          if (rows.length === 0 && !categories.includes(category)) continue;
+          const sheet = workbook.addWorksheet(safeSheetName(category, usedSheetNames));
+          sheet.mergeCells(1, 1, 1, 8);
+          const title = sheet.getCell(1, 1);
+          title.value = '기자재 현황';
+          title.font = { name: 'HY헤드라인M', size: 20, bold: false };
+          title.alignment = centerAlignment;
+          title.border = border;
+          sheet.getRow(1).height = 42; // 약 56px
+          const headers = ['No.', '자재명', '구분', '시리얼번호', '수량', '교정일', '차기교정일', '비고'];
+          sheet.addRow(headers);
+          sheet.getRow(2).height = 24;
+          sheet.getRow(2).eachCell((cell) => { setTableCellStyle(cell, true, true); cell.font = { name: '맑은 고딕', size: 10, bold: true }; });
+          rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
+            .forEach((item, index) => {
+              const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+              const serial = item.serial_number || ((item.category === '압력계' || item.category === 'VBT') ? item.code : '') || '';
+              const note = (item as any).note || (item as any).memo || (item as any).remarks || '';
+              const row = sheet.addRow([index + 1, item.name || item.item || '', category, serial, Number(item.quantity || 0), calDate, nextCalDate, note]);
+              row.height = 21;
+              row.eachCell((cell, colNumber) => setTableCellStyle(cell, false, colNumber === 1));
+            });
+          const lastRow = Math.max(2, sheet.rowCount);
+          sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: lastRow, column: 8 } };
+          autoWidth(sheet, 8, 42);
+          sheet.getColumn(1).width = Math.max(8, sheet.getColumn(1).width || 8);
+          sheet.views = [{ state: 'frozen', ySplit: 2 }];
+        }
+      }
+
+      if (target === '전체' || target === 'CABIN') {
+        const cabin = cabinInventoryList.slice();
+        const sheets = Array.from(new Set([
+          ...customCabinSheets,
+          ...cabin.map(item => cleanSheetName(String(item.sheet_name || item.category || '기타'))),
+        ])).filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko-KR'));
+        for (const category of sheets) {
+          const rows = cabin.filter(item => cleanSheetName(String(item.sheet_name || item.category || '기타')) === category)
+            .sort((a, b) => compareCabinIdentifier(a.no, b.no));
+          if (!rows.length) continue;
+          const sheet = workbook.addWorksheet(safeSheetName(category, usedSheetNames));
+          sheet.mergeCells(1, 1, 1, 6);
+          const title = sheet.getCell(1, 1);
+          title.value = 'Instrument calibration certificate';
+          title.font = { name: 'HY헤드라인M', size: 20, bold: false };
+          title.alignment = centerAlignment;
+          title.border = border;
+          sheet.getRow(1).height = 42; // 약 56px
+          const headers = ['No.', 'ITEM', 'MAKER/MODEL', 'Serial No(S/N)', '성적서 번호(Cert.No.)', '교정일(Date of Calibration)'];
+          sheet.addRow(headers);
+          sheet.getRow(2).height = 24;
+          sheet.getRow(2).eachCell((cell) => { setTableCellStyle(cell, true, true); cell.font = { name: '맑은 고딕', size: 10, bold: true }; });
+          let sequence = 1;
+          const itemNames = Array.from(new Set(rows.map(item => String(item.item || item.name || '제목 없음').trim())));
+          for (const itemName of itemNames) {
+            const group = rows.filter(item => String(item.item || item.name || '제목 없음').trim() === itemName);
+            const subtitleRow = sheet.addRow([itemName]);
+            sheet.mergeCells(subtitleRow.number, 1, subtitleRow.number, 6);
+            subtitleRow.height = 30; // 약 40px
+            const subtitle = sheet.getCell(subtitleRow.number, 1);
+            subtitle.font = { name: '맑은 고딕', size: 16, bold: false };
+            subtitle.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
+            subtitle.border = border;
+            for (const item of group) {
+              const row = sheet.addRow([sequence++, item.item || item.name || '', item.maker_model || '', item.serial_number || '', item.cert_no || '', item.calibration_date || '']);
+              row.height = 21;
+              row.eachCell((cell, colNumber) => setTableCellStyle(cell, false, colNumber === 1));
+            }
+          }
+          // 데이터 표 전체에 자동 필터를 설정해 품목별 데이터도 Excel에서 검색/정렬할 수 있게 합니다.
+          if (sheet.rowCount >= 3) sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: sheet.rowCount, column: 6 } };
+          autoWidth(sheet, 10, 44);
+          sheet.views = [{ state: 'frozen', ySplit: 2 }];
+        }
+      }
+
+      if (workbook.worksheets.length === 0) {
+        showCenterToast('Excel로 내려받을 등록 자료가 없습니다.');
+        return;
+      }
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      const date = new Date();
+      const dateText = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+      anchor.download = `${target === 'CABIN' ? 'CABIN_Instrument_calibration_certificate' : target === '기자재' ? '기자재_현황' : '기자재_CABIN_현황'}_${dateText}.xlsx`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setShowExcelDownloadMenu(false);
+      showCenterToast('Excel 파일 내려받기가 완료되었습니다.');
+    } catch (error: any) {
+      console.error('기자재/CABIN Excel 다운로드 실패:', error);
+      showCenterToast(`Excel 내려받기 실패: ${error?.message || '알 수 없는 오류'}`);
+    }
+  };
+
+
   const filteredInventory = useMemo(() => {
     let result: any[] = [];
 
@@ -3469,6 +3627,27 @@ if (cat !== 'VBT') return false;
             <Compass className="h-3.5 w-3.5 shrink-0" />
             <span>CABIN</span>
           </button>
+        </div>
+
+        <div className="relative w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setShowExcelDownloadMenu(prev => !prev)}
+            className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 sm:py-1.5 text-xs font-semibold text-[#243B5A] shadow-2xs hover:bg-[#F5F6F8] transition"
+          >
+            <span>Excel 내려받기</span>
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showExcelDownloadMenu ? 'rotate-180' : ''}`} />
+          </button>
+          {showExcelDownloadMenu && (
+            <>
+              <button aria-label="메뉴 닫기" className="fixed inset-0 z-30 cursor-default" onClick={() => setShowExcelDownloadMenu(false)} />
+              <div className="absolute right-0 top-full mt-1 z-40 w-full sm:w-48 rounded-lg border border-[#D7DDE5] bg-white p-1.5 shadow-lg">
+                <button type="button" onClick={() => void exportInventoryExcel('전체')} className="w-full rounded-md px-3 py-2.5 text-left text-xs font-medium text-[#243B5A] hover:bg-[#F1F4F8] transition">전체 내려받기</button>
+                <button type="button" onClick={() => void exportInventoryExcel('기자재')} className="w-full rounded-md px-3 py-2.5 text-left text-xs font-medium text-[#243B5A] hover:bg-[#F1F4F8] transition">기자재 내려받기</button>
+                <button type="button" onClick={() => void exportInventoryExcel('CABIN')} className="w-full rounded-md px-3 py-2.5 text-left text-xs font-medium text-[#243B5A] hover:bg-[#F1F4F8] transition">CABIN 내려받기</button>
+              </div>
+            </>
+          )}
         </div>
 
         {isAdmin && (
