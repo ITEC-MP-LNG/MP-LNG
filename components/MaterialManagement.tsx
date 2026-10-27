@@ -2419,12 +2419,12 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
   };
 
   // 현재 화면의 목록과 무관하게 전체 등록 데이터를 기준으로 Excel을 생성합니다.
-  const exportInventoryExcel = async (target: '전체' | '기자재' | 'CABIN') => {
+  const exportInventoryExcel = async (target: '전체' | '기자재' | '소모성' | 'CABIN') => {
     try {
       const workbook = new ExcelJS.Workbook();
       workbook.creator = 'MP-LNG 기자재 관리';
       workbook.subject = '기자재 및 CABIN 현황';
-      workbook.title = target === 'CABIN' ? 'Instrument calibration certificate' : '기자재 현황';
+      workbook.title = target === 'CABIN' ? 'Instrument calibration certificate' : target === '소모성' ? '소모성 현황' : '기자재 현황';
 
       const safeSheetName = (raw: string, used: Set<string>) => {
         let base = String(raw || '기타').replace(/[\\/*?:\[\]]/g, '_').trim() || '기타';
@@ -2475,14 +2475,18 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
           const rows = equipment.filter(item => String(item.category || '기타').trim() === category);
           if (rows.length === 0 && !categories.includes(category)) continue;
           const sheet = workbook.addWorksheet(safeSheetName(category, usedSheetNames));
-          sheet.mergeCells(1, 1, 1, 9);
+          const isVbtSheet = category === 'VBT';
+          const columnCount = isVbtSheet ? 7 : 9;
+          sheet.mergeCells(1, 1, 1, columnCount);
           const title = sheet.getCell(1, 1);
           title.value = '기자재 현황';
           title.font = { name: 'HY헤드라인M', size: 20, bold: false };
           title.alignment = centerAlignment;
           title.border = border;
           sheet.getRow(1).height = 42; // 약 56px
-          const headers = ['No.', '구분', '자재명', '품목명', '수량', 'S/N', '교정일', '차기교정일', '비고'];
+          const headers = isVbtSheet
+            ? ['No.', '구분', '품목명', 'VBT 타입', '수량', 'S/N', '비고']
+            : ['No.', '구분', '자재명', '품목명', '수량', 'S/N', '교정일', '차기교정일', '비고'];
           sheet.addRow(headers);
           sheet.getRow(2).height = 24;
           sheet.getRow(2).eachCell((cell) => { setTableCellStyle(cell, true, true); cell.font = { name: '맑은 고딕', size: 10, bold: true }; });
@@ -2504,14 +2508,58 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
             const itemName = String(item.name || item.item || '').trim();
             const distinction = String(item.category || '').trim();
             const note = (item as any).note || (item as any).memo || (item as any).remarks || '';
-            const row = sheet.addRow([index + 1, distinction, materialNameCategory, itemName, Number(item.quantity || 0), serial, calDate, nextCalDate, note]);
+            const row = isVbtSheet
+              ? sheet.addRow([index + 1, distinction, itemName, String((item as any).vbt_type || '').trim(), Number(item.quantity || 0), serial, note])
+              : sheet.addRow([index + 1, distinction, materialNameCategory, itemName, Number(item.quantity || 0), serial, calDate || '', nextCalDate || '', note]);
             row.height = 21;
             row.eachCell((cell, colNumber) => setTableCellStyle(cell, false, colNumber === 1));
           });
           const lastRow = Math.max(2, sheet.rowCount);
-          sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: lastRow, column: 9 } };
+          sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: lastRow, column: columnCount } };
           autoWidth(sheet, 8, 32);
           sheet.getColumn(1).width = Math.max(8, sheet.getColumn(1).width || 8);
+          sheet.views = [{ state: 'frozen', ySplit: 2 }];
+        }
+      }
+
+      if (target === '전체' || target === '소모성') {
+        const consumables = inventoryList.filter(item => item.type === '소모성');
+        const categories = Array.from(new Set(consumables.map(item => String(item.category || '기타').trim() || '기타')))
+          .sort((a, b) => a.localeCompare(b, 'ko-KR'));
+        const consumableSheets = Array.from(new Set([...categories, ...consumableSubCategories]))
+          .filter(Boolean).sort((a, b) => a.localeCompare(b, 'ko-KR'));
+        for (const category of consumableSheets) {
+          const rows = consumables.filter(item => String(item.category || '기타').trim() === category)
+            .sort((a, b) => String(a.name || a.item || '').localeCompare(String(b.name || b.item || ''), 'ko-KR'));
+          if (rows.length === 0 && !categories.includes(category)) continue;
+          const sheet = workbook.addWorksheet(safeSheetName(`소모성_${category}`, usedSheetNames));
+          sheet.mergeCells(1, 1, 1, 7);
+          const title = sheet.getCell(1, 1);
+          title.value = '소모성 현황';
+          title.font = { name: 'HY헤드라인M', size: 20, bold: false };
+          title.alignment = centerAlignment;
+          title.border = border;
+          sheet.getRow(1).height = 42;
+          const headers = ['No.', '서브카테고리', '품목명', '보유수량', '사용수량', '잔여수량', '비고'];
+          sheet.addRow(headers);
+          sheet.getRow(2).height = 24;
+          sheet.getRow(2).eachCell((cell) => { setTableCellStyle(cell, true, true); cell.font = { name: '맑은 고딕', size: 10, bold: true }; });
+          rows.forEach((item, index) => {
+            const itemLogs = inventoryLogs.filter((log: any) => String(log.inventory_id ?? '') === String(item.id));
+            const usedQty = itemLogs.filter((log: any) => {
+              const type = String(log.type || '');
+              return type.includes('소모성 사용') || (type.includes('불출') && !type.includes('반납완료'));
+            }).reduce((sum: number, log: any) => sum + (Number(log.quantity) || 0), 0);
+            const remainingQty = Number(item.quantity) || 0;
+            const stockQty = usedQty + remainingQty;
+            const note = (item as any).note || (item as any).memo || (item as any).remarks || '';
+            const row = sheet.addRow([index + 1, category, item.name || item.item || '', stockQty, usedQty, remainingQty, note]);
+            row.height = 21;
+            row.eachCell((cell, colNumber) => setTableCellStyle(cell, false, colNumber === 1));
+          });
+          const lastRow = Math.max(2, sheet.rowCount);
+          sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: lastRow, column: 7 } };
+          autoWidth(sheet, 8, 32);
           sheet.views = [{ state: 'frozen', ySplit: 2 }];
         }
       }
@@ -2553,29 +2601,30 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
           title.border = border;
           sheet.getRow(1).height = 42; // 약 56px
           const headers = ['No.', 'ITEM', 'MAKER/MODEL', 'Serial No(S/N)', '성적서 번호(Cert.No.)', '교정일(Date of Calibration)'];
-          sheet.addRow(headers);
-          sheet.getRow(2).height = 24;
-          sheet.getRow(2).eachCell((cell) => { setTableCellStyle(cell, true, true); cell.font = { name: '맑은 고딕', size: 10, bold: true }; });
-          let sequence = 1;
           const itemNames = Array.from(new Set(rows.map(item => String(item.item || item.name || '제목 없음').trim()))).sort((a, b) => a.localeCompare(b, 'ko-KR'));
           for (const itemName of itemNames) {
-            const group = rows.filter(item => String(item.item || item.name || '제목 없음').trim() === itemName);
+            const group = rows.filter(item => String(item.item || item.name || '제목 없음').trim() === itemName)
+              .sort((a, b) => compareCabinIdentifier(a.no, b.no));
             const subtitleRow = sheet.addRow([itemName]);
             sheet.mergeCells(subtitleRow.number, 1, subtitleRow.number, 6);
-            subtitleRow.height = 30; // 약 40px
+            subtitleRow.height = 30;
             const subtitle = sheet.getCell(subtitleRow.number, 1);
             subtitle.font = { name: '맑은 고딕', size: 16, bold: false };
             subtitle.alignment = { vertical: 'middle', horizontal: 'left', indent: 1 };
             subtitle.border = border;
-            for (const item of group) {
-              const row = sheet.addRow([sequence++, item.item || item.name || '', item.maker_model || '', item.serial_number || '', item.cert_no || '', item.calibration_date || '']);
+            const headerRow = sheet.addRow(headers);
+            headerRow.height = 24;
+            headerRow.eachCell((cell) => { setTableCellStyle(cell, true, true); cell.font = { name: '맑은 고딕', size: 10, bold: true }; });
+            group.forEach((item, index) => {
+              const row = sheet.addRow([index + 1, item.item || item.name || '', item.maker_model || '', item.serial_number || '', item.cert_no || '', item.calibration_date || '']);
               row.height = 21;
               row.eachCell((cell, colNumber) => setTableCellStyle(cell, false, colNumber === 1));
-            }
+            });
           }
-          // 데이터 표 전체에 자동 필터를 설정해 품목별 데이터도 Excel에서 검색/정렬할 수 있게 합니다.
-          if (sheet.rowCount >= 3) sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: sheet.rowCount, column: 6 } };
-          autoWidth(sheet, 8, 26);
+          // CABIN 지정 열 너비는 픽셀 값을 Excel 열 너비로 환산해 적용합니다.
+          [65, 158, 150, 140, 180, 190].forEach((pixels, index) => {
+            sheet.getColumn(index + 1).width = Math.max(1, (pixels - 5) / 7);
+          });
           sheet.views = [{ state: 'frozen', ySplit: 2 }];
         }
       }
@@ -2591,7 +2640,7 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
       anchor.href = url;
       const date = new Date();
       const dateText = `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
-      anchor.download = `${target === 'CABIN' ? 'CABIN_Instrument_calibration_certificate' : target === '기자재' ? '기자재_현황' : '기자재_CABIN_현황'}_${dateText}.xlsx`;
+      anchor.download = `${target === 'CABIN' ? 'CABIN_Instrument_calibration_certificate' : target === '기자재' ? '기자재_현황' : target === '소모성' ? '소모성_현황' : '기자재_소모성_CABIN_현황'}_${dateText}.xlsx`;
       document.body.appendChild(anchor);
       anchor.click();
       anchor.remove();
@@ -3675,6 +3724,7 @@ if (cat !== 'VBT') return false;
               <div className="absolute right-0 top-full mt-1 z-40 w-full sm:w-48 rounded-lg border border-[#D7DDE5] bg-white p-1.5 shadow-lg">
                 <button type="button" onClick={() => void exportInventoryExcel('전체')} className="w-full rounded-md px-3 py-2.5 text-left text-xs font-medium text-[#243B5A] hover:bg-[#F1F4F8] transition">전체 내려받기</button>
                 <button type="button" onClick={() => void exportInventoryExcel('기자재')} className="w-full rounded-md px-3 py-2.5 text-left text-xs font-medium text-[#243B5A] hover:bg-[#F1F4F8] transition">기자재 내려받기</button>
+                <button type="button" onClick={() => void exportInventoryExcel('소모성')} className="w-full rounded-md px-3 py-2.5 text-left text-xs font-medium text-[#243B5A] hover:bg-[#F1F4F8] transition">소모성 내려받기</button>
                 <button type="button" onClick={() => void exportInventoryExcel('CABIN')} className="w-full rounded-md px-3 py-2.5 text-left text-xs font-medium text-[#243B5A] hover:bg-[#F1F4F8] transition">CABIN 내려받기</button>
               </div>
             </>
