@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { LogIn, User, Lock, ShieldAlert, CheckCircle2, Eye, EyeOff } from 'lucide-react';
 import clsx from 'clsx';
@@ -18,6 +18,30 @@ export default function LoginPage() {
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  // ✅ 비밀 제스처(3연타 감지) 전용 변수
+  const clickCountRef = useRef(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ✅ 아이콘 3연타 터치/클릭 처리 함수
+  const handleSecretTripleClick = () => {
+    clickCountRef.current += 1;
+
+    // 1초 이내에 연속으로 3번 클릭했는지 확인
+    if (clickCountRef.current === 3) {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      clickCountRef.current = 0;
+      // 비밀 관리자 페이지로 이동
+      router.push('/admin/login-stats');
+      return;
+    }
+
+    // 1초 동안 추가 클릭이 없으면 클릭 카운트 초기화
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      clickCountRef.current = 0;
+    }, 1000);
+  };
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -82,7 +106,7 @@ export default function LoginPage() {
         return;
       }
 
-      // ✅ [에러 수정 완료] 로그인 성공 시 기존 login_count에 1을 더해서 안전하게 업데이트
+      // 로그인 성공 시 login_count +1 업데이트
       const currentCount = data.login_count || 0;
       const targetId = data.id !== undefined ? data.id : data.user_id;
       const idColumnName = data.id !== undefined ? 'id' : 'user_id';
@@ -90,7 +114,7 @@ export default function LoginPage() {
       await supabase
         .from('app_users')
         .update({ login_count: currentCount + 1 })
-        .eq(idColumnName, targetId); // eq는 인자를 정확히 2개만 받도록 수정 완료
+        .eq(idColumnName, targetId);
 
       // 3. 로그인 성공 처리
       const userInfo = {
@@ -119,7 +143,12 @@ export default function LoginPage() {
         
         {/* Header Section */}
         <div className="text-center space-y-3">
-          <div className="mx-auto h-12 w-12 bg-[#243B5A]/10 rounded-xl flex items-center justify-center border border-[#243B5A]/20">
+          {/* ✅ 아이콘을 빠르게 3번 터치하면 관리자 페이지로 이동합니다. */}
+          <div 
+            onClick={handleSecretTripleClick}
+            className="mx-auto h-12 w-12 bg-[#243B5A]/10 rounded-xl flex items-center justify-center border border-[#243B5A]/20 cursor-pointer active:scale-95 transition-transform select-none"
+            title="통합현장관리"
+          >
             <LogIn className="h-6 w-6 text-[#243B5A]" />
           </div>
           <div>
