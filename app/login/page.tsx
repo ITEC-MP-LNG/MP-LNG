@@ -82,14 +82,15 @@ export default function LoginPage() {
         return;
       }
 
-      // ✅ [추가됨] 로그인 성공 시 기존 login_count에 1을 더해서 업데이트 (로그 용량 걱정 없음!)
+      // ✅ [에러 수정 완료] 로그인 성공 시 기존 login_count에 1을 더해서 안전하게 업데이트
       const currentCount = data.login_count || 0;
-      const primaryKeyId = data.id !== undefined ? data.id : data.user_id;
+      const targetId = data.id !== undefined ? data.id : data.user_id;
+      const idColumnName = data.id !== undefined ? 'id' : 'user_id';
 
       await supabase
         .from('app_users')
         .update({ login_count: currentCount + 1 })
-        .eq('id', data.id ? 'id' : 'user_id', primaryKeyId); // 안전한 업데이트 처리
+        .eq(idColumnName, targetId); // eq는 인자를 정확히 2개만 받도록 수정 완료
 
       // 3. 로그인 성공 처리
       const userInfo = {
