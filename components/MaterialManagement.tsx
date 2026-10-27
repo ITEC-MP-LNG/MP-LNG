@@ -2475,40 +2475,42 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
           const rows = equipment.filter(item => String(item.category || '기타').trim() === category);
           if (rows.length === 0 && !categories.includes(category)) continue;
           const sheet = workbook.addWorksheet(safeSheetName(category, usedSheetNames));
-          sheet.mergeCells(1, 1, 1, 8);
+          sheet.mergeCells(1, 1, 1, 9);
           const title = sheet.getCell(1, 1);
           title.value = '기자재 현황';
           title.font = { name: 'HY헤드라인M', size: 20, bold: false };
           title.alignment = centerAlignment;
           title.border = border;
           sheet.getRow(1).height = 42; // 약 56px
-          const headers = ['No.', '구분', '자재명카테고리(자재명)', 'S/N', '수량', '교정일', '차기교정일', '비고'];
+          const headers = ['No.', '구분', '자재명', '품목명', '수량', 'S/N', '교정일', '차기교정일', '비고'];
           sheet.addRow(headers);
           sheet.getRow(2).height = 24;
           sheet.getRow(2).eachCell((cell) => { setTableCellStyle(cell, true, true); cell.font = { name: '맑은 고딕', size: 10, bold: true }; });
-          rows.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ko-KR'))
-            .forEach((item, index) => {
-              const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
-              const serial = item.serial_number || ((item.category === '압력계' || item.category === 'VBT') ? item.code : '') || '';
-              const nameCategory = itemSubCategoryRows.find((entry: any) =>
-                entry.inventory_type === item.type &&
-                entry.parent_category === item.category &&
-                String(entry.material_name || '').trim() === String(item.name || item.item || '').trim() &&
-                entry.is_active !== false
-              )?.name || '';
-              const materialName = String(item.name || item.item || '').trim();
-              const nameWithCategory = nameCategory
-                ? `${nameCategory}${materialName ? ` (${materialName})` : ''}`
-                : materialName;
-              const distinction = item.vbt_type || (item.category === '압력계' ? '' : '');
-              const note = (item as any).note || (item as any).memo || (item as any).remarks || '';
-              const row = sheet.addRow([index + 1, distinction, nameWithCategory, serial, Number(item.quantity || 0), calDate, nextCalDate, note]);
-              row.height = 21;
-              row.eachCell((cell, colNumber) => setTableCellStyle(cell, false, colNumber === 1));
-            });
+          const getNameCategory = (item: any) => itemSubCategoryRows.find((entry: any) =>
+            entry.inventory_type === item.type &&
+            entry.parent_category === item.category &&
+            String(entry.material_name || '').trim() === String(item.name || item.item || '').trim() &&
+            entry.is_active !== false
+          )?.name || '';
+          rows.sort((a, b) =>
+            String(a.category || '').localeCompare(String(b.category || ''), 'ko-KR') ||
+            String(getNameCategory(a)).localeCompare(String(getNameCategory(b)), 'ko-KR') ||
+            String(a.name || a.item || '').localeCompare(String(b.name || b.item || ''), 'ko-KR') ||
+            String(a.serial_number || a.code || '').localeCompare(String(b.serial_number || b.code || ''), 'ko-KR')
+          ).forEach((item, index) => {
+            const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
+            const serial = item.serial_number || ((item.category === '압력계' || item.category === 'VBT') ? item.code : '') || '';
+            const materialNameCategory = getNameCategory(item);
+            const itemName = String(item.name || item.item || '').trim();
+            const distinction = String(item.category || '').trim();
+            const note = (item as any).note || (item as any).memo || (item as any).remarks || '';
+            const row = sheet.addRow([index + 1, distinction, materialNameCategory, itemName, Number(item.quantity || 0), serial, calDate, nextCalDate, note]);
+            row.height = 21;
+            row.eachCell((cell, colNumber) => setTableCellStyle(cell, false, colNumber === 1));
+          });
           const lastRow = Math.max(2, sheet.rowCount);
-          sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: lastRow, column: 8 } };
-          autoWidth(sheet, 8, 42);
+          sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: lastRow, column: 9 } };
+          autoWidth(sheet, 8, 32);
           sheet.getColumn(1).width = Math.max(8, sheet.getColumn(1).width || 8);
           sheet.views = [{ state: 'frozen', ySplit: 2 }];
         }
@@ -2555,7 +2557,7 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
           sheet.getRow(2).height = 24;
           sheet.getRow(2).eachCell((cell) => { setTableCellStyle(cell, true, true); cell.font = { name: '맑은 고딕', size: 10, bold: true }; });
           let sequence = 1;
-          const itemNames = Array.from(new Set(rows.map(item => String(item.item || item.name || '제목 없음').trim())));
+          const itemNames = Array.from(new Set(rows.map(item => String(item.item || item.name || '제목 없음').trim()))).sort((a, b) => a.localeCompare(b, 'ko-KR'));
           for (const itemName of itemNames) {
             const group = rows.filter(item => String(item.item || item.name || '제목 없음').trim() === itemName);
             const subtitleRow = sheet.addRow([itemName]);
@@ -2573,7 +2575,7 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
           }
           // 데이터 표 전체에 자동 필터를 설정해 품목별 데이터도 Excel에서 검색/정렬할 수 있게 합니다.
           if (sheet.rowCount >= 3) sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: sheet.rowCount, column: 6 } };
-          autoWidth(sheet, 10, 44);
+          autoWidth(sheet, 8, 26);
           sheet.views = [{ state: 'frozen', ySplit: 2 }];
         }
       }
