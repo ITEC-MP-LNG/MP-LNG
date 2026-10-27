@@ -82,6 +82,11 @@ function valuesEqualForSave(left: any, right: any): boolean {
   return JSON.stringify(normalizeForCompare(left)) === JSON.stringify(normalizeForCompare(right));
 }
 
+// 날짜별 휴무는 브라우저의 현지 날짜(한국 시간대 환경 포함)를 기준으로 판정합니다.
+function getLocalDateKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
 function calculateCareerDetails(startDateStr?: string) {
   if (!startDateStr) return null;
 
@@ -715,6 +720,7 @@ export default function HRManagement({
   const canManageAbsence = (targetUser: HRUser) => isAdmin || isSuperAdmin || (isTeamLeader && String(targetUser.department || '') === String(currentUser?.department || '')) || isSelf(targetUser);
 
   const handleQuickStatusChange = async (targetUser: HRUser, status: '근무중' | '휴무') => {
+    const today = getLocalDateKey();
     const currentStatus = targetUser.work_status === '휴무' ? '휴무' : '근무중';
     if (currentStatus === status) return;
     if (!canEditUser(targetUser)) {
@@ -722,16 +728,31 @@ export default function HRManagement({
       return;
     }
     try {
-      const { error } = await supabase
-        .from('app_users')
-        .update({ work_status: status })
-        .eq('id', targetUser.id);
-      if (error) throw error;
+      if (status === '휴무') {
+        const { error } = await supabase.from('user_day_status').upsert(
+          { user_id: targetUser.id, status_date: today, status: '휴무' },
+          { onConflict: 'user_id,status_date' }
+        );
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('user_day_status').delete()
+          .eq('user_id', targetUser.id).eq('status_date', today).eq('status', '휴무');
+        if (error) throw error;
+      }
 
       const updatedUser = { ...targetUser, work_status: status };
       setUsers(prev => prev.map(user => user.id === targetUser.id ? updatedUser : user));
       setDetailUser(prev => prev?.id === targetUser.id ? updatedUser : prev);
-      
+      setDetailAbsenceDates(prev => status === '휴무'
+        ? Array.from(new Set([...prev, today])).sort()
+        : prev.filter(date => date !== today));
+      setDetailAbsenceDatesOriginal(prev => status === '휴무'
+        ? Array.from(new Set([...prev, today])).sort()
+        : prev.filter(date => date !== today));
+      setFormData(prev => ({ ...prev, work_status: status, absence_dates: status === '휴무'
+        ? Array.from(new Set([...prev.absence_dates, today])).sort()
+        : prev.absence_dates.filter(date => date !== today) }));
+
       if (isSelf(targetUser)) {
         onCurrentUserStatusChange?.(status);
         const local = localStorage.getItem('currentUser');
@@ -743,11 +764,10 @@ export default function HRManagement({
           } catch {}
         }
       }
-
-      showNotice(`${targetUser.name}님의 상태가 '${status}'(으)로 변경되었습니다.`, 'success');
+      showNotice(`${targetUser.name}님의 오늘 상태가 '${status}'(으)로 변경되었습니다.`, 'success');
     } catch (error: any) {
-      console.error('근무 상태 변경 실패:', error?.message || error);
-      showNotice('근무 상태 저장에 실패했습니다. 권한과 work_status 컬럼을 확인해주세요.', 'error');
+      console.error('오늘 근무 상태 변경 실패:', error?.message || error);
+      showNotice('오늘 근무 상태 저장에 실패했습니다. user_day_status 테이블 권한을 확인해주세요.', 'error');
     }
   };
 
@@ -817,6 +837,11 @@ export default function HRManagement({
         if (error) throw error;
       }
       setDetailAbsenceDatesOriginal(selectedDates);
+      const todayStatus: '근무중' | '휴무' = selectedDates.includes(getLocalDateKey()) ? '휴무' : '근무중';
+      const updatedDetailUser = { ...detailUser, work_status: todayStatus };
+      setDetailUser(updatedDetailUser);
+      setUsers(prev => prev.map(user => user.id === detailUser.id ? { ...user, work_status: todayStatus } : user));
+      if (isSelf(detailUser)) onCurrentUserStatusChange?.(todayStatus);
       showNotice(`${detailUser.name}님의 휴무 날짜가 저장되었습니다.`, 'success');
     } catch (error: any) {
       console.error('상세정보 창 휴무 날짜 저장 실패:', error?.message || error);
@@ -1183,8 +1208,19 @@ export default function HRManagement({
 
       if (error) throw error;
 
+      // 구성원 화면의 상태도 업무현황과 동일하게 오늘 날짜의 휴무 기록으로 판정합니다.
+      const today = getLocalDateKey();
+      const { data: todayAbsences, error: todayAbsenceError } = await supabase
+        .from('user_day_status')
+        .select('user_id')
+        .eq('status_date', today)
+        .eq('status', '휴무');
+      if (todayAbsenceError) throw todayAbsenceError;
+      const todayAbsenceUserIds = new Set((todayAbsences || []).map((row: any) => String(row.user_id)));
+
       const formatted = (data || []).map((u: any) => ({
         ...u,
+        work_status: todayAbsenceUserIds.has(String(u.id)) ? '휴무' : '근무중',
         national_certificates: u.national_certificates || u.certificates || '',
         national_cert_details: Array.isArray(u.national_cert_details) ? u.national_cert_details : [],
         yard_cert_details: Array.isArray(u.yard_cert_details) ? u.yard_cert_details : (u.yard_cert_details?.names ? u.yard_cert_details.names.split(',').map((name: string) => ({ name: name.trim(), education_date: u.yard_cert_details.education_date || '', renewal_count: Number(u.yard_cert_details.renewal_count || 0), renewal_dates: Array.isArray(u.yard_cert_details.renewal_dates) ? u.yard_cert_details.renewal_dates : [] })).filter((item: any) => item.name) : []),
@@ -1608,7 +1644,7 @@ export default function HRManagement({
         national_cert_details: formData.national_cert_details,
         yard_cert_details: formData.yard_cert_details,
         ndt_certificates: formData.ndt_certificates,
-        work_status: formData.work_status === '휴무' ? '휴무' : '근무중'
+        work_status: formData.absence_dates.includes(getLocalDateKey()) ? '휴무' : '근무중'
       };
       
       if (isSelf(savedUser)) {
