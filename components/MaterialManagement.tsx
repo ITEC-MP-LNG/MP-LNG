@@ -2482,7 +2482,7 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
           title.alignment = centerAlignment;
           title.border = border;
           sheet.getRow(1).height = 42; // 약 56px
-          const headers = ['No.', '자재명', '구분', '시리얼번호', '수량', '교정일', '차기교정일', '비고'];
+          const headers = ['No.', '구분', '자재명카테고리(자재명)', 'S/N', '수량', '교정일', '차기교정일', '비고'];
           sheet.addRow(headers);
           sheet.getRow(2).height = 24;
           sheet.getRow(2).eachCell((cell) => { setTableCellStyle(cell, true, true); cell.font = { name: '맑은 고딕', size: 10, bold: true }; });
@@ -2490,8 +2490,19 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
             .forEach((item, index) => {
               const { calDate, nextCalDate } = parseCalDates(item.sub_equipment);
               const serial = item.serial_number || ((item.category === '압력계' || item.category === 'VBT') ? item.code : '') || '';
+              const nameCategory = itemSubCategoryRows.find((entry: any) =>
+                entry.inventory_type === item.type &&
+                entry.parent_category === item.category &&
+                String(entry.material_name || '').trim() === String(item.name || item.item || '').trim() &&
+                entry.is_active !== false
+              )?.name || '';
+              const materialName = String(item.name || item.item || '').trim();
+              const nameWithCategory = nameCategory
+                ? `${nameCategory}${materialName ? ` (${materialName})` : ''}`
+                : materialName;
+              const distinction = item.vbt_type || (item.category === '압력계' ? '' : '');
               const note = (item as any).note || (item as any).memo || (item as any).remarks || '';
-              const row = sheet.addRow([index + 1, item.name || item.item || '', category, serial, Number(item.quantity || 0), calDate, nextCalDate, note]);
+              const row = sheet.addRow([index + 1, distinction, nameWithCategory, serial, Number(item.quantity || 0), calDate, nextCalDate, note]);
               row.height = 21;
               row.eachCell((cell, colNumber) => setTableCellStyle(cell, false, colNumber === 1));
             });
@@ -2504,7 +2515,25 @@ const operationBatchId = typeof crypto !== 'undefined' && crypto.randomUUID
       }
 
       if (target === '전체' || target === 'CABIN') {
-        const cabin = cabinInventoryList.slice();
+        // CABIN 탭을 열기 전에도 드롭다운에서 바로 내려받을 수 있도록 필요할 때만 자료를 조회합니다.
+        let cabin = cabinInventoryList.slice();
+        if (cabin.length === 0) {
+          const { data, error } = await supabase
+            .from('cabin_inventory')
+            .select('id, no, item, sheet_name, location_or_section, maker_model, serial_number, cert_no, calibration_date');
+          if (error) throw error;
+          cabin = (data || []).map((row: any) => ({
+            ...row,
+            type: 'CABIN',
+            code: row.no || `CBN-${row.id}`,
+            name: row.item || '제목 없음',
+            category: row.sheet_name || '기타',
+            quantity: 1,
+            unit: 'EA',
+            location: row.location_or_section || 'CABIN',
+            sub_equipment: row.calibration_date ? `${row.calibration_date}` : null,
+          }));
+        }
         const sheets = Array.from(new Set([
           ...customCabinSheets,
           ...cabin.map(item => cleanSheetName(String(item.sheet_name || item.category || '기타'))),
