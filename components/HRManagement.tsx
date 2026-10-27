@@ -2442,7 +2442,7 @@ export default function HRManagement({
                       <span className="font-semibold text-[#16A34A]">{joinCareer || '-'}</span>
                     </div>
                     <div>
-                      <span className="text-[#64748B] block text-[10px]">비파괴 총 경력</span>
+                      <span className="text-[#64748B] block text-[10px]">NDT 경력</span>
                       <span className="font-semibold text-[#2563EB]">{totalCareer || '-'}</span>
                     </div>
                   </div>
@@ -2466,7 +2466,7 @@ export default function HRManagement({
                   <th className="p-3">연락처 / 주소</th>
                   <th className="p-3">권한</th>
                   <th className="p-3">자사 근속 (입사일)</th>
-                  <th className="p-3">비파괴 총 경력 (시작일)</th>
+                  <th className="p-3">NDT 경력 (시작일)</th>
                   <th className="p-3">사내자격(NDT Level)</th>
                   <th className="p-3">국가 자격</th>
                   <th className="p-3">YARD 자격</th>
@@ -2672,7 +2672,7 @@ export default function HRManagement({
                 </div>
 
                 <div className="bg-[#F5F6F8] p-2.5 rounded-lg border border-[#E2E5E9]">
-                  <span className="text-[10px] text-[#2563EB] font-bold block mb-0.5">비파괴 총 경력</span>
+                  <span className="text-[10px] text-[#2563EB] font-bold block mb-0.5">NDT 경력</span>
                   <span className="text-xs font-extrabold text-[#1F2937] block">
                     {calculateCareerDetails(detailUser.career_start_date) || '-'}
                   </span>
@@ -2908,7 +2908,7 @@ export default function HRManagement({
                   <CalendarDatePicker value={formData.join_date} onChange={(date) => setFormData(prev => ({ ...prev, join_date: date }))} />
                 </div>
                 <div>
-                  <label className="block font-bold text-[#64748B] mb-1">비파괴 총 경력 시작일</label>
+                  <label className="block font-bold text-[#64748B] mb-1">NDT 경력 시작일</label>
                   <CalendarDatePicker value={formData.career_start_date} onChange={(date) => setFormData(prev => ({ ...prev, career_start_date: date }))} />
                 </div>
               </div>
@@ -3340,7 +3340,7 @@ function renderMemberCard(
           )}
           <div className="space-x-1.5">
             <span className="font-semibold text-[#16A34A]">근속 {joinCareer || '-'}</span>
-            <span className="font-semibold text-[#2563EB]">총경력 {totalCareer || '-'}</span>
+            <span className="font-semibold text-[#2563EB]">NDT {totalCareer || '-'}</span>
           </div>
         </div>
       </div>
