@@ -779,30 +779,33 @@ export default function NoticeBoard({
         )}
       </div>
 
-      {/* ---------------- 모달 1: 공지 상세보기 ---------------- */}
+      {/* ---------------- 모달 1: 공지 상세보기 (모바일 최적화 수정) ---------------- */}
       {selectedNotice && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full shadow-xl relative text-[#1F2937] overflow-hidden">
-            <div className="p-5">
-              <button
-                onClick={() => setSelectedNotice(null)}
-                className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
-              >
-                <X className="h-4 w-4" />
-              </button>
-
-              <div className="flex items-center gap-2 mb-3">
+          {/* max-w-lg w-full max-h-[85vh] 및 flex flex-col 구조 적용 */}
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full max-h-[85vh] shadow-xl relative text-[#1F2937] overflow-hidden flex flex-col">
+            {/* 상단 헤더 영역 (고정) */}
+            <div className="p-4 sm:p-5 border-b border-[#E2E5E9] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 pr-6">
                 {selectedNotice.is_pinned && (
-                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-[#243B5A] text-white font-bold">
+                  <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-[#243B5A] text-white font-bold shrink-0">
                     <Pin className="h-3 w-3" />
                     중요 공지
                   </span>
                 )}
+                <h2 className="text-sm sm:text-base font-bold text-[#1F2937] truncate">{selectedNotice.title}</h2>
               </div>
+              <button
+                onClick={() => setSelectedNotice(null)}
+                className="text-[#64748B] hover:text-[#1F2937] cursor-pointer p-1 shrink-0"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
 
-              <h2 className="text-sm sm:text-base font-bold text-[#1F2937] pr-6 mb-2">{selectedNotice.title}</h2>
-
-              <div className="flex items-center gap-3 text-[10px] text-[#64748B] pb-3 border-b border-[#E2E5E9]">
+            {/* 메인 콘텐츠 영역 (스크롤 가능) */}
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-3">
+              <div className="flex items-center gap-3 text-[10px] text-[#64748B] pb-2 border-b border-[#E2E5E9]">
                 <span>작성자: {selectedNotice.author_name}</span>
                 <span className="flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
@@ -810,60 +813,64 @@ export default function NoticeBoard({
                 </span>
               </div>
 
-              <div className="py-5 text-xs sm:text-sm text-[#1F2937] whitespace-pre-wrap leading-6 min-h-[120px]">
+              <div className="py-2 text-xs sm:text-sm text-[#1F2937] whitespace-pre-wrap leading-6">
                 {selectedNotice.content}
               </div>
+            </div>
 
-              <div className="flex justify-between items-center pt-3 border-t border-[#E2E5E9]">
-                <div>
-                  {isAdmin && (
-                    <button
-                      onClick={() => {
-                        const notice = selectedNotice;
-                        setSelectedNotice(null);
-                        handleOpenNoticeEdit(notice);
-                      }}
-                      className="px-3 py-1.5 bg-[#F5F6F8] hover:bg-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold flex items-center gap-1 border border-[#E2E5E9] cursor-pointer"
-                    >
-                      <Pencil className="h-3 w-3" />
-                      수정
-                    </button>
-                  )}
-                </div>
-
-                <button
-                  onClick={() => setSelectedNotice(null)}
-                  className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer"
-                >
-                  닫기
-                </button>
+            {/* 하단 버튼 영역 (고정) */}
+            <div className="p-4 bg-[#F5F6F8] border-t border-[#E2E5E9] flex justify-between items-center shrink-0">
+              <div>
+                {isAdmin && (
+                  <button
+                    onClick={() => {
+                      const notice = selectedNotice;
+                      setSelectedNotice(null);
+                      handleOpenNoticeEdit(notice);
+                    }}
+                    className="px-3 py-2 bg-white hover:bg-[#E2E5E9] text-[#1F2937] rounded-lg text-xs font-semibold flex items-center gap-1 border border-[#E2E5E9] cursor-pointer shadow-xs"
+                  >
+                    <Pencil className="h-3 w-3" />
+                    수정
+                  </button>
+                )}
               </div>
+
+              <button
+                onClick={() => setSelectedNotice(null)}
+                className="px-5 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
+              >
+                닫기
+              </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ---------------- 모달 2: 개선/건의 상세보기 & 댓글 ---------------- */}
+      {/* ---------------- 모달 2: 개선/건의 상세보기 & 댓글 (모바일 최적화 수정) ---------------- */}
       {selectedSuggestion && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full shadow-xl relative text-[#1F2937] overflow-hidden max-h-[90vh] flex flex-col">
-            <div className="p-5 overflow-y-auto space-y-4">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full max-h-[85vh] shadow-xl relative text-[#1F2937] overflow-hidden flex flex-col">
+            {/* 상단 고정 영역 */}
+            <div className="p-4 sm:p-5 border-b border-[#E2E5E9] flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2 pr-6 min-w-0">
+                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#F5F6F8] border border-[#E2E5E9] text-[#243B5A] font-bold shrink-0">
+                  <Lightbulb className="h-3 w-3" />
+                  건의
+                </span>
+                <h2 className="text-sm sm:text-base font-bold text-[#1F2937] truncate">{selectedSuggestion.title}</h2>
+              </div>
               <button
                 onClick={() => setSelectedSuggestion(null)}
-                className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
+                className="text-[#64748B] hover:text-[#1F2937] cursor-pointer p-1 shrink-0"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
+            </div>
 
-              <div>
-                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-[#F5F6F8] border border-[#E2E5E9] text-[#243B5A] font-bold mb-2">
-                  <Lightbulb className="h-3 w-3" />
-                  개선/건의사항
-                </span>
-                <h2 className="text-sm sm:text-base font-bold text-[#1F2937] pr-6">{selectedSuggestion.title}</h2>
-              </div>
-
-              <div className="flex items-center gap-3 text-[10px] text-[#64748B] pb-3 border-b border-[#E2E5E9]">
+            {/* 스크롤 가능한 본문 및 댓글 영역 */}
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-4">
+              <div className="flex items-center gap-3 text-[10px] text-[#64748B] pb-2 border-b border-[#E2E5E9]">
                 <span>작성자: {selectedSuggestion.author_name}</span>
                 <span className="flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
@@ -871,7 +878,7 @@ export default function NoticeBoard({
                 </span>
               </div>
 
-              <div className="py-2 text-xs sm:text-sm text-[#1F2937] whitespace-pre-wrap leading-6 min-h-[80px]">
+              <div className="py-2 text-xs sm:text-sm text-[#1F2937] whitespace-pre-wrap leading-6">
                 {selectedSuggestion.content}
               </div>
 
@@ -962,10 +969,11 @@ export default function NoticeBoard({
               </div>
             </div>
 
-            <div className="p-4 bg-[#F5F6F8] border-t border-[#E2E5E9] flex justify-end">
+            {/* 하단 고정 닫기 버튼 영역 */}
+            <div className="p-4 bg-[#F5F6F8] border-t border-[#E2E5E9] flex justify-end shrink-0">
               <button
                 onClick={() => setSelectedSuggestion(null)}
-                className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg text-xs font-semibold cursor-pointer"
+                className="px-5 py-2 bg-[#243B5A] text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
               >
                 닫기
               </button>
@@ -977,7 +985,7 @@ export default function NoticeBoard({
       {/* ---------------- 작성/수정 모달: 공지사항 ---------------- */}
       {showNoticeModal && isAdmin && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full p-5 shadow-xl relative text-[#1F2937]">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full max-h-[85vh] p-5 shadow-xl relative text-[#1F2937] overflow-y-auto">
             <button
               onClick={() => setShowNoticeModal(false)}
               className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
@@ -1011,7 +1019,7 @@ export default function NoticeBoard({
                   required
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  rows={10}
+                  rows={8}
                   className="w-full bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg p-2.5 text-xs text-[#1F2937] resize-none focus:bg-white focus:border-[#243B5A] focus:outline-hidden"
                   placeholder="공지 내용을 입력해주세요."
                 />
@@ -1068,7 +1076,7 @@ export default function NoticeBoard({
       {/* ---------------- 작성/수정 모달: 개선/건의사항 ---------------- */}
       {showSuggestionModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full p-5 shadow-xl relative text-[#1F2937]">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full max-h-[85vh] p-5 shadow-xl relative text-[#1F2937] overflow-y-auto">
             <button
               onClick={() => setShowSuggestionModal(false)}
               className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
@@ -1133,51 +1141,47 @@ export default function NoticeBoard({
       {/* 중요 공지 팝업 알림 모달 */}
       {showPopupModal && popupNotice && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full shadow-xl relative text-[#1F2937] overflow-hidden">
-            <div className="p-5">
+          <div className="bg-white border border-[#E2E5E9] rounded-xl max-w-lg w-full max-h-[85vh] shadow-xl relative text-[#1F2937] overflow-hidden flex flex-col">
+            <div className="p-4 sm:p-5 border-b border-[#E2E5E9] flex items-center justify-between shrink-0">
+              <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-[#243B5A] text-white font-bold">
+                <Pin className="h-3 w-3" />
+                중요 공지 알림
+              </span>
               <button
                 onClick={handleClosePopup}
-                className="absolute top-4 right-4 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
+                className="text-[#64748B] hover:text-[#1F2937] cursor-pointer"
               >
-                <X className="h-4 w-4" />
+                <X className="h-5 w-5" />
               </button>
+            </div>
 
-              <div className="flex items-center gap-2 mb-3">
-                <span className="inline-flex items-center gap-1 text-[10px] px-2 py-1 rounded-md bg-[#243B5A] text-white font-bold">
-                  <Pin className="h-3 w-3" />
-                  중요 공지 알림
-                </span>
-              </div>
-
-              <h2 className="text-sm sm:text-base font-bold text-[#1F2937] pr-6 mb-2">{popupNotice.title}</h2>
-
-              <div className="flex items-center gap-3 text-[10px] text-[#64748B] pb-3 border-b border-[#E2E5E9]">
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-3">
+              <h2 className="text-sm sm:text-base font-bold text-[#1F2937]">{popupNotice.title}</h2>
+              <div className="flex items-center gap-3 text-[10px] text-[#64748B] pb-2 border-b border-[#E2E5E9]">
                 <span>작성자: {popupNotice.author_name}</span>
                 <span className="flex items-center gap-1">
                   <Calendar className="h-3 w-3" />
                   {formatDate(popupNotice.created_at)}
                 </span>
               </div>
-
-              <div className="py-5 text-xs sm:text-sm text-[#1F2937] whitespace-pre-wrap leading-6 min-h-[120px]">
+              <div className="py-2 text-xs sm:text-sm text-[#1F2937] whitespace-pre-wrap leading-6">
                 {popupNotice.content}
               </div>
+            </div>
 
-              <div className="flex justify-between items-center pt-3 border-t border-[#E2E5E9]">
-                <button
-                  onClick={handleHideToday}
-                  className="text-xs text-[#64748B] hover:text-[#1F2937] font-medium underline cursor-pointer"
-                >
-                  오늘 하루 보지 않기
-                </button>
-
-                <button
-                  onClick={handleClosePopup}
-                  className="px-4 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer"
-                >
-                  닫기
-                </button>
-              </div>
+            <div className="p-4 bg-[#F5F6F8] border-t border-[#E2E5E9] flex justify-between items-center shrink-0">
+              <button
+                onClick={handleHideToday}
+                className="text-xs text-[#64748B] hover:text-[#1F2937] font-medium underline cursor-pointer"
+              >
+                오늘 하루 보지 않기
+              </button>
+              <button
+                onClick={handleClosePopup}
+                className="px-5 py-2 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold cursor-pointer shadow-xs"
+              >
+                닫기
+              </button>
             </div>
           </div>
         </div>
