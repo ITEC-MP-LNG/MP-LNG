@@ -1808,7 +1808,39 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (isDailyOther && !isAdmin && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
     if (!formData.title.trim()) { showCustomAlert('입력 확인', '업무명을 입력해 주세요.'); return; }
     if (isDailyOther && assignedList.length > 3) { showCustomAlert('인원 제한', '야간진행 인원은 최대 3명까지 등록할 수 있습니다.'); return; }
+// 👇 동일 시간대·동일 인원 중복 배정 확인 로직
+    const targetDate = formData.start_date;
+    const targetTimeSlot = formData.time_slot;
+    const targetAssignees = assignedList;
 
+    const conflictDetails: { name: string; taskTitle: string }[] = [];
+
+    tasks.forEach(existingTask => {
+      if (editingTask && existingTask.id === existingTask.id) return;
+
+      if (existingTask.start_date === targetDate && existingTask.time_slot === targetTimeSlot) {
+        const existingAssignees = existingTask.assigned_names || [];
+
+        targetAssignees.forEach(name => {
+          if (name && existingAssignees.includes(name)) {
+            conflictDetails.push({
+              name: name,
+              taskTitle: existingTask.title || '기존 업무'
+            });
+          }
+        });
+      }
+    });
+
+    if (conflictDetails.length > 0) {
+      const first = conflictDetails[0];
+      const confirmMessage = `${first.name} 님은 이미 "${first.taskTitle}" 업무에 배정되어 있습니다. 배정하시겠습니까?`;
+      
+      if (!window.confirm(confirmMessage)) {
+        return;
+      }
+    }
+    // 👆 중복 확인 로직 끝
     const workersToCheck = formData.task_type === 'CABIN'
       ? [...dayWorkerList, ...(cabinShiftType === '3교대' ? eveningWorkerList : []), ...nightWorkerList]
       : assignedList;
