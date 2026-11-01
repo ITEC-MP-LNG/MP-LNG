@@ -1751,21 +1751,28 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     // 2. 이 하단부터는 기존에 작성되어 있던 원본 저장/API 호출 로직 수행
     // -----------------------------------------------------------------
     // await supabase.from('tasks').insert(...); 등 기존 원본 코드
-  };const handleSubmitTask = useCallback(async (e: React.FormEvent) => {
+  const handleSubmitTask = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // 👇 [추가] 동일 시간대·동일 인원 중복 배정 확인 로직 (타입 오류 해결 버전)
+    const isDailyOther = formData.task_type === 'DAILY_OTHER';
+    if (editingTask) {
+      if (!canManageTask(editingTask)) { showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
+    } else if (!isAdmin && !isDailyOther) {
+      showCustomAlert('권한 제한', '관리자 권한이 없습니다.'); return;
+    }
+    if (isDailyOther && !isAdmin && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
+    if (!formData.title.trim()) { showCustomAlert('입력 확인', '업무명을 입력해 주세요.'); return; }
+    if (isDailyOther && assignedList.length > 3) { showCustomAlert('인원 제한', '야간진행 인원은 최대 3명까지 등록할 수 있습니다.'); return; }
+
+    // 👇 동일 시간대·동일 인원 중복 배정 확인 로직
     const targetDate = formData.start_date;
     const targetTimeSlot = formData.time_slot;
-    const targetAssignees = assignedList; // 원본 코드의 입력 인원 State명
+    const targetAssignees = assignedList;
 
     const conflictDetails: { name: string; taskTitle: string }[] = [];
 
     tasks.forEach(existingTask => {
-      // 수정 중인 자기 자신은 중복 체크에서 제외
-      if (editingTask && existingTask.id === editingTask.id) return;
+      if (editingTask && existingTask.id === existingTask.id) return;
 
-      // 같은 날짜이면서 시간대가 겹치는 경우 검사
       if (existingTask.start_date === targetDate && existingTask.time_slot === targetTimeSlot) {
         const existingAssignees = existingTask.assigned_names || [];
 
@@ -1780,16 +1787,15 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }
     });
 
-    // 중복 인원이 존재할 경우 확인 창 띄우기
     if (conflictDetails.length > 0) {
       const first = conflictDetails[0];
       const confirmMessage = `${first.name} 님은 이미 "${first.taskTitle}" 업무에 배정되어 있습니다. 배정하시겠습니까?`;
       
       if (!window.confirm(confirmMessage)) {
-        return; // 취소를 누르면 저장 중단
+        return;
       }
     }
-    // 👆 [추가 끝]
+    // 👆 중복 확인 로직 끝
 
     // ... 이후 기존의 저장/수정 API 호출 및 로직 계속 진행 ...
   }, [/* 기존 의존성 배열 유지 */]);
