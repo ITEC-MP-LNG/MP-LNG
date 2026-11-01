@@ -1754,6 +1754,40 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   };
   const handleSubmitTask = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
+    const targetDate = formData.start_date;
+    const targetTimeSlot = formData.time_slot;
+    const targetAssignees = assignedList; // 현재 입력된 배정 인원 리스트
+
+    const conflictDetails: { name: string; taskTitle: string }[] = [];
+
+    tasks.forEach(existingTask => {
+      // 수정 중인 자기 자신은 중복 체크에서 제외
+      if (editingTask && existingTask.id === existingTask.id) return;
+
+      // 같은 날짜이면서 시간대가 겹치는 경우 검사
+      if (existingTask.start_date === targetDate && existingTask.time_slot === targetTimeSlot) {
+        const existingAssignees = existingTask.assigned_names || [];
+
+        targetAssignees.forEach(name => {
+          if (name && existingAssignees.includes(name)) {
+            conflictDetails.push({
+              name: name,
+              taskTitle: existingTask.title || '기존 업무'
+            });
+          }
+        });
+      }
+    });
+
+    // 중복 인원이 존재할 경우 확인 창 띄우기
+    if (conflictDetails.length > 0) {
+      const first = conflictDetails[0];
+      const confirmMessage = `${first.name} 님은 이미 "${first.taskTitle}" 업무에 배정되어 있습니다. 배정하시겠습니까?`;
+      
+      if (!window.confirm(confirmMessage)) {
+        return; // 취소를 누르면 저장 중단
+      }
+    }
     const isDailyOther = formData.task_type === 'DAILY_OTHER';
     if (editingTask) {
       if (!canManageTask(editingTask)) { showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
