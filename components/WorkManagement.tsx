@@ -1698,6 +1698,60 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (target === 'NIGHT') setNightWorkerList(nightWorkerList.filter(n => n !== name));
   }, [assignedList, dayWorkerList, eveningWorkerList, nightWorkerList]);
 
+  // -----------------------------------------------------------------
+  // 1. 기존 저장/등록 함수 상단에 추가할 중복 배정 검증 로직
+  // -----------------------------------------------------------------
+
+  // 저장/등록 처리 함수 (기존 함수명을 사용하세요, 예: handleSubmit)
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+
+    // 입력 폼 dynamic state에서 데이터 추출 (프로젝트 변수명에 맞게 변경)
+    const targetDate = formData.start_date;
+    const targetTimeSlot = formData.time_slot;
+    // 배정 인원이 배열 형태(assignees) 또는 단일 문자열(assignee)인지 확인
+    const targetAssignees: string[] = Array.isArray(formData.assignees) 
+      ? formData.assignees 
+      : formData.assignee ? [formData.assignee] : [];
+
+    // 동일 날짜/동일 시간대에 이미 중복 배정된 인원 및 업무 정보 탐색
+    const conflictDetails: { name: string; taskTitle: string }[] = [];
+
+    tasks.forEach(existingTask => {
+      // 수정 모드인 경우 자기 자신(ID)은 검사 대상에서 제외
+      if (editingTask && existingTask.id === editingTask.id) return;
+
+      if (existingTask.start_date === targetDate && existingTask.time_slot === targetTimeSlot) {
+        const existingAssignees = Array.isArray(existingTask.assignees) 
+          ? existingTask.assignees 
+          : existingTask.assignee ? [existingTask.assignee] : [];
+
+        targetAssignees.forEach(assignee => {
+          if (assignee && existingAssignees.includes(assignee)) {
+            conflictDetails.push({
+              name: assignee,
+              taskTitle: existingTask.title || '기존 업무'
+            });
+          }
+        });
+      }
+    });
+
+    // 중복 인원이 존재할 경우 확인(confirm) 창 표시
+    if (conflictDetails.length > 0) {
+      const firstConflict = conflictDetails[0];
+      const confirmMessage = `${firstConflict.name} 님은 이미 "${firstConflict.taskTitle}" 업무에 배정되어 있습니다. 배정하시겠습니까?`;
+      
+      if (!window.confirm(confirmMessage)) {
+        return; // '취소' 클릭 시 저장 진행 중단
+      }
+    }
+
+    // -----------------------------------------------------------------
+    // 2. 이 하단부터는 기존에 작성되어 있던 원본 저장/API 호출 로직 수행
+    // -----------------------------------------------------------------
+    // await supabase.from('tasks').insert(...); 등 기존 원본 코드
+  };
   const handleSubmitTask = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     const isDailyOther = formData.task_type === 'DAILY_OTHER';
@@ -3285,7 +3339,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           );
         })()}
 
-      {/* 플로팅 액션바: 모달창이 열려있지 않을 때만 표시 (3번), 단일 선택 및 크기/상태색상 개선 (1, 4, 5번) */}
+      {/* 플로팅 액션바: 모달창이 아닐 때만 표시되며, 선택된 업무의 상세내용(비고)을 함께 노출 */}
         {(['WEEKLY', 'DAILY', 'CABIN'].includes(taskTab)) && 
          !isModalOpen && 
          !statusChangeModal.open && 
@@ -3297,7 +3351,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           const selectedVisibleTasks = filteredTasks.filter(task => selectedTaskIds.includes(task.id));
           const singleTask = selectedVisibleTasks.length === 1 ? selectedVisibleTasks[0] : null;
 
-          // 상태별 색상 및 뱃지 스타일 (상태 변경 모달의 색상과 동일하게 적용)
           const getStatusBadge = (status: Task['status']) => {
             switch (status) {
               case 'PENDING':
@@ -3312,65 +3365,71 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           };
 
           return (
-            <div className="fixed bottom-6 left-1/2 z-[50] w-[min(840px,calc(100vw-24px))] -translate-x-1/2 rounded-2xl border border-[#D7DEE8] bg-white p-3.5 shadow-[0_16px_40px_rgba(15,23,42,0.28)]">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="fixed bottom-6 left-1/2 z-[50] w-[min(880px,calc(100vw-24px))] -translate-x-1/2 rounded-2xl border border-[#D7DEE8] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.28)]">
+              <div className="flex flex-col gap-3">
                 
-                {/* 좌측: 선택 업무 정보 & 상태 뱃지 표시 */}
-                <div className="min-w-0 flex items-center gap-3">
-                  <span className="flex h-9 min-w-9 items-center justify-center rounded-xl bg-[#243B5A] px-2.5 text-xs font-extrabold text-white">
-                    {selectedVisibleTasks.length}
-                  </span>
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <div className="text-sm font-bold text-[#243B5A] truncate">{singleTask ? singleTask.title : '선택된 업무'}</div>
-                      {singleTask && getStatusBadge(singleTask.status)}
+                {/* 상단: 타이틀, 상태 및 닫기 버튼 */}
+                <div className="flex items-center justify-between gap-3 border-b border-[#F1F3F5] pb-2.5">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <span className="flex h-7 min-w-7 items-center justify-center rounded-lg bg-[#243B5A] text-xs font-extrabold text-white">
+                      {selectedVisibleTasks.length}
+                    </span>
+                    <div className="text-sm font-bold text-[#243B5A] truncate">
+                      {singleTask ? singleTask.title : `${selectedVisibleTasks.length}개 업무 선택됨`}
                     </div>
-                    <div className="text-xs text-[#64748B] mt-0.5 truncate">
-                      {singleTask ? `${singleTask.start_date}${singleTask.time_slot ? ` · ${formatShortTimeSlot(singleTask.time_slot)}` : ''}` : `${selectedVisibleTasks.length}개 선택됨`}
-                    </div>
+                    {singleTask && getStatusBadge(singleTask.status)}
                   </div>
-                  <button type="button" onClick={() => setSelectedTaskIds([])} className="ml-1 rounded-lg px-2.5 py-1.5 text-xs font-bold text-[#64748B] hover:bg-[#F5F6F8] hover:text-[#1F2937] transition-colors">
-                    닫기
+                  <button type="button" onClick={() => setSelectedTaskIds([])} className="rounded-lg px-2.5 py-1 text-xs font-bold text-[#64748B] hover:bg-[#F5F6F8] hover:text-[#1F2937] transition-colors">
+                    선택 해제 ✕
                   </button>
                 </div>
 
-                {/* 우측: 액션 버튼 그룹 */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {singleTask && canModifyTaskStatus(singleTask) && singleTask.task_type !== 'DAILY_OTHER' && (
-                    <button type="button" onClick={() => setStatusChangeModal({ open: true, task: singleTask, targetStatus: singleTask.status, remarks: singleTask.remarks || '' })} className="inline-flex items-center gap-1.5 rounded-xl bg-[#243B5A] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#1B2F49] transition-colors">
-                      <CheckCircle2 className="h-4 w-4" />상태 변경
-                    </button>
-                  )}
-                  {singleTask?.task_type === 'DAILY_OTHER' && isAdmin && singleTask.status !== 'COMPLETED' && (
-                    <button type="button" onClick={() => handleCompleteOtherTask(singleTask)} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors">
-                      <CheckCircle2 className="h-4 w-4" />완료 처리
-                    </button>
-                  )}
-                  {singleTask?.task_type === 'DAILY' && isAdmin && singleTask.status === 'COMPLETED' && singleTask.completion_pending_review && (
-                    <button type="button" onClick={() => handleFinalizeDailyTask(singleTask)} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors">
-                      <CheckCircle2 className="h-4 w-4" />완료 확인
-                    </button>
-                  )}
-                  {singleTask && canManageTask(singleTask) && (
-                    <>
-                      <button type="button" onClick={() => handleOpenTaskEdit(singleTask)} className="inline-flex items-center gap-1.5 rounded-xl border border-[#D7DEE8] bg-white px-3.5 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8] transition-colors">
-                        <Pencil className="h-4 w-4" />수정
+                {/* 중간: 단일 선택 시 상세 내용(비고) 표시 영역 */}
+                {singleTask && (
+                  <div className="flex flex-col gap-1 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] px-3.5 py-2.5 text-xs">
+                    <div className="flex items-center justify-between text-[#64748B]">
+                      <span>일시: {singleTask.start_date} {singleTask.time_slot ? `· ${formatShortTimeSlot(singleTask.time_slot)}` : ''}</span>
+                      <span>담당자: {singleTask.assignee || '미배정'}</span>
+                    </div>
+                    <div className="mt-1 text-[#1F2937] font-medium whitespace-pre-wrap break-all">
+                      <span className="font-bold text-[#243B5A] mr-1.5">[상세내용/비고]:</span>
+                      {singleTask.remarks && singleTask.remarks.trim() !== '' ? singleTask.remarks : '등록된 상세 내용(비고)이 없습니다.'}
+                    </div>
+                  </div>
+                )}
+
+                {/* 하단: 액션 버튼 그룹 */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <div className="text-xs text-[#64748B]">
+                    {singleTask ? `ID: ${singleTask.id}` : '다중 선택 상태입니다.'}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {singleTask && canModifyTaskStatus(singleTask) && singleTask.task_type !== 'DAILY_OTHER' && (
+                      <button type="button" onClick={() => setStatusChangeModal({ open: true, task: singleTask, targetStatus: singleTask.status, remarks: singleTask.remarks || '' })} className="inline-flex items-center gap-1.5 rounded-xl bg-[#243B5A] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#1B2F49] transition-colors">
+                        <CheckCircle2 className="h-4 w-4" />상태 변경
                       </button>
-                      <button type="button" onClick={() => handleDeleteTask(singleTask.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors">
-                        <Trash2 className="h-4 w-4" />삭제
+                    )}
+                    {singleTask?.task_type === 'DAILY_OTHER' && isAdmin && singleTask.status !== 'COMPLETED' && (
+                      <button type="button" onClick={() => handleCompleteOtherTask(singleTask)} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors">
+                        <CheckCircle2 className="h-4 w-4" />완료 처리
                       </button>
-                    </>
-                  )}
-                  {isAdmin && taskTab === 'DAILY' && dailySubTab === 'HISTORY' && (
-                    <button type="button" onClick={handleExportDailyHistoryExcel} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors">
-                      <FileSpreadsheet className="h-4 w-4" />Excel Export
-                    </button>
-                  )}
-                  {isAdmin && selectedVisibleTasks.length > 1 && (
-                    <button type="button" onClick={handleBulkDeleteTasks} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors">
-                      <Trash2 className="h-4 w-4" />일괄 삭제
-                    </button>
-                  )}
+                    )}
+                    {singleTask && canManageTask(singleTask) && (
+                      <>
+                        <button type="button" onClick={() => handleOpenTaskEdit(singleTask)} className="inline-flex items-center gap-1.5 rounded-xl border border-[#D7DEE8] bg-white px-3.5 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8] transition-colors">
+                          <Pencil className="h-4 w-4" />수정
+                        </button>
+                        <button type="button" onClick={() => handleDeleteTask(singleTask.id)} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors">
+                          <Trash2 className="h-4 w-4" />삭제
+                        </button>
+                      </>
+                    )}
+                    {isAdmin && selectedVisibleTasks.length > 1 && (
+                      <button type="button" onClick={handleBulkDeleteTasks} className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3.5 py-2 text-xs font-bold text-red-700 hover:bg-red-100 transition-colors">
+                        <Trash2 className="h-4 w-4" />일괄 삭제
+                      </button>
+                    )}
+                  </div>
                 </div>
 
               </div>
