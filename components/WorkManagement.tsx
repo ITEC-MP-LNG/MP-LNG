@@ -1751,18 +1751,19 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     // 2. 이 하단부터는 기존에 작성되어 있던 원본 저장/API 호출 로직 수행
     // -----------------------------------------------------------------
     // await supabase.from('tasks').insert(...); 등 기존 원본 코드
-  };
-  const handleSubmitTask = useCallback(async (e: React.FormEvent) => {
+  };const handleSubmitTask = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // 👇 [추가] 동일 시간대·동일 인원 중복 배정 확인 로직 (타입 오류 해결 버전)
     const targetDate = formData.start_date;
     const targetTimeSlot = formData.time_slot;
-    const targetAssignees = assignedList; // 현재 입력된 배정 인원 리스트
+    const targetAssignees = assignedList; // 원본 코드의 입력 인원 State명
 
     const conflictDetails: { name: string; taskTitle: string }[] = [];
 
     tasks.forEach(existingTask => {
       // 수정 중인 자기 자신은 중복 체크에서 제외
-      if (editingTask && existingTask.id === existingTask.id) return;
+      if (editingTask && existingTask.id === editingTask.id) return;
 
       // 같은 날짜이면서 시간대가 겹치는 경우 검사
       if (existingTask.start_date === targetDate && existingTask.time_slot === targetTimeSlot) {
@@ -1788,6 +1789,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         return; // 취소를 누르면 저장 중단
       }
     }
+    // 👆 [추가 끝]
+
+    // ... 이후 기존의 저장/수정 API 호출 및 로직 계속 진행 ...
+  }, [/* 기존 의존성 배열 유지 */]);
     const isDailyOther = formData.task_type === 'DAILY_OTHER';
     if (editingTask) {
       if (!canManageTask(editingTask)) { showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
