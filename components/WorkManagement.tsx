@@ -3446,7 +3446,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
           );
         })()}
-
+        
         {isVesselManagerOpen && isAdmin && (
           <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/25 p-4">
             <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-5 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 border border-[#E2E5E9]">
