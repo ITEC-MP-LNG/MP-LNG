@@ -1518,17 +1518,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const config = statusConfig[task.status] || statusConfig.PENDING;
     const Icon = config.icon;
 
-    if (task.task_type === 'DAILY_OTHER') {
-      return (
-        <span className={`px-1.5 py-0.5 rounded-full border text-[9px] font-bold flex items-center gap-0.5 shrink-0 ${config.bg}`}>
-          <Icon className="h-2.5 w-2.5" />
-          <span>{config.label}</span>
-        </span>
-      );
-    }
-
     return (
       <button
+        type="button"
         onClick={(e) => handleNextStatus(e, task)}
         title="클릭 시 상태 및 비고란 변경 모달 호출"
         className={`px-1.5 py-0.5 rounded-full border text-[9px] font-bold flex items-center gap-0.5 transition-all shrink-0 ${config.bg}`}
@@ -1591,19 +1583,60 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setIsModalOpen(true);
   }, [canManageTask, vessels, showCustomAlert, isAdmin]);
 
+  // 일일업무 인원 추가 시 같은 날짜·시간대의 기존 일일업무와 CABIN 편성을 즉시 확인합니다.
+  const findDailyAssignmentConflict = useCallback((workerName: string) => {
+    if (formData.task_type !== 'DAILY') return null;
+    const normalizedName = workerName.trim().toLowerCase();
+
+    for (const task of tasks) {
+      if (task.id === editingTask?.id || task.status === 'COMPLETED') continue;
+
+      if (task.task_type === 'DAILY') {
+        if (task.start_date !== formData.start_date || task.time_slot !== formData.time_slot) continue;
+        const alreadyAssigned = (task.assigned_names || []).some(
+          name => name.trim().toLowerCase() === normalizedName
+        );
+        if (alreadyAssigned) return { taskTitle: task.title || '기존 일일업무' };
+      }
+
+      if (task.task_type === 'CABIN') {
+        const cabinDateMatches =
+          formData.start_date >= task.start_date &&
+          formData.start_date <= (task.end_date || task.start_date);
+        if (!cabinDateMatches) continue;
+
+        const shift = (task.day_workers || []).some(name => name.trim().toLowerCase() === normalizedName)
+          ? '주간'
+          : (task.evening_workers || []).some(name => name.trim().toLowerCase() === normalizedName)
+            ? 'Evening'
+            : (task.night_workers || []).some(name => name.trim().toLowerCase() === normalizedName)
+              ? '야간'
+              : '';
+        if (shift) {
+          const cabinTitle = task.title || 'CABIN 업무';
+          return { taskTitle: `${cabinTitle} (CABIN ${shift})` };
+        }
+      }
+    }
+    return null;
+  }, [formData.task_type, formData.start_date, formData.time_slot, tasks, editingTask]);
+
   const handleAddWorkerSingle = useCallback((target: 'ASSIGNED' | 'DAY' | 'EVENING' | 'NIGHT') => {
     const names = Array.from(new Set(singleWorkerInput.split(',').map(name => name.trim()).filter(Boolean)));
     if (names.length === 0) return;
 
     const accepted: string[] = [];
+    const conflicts: { name: string; taskTitle: string }[] = [];
     const rejected: string[] = [];
 
     for (const name of names) {
-      const alreadyAdded = target === 'ASSIGNED' ? assignedList.includes(name)
-        : target === 'DAY' ? dayWorkerList.includes(name)
-        : target === 'EVENING' ? eveningWorkerList.includes(name) : nightWorkerList.includes(name);
+      const alreadyAdded = target === 'ASSIGNED' ? assignedList.some(item => item.toLowerCase() === name.toLowerCase())
+        : target === 'DAY' ? dayWorkerList.some(item => item.toLowerCase() === name.toLowerCase())
+        : target === 'EVENING' ? eveningWorkerList.some(item => item.toLowerCase() === name.toLowerCase())
+        : nightWorkerList.some(item => item.toLowerCase() === name.toLowerCase());
       if (alreadyAdded) continue;
-      if (formData.task_type === 'DAILY_OTHER' && assignedList.length + accepted.length >= 3) {
+
+      if (formData.task_type === 'DAILY_OTHER' && assignedList.length + accepted.length + conflicts.length >= 3) {
         rejected.push(`${name}(최대 3명)`);
         continue;
       }
@@ -1614,36 +1647,41 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         continue;
       }
 
-      let cabinConflict = '';
-      if (formData.task_type === 'DAILY' && target === 'ASSIGNED') {
-        for (const task of tasks) {
-          const cabinDateMatches = formData.start_date >= task.start_date && formData.start_date <= (task.end_date || task.start_date);
-          if (task.task_type === 'CABIN' && task.status !== 'COMPLETED' && cabinDateMatches) {
-            const isDay = (task.day_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase());
-            const isEvening = (task.evening_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase());
-            const isNight = (task.night_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase());
-            if (isDay) { cabinConflict = 'CABIN 주간/Day'; break; }
-            if (isEvening) { cabinConflict = 'CABIN Evening'; break; }
-            if (isNight) { cabinConflict = 'CABIN 야간/Night'; break; }
-          }
-        }
-      }
-      if (cabinConflict) {
-        showCustomConfirm('CABIN 근무자 확인', `${name} 는 Cabin 근무자 입니다. 일일업무에 등록하시겠습니까?`, () => {
-          setAssignedList(prev => Array.from(new Set([...prev, name])));
-        });
-        continue;
-      }
-      accepted.push(name);
+      const conflict = target === 'ASSIGNED' ? findDailyAssignmentConflict(name) : null;
+      if (conflict) conflicts.push({ name, taskTitle: conflict.taskTitle });
+      else accepted.push(name);
     }
 
-    if (target === 'ASSIGNED' && accepted.length) setAssignedList(prev => Array.from(new Set([...prev, ...accepted])));
-    if (target === 'DAY' && accepted.length) setDayWorkerList(prev => Array.from(new Set([...prev, ...accepted])));
-    if (target === 'EVENING' && accepted.length) setEveningWorkerList(prev => Array.from(new Set([...prev, ...accepted])));
-    if (target === 'NIGHT' && accepted.length) setNightWorkerList(prev => Array.from(new Set([...prev, ...accepted])));
+    const addAccepted = (extraNames: string[] = []) => {
+      const namesToAdd = Array.from(new Set([...accepted, ...extraNames]));
+      if (target === 'ASSIGNED' && namesToAdd.length) setAssignedList(prev => Array.from(new Set([...prev, ...namesToAdd])));
+      if (target === 'DAY' && namesToAdd.length) setDayWorkerList(prev => Array.from(new Set([...prev, ...namesToAdd])));
+      if (target === 'EVENING' && namesToAdd.length) setEveningWorkerList(prev => Array.from(new Set([...prev, ...namesToAdd])));
+      if (target === 'NIGHT' && namesToAdd.length) setNightWorkerList(prev => Array.from(new Set([...prev, ...namesToAdd])));
+    };
+
     setSingleWorkerInput('');
-    if (rejected.length) showCustomAlert('일부 인원 제외', `다음 인원은 추가하지 않았습니다: ${rejected.join(', ')}`);
-  }, [singleWorkerInput, assignedList, dayWorkerList, eveningWorkerList, nightWorkerList, appUsers, showCustomAlert, showCustomConfirm, formData.task_type, formData.start_date, tasks]);
+    if (conflicts.length > 0) {
+      const message = conflicts
+        .map(item => `${item.name} 은(는) 이미 ${item.taskTitle} 업무에 배정되어 있습니다.`)
+        .join('\n');
+      showCustomConfirm(
+        '중복 배정 확인',
+        `${message}\n\n동일 시간대에 배정하시겠습니까?`,
+        () => addAccepted(conflicts.map(item => item.name))
+      );
+    } else {
+      addAccepted();
+    }
+
+    if (rejected.length) {
+      showCustomAlert('일부 인원 제외', `다음 인원은 추가하지 않았습니다: ${rejected.join(', ')}`);
+    }
+  }, [
+    singleWorkerInput, assignedList, dayWorkerList, eveningWorkerList, nightWorkerList,
+    appUsers, formData.task_type, formData.start_date, findDailyAssignmentConflict,
+    showCustomAlert, showCustomConfirm,
+  ]);
 
   const handleAddPresetTeamToTask = useCallback(() => {
     const team = presetTeams.find(item => item.id === selectedPresetTeamId);
@@ -1658,39 +1696,59 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
 
     const accepted: string[] = [];
+    const conflicts: { name: string; taskTitle: string }[] = [];
     const rejected: string[] = [];
+
     for (const name of names) {
-      if (assignedList.some(existing => existing.toLowerCase() === name.toLowerCase()) || accepted.some(existing => existing.toLowerCase() === name.toLowerCase())) continue;
+      if (
+        assignedList.some(existing => existing.toLowerCase() === name.toLowerCase()) ||
+        accepted.some(existing => existing.toLowerCase() === name.toLowerCase()) ||
+        conflicts.some(existing => existing.name.toLowerCase() === name.toLowerCase())
+      ) continue;
+
       const foundUser = appUsers.find(user => user.name?.trim().toLowerCase() === name.toLowerCase());
       if (isUserOffOnDate(foundUser, formData.start_date)) {
         rejected.push(`${name}(휴무)`);
         continue;
       }
-      let cabinConflict = '';
-      if (formData.task_type === 'DAILY') {
-        for (const task of tasks) {
-          const cabinDateMatches = formData.start_date >= task.start_date && formData.start_date <= (task.end_date || task.start_date);
-          if (task.task_type === 'CABIN' && task.status !== 'COMPLETED' && cabinDateMatches) {
-            if ((task.day_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase())) { cabinConflict = 'CABIN 주간/Day'; break; }
-            if ((task.evening_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase())) { cabinConflict = 'CABIN Evening'; break; }
-            if ((task.night_workers || []).some(worker => worker.trim().toLowerCase() === name.toLowerCase())) { cabinConflict = 'CABIN 야간/Night'; break; }
-          }
-        }
-      }
-      if (cabinConflict) {
-        showCustomConfirm('CABIN 근무자 확인', `${name} 는 Cabin 근무자 입니다. 일일업무에 등록하시겠습니까?`, () => {
-          setAssignedList(prev => Array.from(new Set([...prev, name])));
-        });
-        continue;
-      }
-      accepted.push(name);
+
+      const conflict = findDailyAssignmentConflict(name);
+      if (conflict) conflicts.push({ name, taskTitle: conflict.taskTitle });
+      else accepted.push(name);
     }
-    if (accepted.length) setAssignedList(prev => Array.from(new Set([...prev, ...accepted])));
+
+    const addNames = (extraNames: string[] = []) => {
+      const namesToAdd = Array.from(new Set([...accepted, ...extraNames]));
+      if (namesToAdd.length) {
+        setAssignedList(prev => Array.from(new Set([...prev, ...namesToAdd])));
+        showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${namesToAdd.length}명이 추가되었습니다.`);
+      } else if (!rejected.length) {
+        showCustomAlert('추가할 인원 없음', '선택한 Team의 구성원은 이미 모두 추가되어 있습니다.');
+      }
+    };
+
     setSelectedPresetTeamId('');
-    if (rejected.length) showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${accepted.length}명이 추가되었습니다.`);
-    else if (accepted.length) showCustomAlert('Team 추가 완료', `Team “${team.name}”의 ${accepted.length}명이 추가되었습니다.`);
-    else showCustomAlert('추가할 인원 없음', '선택한 Team의 구성원은 이미 모두 추가되어 있습니다.');
-  }, [presetTeams, selectedPresetTeamId, assignedList, appUsers, formData.task_type, formData.start_date, tasks, showCustomAlert, showCustomConfirm, getCurrentTeamMembers]);
+    if (conflicts.length > 0) {
+      const message = conflicts
+        .map(item => `${item.name} 은(는) 이미 ${item.taskTitle} 업무에 배정되어 있습니다.`)
+        .join('\n');
+      showCustomConfirm(
+        '중복 배정 확인',
+        `${message}\n\n동일 시간대에 배정하시겠습니까?`,
+        () => addNames(conflicts.map(item => item.name))
+      );
+    } else {
+      addNames();
+    }
+
+    if (rejected.length) {
+      showCustomAlert('일부 인원 제외', `휴무 등으로 추가하지 않은 인원: ${rejected.join(', ')}`);
+    }
+  }, [
+    presetTeams, selectedPresetTeamId, assignedList, appUsers,
+    formData.start_date, findDailyAssignmentConflict, showCustomAlert,
+    showCustomConfirm, getCurrentTeamMembers,
+  ]);
 
   const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'EVENING' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
@@ -3409,7 +3467,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 {/* 하단: 액션 버튼 그룹 */}
                 <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                   <div className="text-xs text-[#64748B]">
-                    {singleTask ? `ID: ${singleTask.id}` : '다중 선택 상태입니다.'}
+                    {singleTask ? '' : '다중 선택 상태입니다.'}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {singleTask && canModifyTaskStatus(singleTask) && (
