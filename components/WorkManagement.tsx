@@ -1299,9 +1299,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return isAssigned;
 }, [isAdmin, currentUser]);
 
-  const wasCompletedHistoryRemarksEdited = useCallback((task: Task) => (
+ const wasCompletedHistoryRemarksEdited = useCallback((task: Task) => (
     task.status === 'COMPLETED' &&
-    task.completion_pending_review !== true &&
+    (
+      task.completion_pending_review !== true ||
+      task.task_type === 'DAILY_OTHER'
+    ) &&
     Boolean(task.remarks_edited_at)
   ), []);
 
