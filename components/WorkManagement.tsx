@@ -1905,7 +1905,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const handleFinalizeDailyTask = useCallback((task: Task) => {
     if (!isAdmin) {
-      showCustomAlert('권한 제한', '관리자만 최종 완료 처리할 수 있습니다.');
+      showCustomAlert('권한 제한', '관리자만 관리자 확인 처리할 수 있습니다.');
       return;
     }
     if (
@@ -1915,8 +1915,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     ) return;
 
     showCustomConfirm(
-      '업무 최종 완료',
-      '업무 내용을 확인하셨습니까? 최종 완료 처리하면 완료이력에 기록됩니다.',
+      '업무 관리자 확인',
+      '업무 내용을 확인하셨습니까? 관리자 확인 처리하면 완료이력에 기록됩니다.',
       async () => {
         try {
           const { error } = await supabase.from('tasks').update({
@@ -1932,7 +1932,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           await fetchTasks();
           showCustomAlert('완료', '관리자 최종 확인이 완료되었습니다. 완료이력에서 확인할 수 있습니다.');
         } catch (err: any) {
-          showCustomAlert('오류', `최종 완료 처리 실패: ${err.message}`);
+          showCustomAlert('오류', `관리자 확인 처리 실패: ${err.message}`);
         }
       }
     );
@@ -2760,7 +2760,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   ) : <div className="text-xs text-[#94A3B8]">미지정</div>}
                 </div>
                 <div className="mt-2 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                  {isAdmin && (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && t.status === 'COMPLETED' && t.completion_pending_review === true && <button type="button" onClick={() => handleFinalizeDailyTask(t)} className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">최종 완료</button>}
+                  {isAdmin && (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && t.status === 'COMPLETED' && t.completion_pending_review === true && <button type="button" onClick={() => handleFinalizeDailyTask(t)} className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">관리자 확인</button>}
                   {t.task_type === 'DAILY_OTHER' && canManageTask(t) && <><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]"><Pencil className="mr-1 inline h-3 w-3" />수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button></>}
                   {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && <button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button>}
                 </div>
@@ -2909,7 +2909,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       <td className="p-1 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           {isAdmin && (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && t.status === 'COMPLETED' && t.completion_pending_review === true && (
-                            <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[54px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">최종 완료</button>
+                            <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[54px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">관리자 확인</button>
                           )}
                           {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
                             <>
