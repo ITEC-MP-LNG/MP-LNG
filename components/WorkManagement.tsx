@@ -1276,17 +1276,28 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const canModifyTaskStatus = useCallback((task: Task) => {
     if (isAdmin) return true;
-    if (task.task_type === 'WEEKLY' || task.completion_pending_review === true) return false;
+
+    if (task.task_type === 'WEEKLY') return false;
     if (!currentUser || !currentUser.name) return false;
 
     const name = currentUser.name.trim().toLowerCase();
+
     const assigned = (task.assigned_names || []).map(n => n.trim().toLowerCase());
     const day = (task.day_workers || []).map(n => n.trim().toLowerCase());
     const evening = (task.evening_workers || []).map(n => n.trim().toLowerCase());
     const night = (task.night_workers || []).map(n => n.trim().toLowerCase());
 
-    return assigned.includes(name) || day.includes(name) || evening.includes(name) || night.includes(name);
-  }, [isAdmin, currentUser]);
+    const isAssigned =
+      assigned.includes(name) ||
+      day.includes(name) ||
+      evening.includes(name) ||
+      night.includes(name);
+
+    // 최종 완료 확인 대기 중에는 일반 직원의 상태 변경을 차단
+    if (task.completion_pending_review === true) return false;
+
+    return isAssigned;
+}, [isAdmin, currentUser]);
 
   const wasCompletedHistoryRemarksEdited = useCallback((task: Task) => (
     task.status === 'COMPLETED' &&
@@ -1434,13 +1445,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const task = statusChangeModal.task;
     const nextStatus = statusChangeModal.targetStatus;
     const remarks = statusChangeModal.remarks;
-    const isCompletedHistory = task.status === 'COMPLETED' && task.completion_pending_review !== true;
+    const isNightTask = task.task_type === 'DAILY_OTHER';
+const isCompletedHistory =
+  task.status === 'COMPLETED' &&
+  (task.completion_pending_review !== true || isNightTask);
+//비고 수정하기
+   const isNightTask = task.task_type === 'DAILY_OTHER';
+const isAssignedWorker = (task.assigned_names || []).includes(currentUser?.name || '');
+const isAdmin = ['SUPER_ADMIN', 'WORK_ADMIN', 'ADMIN', '최고 관리자', '총 관리자', '업무 관리자', '관리자'].includes(currentUser?.role || '');
 
-    if (!canModifyTaskStatus(task)) {
-      showCustomAlert('권한 없음', '해당 업무의 당사자 또는 관리자만 변경할 수 있습니다.');
-      return;
-    }
+const canEditNightRemarks = isNightTask && (isAssignedWorker || isAdmin);
 
+if (!canModifyTaskStatus(task) && !canEditNightRemarks) {
+  showCustomAlert('권한 없음', '해당 업무의 당사자 또는 관리자만 변경할 수 있습니다.');
+  return;
+}
+//비고 수정하기 종
     if (isCompletedHistory) {
       const previousRemarks = task.remarks || '';
       const nextRemarks = remarks || '';
@@ -1565,7 +1585,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       description: task.description || '',
       start_date: task.start_date,
       end_date: task.end_date || task.start_date,
-      time_slot: task.time_slot || '오전(08:00~12:00)',
+      time_slot: task.time_slot || '업무시간',
       task_type: task.task_type || 'CABIN',
       category: task.category || (vessels.length > 0 ? vessels[0].name : ''),
       cargo_hold: task.cargo_hold || '',
