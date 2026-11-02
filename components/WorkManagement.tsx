@@ -2928,7 +2928,9 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
                       <td className="p-1 text-center truncate border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
                           {renderStatusBadge(t)}
-                          {dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 whitespace-nowrap text-[9px] font-bold text-green-600">비고 수정됨</span>}
+                         {(dailySubTab === 'HISTORY' || dailySubTab === 'OTHER') &&
+  wasCompletedHistoryRemarksEdited(t) &&
+  <span className="ml-1 whitespace-nowrap text-[9px] font-bold text-green-600">비고 수정됨</span>}
                           {(t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && t.completion_pending_review === true && (
                             <span className="px-1 py-0.5 bg-amber-50 text-amber-800 border border-amber-300 rounded text-[9px] font-bold">관리자 확인 대기</span>
                           )}
