@@ -1450,8 +1450,7 @@ const isCompletedHistory =
   task.status === 'COMPLETED' &&
   (task.completion_pending_review !== true || isNightTask);
 //비고 수정하기
-   const isNightTask = task.task_type === 'DAILY_OTHER';
-const isAssignedWorker = (task.assigned_names || []).includes(currentUser?.name || '');
+ 
 const isAdmin = ['SUPER_ADMIN', 'WORK_ADMIN', 'ADMIN', '최고 관리자', '총 관리자', '업무 관리자', '관리자'].includes(currentUser?.role || '');
 
 const canEditNightRemarks = isNightTask && (isAssignedWorker || isAdmin);
