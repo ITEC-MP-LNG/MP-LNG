@@ -1696,7 +1696,7 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
     if (conflicts.length > 0) {
       const message = conflicts
   .map(item => `${item.name} : ${item.taskTitle} 업무에 이미 배정됨`)
-  .join('\n');
+  .join('\n\n');
       showCustomConfirm(
         '중복 배정 확인',
         `${message}\n\n동일 시간대에 배정하시겠습니까?`,
@@ -1763,7 +1763,7 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
     if (conflicts.length > 0) {
       const message = conflicts
   .map(item => `${item.name} : ${item.taskTitle} 업무에 이미 배정됨`)
-  .join('\n');
+  .join('\n\n');
       showCustomConfirm(
         '중복 배정 확인',
         `${message}\n\n동일 시간대에 배정하시겠습니까?`,
