@@ -1092,7 +1092,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (targetTasks.length > 0) setIsAlertOpen(true);
 
         const pendingNightTasks = isAdmin
-          ? formatted.filter((t) => t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED')
+          ? formatted.filter((t) => t.task_type === 'DAILY_OTHER' && (t.status !== 'COMPLETED' || t.completion_pending_review === true))
           : [];
         setNightPendingTasks(pendingNightTasks);
         if (!isAdmin) {
@@ -1276,7 +1276,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const canModifyTaskStatus = useCallback((task: Task) => {
     if (isAdmin) return true;
-    if (task.task_type === 'WEEKLY') return false;
+    if (task.task_type === 'WEEKLY' || task.completion_pending_review === true) return false;
     if (!currentUser || !currentUser.name) return false;
 
     const name = currentUser.name.trim().toLowerCase();
@@ -1471,7 +1471,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return;
     }
 
-    if (task.task_type === 'DAILY' && nextStatus === 'COMPLETED') {
+    if ((task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') && nextStatus === 'COMPLETED') {
       try {
         const { error } = await supabase.from('tasks').update({
           status: 'COMPLETED',
@@ -1485,7 +1485,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
         setSelectedTaskIds([]);
         await fetchTasks();
-        showCustomAlert('완료 확인 대기', '업무가 완료 상태로 저장되었습니다. 관리자 확인 후 완료 이력으로 이동됩니다.');
+        showCustomAlert('완료 확인 대기', '업무가 완료 확인 대기 상태로 저장되었습니다. 관리자 최종 확인 후 완료이력으로 이동됩니다.');
       } catch (err: any) {
         showCustomAlert('오류', `완료 상태 저장 실패: ${err.message}`);
       }
@@ -1498,7 +1498,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       const { error } = await supabase.from('tasks').update({
         status: nextStatus,
         remarks,
-        ...(task.task_type === 'DAILY' ? { completion_pending_review: false } : {}),
+        ...((task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') ? { completion_pending_review: false } : {}),
       }).eq('id', task.id);
       if (error) throw error;
       setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
@@ -1695,99 +1695,50 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const handleRemoveWorker = useCallback((name: string, target: 'ASSIGNED' | 'DAY' | 'EVENING' | 'NIGHT') => {
     if (target === 'ASSIGNED') setAssignedList(assignedList.filter(n => n !== name));
     if (target === 'DAY') setDayWorkerList(dayWorkerList.filter(n => n !== name));
+    if (target === 'EVENING') setEveningWorkerList(eveningWorkerList.filter(n => n !== name));
     if (target === 'NIGHT') setNightWorkerList(nightWorkerList.filter(n => n !== name));
   }, [assignedList, dayWorkerList, eveningWorkerList, nightWorkerList]);
 
-  // -----------------------------------------------------------------
-  // 1. 기존 저장/등록 함수 상단에 추가할 중복 배정 검증 로직
-  // -----------------------------------------------------------------
-
-  // 저장/등록 처리 함수 (기존 함수명을 사용하세요, 예: handleSubmit)
-  const handleSubmit = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-
-    // 입력 폼 dynamic state에서 데이터 추출 (프로젝트 변수명에 맞게 변경)
-    const targetDate = formData.start_date;
-    const targetTimeSlot = formData.time_slot;
-    // 배정 인원이 배열 형태(assignees) 또는 단일 문자열(assignee)인지 확인
-    const targetAssignees: string[] = Array.isArray(formData.assignees) 
-      ? formData.assignees 
-      : formData.assignee ? [formData.assignee] : [];
-
-    // 동일 날짜/동일 시간대에 이미 중복 배정된 인원 및 업무 정보 탐색
-    const conflictDetails: { name: string; taskTitle: string }[] = [];
-
-    tasks.forEach(existingTask => {
-      // 수정 모드인 경우 자기 자신(ID)은 검사 대상에서 제외
-      if (editingTask && existingTask.id === editingTask.id) return;
-
-      if (existingTask.start_date === targetDate && existingTask.time_slot === targetTimeSlot) {
-        const existingAssignees = Array.isArray(existingTask.assignees) 
-          ? existingTask.assignees 
-          : existingTask.assignee ? [existingTask.assignee] : [];
-
-        targetAssignees.forEach(assignee => {
-          if (assignee && existingAssignees.includes(assignee)) {
-            conflictDetails.push({
-              name: assignee,
-              taskTitle: existingTask.title || '기존 업무'
-            });
-          }
-        });
-      }
-    });
-
-    // 중복 인원이 존재할 경우 확인(confirm) 창 표시
-    if (conflictDetails.length > 0) {
-      const firstConflict = conflictDetails[0];
-      const confirmMessage = `${firstConflict.name} 님은 이미 "${firstConflict.taskTitle}" 업무에 배정되어 있습니다. 배정하시겠습니까?`;
-      
-      if (!window.confirm(confirmMessage)) {
-        return; // '취소' 클릭 시 저장 진행 중단
-      }
-    }
-
-    // -----------------------------------------------------------------
-    // 2. 이 하단부터는 기존에 작성되어 있던 원본 저장/API 호출 로직 수행
-    // -----------------------------------------------------------------
-    // await supabase.from('tasks').insert(...); 등 기존 원본 코드
   const handleSubmitTask = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     const isDailyOther = formData.task_type === 'DAILY_OTHER';
+
     if (editingTask) {
-      if (!canManageTask(editingTask)) { showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
+      if (!canManageTask(editingTask)) {
+        showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 수정할 수 있습니다.');
+        return;
+      }
     } else if (!isAdmin && !isDailyOther) {
-      showCustomAlert('권한 제한', '관리자 권한이 없습니다.'); return;
+      showCustomAlert('권한 제한', '관리자 권한이 없습니다.');
+      return;
     }
-    if (isDailyOther && !isAdmin && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
-    if (!formData.title.trim()) { showCustomAlert('입력 확인', '업무명을 입력해 주세요.'); return; }
-    if (isDailyOther && assignedList.length > 3) { showCustomAlert('인원 제한', '야간진행 인원은 최대 3명까지 등록할 수 있습니다.'); return; }
-  
-   
-    const isDailyOther = formData.task_type === 'DAILY_OTHER';
-    if (editingTask) {
-      if (!canManageTask(editingTask)) { showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
-    } else if (!isAdmin && !isDailyOther) {
-      showCustomAlert('권한 제한', '관리자 권한이 없습니다.'); return;
+
+    if (isDailyOther && !isAdmin && !currentUser?.name) {
+      showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.');
+      return;
     }
-    if (isDailyOther && !isAdmin && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
-    if (!formData.title.trim()) { showCustomAlert('입력 확인', '업무명을 입력해 주세요.'); return; }
-    if (isDailyOther && assignedList.length > 3) { showCustomAlert('인원 제한', '야간진행 인원은 최대 3명까지 등록할 수 있습니다.'); return; }
+    if (!formData.title.trim()) {
+      showCustomAlert('입력 확인', '업무명을 입력해 주세요.');
+      return;
+    }
+    if (isDailyOther && assignedList.length > 3) {
+      showCustomAlert('인원 제한', '야간진행 인원은 최대 3명까지 등록할 수 있습니다.');
+      return;
+    }
 
     const workersToCheck = formData.task_type === 'CABIN'
       ? [...dayWorkerList, ...(cabinShiftType === '3교대' ? eveningWorkerList : []), ...nightWorkerList]
       : assignedList;
 
     for (const wName of workersToCheck) {
-      const u = appUsers.find(user => user.name?.trim().toLowerCase() === wName.trim().toLowerCase());
-      if (u !== undefined && isUserOffOnDate(u, formData.start_date)) {
-        showCustomAlert('업무 등록 제한', `${u?.name || wName} 휴무입니다.`);
+      const user = appUsers.find(item => item.name?.trim().toLowerCase() === wName.trim().toLowerCase());
+      if (user && isUserOffOnDate(user, formData.start_date)) {
+        showCustomAlert('업무 등록 제한', `${user.name || wName} 휴무입니다.`);
         return;
       }
-      
     }
 
-    let payload: any = {
+    const payloadBase: Record<string, any> = {
       title: formData.title.trim(),
       description: formData.description.trim(),
       start_date: formData.start_date,
@@ -1795,92 +1746,136 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       status: editingTask ? editingTask.status : 'PENDING',
       category: formData.category || null,
       cargo_hold: formData.cargo_hold || null,
-      ...(isDailyOther && !editingTask ? { created_by_id: currentUser?.id || null, created_by_name: currentUser?.name || null } : {}),
+      ...(isDailyOther && !editingTask
+        ? { created_by_id: currentUser?.id || null, created_by_name: currentUser?.name || null }
+        : {}),
     };
 
-    if (formData.task_type === 'CABIN') {
-      payload = {
-        ...payload,
-        end_date: formData.end_date,
-        day_workers: dayWorkerList,
-        evening_workers: cabinShiftType === '3교대' ? eveningWorkerList : [],
-        night_workers: nightWorkerList,
-        shift_type: cabinShiftType,
-        time_slot: null,
-        assigned_names: null,
-      };
-    } else {
-      payload = {
-        ...payload,
-        end_date: formData.start_date,
-        time_slot: isDailyOther ? null : formData.time_slot.trim(),
-        assigned_names: assignedList,
-        day_workers: null,
-        night_workers: null,
-      };
+    const payload = formData.task_type === 'CABIN'
+      ? {
+          ...payloadBase,
+          end_date: formData.end_date,
+          day_workers: dayWorkerList,
+          evening_workers: cabinShiftType === '3교대' ? eveningWorkerList : [],
+          night_workers: nightWorkerList,
+          shift_type: cabinShiftType,
+          time_slot: null,
+          assigned_names: null,
+        }
+      : {
+          ...payloadBase,
+          end_date: formData.start_date,
+          time_slot: isDailyOther ? null : formData.time_slot.trim(),
+          assigned_names: assignedList,
+          day_workers: null,
+          evening_workers: null,
+          night_workers: null,
+        };
+
+    const saveTask = async () => {
+      try {
+        const savePayload = { ...payload };
+        if (editingTask?.task_type === 'DAILY_OTHER') {
+          delete savePayload.created_by_id;
+          delete savePayload.created_by_name;
+        }
+
+        if (editingTask) {
+          const { error } = await supabase.from('tasks').update(savePayload).eq('id', editingTask.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabase.from('tasks').insert([savePayload]);
+          if (error) throw error;
+        }
+
+        setIsModalOpen(false);
+        setSelectedTaskIds([]);
+        await fetchTasks();
+        showCustomAlert('성공', '업무가 정상적으로 저장되었습니다.');
+      } catch (err: any) {
+        showCustomAlert('오류', `저장 중 오류: ${err.message}`);
+      }
+    };
+
+    // 일일업무는 동일 날짜·시간대에 같은 인원이 이미 배정되어 있는지 확인합니다.
+    // 수정 중인 업무와 완료된 업무는 중복 확인에서 제외합니다.
+    if (formData.task_type === 'DAILY' && assignedList.length > 0) {
+      const selectedNames = new Set(assignedList.map(name => name.trim().toLowerCase()));
+      const conflicts: { name: string; taskTitle: string }[] = [];
+
+      tasks.forEach(existingTask => {
+        if (existingTask.id === editingTask?.id) return;
+        if (existingTask.task_type !== 'DAILY' || existingTask.status === 'COMPLETED') return;
+        if (existingTask.start_date !== formData.start_date || existingTask.time_slot !== formData.time_slot) return;
+
+        (existingTask.assigned_names || []).forEach(existingName => {
+          const normalizedName = existingName.trim().toLowerCase();
+          if (selectedNames.has(normalizedName)) {
+            conflicts.push({
+              name: existingName,
+              taskTitle: existingTask.title || '기존 업무',
+            });
+          }
+        });
+      });
+
+      const uniqueConflicts = Array.from(
+        new Map(conflicts.map(item => [`${item.name.toLowerCase()}|${item.taskTitle}`, item])).values()
+      );
+
+      if (uniqueConflicts.length > 0) {
+        const conflictMessage = uniqueConflicts
+          .map(item => `${item.name} 은(는) 이미 ${item.taskTitle} 업무에 배정되어 있습니다.`)
+          .join('\n');
+        showCustomConfirm(
+          '중복 배정 확인',
+          `${conflictMessage}\n\n동일 시간대에 배정하시겠습니까?`,
+          () => { void saveTask(); }
+        );
+        return;
+      }
     }
 
-    try {
-      if (editingTask) {
-        if (editingTask.task_type === 'DAILY_OTHER') {
-          delete payload.created_by_id;
-          delete payload.created_by_name;
-        }
-        const { error } = await supabase.from('tasks').update(payload).eq('id', editingTask.id);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('tasks').insert([payload]);
-        if (error) throw error;
-      }
-      setIsModalOpen(false);
-      fetchTasks();
-      showCustomAlert('성공', '업무가 정상적으로 저장되었습니다.');
-    } catch (err: any) { showCustomAlert('오류', `저장 중 오류: ${err.message}`); }
-  }, [isAdmin, canManageTask, currentUser, formData, editingTask, dayWorkerList, eveningWorkerList, nightWorkerList, cabinShiftType, assignedList, appUsers, tasks, fetchTasks, showCustomAlert]);
+    await saveTask();
+  }, [
+    isAdmin, canManageTask, currentUser, formData, editingTask,
+    dayWorkerList, eveningWorkerList, nightWorkerList, cabinShiftType,
+    assignedList, appUsers, tasks, fetchTasks, showCustomAlert, showCustomConfirm,
+  ]);
 
   const handleFinalizeDailyTask = useCallback((task: Task) => {
-    if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 최종 완료 처리할 수 있습니다.'); return; }
-    if (task.task_type !== 'DAILY' || task.status !== 'COMPLETED' || !task.completion_pending_review) return;
+    if (!isAdmin) {
+      showCustomAlert('권한 제한', '관리자만 최종 완료 처리할 수 있습니다.');
+      return;
+    }
+    if (
+      (task.task_type !== 'DAILY' && task.task_type !== 'DAILY_OTHER') ||
+      task.status !== 'COMPLETED' ||
+      task.completion_pending_review !== true
+    ) return;
 
-    showCustomConfirm('업무 최종 완료', '업무 내용을 확인하셨습니까? 최종 완료 처리하면 완료이력에 기록됩니다. 현재 화면은 유지됩니다.', async () => {
-      try {
-        const { error } = await supabase.from('tasks').update({
-          status: 'COMPLETED',
-          completion_pending_review: false,
-          completed_by_id: currentUser?.id || null,
-          completed_by_name: currentUser?.name || null,
-          completed_at: new Date().toISOString(),
-        }).eq('id', task.id).eq('completion_pending_review', true);
-        if (error) throw error;
-        setSelectedTaskIds([]);
-        await fetchTasks();
-        showCustomAlert('완료', '관리자 최종 확인이 완료되었습니다. 완료이력 탭에서 확인할 수 있습니다.');
-      } catch (err: any) {
-        showCustomAlert('오류', `최종 완료 처리 실패: ${err.message}`);
-      }
-    });
-  }, [isAdmin, currentUser, showCustomAlert, showCustomConfirm, fetchTasks]);
+    showCustomConfirm(
+      '업무 최종 완료',
+      '업무 내용을 확인하셨습니까? 최종 완료 처리하면 완료이력에 기록됩니다.',
+      async () => {
+        try {
+          const { error } = await supabase.from('tasks').update({
+            status: 'COMPLETED',
+            completion_pending_review: false,
+            completed_by_id: currentUser?.id || null,
+            completed_by_name: currentUser?.name || null,
+            completed_at: new Date().toISOString(),
+          }).eq('id', task.id).eq('completion_pending_review', true);
+          if (error) throw error;
 
-  const handleCompleteOtherTask = useCallback((task: Task) => {
-    if (task.task_type !== 'DAILY_OTHER' || task.status === 'COMPLETED') return;
-    if (!isAdmin) { showCustomAlert('권한 제한', '야간업무진행 완료 처리는 관리자만 가능합니다.'); return; }
-    showCustomConfirm('업무 완료', '이 업무를 완료 처리하시겠습니까? 완료이력에 기록되며 현재 화면은 유지됩니다.', async () => {
-      try {
-        const { error } = await supabase.from('tasks').update({
-          status: 'COMPLETED',
-          completed_by_id: currentUser?.id || null,
-          completed_by_name: currentUser?.name || null,
-          completed_at: new Date().toISOString(),
-          completion_pending_review: false
-        }).eq('id', task.id);
-        if (error) throw error;
-        setSelectedTaskIds([]);
-        await fetchTasks();
-        showCustomAlert('완료', '야간업무진행가 완료 처리되었습니다. 완료이력 탭에서 확인할 수 있습니다.');
-      } catch (err: any) {
-        showCustomAlert('오류', `완료 처리 실패: ${err.message}`);
+          setSelectedTaskIds([]);
+          await fetchTasks();
+          showCustomAlert('완료', '관리자 최종 확인이 완료되었습니다. 완료이력에서 확인할 수 있습니다.');
+        } catch (err: any) {
+          showCustomAlert('오류', `최종 완료 처리 실패: ${err.message}`);
+        }
       }
-    });
+    );
   }, [isAdmin, currentUser, showCustomAlert, showCustomConfirm, fetchTasks]);
 
   const handleDeleteTask = useCallback(async (id: string) => {
@@ -1937,7 +1932,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const handleExportDailyHistoryExcel = useCallback(async () => {
     if (!isAdmin) { showCustomAlert('권한 제한', '관리자만 엑셀 다운로드를 할 수 있습니다.'); return; }
-    const historyTasks = tasks.filter((task) => (task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') && task.status === 'COMPLETED');
+    const historyTasks = tasks.filter((task) => (task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') && task.status === 'COMPLETED' && task.completion_pending_review !== true);
     const selectedHistory = historyTasks.filter((task) => selectedTaskIds.includes(task.id));
     const exportTasks = selectedHistory.length > 0 ? selectedHistory : historyTasks;
     if (exportTasks.length === 0) { showCustomAlert('내보내기', '출력할 완료 이력이 없습니다.'); return; }
@@ -2194,14 +2189,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           if (!t.start_date || t.start_date < today) return false;
           if (tableFilterDate === 'ALL' && t.start_date > tomorrow) return false;
         } else if (dailySubTab === 'OTHER') {
-          if (!(t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED')) return false;
+          if (!(t.task_type === 'DAILY_OTHER' && (t.status !== 'COMPLETED' || t.completion_pending_review === true))) return false;
           const todayDate = new Date();
           const today = formatDateToYYYYMMDD(todayDate);
           const tomorrowDate = new Date(todayDate);
           tomorrowDate.setDate(tomorrowDate.getDate() + 1);
           const tomorrow = formatDateToYYYYMMDD(tomorrowDate);
-          if (!t.start_date || t.start_date < today) return false;
-          if (tableFilterDate === 'ALL' && t.start_date > tomorrow) return false;
+          if (t.completion_pending_review !== true) {
+            if (!t.start_date || t.start_date < today) return false;
+            if (tableFilterDate === 'ALL' && t.start_date > tomorrow) return false;
+          }
         } else if (dailySubTab === 'HISTORY') {
           if (!(t.status === 'COMPLETED' && t.completion_pending_review !== true)) return false;
         }
@@ -2691,9 +2688,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 </div>
                 {t.description && <p className="mt-2 whitespace-pre-wrap break-words text-xs text-[#64748B]">{t.description}</p>}
                 <div className="mt-2 flex flex-wrap items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                  {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
-                  {t.task_type === 'DAILY' && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
-                  {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && <button type="button" onClick={() => handleCompleteOtherTask(t)} className="rounded border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-800 hover:bg-emerald-100">완료</button>}
+                  {renderStatusBadge(t)}
+                  {(t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
                 </div>
                 <div className="mt-3 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
                   <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 ({t.assigned_names?.length || 0}명)</div>
@@ -2704,7 +2700,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   ) : <div className="text-xs text-[#94A3B8]">미지정</div>}
                 </div>
                 <div className="mt-2 flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
-                  {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && <button type="button" onClick={() => handleFinalizeDailyTask(t)} className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">최종 완료</button>}
+                  {isAdmin && (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && t.status === 'COMPLETED' && t.completion_pending_review === true && <button type="button" onClick={() => handleFinalizeDailyTask(t)} className="rounded bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors">최종 완료</button>}
                   {t.task_type === 'DAILY_OTHER' && canManageTask(t) && <><button type="button" onClick={() => handleOpenTaskEdit(t)} className="rounded border px-2 py-1.5 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]"><Pencil className="mr-1 inline h-3 w-3" />수정</button><button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button></>}
                   {dailySubTab === 'HISTORY' && isAdmin && t.task_type === 'DAILY' && <button type="button" onClick={() => handleDeleteTask(t.id)} className="rounded border border-red-200 px-2 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50"><Trash2 className="mr-1 inline h-3 w-3" />삭제</button>}
                 </div>
@@ -2842,26 +2838,18 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       {dailySubTab !== 'OTHER' && <td className="p-1 font-mono text-[#2563EB] text-center truncate border-r border-slate-200 last:border-r-0" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>}
                       <td className="p-1 text-center truncate border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
-                          {(t.task_type !== 'DAILY_OTHER' || t.status === 'COMPLETED') && renderStatusBadge(t)}
+                          {renderStatusBadge(t)}
                           {dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 whitespace-nowrap text-[9px] font-bold text-green-600">비고 수정됨</span>}
-                          {t.task_type === 'DAILY' && t.completion_pending_review === true && (
-                            <span className="px-1 py-0.2 bg-amber-50 text-amber-800 border border-amber-300 rounded text-[9px] font-bold">대기</span>
+                          {(t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && t.completion_pending_review === true && (
+                            <span className="px-1 py-0.5 bg-amber-50 text-amber-800 border border-amber-300 rounded text-[9px] font-bold">관리자 확인 대기</span>
                           )}
-                          {isAdmin && t.task_type === 'DAILY_OTHER' && t.status !== 'COMPLETED' && (
-                            <button
-                              type="button"
-                              onClick={() => handleCompleteOtherTask(t)}
-                              className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded text-[9px] font-bold hover:bg-emerald-100"
-                            >
-                              완료
-                            </button>
-                          )}
+
                         </div>
                       </td>
                       <td className="p-1 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
-                          {dailySubTab === 'ACTIVE' && isAdmin && t.task_type === 'DAILY' && t.status === 'COMPLETED' && t.completion_pending_review === true && (
-                            <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[42px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">완료</button>
+                          {isAdmin && (t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && t.status === 'COMPLETED' && t.completion_pending_review === true && (
+                            <button onClick={() => handleFinalizeDailyTask(t)} className="min-w-[54px] px-2 py-1 bg-emerald-600 text-white rounded font-semibold text-[10px] text-center hover:bg-emerald-700">최종 완료</button>
                           )}
                           {t.task_type === 'DAILY_OTHER' && canManageTask(t) && (
                             <>
@@ -3316,6 +3304,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                       일시: {statusChangeModal.task.start_date} {statusChangeModal.task.time_slot ? `(${formatShortTimeSlot(statusChangeModal.task.time_slot)})` : ''}
                     </div>
                     {statusChangeModal.task.category && <div className="text-[#64748B]">호선/화물창: {statusChangeModal.task.category} {statusChangeModal.task.cargo_hold ? `(${statusChangeModal.task.cargo_hold})` : ''}</div>}
+                    {statusChangeModal.task.description && <div className="whitespace-pre-wrap break-words border-t border-[#E2E5E9] pt-2 text-[#1F2937]"><span className="font-bold text-[#243B5A]">업무 내용: </span>{statusChangeModal.task.description}</div>}
+                    <div className="text-[#64748B]">담당자: {(statusChangeModal.task.assigned_names || []).join(', ') || '미배정'}</div>
                   </div>
 
                   <div>
@@ -3399,11 +3389,17 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   <div className="flex flex-col gap-1 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] px-3.5 py-2.5 text-xs">
                     <div className="flex items-center justify-between text-[#64748B]">
                       <span>일시: {singleTask.start_date} {singleTask.time_slot ? `· ${formatShortTimeSlot(singleTask.time_slot)}` : ''}</span>
-                      <span>담당자: {singleTask.assignee || '미배정'}</span>
+                      <span>담당자: {singleTask.assigned_names?.join(', ') || '미배정'}</span>
                     </div>
-                    <div className="mt-1 text-[#1F2937] font-medium whitespace-pre-wrap break-all">
-                      <span className="font-bold text-[#243B5A] mr-1.5">[상세내용/비고]:</span>
-                      {singleTask.remarks && singleTask.remarks.trim() !== '' ? singleTask.remarks : '등록된 상세 내용(비고)이 없습니다.'}
+                    {singleTask.description && (
+                      <div className="mt-1 text-[#1F2937] font-medium whitespace-pre-wrap break-words">
+                        <span className="font-bold text-[#243B5A] mr-1.5">[업무 내용]:</span>
+                        {singleTask.description}
+                      </div>
+                    )}
+                    <div className="mt-1 text-[#1F2937] font-medium whitespace-pre-wrap break-words">
+                      <span className="font-bold text-[#243B5A] mr-1.5">[비고]:</span>
+                      {singleTask.remarks && singleTask.remarks.trim() !== '' ? singleTask.remarks : '등록된 비고가 없습니다.'}
                     </div>
                   </div>
                 )}
@@ -3414,14 +3410,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     {singleTask ? `ID: ${singleTask.id}` : '다중 선택 상태입니다.'}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {singleTask && canModifyTaskStatus(singleTask) && singleTask.task_type !== 'DAILY_OTHER' && (
+                    {singleTask && canModifyTaskStatus(singleTask) && (
                       <button type="button" onClick={() => setStatusChangeModal({ open: true, task: singleTask, targetStatus: singleTask.status, remarks: singleTask.remarks || '' })} className="inline-flex items-center gap-1.5 rounded-xl bg-[#243B5A] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#1B2F49] transition-colors">
                         <CheckCircle2 className="h-4 w-4" />상태 변경
                       </button>
                     )}
-                    {singleTask?.task_type === 'DAILY_OTHER' && isAdmin && singleTask.status !== 'COMPLETED' && (
-                      <button type="button" onClick={() => handleCompleteOtherTask(singleTask)} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors">
-                        <CheckCircle2 className="h-4 w-4" />완료 처리
+                    {singleTask && isAdmin && (singleTask.task_type === 'DAILY' || singleTask.task_type === 'DAILY_OTHER') && singleTask.status === 'COMPLETED' && singleTask.completion_pending_review === true && (
+                      <button type="button" onClick={() => handleFinalizeDailyTask(singleTask)} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors">
+                        <CheckCircle2 className="h-4 w-4" />관리자 최종 확인
                       </button>
                     )}
                     {singleTask && canManageTask(singleTask) && (
