@@ -1774,7 +1774,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
     const saveTask = async () => {
       try {
-        const savePayload = { ...payload };
+        // CABIN과 일반 업무 payload의 유니온 타입에서 선택 속성 삭제 시
+        // TypeScript 오류가 발생하지 않도록 저장용 객체를 명시적으로 확장합니다.
+        const savePayload: Record<string, any> = { ...payload };
         if (editingTask?.task_type === 'DAILY_OTHER') {
           delete savePayload.created_by_id;
           delete savePayload.created_by_name;
