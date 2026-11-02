@@ -3314,7 +3314,7 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
                 <h3 className="text-sm font-bold text-[#243B5A]">{customAlert.title}</h3>
                 <button onClick={() => setCustomAlert({ ...customAlert, open: false })} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
               </div>
-              <p className="text-xs text-[#1F2937] leading-relaxed">{customAlert.message}</p>
+             <p className="text-xs text-[#1F2937] leading-relaxed whitespace-pre-line">{customAlert.message}</p>
               <div className="flex justify-end space-x-2 pt-2 border-t border-[#E2E5E9] text-xs">
                 {customAlert.type === 'monthlyDelete' ? (
                   <>
