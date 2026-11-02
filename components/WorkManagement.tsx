@@ -1455,7 +1455,17 @@ const isAdmin = ['SUPER_ADMIN', 'WORK_ADMIN', 'ADMIN', '최고 관리자', '총 
 
 const canEditNightRemarks = isNightTask && (isAssignedWorker || isAdmin);
 
-if (!canModifyTaskStatus(task) && !canEditNightRemarks) {
+const canEditCompletedNightRemarks =
+  task.task_type === 'DAILY_OTHER' &&
+  task.status === 'COMPLETED' &&
+  (
+    isAdmin ||
+    (task.assigned_names || []).some(name =>
+      name.trim().toLowerCase() === (currentUser?.name || '').trim().toLowerCase()
+    )
+  );
+
+if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
   showCustomAlert('권한 없음', '해당 업무의 당사자 또는 관리자만 변경할 수 있습니다.');
   return;
 }
@@ -3365,6 +3375,22 @@ if (!canModifyTaskStatus(task) && !canEditNightRemarks) {
 
         {statusChangeModal.open && statusChangeModal.task && (() => {
           const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
+
+const isCompletedNightTask =
+  statusChangeModal.task.task_type === 'DAILY_OTHER' &&
+  statusChangeModal.task.status === 'COMPLETED';
+
+const isAssignedNightWorker = (statusChangeModal.task.assigned_names || [])
+  .some(name =>
+    name.trim().toLowerCase() === (currentUser?.name || '').trim().toLowerCase()
+  );
+
+const canEditRemarks =
+  isAllowedUser ||
+  (isCompletedNightTask && (isAdmin || isAssignedNightWorker));
+
+const canChangeStatus =
+  isAllowedUser && statusChangeModal.task.status !== 'COMPLETED';
           return (
             <div className="fixed inset-0 z-[65] flex items-center justify-center bg-slate-900/25 p-4">
               <div className="bg-white rounded-2xl max-w-md w-full p-4 sm:p-5 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 border border-[#E2E5E9]">
@@ -3390,9 +3416,9 @@ if (!canModifyTaskStatus(task) && !canEditNightRemarks) {
                   <div>
                     <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택</label>
                     <div className="grid grid-cols-3 gap-2">
-                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}`}>대기</button>
-                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'}`}>진행중</button>
-                      <button type="button" disabled={!isAllowedUser} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white border-slate-800' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'}`}>완료</button>
+                      <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}`}>대기</button>
+                      <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'}`}>진행중</button>
+                      <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white border-slate-800' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'}`}>완료</button>
                     </div>
                   </div>
 
@@ -3400,7 +3426,7 @@ if (!canModifyTaskStatus(task) && !canEditNightRemarks) {
                     <label className="block text-xs font-bold text-[#1F2937] mb-1">비고란 (최대 10줄 이상 스크롤)</label>
                     <textarea
                       rows={10}
-                      disabled={!isAllowedUser}
+                      disabled={!canEditRemarks}
                       placeholder="비고 사항을 입력해주세요..."
                       value={statusChangeModal.remarks}
                       onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
@@ -3411,7 +3437,7 @@ if (!canModifyTaskStatus(task) && !canEditNightRemarks) {
 
                 <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9] text-xs">
                   <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">닫기</button>
-                  {isAllowedUser && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">저장</button>}
+                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">저장</button>}
                 </div>
               </div>
             </div>
