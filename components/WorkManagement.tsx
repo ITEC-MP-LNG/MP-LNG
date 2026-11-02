@@ -1695,8 +1695,8 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
     setSingleWorkerInput('');
     if (conflicts.length > 0) {
       const message = conflicts
-        .map(item => `${item.name} 은(는) 이미 ${item.taskTitle} 업무에 배정되어 있습니다.`)
-        .join('\n');
+  .map(item => `${item.name} : ${item.taskTitle} 업무에 이미 배정됨`)
+  .join('\n');
       showCustomConfirm(
         '중복 배정 확인',
         `${message}\n\n동일 시간대에 배정하시겠습니까?`,
@@ -1762,8 +1762,8 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
     setSelectedPresetTeamId('');
     if (conflicts.length > 0) {
       const message = conflicts
-        .map(item => `${item.name} 은(는) 이미 ${item.taskTitle} 업무에 배정되어 있습니다.`)
-        .join('\n');
+  .map(item => `${item.name} : ${item.taskTitle} 업무에 이미 배정됨`)
+  .join('\n');
       showCustomConfirm(
         '중복 배정 확인',
         `${message}\n\n동일 시간대에 배정하시겠습니까?`,
