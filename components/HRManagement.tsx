@@ -29,6 +29,14 @@ import { supabase } from '@/lib/supabase';
 import { exportHRToExcel, exportHRToPptx } from '@/lib/hrExport';
 import CertManagement from './cert';
 
+type YardCertDetail = {
+  name: string;
+  education_date: string;
+  renewal_count: number;
+  renewal_dates: string[];
+  needs_renewal: boolean;
+};
+
 export interface HRUser {
   id: string;          
   name: string;
@@ -45,7 +53,7 @@ export interface HRUser {
   national_certificates?: string; 
   certificates?: string;
   national_cert_details?: Array<{ method: string; kind: string }>;
-  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>;
+  yard_cert_details?: YardCertDetail[];
   ndt_certificates?: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>; 
   join_date?: string;          
   career_start_date?: string;  
@@ -672,7 +680,7 @@ export default function HRManagement({
     internal_certificates: '',
     national_certificates: '',
     national_cert_details: [] as Array<{ method: string; kind: string }>,
-    yard_cert_details: [] as Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>,
+    yard_cert_details: [] as YardCertDetail[],
     ndt_certificates: [] as Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>,
     join_date: '',
     career_start_date: '',
@@ -1223,7 +1231,13 @@ export default function HRManagement({
         work_status: todayAbsenceUserIds.has(String(u.id)) ? '휴무' : '근무중',
         national_certificates: u.national_certificates || u.certificates || '',
         national_cert_details: Array.isArray(u.national_cert_details) ? u.national_cert_details : [],
-        yard_cert_details: Array.isArray(u.yard_cert_details) ? u.yard_cert_details : (u.yard_cert_details?.names ? u.yard_cert_details.names.split(',').map((name: string) => ({ name: name.trim(), education_date: u.yard_cert_details.education_date || '', renewal_count: Number(u.yard_cert_details.renewal_count || 0), renewal_dates: Array.isArray(u.yard_cert_details.renewal_dates) ? u.yard_cert_details.renewal_dates : [] })).filter((item: any) => item.name) : []),
+        yard_cert_details: Array.isArray(u.yard_cert_details) ? u.yard_cert_details.map((item: any) => ({
+          name: String(item?.name || ''),
+          education_date: item?.education_date || '',
+          renewal_count: Number(item?.renewal_count || 0),
+          renewal_dates: Array.isArray(item?.renewal_dates) ? item.renewal_dates : [],
+          needs_renewal: item?.needs_renewal ?? true,
+        })).filter((item: any) => item.name) : (u.yard_cert_details?.names ? u.yard_cert_details.names.split(',').map((name: string) => ({ name: name.trim(), education_date: u.yard_cert_details.education_date || '', renewal_count: Number(u.yard_cert_details.renewal_count || 0), renewal_dates: Array.isArray(u.yard_cert_details.renewal_dates) ? u.yard_cert_details.renewal_dates : [], needs_renewal: Boolean(u.yard_cert_details.needs_renewal ?? true) })).filter((item: any) => item.name) : []),
         ndt_certificates: normalizeNdtCertificates(Array.isArray(u.ndt_certificates) ? u.ndt_certificates : [])
       }));
 
@@ -1438,7 +1452,13 @@ export default function HRManagement({
       internal_certificates: user.internal_certificates || '',
       national_certificates: user.national_certificates || user.certificates || '',
       national_cert_details: Array.isArray(user.national_cert_details) ? user.national_cert_details : [],
-      yard_cert_details: Array.isArray(user.yard_cert_details) ? user.yard_cert_details : (user.yard_cert_details && !Array.isArray(user.yard_cert_details) && (user.yard_cert_details as any).names ? (user.yard_cert_details as any).names.split(',').map((name: string) => ({ name: name.trim(), education_date: (user.yard_cert_details as any).education_date || '', renewal_count: Number((user.yard_cert_details as any).renewal_count || 0), renewal_dates: Array.isArray((user.yard_cert_details as any).renewal_dates) ? (user.yard_cert_details as any).renewal_dates : [] })).filter((item: any) => item.name) : []),
+      yard_cert_details: Array.isArray(user.yard_cert_details) ? user.yard_cert_details.map((item: any) => ({
+        name: String(item?.name || ''),
+        education_date: item?.education_date || '',
+        renewal_count: Number(item?.renewal_count || 0),
+        renewal_dates: Array.isArray(item?.renewal_dates) ? item.renewal_dates : [],
+        needs_renewal: item?.needs_renewal ?? true,
+      })).filter((item: any) => item.name) : (user.yard_cert_details && !Array.isArray(user.yard_cert_details) && (user.yard_cert_details as any).names ? (user.yard_cert_details as any).names.split(',').map((name: string) => ({ name: name.trim(), education_date: (user.yard_cert_details as any).education_date || '', renewal_count: Number((user.yard_cert_details as any).renewal_count || 0), renewal_dates: Array.isArray((user.yard_cert_details as any).renewal_dates) ? (user.yard_cert_details as any).renewal_dates : [], needs_renewal: Boolean((user.yard_cert_details as any).needs_renewal ?? true) })).filter((item: any) => item.name) : []),
       ndt_certificates: normalizeNdtCertificates(Array.isArray(user.ndt_certificates) ? user.ndt_certificates : []),
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
@@ -2979,19 +2999,7 @@ export default function HRManagement({
                       </div>
                     </details>
                   ))}
-                  <button 
-  type="button" 
-  onClick={() => setFormData(prev => ({ 
-    ...prev, 
-    yard_cert_details: [
-      ...prev.yard_cert_details, 
-      { name: '', education_date: '', renewal_count: 0, renewal_dates: [], needs_renewal: true } // 👈 이 부분이 빠져있으면 에러가 납니다!
-    ] 
-  }))} 
-  className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold"
->
-  + YARD 교육 추가
-</button>
+                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, yard_cert_details: [...prev.yard_cert_details, { name: '', education_date: '', renewal_count: 0, renewal_dates: [], needs_renewal: true }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ YARD 교육 추가</button>
                </div>
               </details>
 
