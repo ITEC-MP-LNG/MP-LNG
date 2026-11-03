@@ -500,6 +500,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   // 호선 제원정보 필터: 선종/프로젝트명, 선주사, 전 공정 완료 여부만 사용합니다.
   const [searchQuery, setSearchQuery] = useState('');
   const [completedOnly, setCompletedOnly] = useState(false);
+  const [isShipListCollapsed, setIsShipListCollapsed] = useState(true);//기본접
 
   // 1. 메인 탭 상태: 'INFO'(호선 제원 정보) vs 'STATUS'(공정 현황)
   const [activeMainTab, setActiveMainTab] = useState<'INFO' | 'STATUS'>('INFO');
@@ -1769,6 +1770,18 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               <div>
                 <h2 className="text-sm font-bold text-[#1F2937]">호선 목록 및 제원 현황</h2>
                 <p className="text-[11px] text-[#64748B]">선종, 선주사, 호선위치 및 주요 탑재/인도 일정 관리</p>
+             {/* 호선 목록 접기/펼치기 버튼 */}
+<button
+  type="button"
+  onClick={() => setIsShipListCollapsed(prev => !prev)}
+  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-xs font-bold text-[#243B5A] hover:bg-slate-100 transition cursor-pointer"
+>
+  {isShipListCollapsed ? '호선 목록 펼치기' : '호선 목록 접기'}
+  {isShipListCollapsed
+    ? <ChevronDown className="h-4 w-4" />
+    : <ChevronUp className="h-4 w-4" />}
+</button>
+
               </div>
             </div>
 
@@ -1794,7 +1807,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </label>
             </div>
           </div>
-
+{!isShipListCollapsed && (
+  <>
           <div className="hidden lg:block bg-white border border-[#E2E5E9] rounded-xl shadow-2xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
