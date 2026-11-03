@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'; // 달력 모달 수정부
 import { supabase } from '@/lib/supabase';
 import * as XLSX from 'xlsx';
 import StatusComparisonExport from './StatusComparisonExport';
@@ -14,7 +14,8 @@ import {
   MapPin,
   AlertTriangle,
   CheckCircle2,
-  Clock,
+   Clock,
+  ChevronLeft,
   ChevronRight,
   User,
   Activity,
@@ -35,6 +36,266 @@ import {
 
 // 테이블명: 기본적으로 'ships'를 사용하되 Supabase 환경에 맞춰 연동
 const TABLE_NAME = 'ships';
+/** WorkManagement와 동일한 스타일의 날짜 선택 달력 */
+function ShipCalendarDatePicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value)
+    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+    : new Date();
+
+  const [viewYear, setViewYear] = useState(initialDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(initialDate.getMonth());
+  const [inputText, setInputText] = useState(value || '');
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setInputText(value || '');
+  }, [value]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+
+    const handleOutside = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('touchstart', handleOutside);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('touchstart', handleOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [isOpen]);
+
+  const moveMonth = (amount: number) => {
+    const next = new Date(viewYear, viewMonth + amount, 1);
+    setViewYear(next.getFullYear());
+    setViewMonth(next.getMonth());
+  };
+
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const selected = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : '';
+  const today = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })();
+
+  const chooseDate = (day: number) => {
+    const nextValue = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange(nextValue);
+    setInputText(nextValue);
+    setIsOpen(false);
+  };
+
+  const commitTypedDate = () => {
+    const trimmed = inputText.trim();
+    if (!trimmed) {
+      onChange('');
+      return;
+    }
+
+    const normalized = /^\d{8}$/.test(trimmed)
+      ? `${trimmed.slice(0, 4)}-${trimmed.slice(4, 6)}-${trimmed.slice(6, 8)}`
+      : trimmed;
+
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalized);
+    if (match) {
+      const year = Number(match[1]);
+      const month = Number(match[2]);
+      const day = Number(match[3]);
+      const candidate = new Date(year, month - 1, day);
+
+      if (
+        candidate.getFullYear() === year &&
+        candidate.getMonth() === month - 1 &&
+        candidate.getDate() === day
+      ) {
+        onChange(normalized);
+        setInputText(normalized);
+        return;
+      }
+    }
+
+    setInputText(value || '');
+  };
+
+  return (
+    <div ref={rootRef} className="relative w-full min-w-0">
+      <div className="flex min-w-0 items-center gap-1">
+        <input
+          type="text"
+          inputMode="numeric"
+          value={inputText}
+          onChange={(event) => setInputText(event.target.value)}
+          onBlur={commitTypedDate}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              commitTypedDate();
+            }
+          }}
+          placeholder="YYYY-MM-DD"
+          className="w-full min-w-0 px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
+        />
+        <button
+          type="button"
+          onClick={() => {
+            if (!isOpen) {
+              const current = selected
+                ? new Date(Number(selected.slice(0, 4)), Number(selected.slice(5, 7)) - 1, Number(selected.slice(8, 10)))
+                : new Date();
+              setViewYear(current.getFullYear());
+              setViewMonth(current.getMonth());
+            }
+            setIsOpen(open => !open);
+          }}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#F5F6F8]"
+          aria-label="달력 열기"
+        >
+          <Calendar className="h-4 w-4" />
+        </button>
+      </div>
+
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/25 p-4"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="날짜 선택"
+            onClick={(event) => event.stopPropagation()}
+            className="w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 text-[#1F2937] shadow-[0_12px_32px_rgba(15,23,42,0.18)]"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button type="button" onClick={() => moveMonth(-1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]">
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+
+              <div className="flex items-center gap-1">
+                <select
+                  value={viewYear}
+                  onChange={(event) => setViewYear(Number(event.target.value))}
+                  className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none"
+                >
+                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map(year => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <select
+                  value={viewMonth}
+                  onChange={(event) => setViewMonth(Number(event.target.value))}
+                  className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none"
+                >
+                  {Array.from({ length: 12 }, (_, month) => (
+                    <option key={month} value={month}>{month + 1}월</option>
+                  ))}
+                </select>
+              </div>
+
+              <button type="button" onClick={() => moveMonth(1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]">
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => (
+                <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>
+                  {day}
+                </div>
+              ))}
+
+              {Array.from({ length: firstDay }, (_, index) => (
+                <div key={`empty-${index}`} />
+              ))}
+
+              {Array.from({ length: daysInMonth }, (_, index) => {
+                const day = index + 1;
+                const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = dateKey === selected;
+                const isToday = dateKey === today;
+                const weekday = new Date(viewYear, viewMonth, day).getDay();
+
+                return (
+                  <button
+                    key={dateKey}
+                    type="button"
+                    onClick={() => chooseDate(day)}
+                    className={`h-9 rounded-lg text-xs transition-colors ${
+                      isSelected
+                        ? 'bg-[#243B5A] font-bold text-white shadow-sm'
+                        : isToday
+                          ? 'border border-[#243B5A] font-bold text-[#243B5A]'
+                          : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`
+                    }`}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const date = today;
+                  setViewYear(Number(date.slice(0, 4)));
+                  setViewMonth(Number(date.slice(5, 7)) - 1);
+                  onChange(date);
+                  setInputText(date);
+                  setIsOpen(false);
+                }}
+                className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]"
+              >
+                오늘
+              </button>
+
+              <div className="flex items-center gap-1">
+                {selected && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange('');
+                      setInputText('');
+                      setIsOpen(false);
+                    }}
+                    className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]"
+                  >
+                    지우기
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // 진행 상태 타입 정의 (기존 7개 단계)
 export type ShipStatus =
@@ -2328,12 +2589,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                     진수일
                   </label>
-                  <input
-                    type="date"
-                    value={formData.launch_date || ''}
-                    onChange={(e) => setFormData({ ...formData, launch_date: e.target.value })}
-                    className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                  />
+                  <ShipCalendarDatePicker
+  value={formData.launch_date || ''}
+  onChange={(value) =>
+    setFormData({ ...formData, launch_date: value })
+  }
+/>
                 </div>
                 <div>
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
