@@ -1542,6 +1542,36 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
     return STATUS_LIST.every((step) => processStatuses[step] === '완료');
   };
 
+  // 미완료 공정 목록에서는 NH3 U/F와 Welding을 별도 공정 배지로 표시합니다.
+  // 기존 STATUS 화면의 통합 판정은 변경하지 않습니다.
+  const getShipInProgressLabels = (ship: ShipItem): string[] => {
+    const activeTanks = TANKS.filter((tank) => ship.tank_status?.[tank]?.enabled !== false);
+    if (activeTanks.length === 0) return [];
+
+    const getStepStatus = (stepKey: TankStepKey): CommissioningProcessStatus => {
+      const stepDetails = activeTanks.map((tank) => ship.tank_status?.[tank]?.[stepKey]);
+      const hasAnyInput = stepDetails.some((step) =>
+        !!step && !!(step.date || step.startDate || step.endDate || step.value || step.finalValue)
+      );
+      if (!hasAnyInput) return '대기';
+      return stepDetails.every((step) => getTankStepStatus(stepKey, step) === '완료') ? '완료' : '진행중';
+    };
+
+    const processStatuses = getTankLinkedCommissioningStatus(ship.tank_status);
+    const labels: string[] = [];
+
+    STATUS_LIST.forEach((step) => {
+      if (step === 'Nh3 Test') {
+        if (getStepStatus('nh3_uf') === '진행중') labels.push('NH3 U/F');
+        if (getStepStatus('nh3_welding') === '진행중') labels.push('NH3');
+      } else if (processStatuses[step] === '진행중') {
+        labels.push(step);
+      }
+    });
+
+    return labels;
+  };
+
   return (
     <div className="space-y-4 font-sans text-[#1F2937]">
       {alertInfo.isOpen && (
@@ -1622,6 +1652,52 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* ============================================================== */}
       {activeMainTab === 'INFO' && (
         <>
+          {/* 미완료 공정 목록: 기존에 로드된 ships 데이터만 사용합니다. */}
+          <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Activity className="h-4 w-4 text-[#243B5A]" />
+                <h2 className="text-sm font-bold text-[#1F2937]">호선별 공정 진행상황(간략히)</h2>
+              </div>
+                          </div>
+            <div className="space-y-1.5">
+              {ships.filter((ship) => getShipInProgressLabels(ship).length > 0).map((ship) => {
+                const inProgressSteps = getShipInProgressLabels(ship);
+
+                return (
+                  <button
+                    key={`in-progress-${ship.id}`}
+                    type="button"
+                    onClick={() => handleOpenStatusEditModal(ship)}
+                    disabled={!isAdmin}
+                    title={isAdmin ? '클릭하여 공정 상태 수정' : '공정 상태 수정은 관리자 권한이 필요합니다.'}
+                    className={`w-full flex flex-wrap items-center gap-1.5 rounded-lg border border-transparent px-1.5 py-1.5 text-left transition ${isAdmin ? 'hover:bg-slate-50 hover:border-[#E2E5E9] cursor-pointer' : 'cursor-default'}`}
+                  >
+                    <span className="shrink-0 rounded bg-[#243B5A] px-1.5 py-0.5 text-[11px] font-bold text-white">
+                      {ship.ship_no}
+                    </span>
+                    <span className="shrink-0 rounded border border-[#D7DEE8] bg-[#F8FAFC] px-2 py-0.5 text-[11px] font-medium text-[#475569]">
+                      {ship.shipowner || '-'}
+                    </span>
+                    {inProgressSteps.map((step) => (
+                      <span key={step} className="shrink-0 rounded bg-emerald-600 px-2 py-0.5 text-[11px] font-bold text-white">
+                        {step}
+                      </span>
+                    ))}
+                    <span className="shrink-0 text-xs font-bold text-[#1F2937]">
+                      {ship.ship_name || '-'}
+                    </span>
+                  </button>
+                );
+              })}
+              {ships.every((ship) => getShipInProgressLabels(ship).length === 0) && (
+                <div className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs text-[#94A3B8]">
+                  현재 진행중인 공정이 없습니다.
+                </div>
+              )}
+            </div>
+          </div>
+
           <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs space-y-3">
             <div className="flex items-center justify-between gap-3 bg-slate-50 border border-[#E2E5E9] rounded-lg px-3 py-2.5">
               <div className="min-w-0">
@@ -2575,12 +2651,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                     DWT 
                   </label>
-                  <input
-                    type="date"
-                    value={formData.dwt || ''}
-                    onChange={(e) => setFormData({ ...formData, dwt: e.target.value })}
-                    className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                  />
+                  <ShipCalendarDatePicker
+  value={formData.dwt || ''}
+  onChange={(value) =>
+    setFormData({ ...formData, dwt: value })
+  }
+/>
                 </div>
               </div>
 
@@ -2600,12 +2676,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                     P/T 탑재일
                   </label>
-                  <input
-                    type="date"
-                    value={formData.pt_mount_date || ''}
-                    onChange={(e) => setFormData({ ...formData, pt_mount_date: e.target.value })}
-                    className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                  />
+                  <ShipCalendarDatePicker
+  value={formData.pt_mount_date || ''}
+  onChange={(value) =>
+    setFormData({ ...formData, pt_mount_date: value })
+  }
+/>
                 </div>
               </div>
 
@@ -2647,12 +2723,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                   인도 예정일
                 </label>
-                <input
-                  type="date"
-                  value={formData.delivery_date ?? ''}
-                  onChange={(e) => setFormData({ ...formData, delivery_date: e.target.value })}
-                  className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                />
+                <ShipCalendarDatePicker
+  value={formData.delivery_date ?? ''}
+  onChange={(value) =>
+    setFormData({ ...formData, delivery_date: value })
+  }
+/>
               </div>
 
               <div>
@@ -2821,34 +2897,43 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       DWT 
                     </label>
-                    <input
-                      type="date"
-                      value={statusCreateFormData.dwt || ''}
-                      onChange={(e) => setStatusCreateFormData({ ...statusCreateFormData, dwt: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                    />
+                    <ShipCalendarDatePicker
+  value={statusCreateFormData.dwt || ''}
+  onChange={(value) =>
+    setStatusCreateFormData({
+      ...statusCreateFormData,
+      dwt: value,
+    })
+  }
+/>
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       진수일
                     </label>
-                    <input
-                      type="date"
-                      value={statusCreateFormData.launch_date || ''}
-                      onChange={(e) => setStatusCreateFormData({ ...statusCreateFormData, launch_date: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                    />
+                    <ShipCalendarDatePicker
+  value={statusCreateFormData.launch_date || ''}
+  onChange={(value) =>
+    setStatusCreateFormData({
+      ...statusCreateFormData,
+      launch_date: value,
+    })
+  }
+/>
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       인도 예정일
                     </label>
-                    <input
-                      type="date"
-                      value={statusCreateFormData.delivery_date ?? ''}
-                      onChange={(e) => setStatusCreateFormData({ ...statusCreateFormData, delivery_date: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                    />
+                    <ShipCalendarDatePicker
+  value={statusCreateFormData.delivery_date ?? ''}
+  onChange={(value) =>
+    setStatusCreateFormData({
+      ...statusCreateFormData,
+      delivery_date: value,
+    })
+  }
+/>
                   </div>
                 </div>
               </div>
@@ -2981,93 +3066,112 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                               <span className={`px-2 py-1 border rounded text-[11px] font-semibold shrink-0 ${getTankStepStatus(step.key, currentStepData) === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : getTankStepStatus(step.key, currentStepData) === '진행중' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{getTankStepStatus(step.key, currentStepData)}</span>
 
                               {step.key !== 'pbgt' && step.key !== 'nh3_welding' && (
-                                <input
-                                  type="date"
+                                <ShipCalendarDatePicker
                                   value={currentStepData.date || ''}
-                                  onChange={(e) => {
-                                    const newDate = e.target.value;
-                                    setStatusCreateFormData(prev => ({
-                                      ...prev,
-                                      tank_status: {
-                                        ...prev.tank_status,
-                                        [statusCreateTankTab]: {
-                                          ...prev.tank_status[statusCreateTankTab],
-                                          [step.key]: {
-                                            ...prev.tank_status[statusCreateTankTab][step.key],
-                                            date: newDate,
-                                            status: getTankStepStatus(step.key, { ...currentStepData, date: newDate })
-                                          }
-                                        }
+                                  onChange={(newDate) => {
+                                    setStatusCreateFormData(prev => {
+                                      const currentTank = prev.tank_status[statusCreateTankTab] || {};
+                                      const existing = currentTank[step.key] || {};
+                                      const updatedTank = {
+                                        ...currentTank,
+                                        [step.key]: {
+                                          ...existing,
+                                          date: newDate,
+                                          status: getTankStepStatus(step.key, { ...existing, date: newDate }),
+                                        },
+                                      };
+
+                                      if (
+                                        step.key === 'nh3_uf' &&
+                                        updatedTank.nh3_welding?.status === '완료' &&
+                                        updatedTank.nh3_uf?.status === '완료'
+                                      ) {
+                                        updatedTank.nh3 = { ...updatedTank.nh3, status: '완료' };
                                       }
-                                    }));
+
+                                      return {
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusCreateTankTab]: updatedTank,
+                                        },
+                                      };
+                                    });
                                   }}
-                                  className="px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono shrink-0"
                                 />
                               )}
 
                               {(step.key === 'pbgt' || step.key === 'nh3_welding') && (
-                                <div className="flex items-center space-x-1 shrink-0">
-                                  <input
-                                    type="date"
-                                    title="시작일"
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <ShipCalendarDatePicker
                                     value={currentStepData.startDate || ''}
-                                    onChange={(e) => {
-                                      const sDate = e.target.value;
+                                    onChange={(sDate) => {
                                       setStatusCreateFormData(prev => {
+                                        const currentTank = prev.tank_status[statusCreateTankTab] || {};
+                                        const existing = currentTank[step.key] || {};
                                         const updatedTank = {
-                                          ...prev.tank_status[statusCreateTankTab],
+                                          ...currentTank,
                                           [step.key]: {
-                                            ...prev.tank_status[statusCreateTankTab][step.key],
+                                            ...existing,
                                             startDate: sDate,
-                                          }
+                                          },
                                         };
-                                        if (step.key === 'nh3_welding' && updatedTank.nh3_uf.status === '완료' && updatedTank.nh3_welding.status === '완료') {
-                                          updatedTank.nh3.status = '완료';
+
+                                        if (
+                                          step.key === 'nh3_welding' &&
+                                          updatedTank.nh3_uf?.status === '완료' &&
+                                          updatedTank.nh3_welding?.status === '완료'
+                                        ) {
+                                          updatedTank.nh3 = { ...updatedTank.nh3, status: '완료' };
                                         }
+
                                         return {
                                           ...prev,
                                           tank_status: {
                                             ...prev.tank_status,
-                                            [statusCreateTankTab]: updatedTank
-                                          }
+                                            [statusCreateTankTab]: updatedTank,
+                                          },
                                         };
                                       });
                                     }}
-                                    className="px-1.5 py-1 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-[10px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                                   />
                                   <span className="text-[10px] text-slate-400">~</span>
-                                  <input
-                                    type="date"
-                                    title="종료일"
+                                  <ShipCalendarDatePicker
                                     value={currentStepData.endDate || ''}
-                                    onChange={(e) => {
-                                      const eDate = e.target.value;
+                                    onChange={(eDate) => {
                                       setStatusCreateFormData(prev => {
+                                        const currentTank = prev.tank_status[statusCreateTankTab] || {};
+                                        const existing = currentTank[step.key] || {};
                                         const updatedTank = {
-                                          ...prev.tank_status[statusCreateTankTab],
+                                          ...currentTank,
                                           [step.key]: {
-                                            ...prev.tank_status[statusCreateTankTab][step.key],
+                                            ...existing,
                                             endDate: eDate,
-                                          }
+                                          },
                                         };
-                                        if (step.key === 'nh3_welding' && updatedTank.nh3_uf.status === '완료' && updatedTank.nh3_welding.status === '완료') {
-                                          updatedTank.nh3.status = '완료';
+
+                                        if (
+                                          step.key === 'nh3_welding' &&
+                                          updatedTank.nh3_uf?.status === '완료' &&
+                                          updatedTank.nh3_welding?.status === '완료'
+                                        ) {
+                                          updatedTank.nh3 = { ...updatedTank.nh3, status: '완료' };
                                         }
+
                                         return {
                                           ...prev,
                                           tank_status: {
                                             ...prev.tank_status,
-                                            [statusCreateTankTab]: updatedTank
-                                          }
+                                            [statusCreateTankTab]: updatedTank,
+                                          },
                                         };
                                       });
                                     }}
-                                    className="px-1.5 py-1 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-[10px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                                   />
                                 </div>
                               )}
 
-                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? (
+                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <select
                                     aria-label="No Leak 선택"
@@ -3114,10 +3218,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     className="w-20 sm:w-24 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                                   />
                                 </div>
-                              ) : (
+                              )}
+
+                              {!(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <input
                                   type="text"
-                                  placeholder={step.key === 'pbgt' ? "Ref. 값 입력" : "값 (예: 250 mbar)"}
+                                  placeholder={step.key === 'pbgt' ? 'Ref. 값 입력' : '값 (예: 250 mbar)'}
                                   value={currentStepData.value || ''}
                                   onChange={(e) => {
                                     const val = e.target.value;
@@ -3136,32 +3242,6 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 />
                               )}
 
-                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
-                                <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
-                                  <label className="text-[11px] font-bold text-amber-800 shrink-0">Leak Location</label>
-                                  <input
-                                    type="text"
-                                    disabled={!isCurrentTankEnabled}
-                                    placeholder="Leak Location 입력"
-                                    value={currentStepData.text || ''}
-                                    onChange={(e) => {
-                                      const note = e.target.value;
-                                      setStatusCreateFormData(prev => ({
-                                        ...prev,
-                                        tank_status: {
-                                          ...prev.tank_status,
-                                          [statusCreateTankTab]: {
-                                            ...prev.tank_status[statusCreateTankTab],
-                                            [step.key]: { ...prev.tank_status[statusCreateTankTab][step.key], text: note },
-                                          },
-                                        },
-                                      }));
-                                    }}
-                                    className="flex-1 min-w-0 px-2.5 py-1 bg-amber-50/60 border border-amber-200 rounded text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
-                                  />
-                                </div>
-                              )}
-
                               {step.key === 'pbgt' && (
                                 <input
                                   type="text"
@@ -3178,9 +3258,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           pbgt: {
                                             ...prev.tank_status[statusCreateTankTab].pbgt,
                                             finalValue: fVal,
-                                          }
-                                        }
-                                      }
+                                          },
+                                        },
+                                      },
                                     }));
                                   }}
                                   className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -3188,6 +3268,32 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                               )}
                             </div>
                           </div>
+
+                          {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
+                            <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
+                              <label className="text-[11px] font-bold text-amber-800 shrink-0">Leak Location</label>
+                              <input
+                                type="text"
+                                disabled={!isCurrentTankEnabled}
+                                placeholder="Leak Location 입력"
+                                value={currentStepData.text || ''}
+                                onChange={(e) => {
+                                  const note = e.target.value;
+                                  setStatusCreateFormData(prev => ({
+                                    ...prev,
+                                    tank_status: {
+                                      ...prev.tank_status,
+                                      [statusCreateTankTab]: {
+                                        ...prev.tank_status[statusCreateTankTab],
+                                        [step.key]: { ...prev.tank_status[statusCreateTankTab][step.key], text: note },
+                                      },
+                                    },
+                                  }));
+                                }}
+                                className="flex-1 min-w-0 px-2.5 py-1 bg-amber-50/60 border border-amber-200 rounded text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                              />
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -3258,6 +3364,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 )}
               </div>
               <button
+                type="button"
                 onClick={() => { setIsShipPickerOpen(false); setIsStatusEditModalOpen(false); }}
                 className="p-1 text-[#64748B] hover:text-[#1F2937] rounded-lg hover:bg-slate-100"
               >
@@ -3324,34 +3431,43 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       DWT 
                     </label>
-                    <input
-                      type="date"
-                      value={statusEditFormData.dwt || ''}
-                      onChange={(e) => setStatusEditFormData({ ...statusEditFormData, dwt: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                    />
+                    <ShipCalendarDatePicker
+  value={statusEditFormData.dwt || ''}
+  onChange={(value) =>
+    setStatusEditFormData({
+      ...statusEditFormData,
+      dwt: value,
+    })
+  }
+/>
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       진수일
                     </label>
-                    <input
-                      type="date"
-                      value={statusEditFormData.launch_date || ''}
-                      onChange={(e) => setStatusEditFormData({ ...statusEditFormData, launch_date: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                    />
+                    <ShipCalendarDatePicker
+  value={statusEditFormData.launch_date || ''}
+  onChange={(value) =>
+    setStatusEditFormData({
+      ...statusEditFormData,
+      launch_date: value,
+    })
+  }
+/>
                   </div>
                   <div>
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       인도 예정일
                     </label>
-                    <input
-                      type="date"
-                      value={statusEditFormData.delivery_date ?? ''}
-                      onChange={(e) => setStatusEditFormData({ ...statusEditFormData, delivery_date: e.target.value })}
-                      className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
-                    />
+                    <ShipCalendarDatePicker
+  value={statusEditFormData.delivery_date ?? ''}
+  onChange={(value) =>
+    setStatusEditFormData({
+      ...statusEditFormData,
+      delivery_date: value,
+    })
+  }
+/>
                   </div>
                 </div>
               </div>
@@ -3438,11 +3554,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                               <span className={`px-2 py-1 border rounded text-[11px] font-semibold shrink-0 ${getTankStepStatus(step.key, currentStepData) === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : getTankStepStatus(step.key, currentStepData) === '진행중' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{getTankStepStatus(step.key, currentStepData)}</span>
 
                               {step.key !== 'pbgt' && step.key !== 'nh3_welding' && (
-                                <input
-                                  type="date"
+                                <ShipCalendarDatePicker
                                   value={currentStepData.date || ''}
-                                  onChange={(e) => {
-                                    const newDate = e.target.value;
+                                  onChange={(newDate) => {
                                     setStatusEditFormData(prev => ({
                                       ...prev,
                                       tank_status: {
@@ -3452,79 +3566,89 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           [step.key]: {
                                             ...prev.tank_status[statusModalTankTab][step.key],
                                             date: newDate,
-                                            status: getTankStepStatus(step.key, { ...currentStepData, date: newDate })
-                                          }
-                                        }
-                                      }
+                                            status: getTankStepStatus(step.key, {
+                                              ...currentStepData,
+                                              date: newDate,
+                                            }),
+                                          },
+                                        },
+                                      },
                                     }));
                                   }}
-                                  className="px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono shrink-0"
                                 />
                               )}
 
                               {(step.key === 'pbgt' || step.key === 'nh3_welding') && (
-                                <div className="flex items-center space-x-1 shrink-0">
-                                  <input
-                                    type="date"
-                                    title="시작일"
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <ShipCalendarDatePicker
                                     value={currentStepData.startDate || ''}
-                                    onChange={(e) => {
-                                      const sDate = e.target.value;
+                                    onChange={(sDate) => {
                                       setStatusEditFormData(prev => {
+                                        const currentTank = prev.tank_status[statusModalTankTab] || {};
+                                        const existing = currentTank[step.key] || {};
                                         const updatedTank = {
-                                          ...prev.tank_status[statusModalTankTab],
+                                          ...currentTank,
                                           [step.key]: {
-                                            ...prev.tank_status[statusModalTankTab][step.key],
+                                            ...existing,
                                             startDate: sDate,
-                                          }
+                                          },
                                         };
-                                        if (step.key === 'nh3_welding' && updatedTank.nh3_uf.status === '완료' && updatedTank.nh3_welding.status === '완료') {
-                                          updatedTank.nh3.status = '완료';
+
+                                        if (
+                                          step.key === 'nh3_welding' &&
+                                          updatedTank.nh3_uf?.status === '완료' &&
+                                          updatedTank.nh3_welding?.status === '완료'
+                                        ) {
+                                          updatedTank.nh3 = { ...updatedTank.nh3, status: '완료' };
                                         }
+
                                         return {
                                           ...prev,
                                           tank_status: {
                                             ...prev.tank_status,
-                                            [statusModalTankTab]: updatedTank
-                                          }
+                                            [statusModalTankTab]: updatedTank,
+                                          },
                                         };
                                       });
                                     }}
-                                    className="px-1.5 py-1 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-[10px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                                   />
                                   <span className="text-[10px] text-slate-400">~</span>
-                                  <input
-                                    type="date"
-                                    title="종료일"
+                                  <ShipCalendarDatePicker
                                     value={currentStepData.endDate || ''}
-                                    onChange={(e) => {
-                                      const eDate = e.target.value;
+                                    onChange={(eDate) => {
                                       setStatusEditFormData(prev => {
+                                        const currentTank = prev.tank_status[statusModalTankTab] || {};
+                                        const existing = currentTank[step.key] || {};
                                         const updatedTank = {
-                                          ...prev.tank_status[statusModalTankTab],
+                                          ...currentTank,
                                           [step.key]: {
-                                            ...prev.tank_status[statusModalTankTab][step.key],
+                                            ...existing,
                                             endDate: eDate,
-                                          }
+                                          },
                                         };
-                                        if (step.key === 'nh3_welding' && updatedTank.nh3_uf.status === '완료' && updatedTank.nh3_welding.status === '완료') {
-                                          updatedTank.nh3.status = '완료';
+
+                                        if (
+                                          step.key === 'nh3_welding' &&
+                                          updatedTank.nh3_uf?.status === '완료' &&
+                                          updatedTank.nh3_welding?.status === '완료'
+                                        ) {
+                                          updatedTank.nh3 = { ...updatedTank.nh3, status: '완료' };
                                         }
+
                                         return {
                                           ...prev,
                                           tank_status: {
                                             ...prev.tank_status,
-                                            [statusModalTankTab]: updatedTank
-                                          }
+                                            [statusModalTankTab]: updatedTank,
+                                          },
                                         };
                                       });
                                     }}
-                                    className="px-1.5 py-1 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-[10px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                                   />
                                 </div>
                               )}
 
-                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') ? (
+                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center gap-1.5 shrink-0">
                                   <select
                                     aria-label="No Leak 선택"
@@ -3571,10 +3695,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     className="w-20 sm:w-24 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                                   />
                                 </div>
-                              ) : (
+                              )}
+
+                              {!(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <input
                                   type="text"
-                                  placeholder={step.key === 'pbgt' ? "Ref. 값" : "값"}
+                                  placeholder={step.key === 'pbgt' ? 'Ref. 값 입력' : '값 (예: 250 mbar)'}
                                   value={currentStepData.value || ''}
                                   onChange={(e) => {
                                     const val = e.target.value;
@@ -3593,36 +3719,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                 />
                               )}
 
-                              {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
-                                <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
-                                  <label className="text-[11px] font-bold text-amber-800 shrink-0">Leak Location</label>
-                                  <input
-                                    type="text"
-                                    disabled={!isCurrentTankEnabled}
-                                    placeholder="Leak Location 입력"
-                                    value={currentStepData.text || ''}
-                                    onChange={(e) => {
-                                      const note = e.target.value;
-                                      setStatusEditFormData(prev => ({
-                                        ...prev,
-                                        tank_status: {
-                                          ...prev.tank_status,
-                                          [statusModalTankTab]: {
-                                            ...prev.tank_status[statusModalTankTab],
-                                            [step.key]: { ...prev.tank_status[statusModalTankTab][step.key], text: note },
-                                          },
-                                        },
-                                      }));
-                                    }}
-                                    className="flex-1 min-w-0 px-2.5 py-1 bg-amber-50/60 border border-amber-200 rounded text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
-                                  />
-                                </div>
-                              )}
-
                               {step.key === 'pbgt' && (
                                 <input
                                   type="text"
-                                  placeholder="Final 값"
+                                  placeholder="Final 값 입력"
                                   value={currentStepData.finalValue || ''}
                                   onChange={(e) => {
                                     const fVal = e.target.value;
@@ -3635,9 +3735,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                           pbgt: {
                                             ...prev.tank_status[statusModalTankTab].pbgt,
                                             finalValue: fVal,
-                                          }
-                                        }
-                                      }
+                                          },
+                                        },
+                                      },
                                     }));
                                   }}
                                   className="w-24 sm:w-28 px-2 py-1 bg-white border border-[#E2E5E9] rounded text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -3645,6 +3745,32 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                               )}
                             </div>
                           </div>
+
+                          {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
+                            <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center gap-2">
+                              <label className="text-[11px] font-bold text-amber-800 shrink-0">Leak Location</label>
+                              <input
+                                type="text"
+                                disabled={!isCurrentTankEnabled}
+                                placeholder="Leak Location 입력"
+                                value={currentStepData.text || ''}
+                                onChange={(e) => {
+                                  const note = e.target.value;
+                                  setStatusEditFormData(prev => ({
+                                    ...prev,
+                                    tank_status: {
+                                      ...prev.tank_status,
+                                      [statusModalTankTab]: {
+                                        ...prev.tank_status[statusModalTankTab],
+                                        [step.key]: { ...prev.tank_status[statusModalTankTab][step.key], text: note },
+                                      },
+                                    },
+                                  }));
+                                }}
+                                className="flex-1 min-w-0 px-2.5 py-1 bg-amber-50/60 border border-amber-200 rounded text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                              />
+                            </div>
+                          )}
                         </div>
                       );
                     })}
