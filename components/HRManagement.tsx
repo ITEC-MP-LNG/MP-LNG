@@ -45,7 +45,7 @@ export interface HRUser {
   national_certificates?: string; 
   certificates?: string;
   national_cert_details?: Array<{ method: string; kind: string }>;
-  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[]; needs_renewal?: boolean }>; // 👈 여기에 needs_renewal를 쏙 넣어주세요!
+  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>;
   ndt_certificates?: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>; 
   join_date?: string;          
   career_start_date?: string;  
@@ -2979,7 +2979,19 @@ export default function HRManagement({
                       </div>
                     </details>
                   ))}
-                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, yard_cert_details: [...prev.yard_cert_details, { name: '', education_date: '', renewal_count: 0, renewal_dates: [] }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ YARD 교육 추가</button>
+                  <button 
+  type="button" 
+  onClick={() => setFormData(prev => ({ 
+    ...prev, 
+    yard_cert_details: [
+      ...prev.yard_cert_details, 
+      { name: '', education_date: '', renewal_count: 0, renewal_dates: [], needs_renewal: true } // 👈 이 부분이 빠져있으면 에러가 납니다!
+    ] 
+  }))} 
+  className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold"
+>
+  + YARD 교육 추가
+</button>
                </div>
               </details>
 
