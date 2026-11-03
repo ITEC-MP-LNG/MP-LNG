@@ -146,6 +146,56 @@ type VehicleUsageRow = {
 };
 type VehicleDriver = { id: string; name: string; yard_cert_details?: Array<{ name?: string }> };
 
+/** 달력 모달 안에서 사용하는 앱 공통 스타일의 연도·월 선택 메뉴 */
+function CalendarPickerSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+  className = '',
+}: {
+  value: number;
+  options: Array<{ value: number; label: string }>;
+  onChange: (value: number) => void;
+  ariaLabel: string;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find(option => option.value === value);
+
+  return (
+    <div className={`relative min-w-0 ${className}`}>
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+        className="flex h-8 w-full min-w-0 items-center justify-between gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2 text-xs font-bold text-[#243B5A] outline-none transition-colors hover:border-[#243B5A] hover:bg-white"
+      >
+        <span className="truncate">{selected?.label || value}</span>
+        <ChevronDown className="h-3 w-3 shrink-0 text-[#64748B]" />
+      </button>
+      {open && (
+        <div role="listbox" aria-label={ariaLabel} className="absolute left-0 top-[calc(100%+4px)] z-[40] max-h-48 w-full min-w-[76px] overflow-y-auto rounded-lg border border-[#E2E5E9] bg-white p-1 shadow-[0_8px_20px_rgba(15,23,42,0.16)]">
+          {options.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              onClick={() => { onChange(option.value); setOpen(false); }}
+              className={`mb-0.5 flex w-full items-center justify-center rounded-md px-2 py-2 text-xs last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** cert.tsx 스타일을 참조한 앱 공통 달력 날짜 선택 컴포넌트 */
 function CalendarDatePicker({
   value,
@@ -280,24 +330,20 @@ function CalendarDatePicker({
             <div className="mb-3 flex items-center justify-between gap-2">
               <button type="button" onClick={() => moveMonth(-1)} aria-label="이전 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronLeft className="h-4 w-4" /></button>
               <div className="flex min-w-0 items-center gap-1">
-                <select
-                  aria-label="연도 선택"
+                <CalendarPickerSelect
+                  ariaLabel="연도 선택"
                   value={viewYear}
-                  onChange={(event) => setViewYear(Number(event.target.value))}
-                  className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
-                >
-                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map((year) => (
-                    <option key={year} value={year}>{year}년</option>
-                  ))}
-                </select>
-                <select
-                  aria-label="월 선택"
+                  onChange={setViewYear}
+                  className="w-[104px]"
+                  options={Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map(year => ({ value: year, label: `${year}년` }))}
+                />
+                <CalendarPickerSelect
+                  ariaLabel="월 선택"
                   value={viewMonth}
-                  onChange={(event) => setViewMonth(Number(event.target.value))}
-                  className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]"
-                >
-                  {Array.from({ length: 12 }, (_, month) => <option key={month} value={month}>{month + 1}월</option>)}
-                </select>
+                  onChange={setViewMonth}
+                  className="w-[66px]"
+                  options={Array.from({ length: 12 }, (_, month) => ({ value: month, label: `${month + 1}월` }))}
+                />
               </div>
               <button type="button" onClick={() => moveMonth(1)} aria-label="다음 달" className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"><ChevronRight className="h-4 w-4" /></button>
             </div>
@@ -346,8 +392,8 @@ function MonthOnlyPicker({ value, onChange }: { value: string; onChange: (value:
     return () => document.removeEventListener('keydown', close);
   }, [open]);
   return <>
-    <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open} className="flex items-center gap-2 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-semibold text-[#243B5A] hover:border-[#243B5A]">
-      <CalendarIcon className="h-3.5 w-3.5" />{value.replace('-', '년 ')}월
+    <button type="button" onClick={() => setOpen(true)} aria-haspopup="dialog" aria-expanded={open} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2 py-1.5 text-[11px] font-semibold whitespace-nowrap text-[#243B5A] hover:border-[#243B5A]">
+      <CalendarIcon className="h-3 w-3 shrink-0" />{value.replace('-', '년 ')}월
     </button>
     {open && <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/25 p-4" onClick={() => setOpen(false)}>
       <div role="dialog" aria-modal="true" aria-label="월 선택" onClick={event => event.stopPropagation()} className="w-[min(320px,calc(100vw-32px))] rounded-2xl border border-[#E2E5E9] bg-white p-3 text-[#1F2937] shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
@@ -356,12 +402,20 @@ function MonthOnlyPicker({ value, onChange }: { value: string; onChange: (value:
           <button type="button" onClick={() => setOpen(false)} aria-label="월 선택 닫기" className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4" /></button>
         </div>
         <div className="flex items-center gap-2">
-          <select aria-label="연도 선택" value={year} onChange={event => setYear(Number(event.target.value))} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]">
-            {Array.from({ length: 81 }, (_, i) => new Date().getFullYear() - 60 + i).map(y => <option key={y} value={y}>{y}년</option>)}
-          </select>
-          <select aria-label="월 선택" value={month} onChange={event => setMonth(Number(event.target.value))} className="min-w-0 flex-1 rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2 text-sm font-bold text-[#243B5A] outline-none focus:border-[#243B5A]">
-            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}월</option>)}
-          </select>
+          <CalendarPickerSelect
+            ariaLabel="연도 선택"
+            value={year}
+            onChange={setYear}
+            className="flex-1"
+            options={Array.from({ length: 81 }, (_, i) => new Date().getFullYear() - 60 + i).map(y => ({ value: y, label: `${y}년` }))}
+          />
+          <CalendarPickerSelect
+            ariaLabel="월 선택"
+            value={month}
+            onChange={setMonth}
+            className="flex-1"
+            options={Array.from({ length: 12 }, (_, i) => ({ value: i + 1, label: `${i + 1}월` }))}
+          />
         </div>
         <div className="mt-3 flex justify-between border-t border-[#E2E5E9] pt-2">
           <button type="button" onClick={() => { const now = new Date(); setYear(now.getFullYear()); setMonth(now.getMonth() + 1); }} className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]">이번 달</button>
@@ -3038,17 +3092,17 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
                 <button onClick={() => { setCurrentWeekMonday(getMonday(new Date())); setSelectedTaskIds([]); }} className="text-xs px-2.5 py-1 bg-[#F5F6F8] border rounded-lg font-semibold ml-2 hover:bg-[#EEF2F7] transition-colors">오늘</button>
               </div>
 
-              <div className="flex items-center space-x-2 w-full sm:w-auto justify-end">
+              <div className="flex w-full flex-nowrap items-center justify-end gap-1 sm:w-auto sm:gap-2">
                 {isAdmin && (
                   <>
                     <MonthOnlyPicker value={selectedExportMonth} onChange={setSelectedExportMonth} />
-                    <button onClick={() => { void handleExportWeeklyExcel(); }} className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><FileSpreadsheet className="h-3.5 w-3.5" /><span>Excel 내려받기</span></button>
-                    <button onClick={handleRequestMonthlyWeeklyDelete} className="flex items-center space-x-1 bg-red-600 hover:bg-red-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition"><Trash2 className="h-3.5 w-3.5" /><span>월 삭제</span></button>
+                    <button onClick={() => { void handleExportWeeklyExcel(); }} className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-emerald-600 px-2 py-1.5 text-[10px] font-semibold text-white transition hover:bg-emerald-700 sm:px-3 sm:text-xs"><FileSpreadsheet className="h-3 w-3 sm:h-3.5 sm:w-3.5" /><span className="hidden sm:inline">Excel 내려받기</span><span className="sm:hidden">Excel</span></button>
+                    <button onClick={handleRequestMonthlyWeeklyDelete} className="flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg bg-red-600 px-2 py-1.5 text-[10px] font-semibold text-white transition hover:bg-red-700 sm:px-3 sm:text-xs"><Trash2 className="h-3 w-3 sm:h-3.5 sm:w-3.5" /><span>월 삭제</span></button>
                   </>
                 )}
-                <div className="bg-[#F5F6F8] p-1 rounded-lg border flex space-x-1">
-                  <button onClick={() => setWeeklyViewMode('GRID')} className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1 ${weeklyViewMode === 'GRID' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}><LayoutGrid className="h-3.5 w-3.5" /><span className="hidden sm:inline">가로</span></button>
-                  <button onClick={() => setWeeklyViewMode('LIST')} className={`px-2.5 py-1 text-xs font-semibold rounded-md flex items-center gap-1 ${weeklyViewMode === 'LIST' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}><List className="h-3.5 w-3.5" /><span className="hidden sm:inline">세로</span></button>
+                <div className="flex shrink-0 space-x-1 rounded-lg border bg-[#F5F6F8] p-1">
+                  <button onClick={() => setWeeklyViewMode('GRID')} className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold sm:px-2.5 sm:text-xs ${weeklyViewMode === 'GRID' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}><LayoutGrid className="h-3 w-3 sm:h-3.5 sm:w-3.5" /><span className="hidden sm:inline">가로</span></button>
+                  <button onClick={() => setWeeklyViewMode('LIST')} className={`flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-semibold sm:px-2.5 sm:text-xs ${weeklyViewMode === 'LIST' ? 'bg-[#243B5A] text-white' : 'text-[#64748B]'}`}><List className="h-3 w-3 sm:h-3.5 sm:w-3.5" /><span className="hidden sm:inline">세로</span></button>
                 </div>
               </div>
             </div>
@@ -3521,8 +3575,8 @@ const canChangeStatus =
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {singleTask && canModifyTaskStatus(singleTask) && (
-                      <button type="button" onClick={() => setStatusChangeModal({ open: true, task: singleTask, targetStatus: singleTask.status, remarks: singleTask.remarks || '' })} className="inline-flex items-center gap-1.5 rounded-xl bg-[#243B5A] px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-[#1B2F49] transition-colors">
-                        <CheckCircle2 className="h-4 w-4" />상태 변경
+                      <button type="button" onClick={() => setStatusChangeModal({ open: true, task: singleTask, targetStatus: singleTask.status, remarks: singleTask.remarks || '' })} className="inline-flex items-center gap-1 rounded-lg bg-[#243B5A] px-2.5 py-1.5 text-[11px] font-bold text-white shadow-xs transition-colors hover:bg-[#1B2F49] sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs">
+                        <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />상태 변경
                       </button>
                     )}
                     {singleTask && isAdmin && (singleTask.task_type === 'DAILY' || singleTask.task_type === 'DAILY_OTHER') && singleTask.status === 'COMPLETED' && singleTask.completion_pending_review === true && (
