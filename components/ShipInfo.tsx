@@ -16,6 +16,8 @@ import {
   CheckCircle2,
   Clock,
   ChevronRight,
+  ChevronLeft,
+  ChevronDown,
   User,
   Activity,
   Sun,
@@ -233,6 +235,309 @@ interface ShipInfoProps {
   isAdmin: boolean;
   currentUser?: { name: string };
 }
+
+
+/** WorkManagement (6).tsx와 동일한 스타일의 공통 날짜 선택 모달 */
+function CalendarDateInput({
+  value,
+  onChange,
+  className = '',
+  title,
+}: {
+  value: string;
+  onChange: (event: { target: { value: string } }) => void;
+  className?: string;
+  title?: string;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const selectedDate = /^\d{4}-\d{2}-\d{2}$/.test(value || '')
+    ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+    : new Date();
+  const [viewYear, setViewYear] = useState(selectedDate.getFullYear());
+  const [viewMonth, setViewMonth] = useState(selectedDate.getMonth());
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [isOpen]);
+
+  const openCalendar = () => {
+    const base = /^\d{4}-\d{2}-\d{2}$/.test(value || '')
+      ? new Date(Number(value.slice(0, 4)), Number(value.slice(5, 7)) - 1, Number(value.slice(8, 10)))
+      : new Date();
+    setViewYear(base.getFullYear());
+    setViewMonth(base.getMonth());
+    setIsOpen(true);
+  };
+
+  const moveMonth = (amount: number) => {
+    const next = new Date(viewYear, viewMonth + amount, 1);
+    setViewYear(next.getFullYear());
+    setViewMonth(next.getMonth());
+  };
+
+  const chooseDate = (day: number) => {
+    const nextValue = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    onChange({ target: { value: nextValue } });
+    setIsOpen(false);
+  };
+
+  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+  const firstDay = new Date(viewYear, viewMonth, 1).getDay();
+  const today = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  })();
+
+  return (
+    <>
+      <button
+        type="button"
+        title={title}
+        aria-label={title || '날짜 선택'}
+        aria-haspopup="dialog"
+        aria-expanded={isOpen}
+        onClick={openCalendar}
+        className={`${className} inline-flex min-w-0 items-center justify-between gap-2 text-left`}
+      >
+        <span className="min-w-0 flex-1 truncate">{value || '날짜 선택'}</span>
+        <Calendar className="h-3.5 w-3.5 shrink-0 text-[#243B5A]" />
+      </button>
+
+      {isOpen && (
+        <div
+          className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-900/25 p-4"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="날짜 선택"
+            onClick={(event) => event.stopPropagation()}
+            className="relative w-[min(320px,calc(100vw-32px))] max-h-[calc(100dvh-32px)] overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-3 text-[#1F2937] shadow-[0_12px_32px_rgba(15,23,42,0.18)]"
+          >
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => moveMonth(-1)}
+                aria-label="이전 달"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </button>
+              <div className="flex min-w-0 items-center gap-1">
+                <AppStyledSelect
+                    value={formData.status}
+                    onChange={(e) => handleStatusChange(e.target.value as ShipStatus)}
+                    className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-semibold"
+                    options={STATUS_LIST.map((st) => ({ value: st, label: st }))}
+                    ariaLabel="진행 단계 현황"
+                  />
+                <AppStyledSelect
+                                    ariaLabel="No Leak 선택"
+                                    disabled={!isCurrentTankEnabled}
+                                    value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? 'No Leak' : ''}
+                                    onChange={(e) => {
+                                      const selectedValue = e.target.value === 'No Leak' ? 'No Leak' : '';
+                                      setStatusCreateFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusCreateTankTab]: {
+                                            ...prev.tank_status[statusCreateTankTab],
+                                            [step.key]: { ...prev.tank_status[statusCreateTankTab][step.key], value: selectedValue },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="px-2 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                                    options={[
+                                      { value: '', label: 'Leak 수량 입력' },
+                                      { value: 'No Leak', label: 'No Leak' },
+                                    ]}
+                                  />
+              </div>
+              <button
+                type="button"
+                onClick={() => moveMonth(1)}
+                aria-label="다음 달"
+                className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]"
+              >
+                <ChevronRight className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-7 gap-1 text-center">
+              {['일', '월', '화', '수', '목', '금', '토'].map((day, index) => (
+                <div key={day} className={`py-1 text-[11px] font-semibold ${index === 0 ? 'text-[#DC2626]' : index === 6 ? 'text-[#2563EB]' : 'text-[#64748B]'}`}>
+                  {day}
+                </div>
+              ))}
+              {Array.from({ length: firstDay }, (_, index) => <div key={`empty-${index}`} />)}
+              {Array.from({ length: daysInMonth }, (_, index) => {
+                const day = index + 1;
+                const dateKey = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                const isSelected = dateKey === value;
+                const isToday = dateKey === today;
+                const weekday = new Date(viewYear, viewMonth, day).getDay();
+                return (
+                  <button
+                    key={dateKey}
+                    type="button"
+                    onClick={() => chooseDate(day)}
+                    aria-pressed={isSelected}
+                    className={`h-9 rounded-lg text-xs transition-colors ${isSelected ? 'bg-[#243B5A] font-bold text-white shadow-sm' : isToday ? 'border border-[#243B5A] font-bold text-[#243B5A]' : `hover:bg-[#EEF2F7] ${weekday === 0 ? 'text-[#DC2626]' : weekday === 6 ? 'text-[#2563EB]' : 'text-[#1F2937]'}`}`}
+                  >
+                    {day}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 flex items-center justify-between border-t border-[#E2E5E9] pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const now = new Date();
+                  const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                  onChange({ target: { value: date } });
+                  setViewYear(now.getFullYear());
+                  setViewMonth(now.getMonth());
+                  setIsOpen(false);
+                }}
+                className="rounded-lg px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8]"
+              >
+                오늘
+              </button>
+              <div className="flex items-center gap-1">
+                {!!value && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onChange({ target: { value: '' } });
+                      setIsOpen(false);
+                    }}
+                    className="rounded-lg px-3 py-2 text-xs font-semibold text-[#64748B] hover:bg-[#F5F6F8]"
+                  >
+                    지우기
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setIsOpen(false)}
+                  className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-semibold text-white hover:bg-[#1B2F49]"
+                >
+                  닫기
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/** WorkManagement (6).tsx와 동일한 공통 드롭다운 모달 */
+function AppStyledSelect({
+  value,
+  options,
+  onChange,
+  className = '',
+  placeholder = '선택해주세요',
+  disabled = false,
+  ariaLabel = '항목 선택',
+}: {
+  value: string;
+  options: { value: string; label: string }[];
+  onChange: (event: { target: { value: string } }) => void;
+  className?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  ariaLabel?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [open]);
+
+  const selected = options.find(option => option.value === value);
+
+  return (
+    <>
+      <button
+        type="button"
+        className={`${className} flex items-center justify-between gap-2 text-left ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-[#243B5A]'}`}
+        onClick={() => { if (!disabled) setOpen(true); }}
+        aria-label={ariaLabel}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        disabled={disabled}
+      >
+        <span className={`min-w-0 flex-1 truncate ${selected ? 'text-[#1F2937]' : 'text-[#94A3B8]'}`}>
+          {selected?.label || placeholder}
+        </span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-[999999] flex items-center justify-center bg-slate-900/25 p-4"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={ariaLabel}
+            onClick={(event) => event.stopPropagation()}
+            className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]"
+          >
+            <div className="flex items-center justify-between gap-3 border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3">
+              <span className="text-sm font-bold text-[#243B5A]">{ariaLabel}</span>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#E2E8F0]"
+                aria-label="선택 메뉴 닫기"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="max-h-[60dvh] overflow-y-auto p-2">
+              {options.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => {
+                    onChange({ target: { value: option.value } });
+                    setOpen(false);
+                  }}
+                  className={`mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}
+                >
+                  <span className="min-w-0 break-words">{option.label}</span>
+                  {option.value === value && <span aria-hidden="true" className="shrink-0">✓</span>}
+                </button>
+              ))}
+              {options.length === 0 && (
+                <p className="px-3 py-4 text-center text-xs text-[#64748B]">선택 가능한 항목이 없습니다.</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 
 export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const [ships, setShips] = useState<ShipItem[]>([]);
@@ -656,6 +961,21 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         return (a.ship_no || '').localeCompare(b.ship_no || '', undefined, { numeric: true, sensitivity: 'base' });
       });
   }, [filteredShips, selectedOwnerFilter, completedOnly]);
+
+  // 제원현황 상단에 표시할 미완료 공정: 기존 메모리 데이터만 사용하며 추가 조회는 하지 않습니다.
+  const incompleteProcessRows = useMemo(() => {
+    return infoFilteredShips.flatMap((ship) => {
+      const processStatuses = getTankLinkedCommissioningStatus(ship.tank_status);
+      return STATUS_LIST
+        .filter((step) => processStatuses[step] !== '완료')
+        .map((step) => ({
+          key: `${ship.id}-${step}`,
+          ship,
+          step,
+          processStatus: processStatuses[step],
+        }));
+    });
+  }, [infoFilteredShips]);
 
   const shipOwners = useMemo(() => {
     return Array.from(
@@ -1284,8 +1604,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   return (
     <div className="space-y-4 font-sans text-[#1F2937]">
       {alertInfo.isOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-3">
+        <div className="fixed inset-0 bg-slate-900/25 flex items-center justify-center p-4 z-[999999]">
+          <div className="bg-white border border-[#E2E5E9] rounded-2xl p-5 max-w-sm w-full shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-3">
             <div className="flex items-center space-x-2">
               {alertInfo.type === 'error' && <AlertCircle className="h-5 w-5 text-red-600" />}
               {alertInfo.type === 'warning' && <AlertTriangle className="h-5 w-5 text-amber-500" />}
@@ -1421,6 +1741,50 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </label>
             </div>
           </div>
+
+          {!completedOnly && incompleteProcessRows.length > 0 && (
+            <section className="overflow-hidden rounded-xl border border-[#E2E5E9] bg-white shadow-2xs">
+              <div className="flex items-center justify-between gap-2 border-b border-[#E2E5E9] bg-[#F8FAFC] px-3 py-2">
+                <div className="flex items-center gap-1.5">
+                  <Activity className="h-3.5 w-3.5 text-[#243B5A]" />
+                  <h3 className="text-xs font-bold text-[#243B5A]">공정 미완료 현황</h3>
+                </div>
+                <span className="rounded-full bg-[#243B5A] px-2 py-0.5 text-[10px] font-bold text-white">
+                  {incompleteProcessRows.length}건
+                </span>
+              </div>
+              <div className="divide-y divide-[#E2E5E9]">
+                {incompleteProcessRows.map(({ key, ship, step, processStatus }) => (
+                  <div
+                    key={key}
+                    className="grid grid-cols-[64px_minmax(0,1fr)_minmax(0,1.15fr)_minmax(0,0.9fr)] items-center gap-1.5 px-2.5 py-2 sm:grid-cols-[88px_minmax(0,1fr)_minmax(0,1.2fr)_minmax(0,1fr)] sm:gap-3 sm:px-3"
+                  >
+                    <span className="truncate rounded bg-[#243B5A] px-1.5 py-1 text-center font-mono text-[10px] font-bold text-white sm:text-xs">
+                      {ship.ship_no}
+                    </span>
+                    <span className="truncate text-[10px] font-semibold text-[#475569] sm:text-xs" title={ship.shipowner || ''}>
+                      {ship.shipowner || '-'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => handleOpenStatusEditModal(ship)}
+                      title={`${ship.ship_no} - ${step} Status 입력`}
+                      className={`min-w-0 truncate rounded-md border px-1.5 py-1 text-left text-[10px] font-bold transition hover:ring-2 hover:ring-[#243B5A]/15 sm:px-2 sm:text-xs ${
+                        processStatus === '진행중'
+                          ? 'border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-400'
+                          : 'border-slate-200 bg-slate-50 text-slate-600 hover:border-[#243B5A]'
+                      }`}
+                    >
+                      {step}
+                    </button>
+                    <span className="truncate text-right text-[10px] font-semibold text-[#1F2937] sm:text-xs" title={ship.ship_name || ''}>
+                      {ship.ship_name || '-'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           <div className="hidden lg:block bg-white border border-[#E2E5E9] rounded-xl shadow-2xs overflow-hidden">
             <div className="overflow-x-auto">
@@ -2053,9 +2417,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* 3. 호선 상세 바텀시트 모달 (규칙 3 반영: 'STATUS 입력하기' 버튼 추가) */}
       {/* ============================================================== */}
       {selectedShip && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-end sm:items-center justify-center z-[99999] transition-all">
+        <div className="fixed inset-0 bg-slate-900/25 flex items-end sm:items-center justify-center z-[99999] transition-all">
           <div
-            className="bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-xl p-5 shadow-2xl border border-[#E2E5E9] space-y-4 max-h-[88vh] overflow-y-auto animate-in slide-in-from-bottom duration-200"
+            className="bg-white w-full sm:max-w-lg rounded-t-2xl sm:rounded-2xl p-5 shadow-[0_12px_32px_rgba(15,23,42,0.18)] border border-[#E2E5E9] space-y-4 max-h-[88vh] overflow-y-auto animate-in slide-in-from-bottom duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex flex-col items-center">
@@ -2240,8 +2604,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* 4. 호선 정보 탭 전용: 등록 및 수정 모달 */}
       {/* ============================================================== */}
       {isFormModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-lg w-full shadow-xl space-y-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-slate-900/25 flex items-center justify-center p-4 z-[99999]">
+          <div className="bg-white border border-[#E2E5E9] rounded-2xl p-5 max-w-lg w-full shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 max-h-[90vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-3">
               <h3 className="text-sm font-bold text-[#1F2937]">
                 {editingShip ? '호선 정보 수정' : '신규 호선 등록'}
@@ -2314,8 +2678,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                     DWT 
                   </label>
-                  <input
-                    type="date"
+                  <CalendarDateInput
                     value={formData.dwt || ''}
                     onChange={(e) => setFormData({ ...formData, dwt: e.target.value })}
                     className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -2328,8 +2691,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                     진수일
                   </label>
-                  <input
-                    type="date"
+                  <CalendarDateInput
                     value={formData.launch_date || ''}
                     onChange={(e) => setFormData({ ...formData, launch_date: e.target.value })}
                     className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -2339,8 +2701,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                     P/T 탑재일
                   </label>
-                  <input
-                    type="date"
+                  <CalendarDateInput
                     value={formData.pt_mount_date || ''}
                     onChange={(e) => setFormData({ ...formData, pt_mount_date: e.target.value })}
                     className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -2353,17 +2714,29 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                     진행 단계 현황
                   </label>
-                  <select
-                    value={formData.status}
-                    onChange={(e) => handleStatusChange(e.target.value as ShipStatus)}
-                    className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-semibold"
-                  >
-                    {STATUS_LIST.map((st) => (
-                      <option key={st} value={st}>
-                        {st}
-                      </option>
-                    ))}
-                  </select>
+                  <AppStyledSelect
+                                    ariaLabel="No Leak 선택"
+                                    disabled={!isCurrentTankEnabled}
+                                    value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? 'No Leak' : ''}
+                                    onChange={(e) => {
+                                      const selectedValue = e.target.value === 'No Leak' ? 'No Leak' : '';
+                                      setStatusEditFormData(prev => ({
+                                        ...prev,
+                                        tank_status: {
+                                          ...prev.tank_status,
+                                          [statusModalTankTab]: {
+                                            ...prev.tank_status[statusModalTankTab],
+                                            [step.key]: { ...prev.tank_status[statusModalTankTab][step.key], value: selectedValue },
+                                          },
+                                        },
+                                      }));
+                                    }}
+                                    className="px-2 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                                    options={[
+                                      { value: '', label: 'Leak 수량 입력' },
+                                      { value: 'No Leak', label: 'No Leak' },
+                                    ]}
+                                  />
                 </div>
 
                 <div>
@@ -2386,8 +2759,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                   인도 예정일
                 </label>
-                <input
-                  type="date"
+                <CalendarDateInput
                   value={formData.delivery_date ?? ''}
                   onChange={(e) => setFormData({ ...formData, delivery_date: e.target.value })}
                   className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -2478,8 +2850,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* 5. Status 탭 전용 [신규 등록] 모달 */}
       {/* ============================================================== */}
       {isStatusCreateModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-2xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-slate-900/25 flex items-center justify-center p-4 z-[99999]">
+          <div className="bg-white border border-[#E2E5E9] rounded-2xl p-5 max-w-2xl w-full shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-3">
               <div>
                 <h3 className="text-sm font-bold text-[#1F2937] flex items-center gap-1.5">
@@ -2560,8 +2932,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       DWT 
                     </label>
-                    <input
-                      type="date"
+                    <CalendarDateInput
                       value={statusCreateFormData.dwt || ''}
                       onChange={(e) => setStatusCreateFormData({ ...statusCreateFormData, dwt: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -2571,8 +2942,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       진수일
                     </label>
-                    <input
-                      type="date"
+                    <CalendarDateInput
                       value={statusCreateFormData.launch_date || ''}
                       onChange={(e) => setStatusCreateFormData({ ...statusCreateFormData, launch_date: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -2582,8 +2952,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       인도 예정일
                     </label>
-                    <input
-                      type="date"
+                    <CalendarDateInput
                       value={statusCreateFormData.delivery_date ?? ''}
                       onChange={(e) => setStatusCreateFormData({ ...statusCreateFormData, delivery_date: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -2720,8 +3089,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                               <span className={`px-2 py-1 border rounded text-[11px] font-semibold shrink-0 ${getTankStepStatus(step.key, currentStepData) === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : getTankStepStatus(step.key, currentStepData) === '진행중' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{getTankStepStatus(step.key, currentStepData)}</span>
 
                               {step.key !== 'pbgt' && step.key !== 'nh3_welding' && (
-                                <input
-                                  type="date"
+                                <CalendarDateInput
                                   value={currentStepData.date || ''}
                                   onChange={(e) => {
                                     const newDate = e.target.value;
@@ -2746,8 +3114,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
                               {(step.key === 'pbgt' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center space-x-1 shrink-0">
-                                  <input
-                                    type="date"
+                                  <CalendarDateInput
                                     title="시작일"
                                     value={currentStepData.startDate || ''}
                                     onChange={(e) => {
@@ -2775,8 +3142,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     className="px-1.5 py-1 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-[10px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                                   />
                                   <span className="text-[10px] text-slate-400">~</span>
-                                  <input
-                                    type="date"
+                                  <CalendarDateInput
                                     title="종료일"
                                     value={currentStepData.endDate || ''}
                                     onChange={(e) => {
@@ -2958,8 +3324,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* 6. Status 탭 전용 [수정] 모달 */}
       {/* ============================================================== */}
       {isStatusEditModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[99999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-2xl w-full shadow-2xl space-y-4 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-slate-900/25 flex items-center justify-center p-4 z-[99999]">
+          <div className="bg-white border border-[#E2E5E9] rounded-2xl p-5 max-w-2xl w-full shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 max-h-[92vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center border-b border-[#E2E5E9] pb-3">
               <div>
                 <h3 className="text-sm font-bold text-[#1F2937] flex items-center gap-1.5">
@@ -2979,7 +3345,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <span>호선 펼치기</span>
                 </button>
                 {isShipPickerOpen && (
-                  <div className="absolute right-0 top-full mt-2 w-64 max-h-72 overflow-y-auto rounded-xl border border-[#CBD5E1] bg-white shadow-xl z-[100000]">
+                  <div className="absolute right-0 top-full mt-2 w-64 max-h-72 overflow-y-auto rounded-xl border border-[#CBD5E1] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)] z-[100000]">
                     <div className="sticky top-0 bg-[#F5F6F8] border-b border-[#E2E5E9] px-3 py-2 text-[11px] font-bold text-[#243B5A]">이동할 호선을 선택하세요</div>
                     {ships.map((ship) => (
                       <button
@@ -3063,8 +3429,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       DWT 
                     </label>
-                    <input
-                      type="date"
+                    <CalendarDateInput
                       value={statusEditFormData.dwt || ''}
                       onChange={(e) => setStatusEditFormData({ ...statusEditFormData, dwt: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -3074,8 +3439,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       진수일
                     </label>
-                    <input
-                      type="date"
+                    <CalendarDateInput
                       value={statusEditFormData.launch_date || ''}
                       onChange={(e) => setStatusEditFormData({ ...statusEditFormData, launch_date: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -3085,8 +3449,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                     <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                       인도 예정일
                     </label>
-                    <input
-                      type="date"
+                    <CalendarDateInput
                       value={statusEditFormData.delivery_date ?? ''}
                       onChange={(e) => setStatusEditFormData({ ...statusEditFormData, delivery_date: e.target.value })}
                       className="w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
@@ -3177,8 +3540,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                               <span className={`px-2 py-1 border rounded text-[11px] font-semibold shrink-0 ${getTankStepStatus(step.key, currentStepData) === '완료' ? 'bg-emerald-50 text-emerald-800 border-emerald-300' : getTankStepStatus(step.key, currentStepData) === '진행중' ? 'bg-amber-50 text-amber-800 border-amber-300' : 'bg-slate-50 text-slate-600 border-slate-200'}`}>{getTankStepStatus(step.key, currentStepData)}</span>
 
                               {step.key !== 'pbgt' && step.key !== 'nh3_welding' && (
-                                <input
-                                  type="date"
+                                <CalendarDateInput
                                   value={currentStepData.date || ''}
                                   onChange={(e) => {
                                     const newDate = e.target.value;
@@ -3203,8 +3565,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
                               {(step.key === 'pbgt' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center space-x-1 shrink-0">
-                                  <input
-                                    type="date"
+                                  <CalendarDateInput
                                     title="시작일"
                                     value={currentStepData.startDate || ''}
                                     onChange={(e) => {
@@ -3232,8 +3593,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                     className="px-1.5 py-1 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-[10px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-mono"
                                   />
                                   <span className="text-[10px] text-slate-400">~</span>
-                                  <input
-                                    type="date"
+                                  <CalendarDateInput
                                     title="종료일"
                                     value={currentStepData.endDate || ''}
                                     onChange={(e) => {
@@ -3423,12 +3783,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* ============================================================== */}
       {isInfoOwnerSelectionModalOpen && (
         <div
-          className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]"
+          className="fixed inset-0 bg-slate-900/25 flex items-center justify-center p-4 z-[999999]"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget) setIsInfoOwnerSelectionModalOpen(false);
           }}
         >
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-md w-full shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-white border border-[#E2E5E9] rounded-2xl p-5 max-w-md w-full shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
               <div>
                 <h3 className="text-sm font-bold text-[#1F2937] flex items-center gap-1.5">
@@ -3491,8 +3851,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* 8. Status 호선/선주사 목록 선택 모달 */}
       {/* ============================================================== */}
       {isShipSelectionModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-2xl w-full shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-slate-900/25 flex items-center justify-center p-4 z-[999999]">
+          <div className="bg-white border border-[#E2E5E9] rounded-2xl p-5 max-w-2xl w-full shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
               <div>
                 <h3 className="text-sm font-bold text-[#1F2937] flex items-center gap-1.5">
@@ -3627,10 +3987,10 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* 9. Ship No. TITLE 수정 모달 */}
       {/* ============================================================== */}
       {isShipNoTitleEditModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
+        <div className="fixed inset-0 bg-slate-900/25 flex items-center justify-center p-4 z-[999999]">
           <form
             onSubmit={handleSaveShipNoTitleEdit}
-            className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150"
+            className="bg-white border border-[#E2E5E9] rounded-2xl p-5 max-w-sm w-full shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 animate-in fade-in zoom-in-95 duration-150"
           >
             <div className="flex items-center justify-between">
               <div>
@@ -3686,8 +4046,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* 10. 삭제 확인 모달 */}
       {/* ============================================================== */}
       {isDeleteModalOpen && targetDeleteShip && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 z-[999999]">
-          <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-sm w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 bg-slate-900/25 flex items-center justify-center p-4 z-[999999]">
+          <div className="bg-white border border-[#E2E5E9] rounded-2xl p-5 max-w-sm w-full shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center space-x-2 text-red-600">
               <AlertTriangle className="h-5 w-5 shrink-0" />
               <h3 className="text-sm font-bold text-[#1F2937]">Ship 삭제 확인</h3>
