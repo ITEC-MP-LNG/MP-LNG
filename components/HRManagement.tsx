@@ -45,7 +45,7 @@ export interface HRUser {
   national_certificates?: string; 
   certificates?: string;
   national_cert_details?: Array<{ method: string; kind: string }>;
-  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[]; needs_renewal?: boolean }>;
+  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[]; needs_renewal?: boolean }>; // 👈 여기에 needs_renewal를 쏙 넣어주세요!
   ndt_certificates?: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>; 
   join_date?: string;          
   career_start_date?: string;  
