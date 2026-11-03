@@ -31,6 +31,8 @@ import {
   Info,
   CheckCheck,
   RotateCcw,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 
 
@@ -1770,19 +1772,16 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               <div>
                 <h2 className="text-sm font-bold text-[#1F2937]">호선 목록 및 제원 현황</h2>
                 <p className="text-[11px] text-[#64748B]">선종, 선주사, 호선위치 및 주요 탑재/인도 일정 관리</p>
-             {/* 호선 목록 접기/펼치기 버튼 */}
-<button
-  type="button"
-  onClick={() => setIsShipListCollapsed(prev => !prev)}
-  className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-xs font-bold text-[#243B5A] hover:bg-slate-100 transition cursor-pointer"
->
-  {isShipListCollapsed ? '호선 목록 펼치기' : '호선 목록 접기'}
-  {isShipListCollapsed
-    ? <ChevronDown className="h-4 w-4" />
-    : <ChevronUp className="h-4 w-4" />}
-</button>
-
               </div>
+              {/* 호선 목록 접기/펼치기 버튼 */}
+              <button
+                type="button"
+                onClick={() => setIsShipListCollapsed(prev => !prev)}
+                className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] text-xs font-bold text-[#243B5A] hover:bg-slate-100 transition cursor-pointer"
+              >
+                {isShipListCollapsed ? '호선 목록 펼치기' : '호선 목록 접기'}
+                {isShipListCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
+              </button>
             </div>
 
             <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:ml-auto">
@@ -2018,6 +2017,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           </div>
         </>
       )}
+      </>
+    )}
 
       {/* ============================================================== */}
       {/* 탭 2: Status (공정 현황) */}
