@@ -45,7 +45,7 @@ export interface HRUser {
   national_certificates?: string; 
   certificates?: string;
   national_cert_details?: Array<{ method: string; kind: string }>;
-  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[] }>; 
+  yard_cert_details?: Array<{ name: string; education_date: string; renewal_count: number; renewal_dates: string[]; needs_renewal?: boolean }>;
   ndt_certificates?: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>; 
   join_date?: string;          
   career_start_date?: string;  
@@ -2949,13 +2949,38 @@ export default function HRManagement({
                           <summary className="cursor-pointer font-semibold">보수교육 횟수 선택 (현재 {yard.renewal_count}회)</summary>
                           <StyledDropdown value={yard.renewal_count} onChange={(e) => { const count = Number(e.target.value); setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_count: count, renewal_dates: Array.from({ length: count }, (_, j) => addYearsToDate(item.education_date, 2 * (j + 1))) } : item) })); }} className="mt-2 w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs"><option value={0}>0회</option><option value={1}>1회</option><option value={2}>2회</option><option value={3}>3회</option><option value={4}>4회</option></StyledDropdown>
                         </details>
-                        {yard.renewal_dates.map((date, renewalIndex) => <div key={`yard-${index}-renewal-${renewalIndex}`} className="space-y-1"><label className="block text-[10px] text-[#64748B]">보수교육일 {renewalIndex + 1}회</label><CalendarDatePicker value={date} onChange={(nextDate) => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_dates: item.renewal_dates.map((d, j) => j === renewalIndex ? nextDate : d) } : item) }))} /></div>)}
-                        <button type="button" onClick={() => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 YARD 교육 삭제</button>
+                        {yard.renewal_dates.map((date, renewalIndex) => (
+  <div key={`yard-${index}-renewal-${renewalIndex}`} className="space-y-1">
+    <label className="block text-[10px] text-[#64748B]">보수교육일 {renewalIndex + 1}회</label>
+    <CalendarDatePicker value={date} onChange={(nextDate) => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.map((item, i) => i === index ? { ...item, renewal_dates: item.renewal_dates.map((d, j) => j === renewalIndex ? nextDate : d) } : item) }))} />
+  </div>
+))}
+
+{/* ⬇️ [새로 추가할 코드] 보수교육 필요 유무 체크박스 ⬇️ */}
+<label className="flex items-center gap-2 py-1.5 cursor-pointer">
+  <input
+    type="checkbox"
+    checked={yard.needs_renewal ?? true} // 기본값은 '필요함(true)'
+    onChange={(e) => {
+      const checked = e.target.checked;
+      setFormData(prev => ({
+        ...prev,
+        yard_cert_details: prev.yard_cert_details.map((item, i) =>
+          i === index ? { ...item, needs_renewal: checked } : item
+        )
+      }));
+    }}
+    className="h-4 w-4 rounded border-[#E2E5E9] text-[#243B5A] focus:ring-[#243B5A]"
+  />
+  <span className="text-[11px] font-bold text-[#243B5A]">보수교육 대상 (체크 해제 시 갱신 대상에서 제외)</span>
+</label>
+
+<button type="button" onClick={() => setFormData(prev => ({ ...prev, yard_cert_details: prev.yard_cert_details.filter((_, i) => i !== index) }))} className="text-left text-red-600 font-semibold">이 YARD 교육 삭제</button>
                       </div>
                     </details>
                   ))}
                   <button type="button" onClick={() => setFormData(prev => ({ ...prev, yard_cert_details: [...prev.yard_cert_details, { name: '', education_date: '', renewal_count: 0, renewal_dates: [] }] }))} className="px-3 py-1.5 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg font-semibold">+ YARD 교육 추가</button>
-                </div>
+               </div>
               </details>
 
               <details className="rounded-xl border border-[#E2E5E9] p-3">

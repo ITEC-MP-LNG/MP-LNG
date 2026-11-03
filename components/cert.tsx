@@ -440,13 +440,14 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
           training_date_1: null, training_date_2: null, training_date_3: null, training_date_4: null,
           detail: { source: 'hrmanagement', sourceSnapshot: snapshot, localModified: false },
         };
-        if (cat === 'YARD') {
+   if (cat === 'YARD') {
           const dates = normalizeArray<string>(payload.renewal_dates);
+          const needsRenewal = payload.needs_renewal ?? true; // 👈 이 줄을 추가합니다!
           return { ...base, title: text(payload.name).trim() || 'YARD 교육', obtained_date: text(payload.education_date) || null,
             education_completed: text(payload.education_date) || null,
             training_date_1: dates[0] || null, training_date_2: dates[1] || null, training_date_3: dates[2] || null, training_date_4: dates[3] || null,
             expiry_date: addYears(dates.filter(Boolean).sort().slice(-1)[0] || text(payload.education_date), 2) || null,
-            detail: { ...base.detail, sourceSnapshot: snapshot, sourceEducationName: text(payload.name) } };
+            detail: { ...base.detail, sourceSnapshot: snapshot, sourceEducationName: text(payload.name), needs_renewal: needsRenewal } }; // 👈 맨 끝에 `, needs_renewal: needsRenewal` 추가!
         }
         if (cat === 'NATIONAL') {
           return { ...base, title: text(payload.kind).trim() || '국가 자격', method: text(payload.method).trim() || null,
@@ -551,7 +552,11 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
   };
   const activeRecords = useMemo(() => records.filter(r => !r.detail?.deleted), [records]);
   const renewalSummaryRecords = useMemo(() => activeRecords
-    .filter(record => record.category === 'YARD' || record.category === 'NDT')
+    .filter(record => {
+      if (record.category === 'NATIONAL') return false;
+      if (record.category === 'YARD' && record.detail?.needs_renewal === false) return false; // 👈 이 줄을 쏙 넣어주세요!
+      return true;
+    })
     .map(record => ({ record, expiry: expiryFor(record) }))
     .filter(item => !!item.expiry && daysUntil(item.expiry) <= 40)
     .sort((a, b) => (a.expiry || '').localeCompare(b.expiry || '') || a.record.title.localeCompare(b.record.title, 'ko')),
@@ -702,16 +707,16 @@ export default function CertManagement({ users = [], currentUser = null, isAdmin
       notify('자격정보를 삭제했습니다. HRManagement 원본은 변경하지 않았습니다.');
     } catch (e: any) { notify(`삭제 실패: ${e?.message || '오류가 발생했습니다.'}`, 'error'); }
   };
-
-  const alerts = useMemo(() => activeRecords.filter(r => {
+const alerts = useMemo(() => activeRecords.filter(r => {
     if (r.category === 'NATIONAL') return false;
+    if (r.category === 'YARD' && r.detail?.needs_renewal === false) return false; // 👈 이 줄도 쏙 넣어주세요!
     if (!admin && !isSelf(r)) return false;
     const expiry = expiryFor(r);
     if (!expiry) return false;
     const remaining = daysUntil(expiry);
     return remaining <= 40;
   }).sort((a, b) => (expiryFor(a) || '').localeCompare(expiryFor(b) || '')), [activeRecords, admin, selfPerson]);
-  useEffect(() => {
+useEffect(() => {
     const userKey = selfPerson?.id || currentUser?.id || currentUser?.name || 'guest';
     const key = `cert-management-alert-last-shown:${userKey}`;
     let lastShown = 0;
