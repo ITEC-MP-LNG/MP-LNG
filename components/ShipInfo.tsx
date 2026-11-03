@@ -1569,7 +1569,31 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       }
     });
 
-    return labels;
+      return labels;
+  };
+
+  // 완료까지 남은 공정 수: 적게 남은 호선을 목록 상단에 배치합니다.
+  const getShipRemainingProcessCount = (ship: ShipItem): number => {
+    const activeTanks = TANKS.filter((tank) => ship.tank_status?.[tank]?.enabled !== false);
+    if (activeTanks.length === 0) return STATUS_LIST.length;
+
+    const getStepStatus = (stepKey: TankStepKey): CommissioningProcessStatus => {
+      const stepDetails = activeTanks.map((tank) => ship.tank_status?.[tank]?.[stepKey]);
+      const hasAnyInput = stepDetails.some((step) =>
+        !!step && !!(step.date || step.startDate || step.endDate || step.value || step.finalValue)
+      );
+      if (!hasAnyInput) return '대기';
+      return stepDetails.every((step) => getTankStepStatus(stepKey, step) === '완료') ? '완료' : '진행중';
+    };
+
+    const statuses = getTankLinkedCommissioningStatus(ship.tank_status);
+    return STATUS_LIST.reduce((count, step) => {
+      if (step === 'Nh3 Test') {
+        return count + (getStepStatus('nh3_uf') !== '완료' ? 1 : 0)
+          + (getStepStatus('nh3_welding') !== '완료' ? 1 : 0);
+      }
+      return count + (statuses[step] !== '완료' ? 1 : 0);
+    }, 0);
   };
 
   return (
@@ -1652,46 +1676,58 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       {/* ============================================================== */}
       {activeMainTab === 'INFO' && (
         <>
-          {/* 미완료 공정 목록: 기존에 로드된 ships 데이터만 사용합니다. */}
-          <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs space-y-3">
-            <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Activity className="h-4 w-4 text-[#243B5A]" />
-                <h2 className="text-sm font-bold text-[#1F2937]">호선별 공정 진행상황(간략히)</h2>
+          {/* 미완료 공정 목록: 2개 호선씩 배치하고 남은 공정이 적은 순으로 표시합니다. */}
+          <div className="bg-white p-2.5 sm:p-3 rounded-xl border border-[#E2E5E9] shadow-2xs space-y-2">
+            <div className="flex items-center justify-between gap-2 px-0.5">
+              <div className="flex items-center gap-1.5">
+                <Activity className="h-3.5 w-3.5 text-[#243B5A]" />
+                <h2 className="text-xs sm:text-sm font-bold text-[#1F2937]">호선별 공정 진행현황</h2>
               </div>
                           </div>
-            <div className="space-y-1.5">
-              {ships.filter((ship) => getShipInProgressLabels(ship).length > 0).map((ship) => {
-                const inProgressSteps = getShipInProgressLabels(ship);
+            <div className="grid grid-cols-2 gap-1.5">
+              {ships
+                .filter((ship) => getShipInProgressLabels(ship).length > 0)
+                .sort((a, b) => getShipRemainingProcessCount(a) - getShipRemainingProcessCount(b))
+                .map((ship) => {
+                  const inProgressSteps = getShipInProgressLabels(ship);
+                  const remainingCount = getShipRemainingProcessCount(ship);
 
-                return (
-                  <button
-                    key={`in-progress-${ship.id}`}
-                    type="button"
-                    onClick={() => handleOpenStatusEditModal(ship)}
-                    disabled={!isAdmin}
-                    title={isAdmin ? '클릭하여 공정 상태 수정' : '공정 상태 수정은 관리자 권한이 필요합니다.'}
-                    className={`w-full flex flex-wrap items-center gap-1.5 rounded-lg border border-transparent px-1.5 py-1.5 text-left transition ${isAdmin ? 'hover:bg-slate-50 hover:border-[#E2E5E9] cursor-pointer' : 'cursor-default'}`}
-                  >
-                    <span className="shrink-0 rounded bg-[#243B5A] px-1.5 py-0.5 text-[11px] font-bold text-white">
-                      {ship.ship_no}
-                    </span>
-                    <span className="shrink-0 rounded border border-[#D7DEE8] bg-[#F8FAFC] px-2 py-0.5 text-[11px] font-medium text-[#475569]">
-                      {ship.shipowner || '-'}
-                    </span>
-                    {inProgressSteps.map((step) => (
-                      <span key={step} className="shrink-0 rounded bg-emerald-600 px-2 py-0.5 text-[11px] font-bold text-white">
-                        {step}
-                      </span>
-                    ))}
-                    <span className="shrink-0 text-xs font-bold text-[#1F2937]">
-                      {ship.ship_name || '-'}
-                    </span>
-                  </button>
-                );
-              })}
+                  return (
+                    <button
+                      key={`in-progress-${ship.id}`}
+                      type="button"
+                      onClick={() => handleOpenStatusEditModal(ship)}
+                      disabled={!isAdmin}
+                      title={isAdmin ? '클릭하여 공정 상태 수정' : '공정 상태 수정은 관리자 권한이 필요합니다.'}
+                      className={`min-w-0 flex flex-col items-start gap-1 rounded-lg border border-[#E2E5E9] bg-white px-2 py-1.5 text-left transition ${isAdmin ? 'hover:bg-slate-50 hover:border-[#B8C5D6] cursor-pointer' : 'cursor-default'}`}
+                    >
+                      <div className="flex w-full min-w-0 items-center justify-between gap-1">
+                        <span className="min-w-0 truncate rounded bg-[#243B5A] px-1.5 py-0.5 text-[10px] sm:text-[11px] font-bold text-white">
+                          {ship.ship_no}
+                        </span>
+                        <span className="shrink-0 text-[9px] text-[#64748B]">잔여 {remainingCount}</span>
+                      </div>
+                      <div className="flex w-full min-w-0 items-center gap-1">
+                        <span className="min-w-0 truncate text-[10px] sm:text-[11px] font-semibold text-[#475569]">
+                          {ship.shipowner || '-'}
+                        </span>
+                        <span className="shrink-0 text-[9px] text-[#94A3B8]">·</span>
+                        <span className="min-w-0 truncate text-[10px] sm:text-[11px] font-bold text-[#1F2937]">
+                          {ship.ship_name || '-'}
+                        </span>
+                      </div>
+                      <div className="flex w-full flex-wrap gap-1">
+                        {inProgressSteps.map((step) => (
+                          <span key={step} className="rounded bg-emerald-600 px-1.5 py-0.5 text-[9px] sm:text-[10px] font-bold text-white">
+                            {step}
+                          </span>
+                        ))}
+                      </div>
+                    </button>
+                  );
+                })}
               {ships.every((ship) => getShipInProgressLabels(ship).length === 0) && (
-                <div className="rounded-lg bg-slate-50 px-3 py-4 text-center text-xs text-[#94A3B8]">
+                <div className="col-span-2 rounded-lg bg-slate-50 px-3 py-3 text-center text-[11px] text-[#94A3B8]">
                   현재 진행중인 공정이 없습니다.
                 </div>
               )}
