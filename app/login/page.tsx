@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { LogIn, User, Lock, ShieldAlert, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { LogIn, User, Lock, ShieldAlert, CheckCircle2, Eye, EyeOff, X, RefreshCw, Clock3 } from 'lucide-react';
 import clsx from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { supabase } from '@/lib/supabase';
@@ -17,6 +17,10 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [alertMessage, setAlertMessage] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [showLoginStats, setShowLoginStats] = useState(false);
+  const [loginStats, setLoginStats] = useState<Array<{ id: string; name: string; department: string | null; last_login_at: string | null }>>([]);
+  const [statsLoading, setStatsLoading] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const router = useRouter();
 
   // ✅ 비밀 제스처(3연타 감지) 전용 변수
@@ -31,8 +35,9 @@ export default function LoginPage() {
     if (clickCountRef.current === 3) {
       if (timerRef.current) clearTimeout(timerRef.current);
       clickCountRef.current = 0;
-      // 비밀 관리자 페이지로 이동
-      router.push('/admin/login-stats');
+      // 숨겨진 마지막 로그인 현황 모달 열기
+      setShowLoginStats(true);
+      void fetchLoginStats();
       return;
     }
 
@@ -41,6 +46,42 @@ export default function LoginPage() {
     timerRef.current = setTimeout(() => {
       clickCountRef.current = 0;
     }, 1000);
+  };
+
+
+  // 숨겨진 로그인 현황: 모달을 열 때만 직원 목록을 1회 조회
+  const fetchLoginStats = async () => {
+    setStatsLoading(true);
+    setStatsError(null);
+
+    const { data, error } = await supabase
+      .from('app_users')
+      .select('id, name, department, last_login_at')
+      .order('last_login_at', { ascending: false, nullsFirst: false });
+
+    if (error) {
+      setStatsError('로그인 현황을 불러오지 못했습니다: ' + error.message);
+      setLoginStats([]);
+    } else {
+      setLoginStats(data || []);
+    }
+
+    setStatsLoading(false);
+  };
+
+  const formatKoreaDateTime = (value: string | null) => {
+    if (!value) return '로그인 기록 없음';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '날짜 확인 불가';
+    return new Intl.DateTimeFormat('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(date);
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -246,6 +287,80 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
+
+      {/* Hidden Login Statistics Modal */}
+      {showLoginStats && (
+        <div className="fixed inset-0 z-[99998] flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-3 sm:p-5">
+          <div className="flex max-h-[85vh] w-full max-w-3xl flex-col overflow-hidden rounded-xl border border-[#E2E5E9] bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3 sm:px-5">
+              <div className="flex items-center gap-2">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[#243B5A]/10 text-[#243B5A]">
+                  <Clock3 className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-[#1F2937]">직원 마지막 로그인 현황</h3>
+                  <p className="text-[11px] text-[#64748B]">대한민국 표준시(KST) 기준</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void fetchLoginStats()}
+                  disabled={statsLoading}
+                  className="flex h-8 items-center gap-1.5 rounded-lg border border-[#D7DDE5] bg-white px-2.5 text-xs font-semibold text-[#334155] hover:bg-[#F1F5F9] disabled:opacity-50"
+                >
+                  <RefreshCw className={`h-3.5 w-3.5 ${statsLoading ? 'animate-spin' : ''}`} />
+                  새로고침
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowLoginStats(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-[#64748B] hover:bg-[#E9EEF5] hover:text-[#1F2937]"
+                  aria-label="닫기"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 overflow-auto">
+              {statsLoading && loginStats.length === 0 ? (
+                <div className="p-10 text-center text-xs font-medium text-[#64748B]">로그인 현황을 불러오는 중입니다...</div>
+              ) : statsError ? (
+                <div className="p-6 text-center text-xs font-semibold text-[#DC2626]">{statsError}</div>
+              ) : loginStats.length === 0 ? (
+                <div className="p-10 text-center text-xs text-[#64748B]">표시할 직원 정보가 없습니다.</div>
+              ) : (
+                <table className="w-full min-w-[520px] border-collapse text-left text-xs">
+                  <thead className="sticky top-0 bg-[#F1F5F9] text-[#475569]">
+                    <tr>
+                      <th className="border-b border-[#E2E5E9] px-4 py-3 font-bold">사번</th>
+                      <th className="border-b border-[#E2E5E9] px-4 py-3 font-bold">이름</th>
+                      <th className="border-b border-[#E2E5E9] px-4 py-3 font-bold">부서</th>
+                      <th className="border-b border-[#E2E5E9] px-4 py-3 font-bold">마지막 로그인 (KST)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {loginStats.map((employee) => (
+                      <tr key={employee.id} className="border-b border-[#EEF1F5] last:border-0 hover:bg-[#F8FAFC]">
+                        <td className="whitespace-nowrap px-4 py-3 font-medium text-[#475569]">{employee.id}</td>
+                        <td className="whitespace-nowrap px-4 py-3 font-semibold text-[#1F2937]">{employee.name || '-'}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-[#64748B]">{employee.department || '-'}</td>
+                        <td className={`whitespace-nowrap px-4 py-3 ${employee.last_login_at ? 'font-semibold text-[#243B5A]' : 'text-[#94A3B8]'}`}>
+                          {formatKoreaDateTime(employee.last_login_at)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <div className="border-t border-[#E2E5E9] bg-[#F8FAFC] px-4 py-2.5 text-[10px] text-[#64748B]">
+              직원 {loginStats.length.toLocaleString('ko-KR')}명 · 모달을 열거나 새로고침할 때만 조회합니다.
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Corporate Alert Modal */}
       {alertMessage && (
