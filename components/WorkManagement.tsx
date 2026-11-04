@@ -3516,13 +3516,14 @@ const canChangeStatus =
           const singleTask = selectedVisibleTasks.length === 1 ? selectedVisibleTasks[0] : null;
 
           const getStatusBadge = (status: Task['status']) => {
+            const badgeBase = "inline-flex shrink-0 whitespace-nowrap items-center justify-center gap-0.5 rounded-full border px-1.5 py-0.5 text-[10px] leading-none font-bold";
             switch (status) {
               case 'PENDING':
-                return <span className="inline-flex items-center gap-1 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-800"><AlertCircle className="h-3.5 w-3.5" />대기</span>;
+                return <span className={`${badgeBase} border-amber-300 bg-amber-100 text-amber-800`}><AlertCircle className="h-3 w-3 shrink-0" />대기</span>;
               case 'IN_PROGRESS':
-                return <span className="inline-flex items-center gap-1 rounded-full border border-emerald-600 bg-emerald-500 px-2.5 py-1 text-xs font-bold text-white shadow-xs"><PlayCircle className="h-3.5 w-3.5" />진행중</span>;
+                return <span className={`${badgeBase} border-emerald-600 bg-emerald-500 text-white shadow-xs`}><PlayCircle className="h-3 w-3 shrink-0" />진행중</span>;
               case 'COMPLETED':
-                return <span className="inline-flex items-center gap-1 rounded-full border border-slate-300 bg-slate-200 px-2.5 py-1 text-xs font-bold text-slate-700"><CheckCircle2 className="h-3.5 w-3.5" />완료</span>;
+                return <span className={`${badgeBase} border-slate-300 bg-slate-200 text-slate-700`}><CheckCircle2 className="h-3 w-3 shrink-0" />완료</span>;
               default:
                 return null;
             }
@@ -3533,17 +3534,17 @@ const canChangeStatus =
               <div className="flex flex-col gap-3">
                 
                 {/* 상단: 타이틀, 상태 및 닫기 버튼 */}
-                <div className="flex items-center justify-between gap-3 border-b border-[#F1F3F5] pb-2.5">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <span className="flex h-7 min-w-7 items-center justify-center rounded-lg bg-[#243B5A] text-xs font-extrabold text-white">
+                <div className="flex items-center justify-between gap-2 border-b border-[#F1F3F5] pb-2.5">
+                  <div className="flex min-w-0 flex-1 items-center gap-2">
+                    <span className="flex h-7 min-w-7 shrink-0 items-center justify-center rounded-lg bg-[#243B5A] text-xs font-extrabold text-white">
                       {selectedVisibleTasks.length}
                     </span>
-                    <div className="text-sm font-bold text-[#243B5A] truncate">
+                    <div className="min-w-0 flex-1 truncate text-sm font-bold text-[#243B5A]">
                       {singleTask ? singleTask.title : `${selectedVisibleTasks.length}개 업무 선택됨`}
                     </div>
                     {singleTask && getStatusBadge(singleTask.status)}
                   </div>
-                  <button type="button" onClick={() => setSelectedTaskIds([])} className="rounded-lg px-2.5 py-1 text-xs font-bold text-[#64748B] hover:bg-[#F5F6F8] hover:text-[#1F2937] transition-colors">
+                  <button type="button" onClick={() => setSelectedTaskIds([])} className="shrink-0 whitespace-nowrap rounded-lg px-2 py-1 text-[11px] font-bold text-[#64748B] hover:bg-[#F5F6F8] hover:text-[#1F2937] transition-colors">
                     선택 해제 ✕
                   </button>
                 </div>
