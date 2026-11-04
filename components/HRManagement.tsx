@@ -1874,7 +1874,7 @@ export default function HRManagement({
                 }`}
               >
                 <Building2 className="h-3.5 w-3.5" />
-                <span>파트별 조직도</span>
+                <span>파트별</span>
               </button>
               <button
                 onClick={() => setSubGroupType('POS')}
@@ -1885,7 +1885,7 @@ export default function HRManagement({
                 }`}
               >
                 <Briefcase className="h-3.5 w-3.5" />
-                <span>직급별 조직도</span>
+                <span>직급별</span>
               </button>
               <button
                 onClick={() => setSubGroupType('DORM')}
@@ -1896,7 +1896,7 @@ export default function HRManagement({
                 }`}
               >
                 <Building2 className="h-3.5 w-3.5" />
-                <span>기숙사 현황</span>
+                <span>기숙사</span>
               </button>
               {isAdmin && <button
                 type="button"
