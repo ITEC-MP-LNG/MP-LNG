@@ -106,15 +106,18 @@ export default function LoginPage() {
         return;
       }
 
-      // 로그인 성공 시 login_count +1 업데이트
-      const currentCount = data.login_count || 0;
+      // 로그인 성공 시 마지막 로그인 날짜/시간 업데이트
       const targetId = data.id !== undefined ? data.id : data.user_id;
       const idColumnName = data.id !== undefined ? 'id' : 'user_id';
 
-      await supabase
+      const { error: loginUpdateError } = await supabase
         .from('app_users')
-        .update({ login_count: currentCount + 1 })
+        .update({ last_login_at: new Date().toISOString() })
         .eq(idColumnName, targetId);
+
+      if (loginUpdateError) {
+        throw new Error('마지막 로그인 시간 저장에 실패했습니다: ' + loginUpdateError.message);
+      }
 
       // 3. 로그인 성공 처리
       const userInfo = {
