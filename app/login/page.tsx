@@ -134,6 +134,12 @@ export default function LoginPage() {
         return;
       }
 
+      // 관리자에 의해 정지된 계정은 비밀번호 확인 및 로그인 처리를 진행하지 않습니다.
+      if (data.is_suspended === true) {
+        setAlertMessage('정지된 계정입니다. 관리자에게 문의하세요.');
+        return;
+      }
+
       // 퇴사자 검증 (department 컬럼 체크)
       if (data.department === '퇴사자') {
         setAlertMessage('퇴사 처리된 계정입니다. 로그인할 수 없습니다.');
