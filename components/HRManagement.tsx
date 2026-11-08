@@ -647,7 +647,39 @@ export default function HRManagement({
   const [newPartName, setNewPartName] = useState('');
   const [newPartMembers, setNewPartMembers] = useState('');
   const [managedPartNames, setManagedPartNames] = useState<string[]>([]);
-  useEffect(() => { try { const saved = window.localStorage.getItem('hr_managed_part_names'); if (saved) setManagedPartNames(JSON.parse(saved).filter((name: unknown) => typeof name === 'string')); } catch {} }, []);
+
+  // 파트 목록은 브라우저 localStorage가 아닌 Supabase에 저장하여
+  // 다른 PC·브라우저 또는 재로그인 후에도 동일하게 유지합니다.
+  const fetchManagedParts = useCallback(async () => {
+    try {
+      // 기존 버전에서 브라우저에만 저장했던 파트명은 최초 1회 Supabase로 옮깁니다.
+      let legacyNames: string[] = [];
+      try {
+        const saved = window.localStorage.getItem('hr_managed_part_names');
+        if (saved) legacyNames = JSON.parse(saved).filter((name: unknown): name is string => typeof name === 'string').map(name => name.trim()).filter(Boolean);
+      } catch {}
+      if (legacyNames.length) {
+        const { error: migrationError } = await supabase
+          .from('hr_department_options')
+          .upsert(legacyNames.map(name => ({ name })), { onConflict: 'name', ignoreDuplicates: true });
+        if (migrationError) console.warn('기존 브라우저 파트명 이전 실패:', migrationError.message);
+        else { try { window.localStorage.removeItem('hr_managed_part_names'); } catch {} }
+      }
+      const { data, error } = await supabase
+        .from('hr_department_options')
+        .select('name')
+        .order('name', { ascending: true });
+      if (error) throw error;
+      setManagedPartNames(Array.from(new Set((data || [])
+        .map((row: any) => String(row.name || '').trim())
+        .filter(Boolean))));
+    } catch (error: any) {
+      console.error('파트 목록 조회 실패:', error?.message || error);
+      showNotice('파트 목록을 불러오지 못했습니다. hr_department_options 테이블과 권한을 확인해주세요.', 'error');
+    }
+  }, []);
+
+  useEffect(() => { void fetchManagedParts(); }, [fetchManagedParts]);
 
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
   const [dormListCollapsed, setDormListCollapsed] = useState(true);
@@ -730,6 +762,10 @@ export default function HRManagement({
   const canManageAbsence = (targetUser: HRUser) => isAdmin || isSuperAdmin || (isTeamLeader && String(targetUser.department || '') === String(currentUser?.department || '')) || isSelf(targetUser);
 
   const handleQuickStatusChange = async (targetUser: HRUser, status: '근무중' | '휴무') => {
+    if (targetUser.is_suspended) {
+      showNotice('계정 정지 상태에서는 근무 상태를 변경할 수 없습니다.', 'warning');
+      return;
+    }
     const today = getLocalDateKey();
     const currentStatus = targetUser.work_status === '휴무' ? '휴무' : '근무중';
     if (currentStatus === status) return;
@@ -1230,7 +1266,7 @@ export default function HRManagement({
 
       const formatted = (data || []).map((u: any) => ({
         ...u,
-        work_status: todayAbsenceUserIds.has(String(u.id)) ? '휴무' : '근무중',
+        work_status: u.is_suspended ? '정지' : (todayAbsenceUserIds.has(String(u.id)) ? '휴무' : '근무중'),
         national_certificates: u.national_certificates || u.certificates || '',
         national_cert_details: Array.isArray(u.national_cert_details) ? u.national_cert_details : [],
         yard_cert_details: Array.isArray(u.yard_cert_details) ? u.yard_cert_details.map((item: any) => ({
@@ -1448,7 +1484,7 @@ export default function HRManagement({
       job_title: user.job_title || '팀원',
       field: user.field || '안전',
       role: user.role || 'USER',
-      work_status: user.work_status === '휴무' ? '휴무' : '근무중',
+      work_status: user.is_suspended ? '근무중' : (user.work_status === '휴무' ? '휴무' : '근무중'),
       is_suspended: Boolean(user.is_suspended),
       phone: user.phone || '',
       address: user.address || '',
@@ -1725,9 +1761,11 @@ export default function HRManagement({
     return (a.name || '').localeCompare(b.name || '', 'ko');
   });
 
+  const activeFilteredUsers = filteredUsers.filter((u) => !u.is_suspended);
+
   const rawSubCategories = Array.from(
     new Set(
-      filteredUsers
+      activeFilteredUsers
         .map((u) => (subGroupType === 'DEPT' ? u.department || '미지정 파트' : u.position || '미지정 직급'))
         .filter(Boolean)
     )
@@ -1943,9 +1981,9 @@ export default function HRManagement({
                 onChange={setSelectedSubCategory}
                 ariaLabel={subGroupType === 'DEPT' ? '파트별 조직도 선택' : '직급별 조직도 선택'}
                 options={[
-                  { value: 'ALL', label: `전체 보기 (${filteredUsers.length}명)` },
+                  { value: 'ALL', label: `전체 보기 (${activeFilteredUsers.length}명)` },
                   ...availableSubCategories.map((subCat) => {
-                    const count = filteredUsers.filter((u) =>
+                    const count = activeFilteredUsers.filter((u) =>
                       subGroupType === 'DEPT'
                         ? (u.department || '미지정 파트') === subCat
                         : (u.position || '미지정 직급') === subCat
@@ -2300,7 +2338,7 @@ export default function HRManagement({
         ) : (
         <div className="space-y-3">
           {displayedCategories.map((catName) => {
-            const groupMembers = filteredUsers.filter((u) =>
+            const groupMembers = activeFilteredUsers.filter((u) =>
               subGroupType === 'DEPT'
                 ? (u.department || '미지정 파트') === catName
                 : (u.position || '미지정 직급') === catName
@@ -2614,7 +2652,7 @@ export default function HRManagement({
                   <p className="text-[11px] text-[#64748B] font-medium">
                     {detailUser.department || '미지정 파트'} · {detailUser.position || '사원'} {detailUser.job_title && detailUser.job_title !== '없음' ? `(${detailUser.job_title}${detailUser.field ? `/${detailUser.field}` : ''})` : ''}
                   </p>
-                  <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${detailUser.work_status === '휴무' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{detailUser.work_status === '휴무' ? '휴무' : '근무중'}</span>
+                  <span className={`inline-flex mt-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${detailUser.is_suspended ? 'bg-rose-100 text-rose-700' : detailUser.work_status === '휴무' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>{detailUser.is_suspended ? '계정 정지' : detailUser.work_status === '휴무' ? '휴무' : '근무중'}</span>
                 </div>
               </div>
               <button 
@@ -2661,8 +2699,8 @@ export default function HRManagement({
                 <div className="rounded-lg border border-[#E2E5E9] p-2.5 space-y-2">
                   <div className="text-[11px] font-bold text-[#475569]">근무 상태 변경</div>
                   <div className="grid grid-cols-2 gap-2">
-                    <button type="button" onClick={() => handleQuickStatusChange(detailUser, '근무중')} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${detailUser.work_status !== '휴무' ? 'border-emerald-300 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
-                    <button type="button" onClick={() => handleQuickStatusChange(detailUser, '휴무')} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${detailUser.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
+                    <button type="button" disabled={Boolean(detailUser.is_suspended)} onClick={() => handleQuickStatusChange(detailUser, '근무중')} className={`rounded-lg border px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${detailUser.work_status !== '휴무' ? 'border-emerald-300 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
+                    <button type="button" disabled={Boolean(detailUser.is_suspended)} onClick={() => handleQuickStatusChange(detailUser, '휴무')} className={`rounded-lg border px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${detailUser.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
                   </div>
                 </div>
               )}
@@ -2842,8 +2880,8 @@ export default function HRManagement({
               <div>
                 <label className="block font-bold text-[#64748B] mb-2">근무 상태</label>
                 <div className="grid grid-cols-2 gap-2">
-                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, work_status: '근무중' }))} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${formData.work_status === '근무중' ? 'border-emerald-300 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
-                  <button type="button" onClick={() => setFormData(prev => ({ ...prev, work_status: '휴무' }))} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${formData.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
+                  <button type="button" disabled={Boolean(formData.is_suspended)} onClick={() => setFormData(prev => ({ ...prev, work_status: '근무중' }))} className={`rounded-lg border px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${formData.work_status === '근무중' ? 'border-emerald-300 bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
+                  <button type="button" disabled={Boolean(formData.is_suspended)} onClick={() => setFormData(prev => ({ ...prev, work_status: '휴무' }))} className={`rounded-lg border px-3 py-2 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-40 ${formData.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
                 </div>
                 <p className="mt-1 text-[10px] text-[#64748B]">별도 상태가 등록되지 않은 구성원은 근무중으로 표시됩니다.</p>
                 {isAdmin && (
@@ -2867,8 +2905,10 @@ export default function HRManagement({
                 )}
                 <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/60 p-2.5 space-y-2">
                   <div className="text-[11px] font-bold text-blue-800">날짜별 휴무 (여러 날짜 선택 가능)</div>
-                  {absenceDatesLoading ? <div className="text-[11px] text-blue-700">등록된 휴무 날짜를 불러오는 중...</div> : <MultiDateCalendar value={formData.absence_dates} onChange={(dates) => setFormData(prev => ({ ...prev, absence_dates: dates }))} />}
-                  <p className="text-[10px] text-blue-700">근무 상태가 ‘근무중’이어도 특정 날짜만 휴무로 등록할 수 있습니다. 선택한 날짜는 업무현황에서 해당 날짜의 휴무자로 처리됩니다.</p>
+                  {formData.is_suspended
+                    ? <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-[11px] font-semibold text-rose-700">계정 정지 상태에서는 근무 상태와 날짜별 휴무를 변경할 수 없습니다.</div>
+                    : absenceDatesLoading ? <div className="text-[11px] text-blue-700">등록된 휴무 날짜를 불러오는 중...</div> : <MultiDateCalendar value={formData.absence_dates} onChange={(dates) => setFormData(prev => ({ ...prev, absence_dates: dates }))} />}
+                  {!formData.is_suspended && <p className="text-[10px] text-blue-700">근무 상태가 ‘근무중’이어도 특정 날짜만 휴무로 등록할 수 있습니다. 선택한 날짜는 업무현황에서 해당 날짜의 휴무자로 처리됩니다.</p>}
                 </div>
               </div>
 
@@ -2880,7 +2920,7 @@ export default function HRManagement({
                     onChange={(e) => setFormData({ ...formData, department: e.target.value })}
                     className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none cursor-pointer"
                   >
-                    {Array.from(new Set(['운영', '관리', '1팀', '2팀', '3팀', '4팀', ...users.map(user => String(user.department || '').trim()).filter(Boolean), formData.department].filter(Boolean))).map(part => <option key={part} value={part}>{part}</option>)}
+                    {Array.from(new Set(['운영', '관리', '1팀', '2팀', '3팀', '4팀', ...managedPartNames, ...users.map(user => String(user.department || '').trim()).filter(Boolean), formData.department].filter(Boolean))).map(part => <option key={part} value={part}>{part}</option>)}
                   </StyledDropdown>
                 </div>
                 <div>
@@ -3136,16 +3176,16 @@ export default function HRManagement({
                   const targets = names.length ? users.filter(user => names.some(name => name.toLowerCase() === user.name.trim().toLowerCase())) : [];
                   if (names.length && targets.length !== names.length) { showNotice('직원 이름을 찾을 수 없습니다. 이름을 확인해 주세요.', 'warning'); return; }
                   try {
+                    const { error: partInsertError } = await supabase
+                      .from('hr_department_options')
+                      .insert({ name: partName });
+                    if (partInsertError) throw partInsertError;
                     for (const user of targets) {
                       const { error } = await supabase.from('app_users').update({ department: partName }).eq('id', user.id);
                       if (error) throw error;
                     }
                     setUsers(prev => prev.map(user => targets.some(target => target.id === user.id) ? { ...user, department: partName } : user));
-                    setManagedPartNames(prev => {
-                      const next = Array.from(new Set([...prev, partName]));
-                      try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {}
-                      return next;
-                    });
+                    setManagedPartNames(prev => Array.from(new Set([...prev, partName])).sort((a, b) => a.localeCompare(b, 'ko')));
                     setNewPartName('');
                     setNewPartMembers('');
                     showNotice(`'${partName}' 파트가 추가되었습니다.${targets.length ? ` ${targets.length}명의 직원을 배정했습니다.` : ' 직원은 나중에 배정할 수 있습니다.'}`, 'success');
@@ -3190,10 +3230,15 @@ export default function HRManagement({
               if (availableSubCategories.some(existing => existing.toLowerCase() === nextName.toLowerCase())) { showNotice('이미 존재하는 파트명입니다.', 'warning'); return; }
               try {
                 const oldName = partEditTarget;
+                const { error: partRenameError } = await supabase
+                  .from('hr_department_options')
+                  .update({ name: nextName })
+                  .eq('name', oldName);
+                if (partRenameError) throw partRenameError;
                 const members = users.filter(user => (user.department || '') === oldName);
                 for (const user of members) { const { error } = await supabase.from('app_users').update({ department: nextName }).eq('id', user.id); if (error) throw error; }
                 setUsers(prev => prev.map(user => user.department === oldName ? { ...user, department: nextName } : user));
-                setManagedPartNames(prev => { const next = prev.map(name => name === oldName ? nextName : name); try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {} return next; });
+                setManagedPartNames(prev => prev.map(name => name === oldName ? nextName : name).sort((a, b) => a.localeCompare(b, 'ko')));
                 setSelectedSubCategory('ALL'); setPartEditTarget(null); showNotice(`'${oldName}' 파트명이 '${nextName}'(으)로 수정되었습니다.`, 'success');
               } catch (error: any) { showNotice(`파트 수정 실패: ${error?.message || '오류'}`, 'error'); }
             }}>
@@ -3215,8 +3260,13 @@ export default function HRManagement({
               try {
                 const members = users.filter(user => (user.department || '') === part);
                 for (const user of members) { const { error } = await supabase.from('app_users').update({ department: null }).eq('id', user.id); if (error) throw error; }
+                const { error: partDeleteError } = await supabase
+                  .from('hr_department_options')
+                  .delete()
+                  .eq('name', part);
+                if (partDeleteError) throw partDeleteError;
                 setUsers(prev => prev.map(user => user.department === part ? { ...user, department: '' } : user));
-                setManagedPartNames(prev => { const next = prev.filter(name => name !== part); try { window.localStorage.setItem('hr_managed_part_names', JSON.stringify(next)); } catch {} return next; });
+                setManagedPartNames(prev => prev.filter(name => name !== part));
                 setSelectedSubCategory('ALL'); setPartDeleteTarget(null); showNotice(`'${part}' 파트가 삭제되었습니다.`, 'success');
               } catch (error: any) { setPartDeleteTarget(null); showNotice(`파트 삭제 실패: ${error?.message || '오류'}`, 'error'); }
             }} className="rounded-lg bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700">삭제</button></div>
