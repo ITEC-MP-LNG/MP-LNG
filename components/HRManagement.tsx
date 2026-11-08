@@ -656,7 +656,7 @@ export default function HRManagement({
       let legacyNames: string[] = [];
       try {
         const saved = window.localStorage.getItem('hr_managed_part_names');
-        if (saved) legacyNames = JSON.parse(saved).filter((name: unknown): name is string => typeof name === 'string').map(name => name.trim()).filter(Boolean);
+        if (saved) legacyNames = JSON.parse(saved).filter((name: unknown): name is string => typeof name === 'string').map((name: string) => name.trim()).filter(Boolean);
       } catch {}
       if (legacyNames.length) {
         const { error: migrationError } = await supabase
