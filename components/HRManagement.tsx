@@ -62,6 +62,7 @@ export interface HRUser {
   pos_y?: number;              
   photo_url?: string | null;
   work_status?: '근무중' | '휴무' | string;
+  is_suspended?: boolean;
   absence_dates?: string[];
 }
 
@@ -673,6 +674,7 @@ export default function HRManagement({
     field: '안전',
     role: 'USER',
     work_status: '근무중' as '근무중' | '휴무',
+    is_suspended: false,
     absence_dates: [] as string[],
     phone: '',
     address: '',
@@ -1211,7 +1213,7 @@ export default function HRManagement({
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, national_cert_details, yard_cert_details, ndt_certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y, work_status')
+        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, national_cert_details, yard_cert_details, ndt_certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y, work_status, is_suspended')
         .order('name', { ascending: true });
 
       if (error) throw error;
@@ -1412,6 +1414,7 @@ export default function HRManagement({
       field: '안전',
       role: 'USER',
       work_status: '근무중',
+      is_suspended: false,
       absence_dates: [],
       phone: '',
       address: '',
@@ -1446,6 +1449,7 @@ export default function HRManagement({
       field: user.field || '안전',
       role: user.role || 'USER',
       work_status: user.work_status === '휴무' ? '휴무' : '근무중',
+      is_suspended: Boolean(user.is_suspended),
       phone: user.phone || '',
       address: user.address || '',
       experience: user.experience || '',
@@ -1577,6 +1581,11 @@ export default function HRManagement({
         join_date: formData.join_date || null,
         career_start_date: formData.career_start_date || null,
       };
+
+      // 계정 정지/해제는 관리자만 변경할 수 있습니다.
+      if (isAdmin) {
+        payload.is_suspended = Boolean(formData.is_suspended);
+      }
 
       if (formData.birthDate) {
         payload.password = formData.birthDate;
@@ -2837,6 +2846,25 @@ export default function HRManagement({
                   <button type="button" onClick={() => setFormData(prev => ({ ...prev, work_status: '휴무' }))} className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${formData.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700 ring-1 ring-blue-200' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
                 </div>
                 <p className="mt-1 text-[10px] text-[#64748B]">별도 상태가 등록되지 않은 구성원은 근무중으로 표시됩니다.</p>
+                {isAdmin && (
+                  <label className={`mt-2 flex cursor-pointer items-center gap-2.5 rounded-lg border p-3 transition ${
+                    formData.is_suspended
+                      ? 'border-rose-200 bg-rose-50'
+                      : 'border-[#E2E5E9] bg-white hover:bg-[#F8FAFC]'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(formData.is_suspended)}
+                      onChange={(e) => setFormData(prev => ({ ...prev, is_suspended: e.target.checked }))}
+                      className="h-4 w-4 shrink-0 accent-rose-600"
+                    />
+                    <span className="min-w-0 flex-1">
+                      <span className={`block text-xs font-bold ${formData.is_suspended ? 'text-rose-700' : 'text-[#243B5A]'}`}>계정 정지</span>
+                      <span className="mt-0.5 block text-[10px] text-[#64748B]">체크하면 해당 구성원은 로그인할 수 없습니다. 추후 체크 해제하여 다시 활성화할 수 있습니다.</span>
+                    </span>
+                    {formData.is_suspended && <span className="shrink-0 rounded-full bg-rose-100 px-2 py-1 text-[10px] font-bold text-rose-700">정지됨</span>}
+                  </label>
+                )}
                 <div className="mt-2 rounded-lg border border-blue-100 bg-blue-50/60 p-2.5 space-y-2">
                   <div className="text-[11px] font-bold text-blue-800">날짜별 휴무 (여러 날짜 선택 가능)</div>
                   {absenceDatesLoading ? <div className="text-[11px] text-blue-700">등록된 휴무 날짜를 불러오는 중...</div> : <MultiDateCalendar value={formData.absence_dates} onChange={(dates) => setFormData(prev => ({ ...prev, absence_dates: dates }))} />}
