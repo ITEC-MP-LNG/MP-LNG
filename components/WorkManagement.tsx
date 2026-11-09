@@ -2722,9 +2722,19 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
                 <History className="h-3 w-3" />
                 <span>완료이력</span>
               </button>
+              {isAdmin && dailySubTab === 'HISTORY' && (
+  <button
+    type="button"
+    onClick={handleExportDailyHistoryExcel}
+    className="shrink-0 rounded-lg bg-[#243B5A] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1B2F49]"
+  >
+    Excel 내려받기
+  </button>
+)}
             </div>
           </div>
         )}
+
 
         {taskTab === 'CABIN' && (
           <div className="flex min-w-0 items-center gap-2 rounded-xl border border-[#E2E5E9] bg-[#F5F6F8] p-2">
