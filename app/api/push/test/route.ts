@@ -86,10 +86,23 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. 현재 로그인 계정의 푸시 구독 정보 조회
-    const { data: subscription, error } = await supabaseAdmin
+    const { data: subscriptions, error } = await supabaseAdmin
       .from('push_subscriptions')
       .select('endpoint, p256dh, auth')
       .eq('user_id', session.sub)
       .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .limit(1);
+
+    if (error) throw error;
+
+    const subscription = subscriptions?.[0];
+
+    if (!subscription) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: '등록된 푸시 구독 정보가 없습니다.',
+        },
+        { status: 404 }
+      );
+    }
