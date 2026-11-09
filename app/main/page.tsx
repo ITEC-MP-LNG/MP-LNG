@@ -950,37 +950,44 @@ useEffect(() => {
           <label className="block text-xs font-bold text-[#1F2937] mb-2">
             발송 시간
           </label>
-         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
- <select
-  value={pushSettingsHour}
-  onChange={(e) => setPushSettingsHour(e.target.value)}
-  disabled={pushSettingsLoading || pushSettingsSaving}
-  aria-label="발송 시간 시"
-    className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold text-[#1F2937] outline-none focus:border-[#243B5A]"
-  >
-    {Array.from({ length: 24 }, (_, hour) =>
-      String(hour).padStart(2, '0')
-    ).map(hour => (
-      <option key={hour} value={hour}>{hour}시</option>
-    ))}
-  </select>
-
-  <span className="text-sm font-bold text-[#64748B]">:</span>
-
- <select
-  value={pushSettingsMinute}
-  onChange={(e) => setPushSettingsMinute(e.target.value)}
-  disabled={pushSettingsLoading || pushSettingsSaving}
-  aria-label="발송 시간 분"
-    className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold text-[#1F2937] outline-none focus:border-[#243B5A]"
-  >
-    {Array.from({ length: 60 }, (_, minute) =>
-      String(minute).padStart(2, '0')
-    ).map(minute => (
-      <option key={minute} value={minute}>{minute}분</option>
-    ))}
-  </select>
-</div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-xl border border-[#D6DEE8] bg-white p-2.5 shadow-sm">
+              <label className="mb-1.5 block text-center text-[10px] font-bold tracking-wide text-[#64748B]">
+                시
+              </label>
+              <select
+                value={pushSettingsHour}
+                onChange={(e) => setPushSettingsHour(e.target.value)}
+                disabled={pushSettingsLoading || pushSettingsSaving}
+                aria-label="발송 시간 시"
+                className="h-11 w-full appearance-none rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-center text-base font-bold tabular-nums text-[#243B5A] outline-none transition focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/15 disabled:opacity-50"
+              >
+                {Array.from({ length: 24 }, (_, hour) =>
+                  String(hour).padStart(2, '0')
+                ).map(hour => (
+                  <option key={hour} value={hour}>{hour}시</option>
+                ))}
+              </select>
+            </div>
+            <div className="rounded-xl border border-[#D6DEE8] bg-white p-2.5 shadow-sm">
+              <label className="mb-1.5 block text-center text-[10px] font-bold tracking-wide text-[#64748B]">
+                분
+              </label>
+              <select
+                value={pushSettingsMinute}
+                onChange={(e) => setPushSettingsMinute(e.target.value)}
+                disabled={pushSettingsLoading || pushSettingsSaving}
+                aria-label="발송 시간 분"
+                className="h-11 w-full appearance-none rounded-lg border border-[#E2E8F0] bg-[#F8FAFC] px-3 text-center text-base font-bold tabular-nums text-[#243B5A] outline-none transition focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/15 disabled:opacity-50"
+              >
+                {Array.from({ length: 60 }, (_, minute) =>
+                  String(minute).padStart(2, '0')
+                ).map(minute => (
+                  <option key={minute} value={minute}>{minute}분</option>
+                ))}
+              </select>
+            </div>
+          </div>
         </div>
                 <div className="border-t border-[#E2E5E9] pt-3 space-y-3">
           <div>
@@ -994,7 +1001,7 @@ useEffect(() => {
               maxLength={100}
               disabled={pushSettingsLoading || pushSettingsSaving}
               placeholder="알림 제목을 입력하세요"
-              className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] disabled:opacity-50"
+              className="h-10 w-full rounded-lg border border-[#D6DEE8] bg-white px-3 text-sm text-[#1F2937] outline-none transition placeholder:text-[#94A3B8] focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/15 disabled:opacity-50"
             />
           </div>
 
@@ -1009,7 +1016,7 @@ useEffect(() => {
               rows={3}
               disabled={pushSettingsLoading || pushSettingsSaving}
               placeholder="직원에게 전달할 알림 내용을 입력하세요"
-              className="w-full resize-none rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] disabled:opacity-50"
+              className="w-full resize-none rounded-lg border border-[#D6DEE8] bg-white px-3 py-2.5 text-sm leading-5 text-[#1F2937] outline-none transition placeholder:text-[#94A3B8] focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/15 disabled:opacity-50"
             />
             <p className="mt-1 text-right text-[10px] text-[#94A3B8]">
               {pushNotificationBody.length}/300자
@@ -1018,8 +1025,8 @@ useEffect(() => {
         </div>
       </div>
 
-      <p className="text-[11px] text-[#64748B]">
-        설정 저장 기능은 다음 단계에서 Supabase와 연결합니다.
+      <p className="rounded-lg bg-[#F3F6FA] px-3 py-2 text-[11px] leading-5 text-[#64748B]">
+        설정한 시간에 당일 일일업무 알림을 자동 발송합니다.
       </p>
 <div className="flex space-x-2 pt-1">
   <button
