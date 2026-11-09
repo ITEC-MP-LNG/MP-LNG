@@ -1,15 +1,26 @@
 import { createClient } from '@supabase/supabase-js';
+import { supabase as localSupabase } from '@/lib/localSupabase';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error("⚠️ Supabase 환경변수(URL 또는 Key)가 불러와지지 않았습니다. .env.local을 확인하세요.");
-}
+const hasSupabaseConfig = Boolean(
+  supabaseUrl && supabaseAnonKey && /^https?:\/\//i.test(supabaseUrl)
+);
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = (() => {
+  if (!hasSupabaseConfig || !supabaseUrl || !supabaseAnonKey) {
+    return localSupabase;
+  }
 
-// lib/supabase.ts 파일 하단에 추가
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  });
+})();
 
 export function getRoleLabel(role: string): string {
   switch (role) {
