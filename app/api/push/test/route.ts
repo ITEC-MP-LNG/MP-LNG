@@ -106,3 +106,42 @@ export async function POST(request: NextRequest) {
         { status: 404 }
       );
     }
+
+    // 4. 테스트 푸시 발송
+    webpush.setVapidDetails(subject, publicKey, privateKey);
+
+    await webpush.sendNotification(
+      {
+        endpoint: subscription.endpoint,
+        keys: {
+          p256dh: subscription.p256dh,
+          auth: subscription.auth,
+        },
+      },
+      JSON.stringify({
+        title: '통합 현장 관리',
+        body: '푸시알림테스트 성공',
+        url: '/',
+        tag: 'push-test',
+      })
+    );
+
+    return NextResponse.json({
+      success: true,
+      message: '테스트 푸시 발송 성공',
+    });
+  } catch (error) {
+    console.error('[Push Test] 발송 오류:', error);
+
+    return NextResponse.json(
+      {
+        success: false,
+        error:
+          error instanceof Error
+            ? error.message
+            : '테스트 푸시 발송에 실패했습니다.',
+      },
+      { status: 500 }
+    );
+  }
+}
