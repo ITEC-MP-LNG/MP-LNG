@@ -1276,7 +1276,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       if (refreshTimer) clearTimeout(refreshTimer);
       window.removeEventListener('focus', refreshAbsencesWhenVisible);
       document.removeEventListener('visibilitychange', refreshAbsencesWhenVisible);
-      supabase.removeChannel(channel);
+      supabase.removeChannel(channel as any);
     };
   }, []);
 
