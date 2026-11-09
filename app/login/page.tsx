@@ -84,108 +84,62 @@ export default function LoginPage() {
     }).format(date);
   };
 
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+ 
+const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!userCode.trim() || !password.trim()) {
+    setAlertMessage('아이디와 비밀번호(생년월일)를 모두 입력해주세요.');
+    return;
+  }
 
-    if (!supabaseUrl || !supabaseKey) {
-      setAlertMessage('Supabase 환경변수가 설정되지 않았습니다. .env.local을 확인하고 서버를 재시작해 주세요.');
+  setLoading(true);
+
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        userCode: userCode.trim(),
+        password: password.trim(),
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      setAlertMessage(
+        result.error || '로그인 중 오류가 발생했습니다.'
+      );
       return;
     }
 
-    if (!userCode.trim() || !password.trim()) {
-      setAlertMessage('아이디와 비밀번호(생년월일)를 모두 입력해주세요.');
-      return;
-    }
+    // 서버에서 전달받은 안전한 사용자 정보만 저장
+    const userInfo = {
+      ...result.user,
+    };
 
-    setLoading(true);
+    localStorage.setItem('user', JSON.stringify(userInfo));
+    localStorage.setItem('currentUser', JSON.stringify(userInfo));
 
-    try {
-      const cleanUserCode = userCode.trim();
-      const cleanPassword = password.trim();
+    setAlertMessage(`${userInfo.name}님 로그인 되었습니다!`);
 
-      // 1. Supabase 데이터베이스 (app_users) 연동 조회 - 대소문자 구분 없음 (ilike 사용)
-      let { data, error: dbError } = await supabase
-        .from('app_users')
-        .select('*')
-        .ilike('id', cleanUserCode)
-        .maybeSingle();
+  } catch (err: unknown) {
+    console.error('로그인 최종 에러:', err);
 
-      if (dbError && dbError.message?.includes('column')) {
-        const retryResult = await supabase
-          .from('app_users')
-          .select('*')
-          .ilike('user_id', cleanUserCode)
-          .maybeSingle();
-        
-        data = retryResult.data;
-        dbError = retryResult.error;
-      }
+    setAlertMessage(
+      err instanceof Error
+        ? err.message
+        : '로그인 중 오류가 발생했습니다.'
+    );
+  } finally {
+    setLoading(false);
+  }
+};
 
-      if (dbError) {
-        console.error("Supabase 상세 에러 객체:", JSON.stringify(dbError, null, 2));
-        throw new Error(dbError.message || '데이터베이스 연동 중 오류가 발생했습니다.');
-      }
-
-      if (!data) {
-        setAlertMessage('존재하지 않는 아이디입니다.');
-        return;
-      }
-
-      // 관리자에 의해 정지된 계정은 비밀번호 확인 및 로그인 처리를 진행하지 않습니다.
-      if (data.is_suspended === true) {
-        setAlertMessage('정지된 계정입니다. 관리자에게 문의하세요.');
-        return;
-      }
-
-      // 퇴사자 검증 (department 컬럼 체크)
-      if (data.department === '퇴사자') {
-        setAlertMessage('퇴사 처리된 계정입니다. 로그인할 수 없습니다.');
-        return;
-      }
-
-      // 2. 비밀번호(생년월일) 검증
-      const userPassword = data.password || data.birth_date || data.birthdate || '';
-      if (String(userPassword).trim() !== cleanPassword) {
-        setAlertMessage('비밀번호(생년월일)가 일치하지 않습니다.');
-        return;
-      }
-
-      // 로그인 성공 시 마지막 로그인 날짜/시간 업데이트
-      const targetId = data.id !== undefined ? data.id : data.user_id;
-      const idColumnName = data.id !== undefined ? 'id' : 'user_id';
-
-      const { error: loginUpdateError } = await supabase
-        .from('app_users')
-        .update({ last_login_at: new Date().toISOString() })
-        .eq(idColumnName, targetId);
-
-      if (loginUpdateError) {
-        throw new Error('마지막 로그인 시간 저장에 실패했습니다: ' + loginUpdateError.message);
-      }
-
-      // 3. 로그인 성공 처리
-      const userInfo = {
-        id: data.id || data.user_id,
-        name: data.name || '사용자',
-        role: data.role || 'USER',
-        birth_date: userPassword,
-      };
-
-      localStorage.setItem('user', JSON.stringify(userInfo));
-      localStorage.setItem('currentUser', JSON.stringify(userInfo));
-
-      setAlertMessage(`${userInfo.name}님 로그인 되었습니다!`);
-
-    } catch (err: any) {
-      console.error('로그인 최종 에러:', err);
-      setAlertMessage(err.message || '로그인 중 오류가 발생했습니다.');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#F5F6F8] px-4 py-12 sm:px-6 lg:px-8 font-sans">

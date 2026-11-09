@@ -1,0 +1,12 @@
+{
+  "functions": {
+    "app/api/queues/daily-push/route.ts": {
+      "experimentalTriggers": [
+        {
+          "type": "queue/v2beta",
+          "topic": "daily-push"
+        }
+      ]
+    }
+  }
+}

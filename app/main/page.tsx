@@ -1,5 +1,6 @@
 'use client';
 
+import PushNotificationButton from '@/components/PushNotificationButton';
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -102,7 +103,18 @@ export default function MainPage() {
 
   const [showExitModal, setShowExitModal] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
-  const [hrLaunchAction, setHrLaunchAction] = useState<'self-edit' | 'my-team' | 'dormitory' | null>(null);
+  const [pushSettingsOpen, setPushSettingsOpen] = useState(false);
+  const [pushSettingsEnabled, setPushSettingsEnabled] = useState(true);
+const [pushSettingsHour, setPushSettingsHour] = useState('07');
+const [pushSettingsMinute, setPushSettingsMinute] = useState('30');
+const [pushNotificationTitle, setPushNotificationTitle] = useState('통합 현장 관리');
+const [pushNotificationBody, setPushNotificationBody] = useState(
+  '오늘 배정된 업무가 있습니다. 앱에서 확인해 주세요.'
+);
+const [pushSettingsLoading, setPushSettingsLoading] = useState(false);
+const [pushSettingsSaving, setPushSettingsSaving] = useState(false);
+
+const [hrLaunchAction, setHrLaunchAction] = useState<'self-edit' | 'my-team' | 'dormitory' | null>(null);
 
   // 기숙사 현황 등록 여부 상태 (Supabase 호출 최소화를 위해 로그인 직후 1회만 체크)
   const [isDormitoryUser, setIsDormitoryUser] = useState(false);
@@ -113,6 +125,114 @@ export default function MainPage() {
   const normalizedRole = String(currentUser?.role || '').trim().toUpperCase();
   const isAdmin = normalizedRole === 'ADMIN';
 
+  // 푸시 알림 설정 저장
+const handleSavePushSettings = async () => {
+  if (pushSettingsSaving || pushSettingsLoading) return;
+
+  if (!pushNotificationTitle.trim() || !pushNotificationBody.trim()) {
+    alert('알림 제목과 내용을 입력해 주세요.');
+    return;
+  }
+
+  setPushSettingsSaving(true);
+
+  try {
+    const response = await fetch('/api/push/settings', {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        enabled: pushSettingsEnabled,
+        send_time: `${pushSettingsHour}:${pushSettingsMinute}`,
+        notification_title: pushNotificationTitle.trim(),
+        notification_body: pushNotificationBody.trim(),
+      }),
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || '설정 저장에 실패했습니다.');
+    }
+
+    setPushSettingsOpen(false);
+    alert('푸시 알림 설정이 저장되었습니다.');
+  } catch (error) {
+    console.error('[Push Settings] 저장 오류:', error);
+
+    alert(
+      error instanceof Error
+        ? error.message
+        : '푸시 알림 설정 저장에 실패했습니다.'
+    );
+  } finally {
+    setPushSettingsSaving(false);
+  }
+};
+  // 푸시 알림 설정 불러오기
+useEffect(() => {
+  if (!pushSettingsOpen || !isAdmin) return;
+
+  let cancelled = false;
+
+  const loadPushSettings = async () => {
+    setPushSettingsLoading(true);
+
+    try {
+      const response = await fetch('/api/push/settings', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || '설정을 불러오지 못했습니다.');
+      }
+
+      if (cancelled) return;
+
+      const settings = result.settings;
+
+      if (settings) {
+        setPushSettingsEnabled(settings.enabled === true);
+
+        const [hour, minute] = String(settings.send_time || '07:30')
+          .slice(0, 5)
+          .split(':');
+
+        setPushSettingsHour(hour || '07');
+        setPushSettingsMinute(minute || '30');
+
+        setPushNotificationTitle(
+          settings.notification_title || '통합 현장 관리'
+        );
+
+        setPushNotificationBody(
+          settings.notification_body ||
+          '오늘 배정된 업무가 있습니다. 앱에서 확인해 주세요.'
+        );
+      }
+    } catch (error) {
+      if (!cancelled) {
+        console.error('[Push Settings] 불러오기 오류:', error);
+      }
+    } finally {
+      if (!cancelled) {
+        setPushSettingsLoading(false);
+      }
+    }
+  };
+
+  loadPushSettings();
+
+  return () => {
+    cancelled = true;
+  };
+}, [pushSettingsOpen, isAdmin]);  
   const isInitializedRef = useRef(false);
 
   const checkUnreadNotices = useCallback(async (userKey: string) => {
@@ -452,7 +572,7 @@ export default function MainPage() {
       if (tasksRefreshTimer) clearTimeout(tasksRefreshTimer);
       if (inventoryRefreshTimer) clearTimeout(inventoryRefreshTimer);
       if (educationRefreshTimer) clearTimeout(educationRefreshTimer);
-      supabase.removeChannel(globalChannel);
+      supabase.removeChannel(globalChannel as any);
     };
   }, [currentUser, checkUnreadNotices, fetchTasks, fetchInventory, fetchEducations]);
 
@@ -606,6 +726,23 @@ export default function MainPage() {
                     <button type="button" role="menuitem" onClick={() => handleOwnWorkStatusChange('근무중')} className={`min-h-10 rounded-lg border px-2 py-2 text-[11px] font-bold ${currentUser.work_status !== '휴무' ? 'border-emerald-300 bg-emerald-50 text-emerald-700' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 근무중</button>
                     <button type="button" role="menuitem" onClick={() => handleOwnWorkStatusChange('휴무')} className={`min-h-10 rounded-lg border px-2 py-2 text-[11px] font-bold ${currentUser.work_status === '휴무' ? 'border-blue-300 bg-blue-50 text-blue-700' : 'border-[#E2E5E9] bg-white text-[#64748B]'}`}>● 휴무</button>
                   </div>
+                  <div className="border-t border-[#E2E5E9] px-1 py-2">
+  <PushNotificationButton />
+</div>
+{isAdmin && (
+  <button
+    type="button"
+    role="menuitem"
+    onClick={() => {
+      setAccountMenuOpen(false);
+      setPushSettingsOpen(true);
+    }}
+    className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"
+  >
+    <Bell className="h-4 w-4 text-[#243B5A]" />
+    푸시 알림 설정
+  </button>
+)}
                   <div className="border-t border-[#E2E5E9] pt-1">
                     <button type="button" role="menuitem" onClick={handleLogout} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#DC2626] hover:bg-red-50"><LogOut className="h-4 w-4" /> 로그아웃</button>
                     <button type="button" role="menuitem" onClick={() => openHrAction('self-edit')} className="w-full flex items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs font-semibold text-[#1F2937] hover:bg-[#F5F6F8]"><UserRoundPen className="h-4 w-4 text-[#243B5A]" /> 개인정보 수정</button>
@@ -779,6 +916,133 @@ export default function MainPage() {
           </div>
         </div>
       )}
+      {pushSettingsOpen && isAdmin && (
+  <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4">
+    <div className="bg-white rounded-xl max-w-sm w-full p-5 shadow-xl border border-[#E2E5E9] space-y-4">
+      <div className="flex items-center space-x-3">
+        <div className="p-2.5 bg-[#243B5A]/10 rounded-xl text-[#243B5A]">
+          <Bell className="h-6 w-6" />
+        </div>
+        <div>
+          <h3 className="text-sm font-bold text-[#1F2937]">푸시 알림 설정</h3>
+          <p className="text-xs text-[#64748B]">직원 일일업무 자동 발송 설정</p>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-[#E2E5E9] p-3 space-y-3">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-bold text-[#1F2937]">자동 발송</span>
+          <span className="text-xs text-[#64748B]">기본 사용</span>
+        </div>
+
+        <label className="flex items-center justify-between cursor-pointer">
+          <span className="text-xs text-[#475569]">매일 업무 알림 발송</span>
+          <input
+  type="checkbox"
+  checked={pushSettingsEnabled}
+  onChange={(e) => setPushSettingsEnabled(e.target.checked)}
+  disabled={pushSettingsLoading || pushSettingsSaving}
+  className="h-4 w-4 accent-[#243B5A]"
+/>
+        </label>
+
+        <div className="border-t border-[#E2E5E9] pt-3">
+          <label className="block text-xs font-bold text-[#1F2937] mb-2">
+            발송 시간
+          </label>
+         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+ <select
+  value={pushSettingsHour}
+  onChange={(e) => setPushSettingsHour(e.target.value)}
+  disabled={pushSettingsLoading || pushSettingsSaving}
+  aria-label="발송 시간 시"
+    className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold text-[#1F2937] outline-none focus:border-[#243B5A]"
+  >
+    {Array.from({ length: 24 }, (_, hour) =>
+      String(hour).padStart(2, '0')
+    ).map(hour => (
+      <option key={hour} value={hour}>{hour}시</option>
+    ))}
+  </select>
+
+  <span className="text-sm font-bold text-[#64748B]">:</span>
+
+ <select
+  value={pushSettingsMinute}
+  onChange={(e) => setPushSettingsMinute(e.target.value)}
+  disabled={pushSettingsLoading || pushSettingsSaving}
+  aria-label="발송 시간 분"
+    className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold text-[#1F2937] outline-none focus:border-[#243B5A]"
+  >
+    {Array.from({ length: 60 }, (_, minute) =>
+      String(minute).padStart(2, '0')
+    ).map(minute => (
+      <option key={minute} value={minute}>{minute}분</option>
+    ))}
+  </select>
+</div>
+        </div>
+                <div className="border-t border-[#E2E5E9] pt-3 space-y-3">
+          <div>
+            <label className="block text-xs font-bold text-[#1F2937] mb-2">
+              알림 제목
+            </label>
+            <input
+              type="text"
+              value={pushNotificationTitle}
+              onChange={(e) => setPushNotificationTitle(e.target.value)}
+              maxLength={100}
+              disabled={pushSettingsLoading || pushSettingsSaving}
+              placeholder="알림 제목을 입력하세요"
+              className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] disabled:opacity-50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-[#1F2937] mb-2">
+              알림 내용
+            </label>
+            <textarea
+              value={pushNotificationBody}
+              onChange={(e) => setPushNotificationBody(e.target.value)}
+              maxLength={300}
+              rows={3}
+              disabled={pushSettingsLoading || pushSettingsSaving}
+              placeholder="직원에게 전달할 알림 내용을 입력하세요"
+              className="w-full resize-none rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] disabled:opacity-50"
+            />
+            <p className="mt-1 text-right text-[10px] text-[#94A3B8]">
+              {pushNotificationBody.length}/300자
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-[#64748B]">
+        설정 저장 기능은 다음 단계에서 Supabase와 연결합니다.
+      </p>
+<div className="flex space-x-2 pt-1">
+  <button
+    type="button"
+    onClick={() => setPushSettingsOpen(false)}
+    disabled={pushSettingsSaving}
+    className="flex-1 py-2.5 px-4 bg-[#F5F6F8] text-[#1F2937] hover:bg-[#E2E5E9] text-xs font-semibold rounded-lg border border-[#E2E5E9] disabled:opacity-50"
+  >
+    닫기
+  </button>
+
+  <button
+    type="button"
+    onClick={handleSavePushSettings}
+    disabled={pushSettingsLoading || pushSettingsSaving}
+    className="flex-1 py-2.5 px-4 bg-[#243B5A] text-white hover:bg-[#1B2F49] text-xs font-semibold rounded-lg disabled:opacity-50"
+  >
+    {pushSettingsSaving ? '저장 중...' : '설정 저장'}
+  </button>
+</div>
+    </div>
+  </div>
+)}
     </div>
   );
 }
