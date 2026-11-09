@@ -111,10 +111,9 @@ export const POST = handleCallback(async (_message, metadata) => {
 
   for (const user of (users || []) as AppUser[]) {
     if (
-      user.is_approved === false ||
-      user.is_retired === true ||
-      user.is_suspended === true ||
-      user.department === '퇴사자'
+     user.is_retired === true ||
+  user.is_suspended === true ||
+  user.department === '퇴사자'
     ) {
       continue;
     }
