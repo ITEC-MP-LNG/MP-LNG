@@ -1636,11 +1636,11 @@ export default function HRManagement({
       }
 
       if (selectedUser) {
-        const changedPayload = Object.fromEntries(
-          Object.entries(payload).filter(([key, value]) =>
-            key !== 'id' && !valuesEqualForSave((selectedUser as any)[key], value)
-          )
-        );
+       const changedPayload = Object.fromEntries(
+  Object.entries(payload).filter(([key, value]) =>
+    !valuesEqualForSave((selectedUser as any)[key], value)
+  )
+);
 
         if (Object.keys(changedPayload).length > 0) {
           const { error } = await supabase
@@ -1652,11 +1652,13 @@ export default function HRManagement({
 
         if (photoFile) {
           try {
-            const photoUrl = await uploadProfilePhoto(selectedUser.id, photoFile);
-            const { error: photoUpdateError } = await supabase
-              .from('app_users')
-              .update({ photo_url: photoUrl })
-              .eq('id', selectedUser.id);
+            const targetUserId = formData.inputId.trim();
+const photoUrl = await uploadProfilePhoto(targetUserId, photoFile);
+
+const { error: photoUpdateError } = await supabase
+  .from('app_users')
+  .update({ photo_url: photoUrl })
+  .eq('id', targetUserId);
             if (photoUpdateError) throw photoUpdateError;
             savedPhotoUrl = photoUrl;
           } catch (photoError: any) {
