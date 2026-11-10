@@ -147,19 +147,31 @@ const subscriptionData = {
   updated_at: new Date().toISOString(),
 };
 
-const { error } = existing
-  ? await supabaseAdmin
-      .from('push_subscriptions')
-      .update(subscriptionData)
-      .eq('endpoint', endpoint)
-      .eq('user_id', session.sub)
-  : await supabaseAdmin
-      .from('push_subscriptions')
-      .insert(subscriptionData);
 
-if (error) {
-  throw error;
+
+// 새 구독 등록 또는 기존 구독 갱신
+const { error: insertError } = await supabaseAdmin
+  .from('push_subscriptions')
+  .upsert(subscriptionData, {
+    onConflict: 'endpoint',
+  });
+
+if (insertError) {
+  throw insertError;
 }
+
+// 새 구독 등록 성공 후 같은 직원의 이전 기기 구독 정리
+const { error: deleteError } = await supabaseAdmin
+  .from('push_subscriptions')
+  .delete()
+  .eq('user_id', session.sub)
+  .neq('endpoint', endpoint);
+
+if (deleteError) {
+  throw deleteError;
+}
+
+
     return NextResponse.json({
       success: true,
       message: '푸시 알림 등록이 완료되었습니다.',

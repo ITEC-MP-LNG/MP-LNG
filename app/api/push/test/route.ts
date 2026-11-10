@@ -86,16 +86,15 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. 현재 로그인 계정의 푸시 구독 정보 조회
-    const { data: subscriptions, error } = await supabaseAdmin
+    const { data: subscription, error } = await supabaseAdmin
       .from('push_subscriptions')
       .select('endpoint, p256dh, auth')
       .eq('user_id', session.sub)
       .order('updated_at', { ascending: false })
-      .limit(1);
+      .limit(1)
+      .maybeSingle();
 
     if (error) throw error;
-
-    const subscription = subscriptions?.[0];
 
     if (!subscription) {
       return NextResponse.json(
@@ -120,7 +119,7 @@ export async function POST(request: NextRequest) {
       },
       JSON.stringify({
         title: '통합 현장 관리',
-        body: '푸시알림테스트 성공',
+        body: '푸시 알림 테스트가 정상적으로 도착했습니다!',
         url: '/',
         tag: 'push-test',
       })
@@ -131,14 +130,19 @@ export async function POST(request: NextRequest) {
       message: '테스트 푸시 발송 성공',
     });
   } catch (error) {
+    const errorMessage =
+      error && typeof error === 'object' && 'message' in error
+        ? String(error.message)
+        : String(error);
+
     console.error('[Push Test] 발송 오류:', error);
 
     return NextResponse.json(
       {
         success: false,
         error:
-          error instanceof Error
-            ? error.message
+          process.env.NODE_ENV === 'development'
+            ? errorMessage
             : '테스트 푸시 발송에 실패했습니다.',
       },
       { status: 500 }

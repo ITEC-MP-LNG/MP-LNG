@@ -71,99 +71,6 @@ interface ExtendedAppUser extends AppUser {
   work_status?: '근무중' | '휴무' | string;
 }
 
-
-type CompactTimeOption = { value: string; label: string };
-
-function CompactTimeSelect({
-  value,
-  options,
-  onChange,
-  ariaLabel,
-  disabled = false,
-}: {
-  value: string;
-  options: CompactTimeOption[];
-  onChange: (value: string) => void;
-  ariaLabel: string;
-  disabled?: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const selected = options.find(option => option.value === value);
-
-  useEffect(() => {
-    if (!open) return;
-
-    const closeOutside = (event: MouseEvent | TouchEvent) => {
-      if (
-        rootRef.current &&
-        !rootRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false);
-      }
-    };
-
-    const closeEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-
-    document.addEventListener('mousedown', closeOutside);
-    document.addEventListener('touchstart', closeOutside);
-    document.addEventListener('keydown', closeEscape);
-
-    return () => {
-      document.removeEventListener('mousedown', closeOutside);
-      document.removeEventListener('touchstart', closeOutside);
-      document.removeEventListener('keydown', closeEscape);
-    };
-  }, [open]);
-
-  return (
-    <div ref={rootRef} className="relative min-w-0">
-      <button
-        type="button"
-        aria-label={ariaLabel}
-        aria-haspopup="listbox"
-        aria-expanded={open}
-        disabled={disabled}
-        onClick={() => setOpen(current => !current)}
-        className="flex h-9 w-full min-w-0 items-center justify-between gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold tabular-nums text-[#1F2937] outline-none transition-colors hover:border-[#243B5A] focus:border-[#243B5A] focus:bg-white disabled:opacity-50"
-      >
-        <span className="truncate">{selected?.label || value}</span>
-        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
-      </button>
-
-      {open && (
-        <div
-          role="listbox"
-          aria-label={ariaLabel}
-          className="absolute left-0 top-[calc(100%+4px)] z-[110] max-h-48 w-full min-w-[76px] overflow-y-auto rounded-lg border border-[#E2E5E9] bg-white p-1 shadow-[0_8px_20px_rgba(15,23,42,0.16)]"
-        >
-          {options.map(option => (
-            <button
-              key={option.value}
-              type="button"
-              role="option"
-              aria-selected={option.value === value}
-              onClick={() => {
-                onChange(option.value);
-                setOpen(false);
-              }}
-              className={`mb-0.5 flex w-full items-center justify-center rounded-md px-2 py-2 text-xs tabular-nums last:mb-0 ${
-                option.value === value
-                  ? 'bg-[#243B5A] font-bold text-white'
-                  : 'text-[#1F2937] hover:bg-[#F5F6F8]'
-              }`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 export default function MainPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<ExtendedAppUser | null>(null);
@@ -205,6 +112,9 @@ const [pushNotificationBody, setPushNotificationBody] = useState(
   '오늘 배정된 업무가 있습니다. 앱에서 확인해 주세요.'
 );
 const [pushSettingsLoading, setPushSettingsLoading] = useState(false);
+const [pushTestLoading, setPushTestLoading] = useState(false);
+const [pushTestMessage, setPushTestMessage] = useState("");
+
 const [pushSettingsSaving, setPushSettingsSaving] = useState(false);
 
 const [hrLaunchAction, setHrLaunchAction] = useState<'self-edit' | 'my-team' | 'dormitory' | null>(null);
@@ -217,6 +127,39 @@ const [hrLaunchAction, setHrLaunchAction] = useState<'self-edit' | 'my-team' | '
 
   const normalizedRole = String(currentUser?.role || '').trim().toUpperCase();
   const isAdmin = normalizedRole === 'ADMIN';
+
+const handleTestPush = async () => {
+  if (pushTestLoading) return;
+
+  setPushTestLoading(true);
+  setPushTestMessage("");
+
+  try {
+    const response = await fetch('/api/push/test', {
+      method: 'POST',
+      credentials: 'include',
+      cache: 'no-store',
+    });
+
+    const result = await response.json();
+
+    if (!response.ok || !result.success) {
+      throw new Error(result.error || '테스트 푸시 발송에 실패했습니다.');
+    }
+
+    setPushTestMessage('테스트 푸시 발송을 요청했습니다. 기기를 확인해 주세요.');
+  } catch (error) {
+    console.error('[Push Test] 발송 오류:', error);
+
+    setPushTestMessage(
+      error instanceof Error
+        ? error.message
+        : '테스트 푸시 발송에 실패했습니다.'
+    );
+  } finally {
+    setPushTestLoading(false);
+  }
+};
 
   // 푸시 알림 설정 저장
 const handleSavePushSettings = async () => {
@@ -1039,51 +982,42 @@ useEffect(() => {
 />
         </label>
 
-       
-<div className="border-t border-[#E2E5E9] pt-3">
-  <label className="block text-xs font-bold text-[#1F2937] mb-2">
-    발송 시간
-  </label>
+        <div className="border-t border-[#E2E5E9] pt-3">
+          <label className="block text-xs font-bold text-[#1F2937] mb-2">
+            발송 시간
+          </label>
+         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+ <select
+  value={pushSettingsHour}
+  onChange={(e) => setPushSettingsHour(e.target.value)}
+  disabled={pushSettingsLoading || pushSettingsSaving}
+  aria-label="발송 시간 시"
+    className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold text-[#1F2937] outline-none focus:border-[#243B5A]"
+  >
+    {Array.from({ length: 24 }, (_, hour) =>
+      String(hour).padStart(2, '0')
+    ).map(hour => (
+      <option key={hour} value={hour}>{hour}시</option>
+    ))}
+  </select>
 
-  <div className="grid grid-cols-2 gap-3">
-    {/* 시 선택 */}
-    <div className="rounded-xl border border-[#D6DEE8] bg-white p-2.5 shadow-sm">
-      <label className="mb-1.5 block text-center text-[10px] font-bold tracking-wide text-[#64748B]">
-        시
-      </label>
+  <span className="text-sm font-bold text-[#64748B]">:</span>
 
-      <CompactTimeSelect
-        ariaLabel="발송 시간 시"
-        value={pushSettingsHour}
-        options={Array.from({ length: 24 }, (_, hour) => {
-          const value = String(hour).padStart(2, '0');
-          return { value, label: `${value}시` };
-        })}
-        onChange={setPushSettingsHour}
-        disabled={pushSettingsLoading || pushSettingsSaving}
-      />
-    </div>
-
-    {/* 분 선택 */}
-    <div className="rounded-xl border border-[#D6DEE8] bg-white p-2.5 shadow-sm">
-      <label className="mb-1.5 block text-center text-[10px] font-bold tracking-wide text-[#64748B]">
-        분
-      </label>
-
-      <CompactTimeSelect
-        ariaLabel="발송 시간 분"
-        value={pushSettingsMinute}
-        options={Array.from({ length: 60 }, (_, minute) => {
-          const value = String(minute).padStart(2, '0');
-          return { value, label: `${value}분` };
-        })}
-        onChange={setPushSettingsMinute}
-        disabled={pushSettingsLoading || pushSettingsSaving}
-      />
-    </div>
-  </div>
+ <select
+  value={pushSettingsMinute}
+  onChange={(e) => setPushSettingsMinute(e.target.value)}
+  disabled={pushSettingsLoading || pushSettingsSaving}
+  aria-label="발송 시간 분"
+    className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold text-[#1F2937] outline-none focus:border-[#243B5A]"
+  >
+    {Array.from({ length: 60 }, (_, minute) =>
+      String(minute).padStart(2, '0')
+    ).map(minute => (
+      <option key={minute} value={minute}>{minute}분</option>
+    ))}
+  </select>
 </div>
-
+        </div>
                 <div className="border-t border-[#E2E5E9] pt-3 space-y-3">
           <div>
             <label className="block text-xs font-bold text-[#1F2937] mb-2">
@@ -1096,7 +1030,7 @@ useEffect(() => {
               maxLength={100}
               disabled={pushSettingsLoading || pushSettingsSaving}
               placeholder="알림 제목을 입력하세요"
-              className="h-10 w-full rounded-lg border border-[#D6DEE8] bg-white px-3 text-sm text-[#1F2937] outline-none transition placeholder:text-[#94A3B8] focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/15 disabled:opacity-50"
+              className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] disabled:opacity-50"
             />
           </div>
 
@@ -1111,7 +1045,7 @@ useEffect(() => {
               rows={3}
               disabled={pushSettingsLoading || pushSettingsSaving}
               placeholder="직원에게 전달할 알림 내용을 입력하세요"
-              className="w-full resize-none rounded-lg border border-[#D6DEE8] bg-white px-3 py-2.5 text-sm leading-5 text-[#1F2937] outline-none transition placeholder:text-[#94A3B8] focus:border-[#243B5A] focus:ring-2 focus:ring-[#243B5A]/15 disabled:opacity-50"
+              className="w-full resize-none rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] disabled:opacity-50"
             />
             <p className="mt-1 text-right text-[10px] text-[#94A3B8]">
               {pushNotificationBody.length}/300자
@@ -1120,10 +1054,25 @@ useEffect(() => {
         </div>
       </div>
 
-      <p className="rounded-lg bg-[#F3F6FA] px-3 py-2 text-[11px] leading-5 text-[#64748B]">
-        설정한 시간에 당일 일일업무 알림을 자동 발송합니다.
-      </p>
-<div className="flex space-x-2 pt-1">
+      
+<div className="space-y-2 pt-1">
+  <button
+    type="button"
+    onClick={handleTestPush}
+    disabled={pushTestLoading || pushSettingsLoading || pushSettingsSaving}
+    className="w-full rounded-lg border border-[#243B5A] bg-white px-4 py-2.5 text-xs font-semibold text-[#243B5A] hover:bg-[#F3F6FA] disabled:opacity-50"
+  >
+    {pushTestLoading ? '테스트 발송 중...' : '테스트 푸시 보내기'}
+  </button>
+
+  {pushTestMessage && (
+    <p className="text-xs text-center text-[#64748B]" role="status">
+      {pushTestMessage}
+    </p>
+  )}
+</div>
+
+<div className="flex space-x-2">
   <button
     type="button"
     onClick={() => setPushSettingsOpen(false)}

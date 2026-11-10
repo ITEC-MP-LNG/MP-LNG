@@ -273,7 +273,6 @@ export async function POST(request: NextRequest) {
 
     if (error) throw error;
 
-    await syncDailyPushSchedule(enabled, send_time);
     return NextResponse.json({
       success: true,
       message: '푸시 알림 설정이 저장되었습니다.',
