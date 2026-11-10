@@ -283,7 +283,7 @@ const handleSavePushSettings = async () => {
     }
 
     setPushSettingsOpen(false);
-    alert('푸시 알림 설정이 저장되었습니다.');
+    showCenterToast('푸시 알림 설정이 저장되었습니다.');
   } catch (error) {
     console.error('[Push Settings] 저장 오류:', error);
 
