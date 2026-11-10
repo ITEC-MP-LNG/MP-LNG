@@ -16,7 +16,7 @@ self.addEventListener('push', (event) => {
   const options = {
     body: data.body || '새로운 업무 알림이 있습니다.',
     icon: '/icon-192.jpg',
-    //badge: '/notification-badge-white.png',
+    badge: '/notification-badge-korean.png',
     data: {
       url: data.url || '/'
     },
