@@ -71,6 +71,95 @@ interface ExtendedAppUser extends AppUser {
   work_status?: '근무중' | '휴무' | string;
 }
 
+type CompactTimeOption = {
+  value: string;
+  label: string;
+};
+
+function CompactTimeSelect({
+  value,
+  options,
+  onChange,
+  ariaLabel,
+}: {
+  value: string;
+  options: CompactTimeOption[];
+  onChange: (value: string) => void;
+  ariaLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = options.find(option => option.value === value);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const closeOutside = (event: MouseEvent | TouchEvent) => {
+      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+
+    const closeEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+
+    document.addEventListener('mousedown', closeOutside);
+    document.addEventListener('touchstart', closeOutside);
+    document.addEventListener('keydown', closeEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', closeOutside);
+      document.removeEventListener('touchstart', closeOutside);
+      document.removeEventListener('keydown', closeEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative min-w-0">
+      <button
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen(current => !current)}
+        className="flex h-9 w-full min-w-0 items-center justify-between gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold tabular-nums text-[#1F2937] outline-none transition-colors hover:border-[#243B5A] focus:border-[#243B5A] focus:bg-white"
+      >
+        <span className="truncate">{selected?.label || value}</span>
+        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-label={ariaLabel}
+          className="absolute left-0 top-[calc(100%+4px)] z-[80] max-h-48 w-full min-w-[76px] overflow-y-auto rounded-lg border border-[#E2E5E9] bg-white p-1 shadow-[0_8px_20px_rgba(15,23,42,0.16)]"
+        >
+          {options.map(option => (
+            <button
+              key={option.value}
+              type="button"
+              role="option"
+              aria-selected={option.value === value}
+              onClick={() => {
+                onChange(option.value);
+                setOpen(false);
+              }}
+              className={`mb-0.5 flex w-full items-center justify-center rounded-md px-2 py-2 text-xs tabular-nums last:mb-0 ${
+                option.value === value
+                  ? 'bg-[#243B5A] font-bold text-white'
+                  : 'text-[#1F2937] hover:bg-[#F5F6F8]'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MainPage() {
   const router = useRouter();
   const [currentUser, setCurrentUser] = useState<ExtendedAppUser | null>(null);
@@ -982,40 +1071,26 @@ useEffect(() => {
 />
         </label>
 
-        <div className="border-t border-[#E2E5E9] pt-3">
-          <label className="block text-xs font-bold text-[#1F2937] mb-2">
-            발송 시간
-          </label>
-         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
- <select
-  value={pushSettingsHour}
-  onChange={(e) => setPushSettingsHour(e.target.value)}
-  disabled={pushSettingsLoading || pushSettingsSaving}
-  aria-label="발송 시간 시"
-    className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold text-[#1F2937] outline-none focus:border-[#243B5A]"
-  >
-    {Array.from({ length: 24 }, (_, hour) =>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+  <CompactTimeSelect
+    ariaLabel="발송 시간 시"
+    value={pushSettingsHour}
+    options={Array.from({ length: 24 }, (_, hour) =>
       String(hour).padStart(2, '0')
-    ).map(hour => (
-      <option key={hour} value={hour}>{hour}시</option>
-    ))}
-  </select>
+    ).map(hour => ({ value: hour, label: `${hour}시` }))}
+    onChange={setPushSettingsHour}
+  />
 
   <span className="text-sm font-bold text-[#64748B]">:</span>
 
- <select
-  value={pushSettingsMinute}
-  onChange={(e) => setPushSettingsMinute(e.target.value)}
-  disabled={pushSettingsLoading || pushSettingsSaving}
-  aria-label="발송 시간 분"
-    className="h-9 w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-2.5 text-xs font-semibold text-[#1F2937] outline-none focus:border-[#243B5A]"
-  >
-    {Array.from({ length: 60 }, (_, minute) =>
+  <CompactTimeSelect
+    ariaLabel="발송 시간 분"
+    value={pushSettingsMinute}
+    options={Array.from({ length: 60 }, (_, minute) =>
       String(minute).padStart(2, '0')
-    ).map(minute => (
-      <option key={minute} value={minute}>{minute}분</option>
-    ))}
-  </select>
+    ).map(minute => ({ value: minute, label: `${minute}분` }))}
+    onChange={setPushSettingsMinute}
+  />
 </div>
         </div>
                 <div className="border-t border-[#E2E5E9] pt-3 space-y-3">
@@ -1052,9 +1127,7 @@ useEffect(() => {
             </p>
           </div>
         </div>
-      </div>
 
-      
 <div className="space-y-2 pt-1">
   <button
     type="button"
@@ -1092,8 +1165,8 @@ useEffect(() => {
   </button>
 </div>
     </div>
-  </div>
-)}
+        </div>
+    )}
     </div>
   );
 }
