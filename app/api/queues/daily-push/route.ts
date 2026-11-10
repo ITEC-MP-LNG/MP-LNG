@@ -51,6 +51,8 @@ function getErrorStatus(error: unknown) {
 }
 
 export const POST = handleCallback(async (_message, metadata) => {
+  console.log('[DAILY PUSH] 실행 시작');
+
   const { data: settings, error: settingsError } = await supabaseAdmin
     .from('push_notification_settings')
     .select('enabled, notification_title, notification_body')
@@ -58,7 +60,16 @@ export const POST = handleCallback(async (_message, metadata) => {
     .maybeSingle();
 
   if (settingsError) throw settingsError;
-  if (!settings?.enabled) return;
+
+  console.log('[DAILY PUSH] 설정 확인:', {
+    settingsFound: !!settings,
+    enabled: settings?.enabled,
+  });
+
+  if (!settings?.enabled) {
+    console.log('[DAILY PUSH] 종료: 알림 설정이 비활성화되어 있습니다.');
+    return;
+  }
 
   const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
@@ -71,6 +82,8 @@ export const POST = handleCallback(async (_message, metadata) => {
   webpush.setVapidDetails(subject, publicKey, privateKey);
 
   const today = getKoreaDate();
+
+  console.log('[DAILY PUSH] 기준 날짜:', today);
 
   // 당일 DAILY 업무만 조회하고 완료된 업무는 제외
   const { data: tasks, error: tasksError } = await supabaseAdmin
@@ -88,7 +101,15 @@ export const POST = handleCallback(async (_message, metadata) => {
       task.assigned_names.length > 0
   );
 
-  if (activeTasks.length === 0) return;
+  console.log('[DAILY PUSH] 업무 조회:', {
+    total: tasks?.length || 0,
+    active: activeTasks.length,
+  });
+
+  if (activeTasks.length === 0) {
+    console.log('[DAILY PUSH] 종료: 발송 가능한 업무가 없습니다.');
+    return;
+  }
 
   // 업무에 배정된 직원 이름별로 묶기
   const tasksByName = new Map<string, string[]>();
@@ -104,7 +125,12 @@ export const POST = handleCallback(async (_message, metadata) => {
     }
   }
 
-  if (tasksByName.size === 0) return;
+  console.log('[DAILY PUSH] 배정 직원 수:', tasksByName.size);
+
+  if (tasksByName.size === 0) {
+    console.log('[DAILY PUSH] 종료: 배정 직원이 없습니다.');
+    return;
+  }
 
   // 직원 계정 조회
   const { data: users, error: usersError } = await supabaseAdmin
@@ -117,15 +143,25 @@ export const POST = handleCallback(async (_message, metadata) => {
 
   for (const user of (users || []) as AppUser[]) {
     if (
-     user.is_retired === true ||
-  user.is_suspended === true ||
-  user.department === '퇴사자'
+      user.is_retired === true ||
+      user.is_suspended === true ||
+      user.department === '퇴사자'
     ) {
       continue;
     }
 
     userByName.set(String(user.name).trim(), user);
   }
+
+  const matchedCount = [...tasksByName.keys()].filter(
+    (name) => userByName.has(name)
+  ).length;
+
+  console.log('[DAILY PUSH] 계정 조회:', {
+    total: users?.length || 0,
+    eligible: userByName.size,
+    matched: matchedCount,
+  });
 
   // 푸시 구독 정보 조회
   const { data: subscriptions, error: subscriptionsError } =
@@ -144,10 +180,24 @@ export const POST = handleCallback(async (_message, metadata) => {
     }
   }
 
+  console.log('[DAILY PUSH] 구독 조회:', {
+    total: subscriptions?.length || 0,
+    uniqueUsers: subscriptionByUser.size,
+  });
+
   // 직원별 발송
+  let savedCount = 0;
+  let pushSuccessCount = 0;
+  let inAppCount = 0;
+  let skippedCount = 0;
+
   for (const [name, titles] of tasksByName) {
     const user = userByName.get(name);
-    if (!user) continue;
+
+    if (!user) {
+      skippedCount++;
+      continue;
+    }
 
     const userId = user.id;
     const subscription = subscriptionByUser.get(userId);
@@ -180,6 +230,9 @@ export const POST = handleCallback(async (_message, metadata) => {
         );
 
       if (error) throw error;
+
+      savedCount++;
+      inAppCount++;
       continue;
     }
 
@@ -203,6 +256,8 @@ export const POST = handleCallback(async (_message, metadata) => {
 
     if (insertError) throw insertError;
 
+    savedCount++;
+
     const { data: record, error: recordError } = await supabaseAdmin
       .from('daily_work_notifications')
       .select('id, delivery_method, push_sent_at')
@@ -211,8 +266,16 @@ export const POST = handleCallback(async (_message, metadata) => {
       .maybeSingle();
 
     if (recordError) throw recordError;
-    if (!record || record.delivery_method !== 'push') continue;
-    if (record.push_sent_at) continue;
+
+    if (!record || record.delivery_method !== 'push') {
+      skippedCount++;
+      continue;
+    }
+
+    if (record.push_sent_at) {
+      skippedCount++;
+      continue;
+    }
 
     // 발송 중복 방지용 원자적 선점
     const claimedAt = new Date().toISOString();
@@ -229,7 +292,11 @@ export const POST = handleCallback(async (_message, metadata) => {
       .maybeSingle();
 
     if (claimError) throw claimError;
-    if (!claimed) continue;
+
+    if (!claimed) {
+      skippedCount++;
+      continue;
+    }
 
     try {
       await webpush.sendNotification(
@@ -254,6 +321,8 @@ export const POST = handleCallback(async (_message, metadata) => {
         .eq('id', record.id);
 
       if (updateError) throw updateError;
+
+      pushSuccessCount++;
     } catch (error) {
       const status = getErrorStatus(error);
 
@@ -273,6 +342,8 @@ export const POST = handleCallback(async (_message, metadata) => {
           .eq('id', record.id);
 
         if (fallbackError) throw fallbackError;
+
+        inAppCount++;
         continue;
       }
 
@@ -286,7 +357,19 @@ export const POST = handleCallback(async (_message, metadata) => {
         .eq('id', record.id);
 
       if (resetError) throw resetError;
+
       throw error;
     }
   }
+
+  console.log('[DAILY PUSH] 최종 처리 결과:', {
+    assignedUsers: tasksByName.size,
+    matchedUsers: matchedCount,
+    savedCount,
+    pushSuccessCount,
+    inAppCount,
+    skippedCount,
+  });
+
+  console.log('[DAILY PUSH] 실행 완료');
 });
