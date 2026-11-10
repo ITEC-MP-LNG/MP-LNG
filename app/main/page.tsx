@@ -844,12 +844,12 @@ useEffect(() => {
               <Bell className="h-4 w-4" />
             </button>
 {toastMessage && (
-  <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[9999] bg-[#243B5A] text-white px-4 py-3 rounded-xl shadow-xl flex items-start gap-2.5 text-xs sm:text-sm font-semibold border border-slate-600">
-    <CheckCircle2 className="h-4 w-4 text-emerald-300 shrink-0 mt-0.5" />
-    <span className="whitespace-normal break-words leading-relaxed min-w-0">
-      {toastMessage}
-    </span>
-  </div>
+ <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[9999] bg-[#243B5A] text-white px-6 py-5 rounded-2xl shadow-xl flex items-start gap-3 text-sm sm:text-base font-semibold border border-slate-600 min-w-[280px] max-w-[90vw]">
+  <CheckCircle2 className="h-5 w-5 text-emerald-300 shrink-0 mt-0.5" />
+  <span className="whitespace-normal break-words leading-relaxed min-w-0">
+    {toastMessage}
+  </span>
+</div>
 )}
             <div className="relative shrink-0">
               <button type="button" onClick={() => setAccountMenuOpen((open) => !open)} aria-expanded={accountMenuOpen} aria-haspopup="menu" className="flex items-center space-x-1.5 sm:space-x-2 bg-[#F5F6F8] px-2 sm:px-3 py-1.5 rounded-lg border border-[#E2E5E9] max-w-[170px] sm:max-w-none hover:bg-[#E9EDF2] transition">
