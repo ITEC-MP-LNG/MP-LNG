@@ -17,6 +17,7 @@ import {
   Briefcase,
   Anchor,
   AlertCircle,
+  CheckCircle2,
   Bell,
   Home
 } from 'lucide-react';
