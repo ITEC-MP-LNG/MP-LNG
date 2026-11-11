@@ -36,6 +36,7 @@ export interface Task {
   completed_by_name?: string;
   completed_at?: string;
   completion_pending_review?: boolean;
+  photo_paths?: string[];
 }
 
 export interface CabinVessel {
@@ -69,6 +70,43 @@ const isFormerAppUser = (user?: AppUser | null) => {
 
 const C = { navy: '#243B5A', pale: '#F5F6F8', border: '#E2E5E9', text: '#1F2937', muted: '#64748B' };
 const inputClass = 'w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white transition-colors';
+
+const compressDailyWorkPhoto = async (file: File): Promise<File> => {
+  if (!file.type.startsWith('image/')) throw new Error('이미지 파일만 등록할 수 있습니다.');
+  const objectUrl = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = objectUrl;
+    await new Promise<void>((resolve, reject) => {
+      image.onload = () => resolve();
+      image.onerror = () => reject(new Error('이미지를 읽을 수 없습니다.'));
+    });
+
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(image.width * scale));
+    canvas.height = Math.max(1, Math.round(image.height * scale));
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('사진 압축을 시작할 수 없습니다.');
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+    let quality = 0.82;
+    let blob: Blob | null = null;
+    for (let attempt = 0; attempt < 7; attempt += 1) {
+      blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', quality));
+      if (blob && blob.size <= 500 * 1024) break;
+      quality = Math.max(0.45, quality - 0.07);
+    }
+    if (!blob) throw new Error('사진 압축에 실패했습니다.');
+    if (blob.size > 500 * 1024) throw new Error('사진 용량을 500KB 이하로 줄이지 못했습니다. 다른 사진을 선택해 주세요.');
+    const baseName = file.name.replace(/\.[^.]+$/, '') || 'daily-photo';
+    return new File([blob], `${baseName}.jpg`, { type: 'image/jpeg', lastModified: Date.now() });
+  } finally {
+    URL.revokeObjectURL(objectUrl);
+  }
+};
+
 
 const formatDateToYYYYMMDD = (d: Date) => {
   const year = d.getFullYear();
@@ -946,6 +984,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([]);
+  const [selectedPhotoPreviews, setSelectedPhotoPreviews] = useState<string[]>([]);
+  const [keptExistingPhotoPaths, setKeptExistingPhotoPaths] = useState<string[]>([]);
+  const [photoViewerTask, setPhotoViewerTask] = useState<Task | null>(null);
+
   
   const [formData, setFormData] = useState({
     title: '',
@@ -1104,7 +1147,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     lastTasksFetchStartedAtRef.current = Date.now();
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, evening_workers, shift_type, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, remarks_edited_at, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review').order('start_date', { ascending: true });
+      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, evening_workers, shift_type, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, remarks_edited_at, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review, photo_paths').order('start_date', { ascending: true });
       if (error) throw error;
 
       if (data) {
@@ -1621,6 +1664,9 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
     const requestedType: 'DAILY' | 'DAILY_OTHER' | 'WEEKLY' | 'CABIN' = defaultType || (taskTab === 'VEHICLE' ? 'DAILY' : taskTab);
     if (!isAdmin && requestedType !== 'DAILY_OTHER') { showCustomAlert('권한 제한', '관리자만 해당 업무를 등록할 수 있습니다.'); return; }
     if (requestedType === 'DAILY_OTHER' && !currentUser?.name) { showCustomAlert('등록 제한', '로그인 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.'); return; }
+    setSelectedPhotoPreviews(prev => { prev.forEach(url => URL.revokeObjectURL(url)); return []; });
+    setSelectedPhotoFiles([]);
+    setKeptExistingPhotoPaths([]);
     setEditingTask(null);
     setFormData({
       title: '',
@@ -1645,6 +1691,9 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
 
   const handleOpenTaskEdit = useCallback((task: Task) => {
     if (!canManageTask(task)) { showCustomAlert('권한 제한', '야간업무진행는 작성자 본인과 관리자만 수정할 수 있습니다.'); return; }
+    setSelectedPhotoPreviews(prev => { prev.forEach(url => URL.revokeObjectURL(url)); return []; });
+    setSelectedPhotoFiles([]);
+    setKeptExistingPhotoPaths(task.task_type === 'DAILY' ? (task.photo_paths || []) : []);
     setEditingTask(task);
     setFormData({
       title: task.title,
@@ -1926,18 +1975,60 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
           delete savePayload.created_by_name;
         }
 
+        let savedTaskId = editingTask?.id || null;
         if (editingTask) {
           const { error } = await supabase.from('tasks').update(savePayload).eq('id', editingTask.id);
           if (error) throw error;
+        } else if (formData.task_type === 'DAILY' && selectedPhotoFiles.length > 0) {
+          const { data, error } = await supabase.from('tasks').insert([savePayload]).select('id').single();
+          if (error) throw error;
+          savedTaskId = data.id;
         } else {
           const { error } = await supabase.from('tasks').insert([savePayload]);
           if (error) throw error;
         }
 
+        let photoSaveWarning = '';
+        if (formData.task_type === 'DAILY' && savedTaskId) {
+          const uploadedPaths: string[] = [];
+          try {
+            for (const photo of selectedPhotoFiles) {
+              const storagePath = `${savedTaskId}/${crypto.randomUUID()}.jpg`;
+              const { error: uploadError } = await supabase.storage
+                .from('daily-work-photos')
+                .upload(storagePath, photo, { contentType: 'image/jpeg', upsert: false });
+              if (uploadError) throw uploadError;
+              uploadedPaths.push(storagePath);
+            }
+            const nextPhotoPaths = [...keptExistingPhotoPaths, ...uploadedPaths];
+            const { error: pathError } = await supabase.from('tasks')
+              .update({ photo_paths: nextPhotoPaths }).eq('id', savedTaskId);
+            if (pathError) throw pathError;
+
+            const removedPaths = (editingTask?.photo_paths || []).filter(path => !keptExistingPhotoPaths.includes(path));
+            if (removedPaths.length > 0) {
+              const { error: removeError } = await supabase.storage
+                .from('daily-work-photos')
+                .remove(removedPaths);
+              if (removeError) {
+                photoSaveWarning = '업무와 사진 변경은 저장됐지만, 삭제한 기존 사진 파일 일부를 Storage에서 지우지 못했습니다.';
+              }
+            }
+          } catch (photoError) {
+            if (uploadedPaths.length > 0) {
+              await supabase.storage.from('daily-work-photos').remove(uploadedPaths);
+            }
+            photoSaveWarning = `업무는 저장되었지만 사진 저장에 실패했습니다: ${(photoError as any)?.message || '알 수 없는 오류'}`;
+          }
+        }
+
+        setSelectedPhotoPreviews(prev => { prev.forEach(url => URL.revokeObjectURL(url)); return []; });
+        setSelectedPhotoFiles([]);
+        setKeptExistingPhotoPaths([]);
         setIsModalOpen(false);
         setSelectedTaskIds([]);
         await fetchTasks();
-        showCustomAlert('성공', '업무가 정상적으로 저장되었습니다.');
+        showCustomAlert(photoSaveWarning ? '사진 저장 확인' : '성공', photoSaveWarning || '업무가 정상적으로 저장되었습니다.');
       } catch (err: any) {
         showCustomAlert('오류', `저장 중 오류: ${err.message}`);
       }
@@ -1986,7 +2077,7 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
   }, [
     isAdmin, canManageTask, currentUser, formData, editingTask,
     dayWorkerList, eveningWorkerList, nightWorkerList, cabinShiftType,
-    assignedList, appUsers, tasks, fetchTasks, showCustomAlert, showCustomConfirm,
+    assignedList, appUsers, tasks, fetchTasks, showCustomAlert, showCustomConfirm, selectedPhotoFiles, keptExistingPhotoPaths,
   ]);
 
   const handleFinalizeDailyTask = useCallback((task: Task) => {
@@ -2014,9 +2105,32 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
           }).eq('id', task.id).eq('completion_pending_review', true);
           if (error) throw error;
 
+          let photoDeleteFailed = false;
+          if (task.task_type === 'DAILY' && (task.photo_paths || []).length > 0) {
+            const { error: photoDeleteError } = await supabase.storage
+              .from('daily-work-photos')
+              .remove(task.photo_paths || []);
+            if (photoDeleteError) {
+              photoDeleteFailed = true;
+              console.warn('관리자 최종 확인 후 업무 사진 삭제 실패:', task.id, photoDeleteError.message);
+            } else {
+              const { error: clearPathError } = await supabase.from('tasks')
+                .update({ photo_paths: [] }).eq('id', task.id);
+              if (clearPathError) {
+                photoDeleteFailed = true;
+                console.warn('업무 사진 경로 정리 실패:', task.id, clearPathError.message);
+              }
+            }
+          }
+
           setSelectedTaskIds([]);
           await fetchTasks();
-          showCustomAlert('완료', '관리자 최종 확인이 완료되었습니다. 완료이력에서 확인할 수 있습니다.');
+          showCustomAlert(
+            '완료',
+            photoDeleteFailed
+              ? '관리자 최종 확인이 완료되었습니다. 사진 파일 정리는 실패하여 저장 경로를 유지했습니다.'
+              : '관리자 최종 확인이 완료되었습니다. 완료이력에서 확인할 수 있습니다.'
+          );
         } catch (err: any) {
           showCustomAlert('오류', `관리자 확인 처리 실패: ${err.message}`);
         }
@@ -2837,6 +2951,11 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
                       {t.cargo_hold && <span className="rounded bg-indigo-50 px-1.5 py-0.5 font-semibold text-indigo-700">{t.cargo_hold}</span>}
                       <span className="font-mono text-[#64748B]">{formatToShortDate(t.start_date)}</span>
                       {t.time_slot && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[#2563EB]">{formatShortTimeSlot(t.time_slot)}</span>}
+                    {t.task_type === 'DAILY' && (t.photo_paths || []).length > 0 && (
+  <span className="font-bold text-emerald-600 whitespace-nowrap">
+    📷 사진 참조
+  </span>
+)}
                     </div>
                     <div className="break-words text-sm font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}{dailySubTab === 'HISTORY' && wasCompletedHistoryRemarksEdited(t) && <span className="ml-1 text-[10px] font-bold text-green-600">비고 수정됨</span>}</div>
                   </div>
@@ -2988,7 +3107,7 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
                           <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="accent-[#243B5A]" />
                         </td>
                       )}
-                      <td className="p-1 font-bold text-[#243B5A] text-center truncate border-r border-slate-200 last:border-r-0" title={t.category || '-'}>{t.category || '-'}</td>
+  <td className="p-1 font-bold text-[#243B5A] text-center truncate border-r border-slate-200 last:border-r-0" title={t.category || '-'}>{t.category || '-'}</td>
                       <td className="p-1 font-semibold text-indigo-700 text-center truncate border-r border-slate-200 last:border-r-0" title={t.cargo_hold || '-'}>{t.cargo_hold || '-'}</td>
                       <td className="p-1 font-mono text-[#64748B] text-center truncate border-r border-slate-200 last:border-r-0" title={formatToShortDate(t.start_date)}>{formatToShortDate(t.start_date)}</td>
                       {dailySubTab !== 'OTHER' && <td className="p-1 font-mono text-[#2563EB] text-center truncate border-r border-slate-200 last:border-r-0" title={formatShortTimeSlot(t.time_slot)}>{formatShortTimeSlot(t.time_slot) || '-'}</td>}
@@ -3585,6 +3704,11 @@ const canChangeStatus =
                     {singleTask ? '' : '다중 선택 상태입니다.'}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {singleTask && singleTask.task_type === 'DAILY' && (singleTask.photo_paths || []).length > 0 && (
+                      <button type="button" onClick={() => setPhotoViewerTask(singleTask)} className="inline-flex items-center gap-1 rounded-lg border border-[#D7DEE8] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A] hover:bg-[#F5F6F8] sm:px-3 sm:py-2 sm:text-xs">
+                        <Eye className="h-3.5 w-3.5" />사진 보기 ({singleTask.photo_paths?.length})
+                      </button>
+                    )}
                     {singleTask && canModifyTaskStatus(singleTask) && (
                       <button type="button" onClick={() => setStatusChangeModal({ open: true, task: singleTask, targetStatus: singleTask.status, remarks: singleTask.remarks || '' })} className="inline-flex items-center gap-1 rounded-lg bg-[#243B5A] px-2.5 py-1.5 text-[11px] font-bold text-white shadow-xs transition-colors hover:bg-[#1B2F49] sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs">
                         <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />상태 변경
@@ -3930,6 +4054,70 @@ const canChangeStatus =
                   <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition-colors focus:border-[#243B5A] focus:bg-white resize-none" />
                 </div>
 
+                {formData.task_type === 'DAILY' && (
+                  <div className="space-y-2 rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <label className="text-[11px] font-bold text-[#243B5A]">업무 사진 첨부 (최대 3장)</label>
+                      <span className="text-[10px] text-[#64748B]">{keptExistingPhotoPaths.length + selectedPhotoFiles.length}/3장</span>
+                    </div>
+                    <p className="text-[10px] text-[#64748B]">사진은 자동으로 크기와 용량을 줄여 저장합니다. 업무 등록 후에도 추가할 수 있습니다.</p>
+                    {keptExistingPhotoPaths.length > 0 && (
+                      <p className="text-[10px] font-medium text-emerald-700">기존 등록 사진 {keptExistingPhotoPaths.length}장 유지 중 (각 사진의 ×로 삭제 가능)</p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {keptExistingPhotoPaths.map((path, index) => {
+                        const { data } = supabase.storage.from('daily-work-photos').getPublicUrl(path);
+                        return (
+                          <div key={path} className="relative">
+                            <img src={data.publicUrl} alt={`기존 등록 사진 ${index + 1}`} className="h-16 w-16 rounded-lg border border-[#E2E5E9] object-cover" />
+                            <button type="button" onClick={() => setKeptExistingPhotoPaths(prev => prev.filter(item => item !== path))} className="absolute -right-1.5 -top-1.5 rounded-full bg-red-600 p-1 text-white" aria-label="기존 사진 삭제"><X className="h-3 w-3" /></button>
+                            <span className="mt-0.5 block max-w-16 truncate text-[9px] text-[#64748B]">기존 사진 {index + 1}</span>
+                          </div>
+                        );
+                      })}
+                      <label className={`cursor-pointer rounded-lg border border-[#D7DEE8] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] ${keptExistingPhotoPaths.length + selectedPhotoFiles.length >= 3 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F5F6F8]'}`}>
+                        사진 선택
+                        <input
+                          type="file"
+                          accept="image/*"
+                          multiple
+                          disabled={keptExistingPhotoPaths.length + selectedPhotoFiles.length >= 3}
+                          className="hidden"
+                          onChange={async (event) => {
+                            const input = event.currentTarget;
+                            const picked = Array.from(input.files || []);
+                            input.value = '';
+                            const available = 3 - keptExistingPhotoPaths.length - selectedPhotoFiles.length;
+                            if (picked.length > available) {
+                              showCustomAlert('사진 개수 제한', `업무 사진은 총 3장까지 등록할 수 있습니다. ${available}장만 추가할 수 있습니다.`);
+                            }
+                            const filesToAdd = picked.slice(0, Math.max(0, available));
+                            if (!filesToAdd.length) return;
+                            try {
+                              const compressed = await Promise.all(filesToAdd.map(compressDailyWorkPhoto));
+                              setSelectedPhotoFiles(prev => [...prev, ...compressed]);
+                              setSelectedPhotoPreviews(prev => [...prev, ...compressed.map(file => URL.createObjectURL(file))]);
+                            } catch (photoError: any) {
+                              showCustomAlert('사진 처리 오류', photoError?.message || '사진을 처리하지 못했습니다.');
+                            }
+                          }}
+                        />
+                      </label>
+                      {selectedPhotoFiles.map((file, index) => (
+                        <div key={`${file.name}-${index}`} className="relative">
+                          <img src={selectedPhotoPreviews[index]} alt={`첨부 사진 ${index + 1}`} className="h-16 w-16 rounded-lg border border-[#E2E5E9] object-cover" />
+                          <button type="button" onClick={() => {
+                            URL.revokeObjectURL(selectedPhotoPreviews[index]);
+                            setSelectedPhotoFiles(prev => prev.filter((_, i) => i !== index));
+                            setSelectedPhotoPreviews(prev => prev.filter((_, i) => i !== index));
+                          }} className="absolute -right-1.5 -top-1.5 rounded-full bg-slate-800 p-1 text-white" aria-label="선택 사진 제거"><X className="h-3 w-3" /></button>
+                          <span className="mt-0.5 block max-w-16 truncate text-[9px] text-[#64748B]">{Math.round(file.size / 1024)}KB</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9]">
                   <button type="button" onClick={() => setIsModalOpen(false)} className="px-3.5 py-1.5 text-xs border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">취소</button>
                   <button type="submit" className="px-4 py-1.5 text-xs bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">저장</button>
@@ -3940,6 +4128,28 @@ const canChangeStatus =
         )}
 
       </div>
+
+      {photoViewerTask && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4" onClick={() => setPhotoViewerTask(null)}>
+          <div role="dialog" aria-modal="true" aria-label="업무 사진" onClick={event => event.stopPropagation()} className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.3)]">
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-[#E2E5E9] pb-3">
+              <div className="min-w-0">
+                <h3 className="truncate text-sm font-bold text-[#243B5A]">업무 사진</h3>
+                <p className="truncate text-[11px] text-[#64748B]">{photoViewerTask.title}</p>
+              </div>
+              <button type="button" onClick={() => setPhotoViewerTask(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]" aria-label="사진 닫기"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {(photoViewerTask.photo_paths || []).map((path, index) => {
+                const { data } = supabase.storage.from('daily-work-photos').getPublicUrl(path);
+                return <a key={path} href={data.publicUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-xl border border-[#E2E5E9] bg-[#F5F6F8]">
+                  <img src={data.publicUrl} alt={`업무 사진 ${index + 1}`} loading="lazy" className="max-h-[55dvh] w-full object-contain" />
+                </a>;
+              })}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }//
