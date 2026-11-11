@@ -4057,7 +4057,7 @@ const canChangeStatus =
                 {formData.task_type === 'DAILY' && (
                   <div className="space-y-2 rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <label className="text-[11px] font-bold text-[#243B5A]">업무 사진 첨부 (최대 3장)</label>
+                      <label className="text-[11px] font-bold text-[#243B5A]">참조 사진 첨부 (최대 3장)</label>
                       <span className="text-[10px] text-[#64748B]">{keptExistingPhotoPaths.length + selectedPhotoFiles.length}/3장</span>
                     </div>
                     <p className="text-[10px] text-[#64748B]">사진은 자동으로 크기와 용량을 줄여 저장합니다. 업무 등록 후에도 추가할 수 있습니다.</p>
@@ -4134,7 +4134,7 @@ const canChangeStatus =
           <div role="dialog" aria-modal="true" aria-label="업무 사진" onClick={event => event.stopPropagation()} className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.3)]">
             <div className="mb-3 flex items-center justify-between gap-2 border-b border-[#E2E5E9] pb-3">
               <div className="min-w-0">
-                <h3 className="truncate text-sm font-bold text-[#243B5A]">업무 사진</h3>
+                <h3 className="truncate text-sm font-bold text-[#243B5A]">참조 사진</h3>
                 <p className="truncate text-[11px] text-[#64748B]">{photoViewerTask.title}</p>
               </div>
               <button type="button" onClick={() => setPhotoViewerTask(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]" aria-label="사진 닫기"><X className="h-4 w-4" /></button>
