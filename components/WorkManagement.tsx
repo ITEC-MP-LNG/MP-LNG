@@ -2007,8 +2007,8 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
 
             const removedPaths = (editingTask?.photo_paths || []).filter(path => !keptExistingPhotoPaths.includes(path));
             if (removedPaths.length > 0) {
-              const { error: removeError } = await supabase.storage
-                .from('daily-work-photos')
+              const { error: removeError } = await (supabase.storage
+                .from('daily-work-photos') as any)
                 .remove(removedPaths);
               if (removeError) {
                 photoSaveWarning = '업무와 사진 변경은 저장됐지만, 삭제한 기존 사진 파일 일부를 Storage에서 지우지 못했습니다.';
@@ -2016,7 +2016,7 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
             }
           } catch (photoError) {
             if (uploadedPaths.length > 0) {
-              await supabase.storage.from('daily-work-photos').remove(uploadedPaths);
+              await (supabase.storage.from('daily-work-photos') as any).remove(uploadedPaths);
             }
             photoSaveWarning = `업무는 저장되었지만 사진 저장에 실패했습니다: ${(photoError as any)?.message || '알 수 없는 오류'}`;
           }
@@ -2107,8 +2107,8 @@ if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
 
           let photoDeleteFailed = false;
           if (task.task_type === 'DAILY' && (task.photo_paths || []).length > 0) {
-            const { error: photoDeleteError } = await supabase.storage
-              .from('daily-work-photos')
+            const { error: photoDeleteError } = await (supabase.storage
+              .from('daily-work-photos') as any)
               .remove(task.photo_paths || []);
             if (photoDeleteError) {
               photoDeleteFailed = true;
