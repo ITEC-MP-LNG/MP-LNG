@@ -724,14 +724,139 @@ useEffect(() => {
     await supabase.auth.signOut();
     localStorage.removeItem('currentUser');
     localStorage.removeItem('login_timestamp');
+    localStorage.removeItem('last_activity_timestamp');
     router.replace('/login');
   };
+
+  // 12시간 동안 사용자 활동이 없으면 자동 로그아웃 (추가 Supabase 호출 없음)
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const INACTIVITY_LIMIT = 60 * 1000;
+    const ACTIVITY_STORAGE_KEY = 'last_activity_timestamp';
+    const ACTIVITY_WRITE_INTERVAL = 60 * 1000;
+
+    let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+    let lastStorageWrite = 0;
+    let logoutStarted = false;
+
+    const getLastActivity = () => {
+      const stored = Number(localStorage.getItem(ACTIVITY_STORAGE_KEY));
+      return Number.isFinite(stored) && stored > 0 ? stored : Date.now();
+    };
+
+    const clearInactivityTimer = () => {
+      if (inactivityTimer) {
+        clearTimeout(inactivityTimer);
+        inactivityTimer = null;
+      }
+    };
+
+    const logoutForInactivity = async () => {
+      if (logoutStarted) return;
+      logoutStarted = true;
+      clearInactivityTimer();
+      setAccountMenuOpen(false);
+      await supabase.auth.signOut();
+      localStorage.removeItem('currentUser');
+      localStorage.removeItem('login_timestamp');
+      localStorage.removeItem(ACTIVITY_STORAGE_KEY);
+      router.replace('/login');
+    };
+
+    const checkAndSchedule = () => {
+      if (logoutStarted) return;
+
+      const elapsed = Date.now() - getLastActivity();
+      const remaining = INACTIVITY_LIMIT - elapsed;
+
+      clearInactivityTimer();
+
+      if (remaining <= 0) {
+        void logoutForInactivity();
+        return;
+      }
+
+      inactivityTimer = setTimeout(() => {
+        if (Date.now() - getLastActivity() >= INACTIVITY_LIMIT) {
+          void logoutForInactivity();
+        } else {
+          checkAndSchedule();
+        }
+      }, remaining);
+    };
+
+    const recordActivity = () => {
+      if (logoutStarted) return;
+
+      const now = Date.now();
+      const lastActivity = getLastActivity();
+
+      // 이미 12시간이 지난 상태라면 새 활동으로 만료 시간을 되살리지 않고 로그아웃
+      if (now - lastActivity >= INACTIVITY_LIMIT) {
+        void logoutForInactivity();
+        return;
+      }
+
+      if (now - lastStorageWrite >= ACTIVITY_WRITE_INTERVAL) {
+        localStorage.setItem(ACTIVITY_STORAGE_KEY, String(now));
+        lastStorageWrite = now;
+      }
+
+      checkAndSchedule();
+    };
+
+    const handleStorageChange = (event: StorageEvent) => {
+      if (event.key === ACTIVITY_STORAGE_KEY) {
+        checkAndSchedule();
+      }
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (!document.hidden) {
+        checkAndSchedule();
+      }
+    };
+
+    if (!localStorage.getItem(ACTIVITY_STORAGE_KEY)) {
+      localStorage.setItem(ACTIVITY_STORAGE_KEY, String(Date.now()));
+    }
+
+    checkAndSchedule();
+
+    const activityEvents: (keyof DocumentEventMap)[] = [
+      'mousedown',
+      'keydown',
+      'touchstart',
+      'click',
+      'scroll'
+    ];
+
+    activityEvents.forEach(eventName => {
+      document.addEventListener(eventName, recordActivity, { passive: true });
+    });
+
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+    window.addEventListener('storage', handleStorageChange);
+
+    return () => {
+      clearInactivityTimer();
+      activityEvents.forEach(eventName => {
+        document.removeEventListener(eventName, recordActivity);
+      });
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, [currentUser?.id]);
 
   const confirmExitApp = async () => {
     setShowExitModal(false);
     await supabase.auth.signOut();
     localStorage.removeItem('currentUser');
     localStorage.removeItem('login_timestamp');
+    localStorage.removeItem('last_activity_timestamp');
     router.replace('/login');
   };
 
