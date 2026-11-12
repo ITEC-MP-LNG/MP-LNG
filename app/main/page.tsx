@@ -732,7 +732,7 @@ useEffect(() => {
   useEffect(() => {
     if (!currentUser) return;
 
-    const INACTIVITY_LIMIT = 60 * 1000;
+    const INACTIVITY_LIMIT = 8 * 60 * 60 * 1000;
     const ACTIVITY_STORAGE_KEY = 'last_activity_timestamp';
     const ACTIVITY_WRITE_INTERVAL = 60 * 1000;
 
