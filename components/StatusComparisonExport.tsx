@@ -97,8 +97,9 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
     [ships],
   );
 
-  const exportExcel = async (dfOnly = false) => {
-    // 기존 다운로드는 선주사 + 프로젝트 조건을 그대로 적용하고, DF 전체는 DF 프로젝트를 하나로 묶습니다.
+  const exportExcel = async () => {
+    // 프로젝트 선택에서 DF 전체를 고르면 모든 DF 프로젝트를 하나로 통합합니다.
+    const dfOnly = project === '__DF_ALL__';
     const targetShips = ships
       .filter((ship) => {
         const shipProject = (ship.ship_name || '').trim();
@@ -212,7 +213,8 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
         const ownerProject = ownerName && projectName
           ? `${ownerName} (${projectName})`
           : ownerName || projectName || '';
-        shipInfoCell.value = `${ship.ship_no || ''}\n${ownerProject}\n${formatDate(ship.launch_date) === '-' ? '-' : formatDate(ship.launch_date)}`;
+        // 진수일은 정렬에만 사용하고 Excel 호선 정보에는 표시하지 않습니다.
+        shipInfoCell.value = `${ship.ship_no || ''}\n${ownerProject}`;
 
         PROCESS_GROUPS.forEach((group, groupIndex) => {
           TANK_KEYS.forEach((tank, tankIndex) => {
@@ -280,7 +282,7 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
 
       setIsOpen(false);
       showAlert('다운로드 완료', dfOnly
-        ? `DF 프로젝트 ${targetShips.length}개 호선을 프로젝트명 및 진수일 기준으로 정렬하여 저장했습니다.`
+        ? `DF 전체 ${targetShips.length}개 호선을 프로젝트명 및 진수일 기준으로 정렬하여 저장했습니다.`
         : `${targetShips.length}개 호선을 진수일 기준으로 정렬하여 저장했습니다.`, 'success');
     } catch (error: any) {
       console.error('전체 공정 비교표 다운로드 실패:', error);
@@ -303,9 +305,8 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
           <div className="bg-white border border-[#E2E5E9] rounded-xl p-5 max-w-md w-full shadow-2xl space-y-4">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-bold text-[#1F2937]">공정현황 비교표 Excel 저장</h3>
-              <button type="button" onClick={() => setIsOpen(false)} className="p-1 rounded hover:bg-slate-100 text-[#64748B]" aria-label="닫기">✕</button>
             </div>
-            <p className="text-xs text-[#64748B] leading-5">한 시트에 호선별 2개 행으로 저장합니다. 선택 조건 저장은 선주사와 프로젝트명을 적용하고, DF 전체 저장은 선주사 조건을 적용한 뒤 DF 프로젝트 전체를 하나로 통합합니다. DF 전체는 프로젝트명, 진수일 순으로 정렬됩니다.</p>
+            <p className="text-xs text-[#64748B] leading-5">한 시트에 호선별 2개 행으로 저장합니다. DF 전체를 선택하면 모든 DF 프로젝트를 하나로 통합하며, 프로젝트명순·진수일순으로 정렬합니다. 진수일은 Excel에 표시하지 않습니다.</p>
             
             {/* 선주사 선택 드롭다운 */}
             <label className="block space-y-1.5">
@@ -325,14 +326,17 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
                 ariaLabel="프로젝트명 / 선종 선택"
                 value={project}
                 onChange={setProject}
-                options={[{ value: '__ALL__', label: '전체 프로젝트 (174K, DF 8K, DF 15K 전체)' }, ...projects.map(item => ({ value: item, label: item }))]}
+                options={[
+                  { value: '__ALL__', label: '전체 프로젝트 (전체 선종)' },
+                  { value: '__DF_ALL__', label: 'DF 전체' },
+                  ...projects.map(item => ({ value: item, label: item })),
+                ]}
               />
             </label>
 
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={() => setIsOpen(false)} className="px-3 py-2 rounded-lg border border-[#CBD5E1] text-xs font-semibold text-[#475569] hover:bg-slate-50">취소</button>
-              <button type="button" onClick={() => exportExcel(false)} className="px-3 py-2 rounded-lg bg-[#243B5A] hover:bg-[#1B2F49] text-white text-xs font-semibold">선택 조건 저장</button>
-              <button type="button" onClick={() => exportExcel(true)} className="px-3 py-2 rounded-lg bg-[#0F766E] hover:bg-[#115E59] text-white text-xs font-semibold">DF 전체 저장</button>
+              <button type="button" onClick={exportExcel} className="px-3 py-2 rounded-lg bg-[#243B5A] hover:bg-[#1B2F49] text-white text-xs font-semibold">선택조건 저장</button>
             </div>
           </div>
         </div>
