@@ -5,7 +5,7 @@ import {
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, AlertCircle, PlayCircle, PlusCircle,
-  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown
+  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown, Search
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
@@ -37,16 +37,7 @@ export interface Task {
   completed_at?: string;
   completion_pending_review?: boolean;
   photo_paths?: string[];
-  require_all_assignees_consent?: boolean;
 }
-
-type TaskStatusConsent = {
-  task_id: string;
-  target_status: Task['status'];
-  user_id: string;
-  user_name: string;
-  created_at?: string;
-};
 
 export interface CabinVessel {
   id: string;
@@ -904,23 +895,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     return Boolean(task.created_by_name && currentUser.name && task.created_by_name.trim().toLowerCase() === currentUser.name.trim().toLowerCase());
   }, [isAdmin, currentUser]);
 
-  const getTaskParticipants = useCallback((task: Task) => {
-    const names = Array.from(new Set([
-      ...(task.assigned_names || []),
-      ...(task.day_workers || []),
-      ...(task.evening_workers || []),
-      ...(task.night_workers || []),
-    ].map(name => String(name || '').trim()).filter(Boolean)));
-    return names.map(name => {
-      const normalizedName = name.toLowerCase();
-      const user = appUsers.find(item => String(item.name || '').trim().toLowerCase() === normalizedName);
-      return {
-        name,
-        userId: user?.id ? String(user.id) : `name:${normalizedName}`,
-      };
-    });
-  }, [appUsers]);
-
   const [taskTab, setTaskTab] = useState<'DAILY' | 'WEEKLY' | 'CABIN' | 'VEHICLE'>('DAILY');
   const [dailySubTab, setDailySubTab] = useState<'ACTIVE' | 'OTHER' | 'HISTORY'>('ACTIVE'); 
   const [cabinSubTab, setCabinSubTab] = useState<string>('ALL');
@@ -935,6 +909,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
   const [activeFilterDropdown, setActiveFilterDropdown] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState<string>('');
 
   const [weeklyViewMode, setWeeklyViewMode] = useState<'GRID' | 'LIST'>('GRID');
   const [currentWeekMonday, setCurrentWeekMonday] = useState<Date>(() => getMonday(new Date()));
@@ -996,97 +971,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     targetStatus: 'PENDING',
     remarks: ''
   });
-  const [taskStatusConsents, setTaskStatusConsents] = useState<TaskStatusConsent[]>([]);
-  const [selectedTaskStatusConsents, setSelectedTaskStatusConsents] = useState<TaskStatusConsent[]>([]);
-
-  // 목록에서 업무별 전원 동의 현황을 바로 표시
-  const renderTaskConsentSummary = useCallback((task: Task) => {
-    if (task.require_all_assignees_consent !== true) return null;
-
-    const participants = getTaskParticipants(task);
-    const activeRows = selectedTaskStatusConsents.filter(
-      row => row.task_id === task.id && row.target_status !== task.status
-    );
-    const activeTarget = activeRows.length
-      ? activeRows.reduce(
-          (latest, row) => !latest || String(row.created_at || '') > String(latest.created_at || '') ? row : latest,
-          null as TaskStatusConsent | null
-        )?.target_status
-      : null;
-    const consentRows = activeTarget
-      ? activeRows.filter(row => row.target_status === activeTarget)
-      : [];
-    const missingNames = participants
-      .filter(person => !consentRows.some(row =>
-        row.user_id === person.userId ||
-        String(row.user_name || '').trim().toLowerCase() === person.name.trim().toLowerCase()
-      ))
-      .map(person => person.name);
-    const consentCount = participants.length - missingNames.length;
-
-    return (
-      <div className="mt-1 whitespace-normal break-words text-[9px] leading-4 text-amber-700">
-        <div className="font-bold">상태변경 동의 현황 : {consentCount}명 / {participants.length}명</div>
-        <div>미동의자 : {missingNames.length ? missingNames.join(', ') : '없음'}</div>
-      </div>
-    );
-  }, [getTaskParticipants, selectedTaskStatusConsents]);
-
-  // 목록에 표시되는 전원 동의 대상 업무들의 동의 현황을 한 번에 조회
-  useEffect(() => {
-    const consentTaskIds = tasks
-      .filter(item => item.require_all_assignees_consent === true)
-      .map(item => item.id);
-
-    if (consentTaskIds.length === 0) {
-      setSelectedTaskStatusConsents([]);
-      return;
-    }
-
-    let cancelled = false;
-    const loadAllTaskConsents = async () => {
-      const { data, error } = await supabase
-        .from('task_status_consents')
-        .select('task_id, target_status, user_id, user_name, created_at')
-        .in('task_id', consentTaskIds);
-
-      if (cancelled) return;
-
-      if (error) {
-        console.error('업무 목록 동의 현황 조회 실패:', error.message);
-        setSelectedTaskStatusConsents([]);
-        return;
-      }
-
-      setSelectedTaskStatusConsents((data || []) as TaskStatusConsent[]);
-    };
-
-    void loadAllTaskConsents();
-    return () => { cancelled = true; };
-  }, [tasks]);
-
-  useEffect(() => {
-    const task = statusChangeModal.task;
-    if (!statusChangeModal.open || !task || task.require_all_assignees_consent !== true) {
-      setTaskStatusConsents([]);
-      return;
-    }
-    let cancelled = false;
-    const loadConsents = async () => {
-      const { data, error } = await supabase.from('task_status_consents')
-        .select('task_id, target_status, user_id, user_name, created_at')
-        .eq('task_id', task.id);
-      if (cancelled) return;
-      if (error) {
-        console.error('업무 상태 동의 현황 조회 실패:', error.message);
-        setTaskStatusConsents([]);
-        return;
-      }
-      setTaskStatusConsents((data || []) as TaskStatusConsent[]);
-    };
-    void loadConsents();
-    return () => { cancelled = true; };
-  }, [statusChangeModal.open, statusChangeModal.task?.id, statusChangeModal.task?.require_all_assignees_consent]);
 
   const [isVesselManagerOpen, setIsVesselManagerOpen] = useState(false);
   const [newVesselName, setNewVesselName] = useState('');
@@ -1104,7 +988,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [selectedPhotoFiles, setSelectedPhotoFiles] = useState<File[]>([]);
   const [selectedPhotoPreviews, setSelectedPhotoPreviews] = useState<string[]>([]);
   const [keptExistingPhotoPaths, setKeptExistingPhotoPaths] = useState<string[]>([]);
-  const [requireAllAssigneesConsent, setRequireAllAssigneesConsent] = useState(false);
   const [photoViewerTask, setPhotoViewerTask] = useState<Task | null>(null);
 
   
@@ -1265,7 +1148,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     lastTasksFetchStartedAtRef.current = Date.now();
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, evening_workers, shift_type, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, remarks_edited_at, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review, photo_paths, require_all_assignees_consent').order('start_date', { ascending: true });
+      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, evening_workers, shift_type, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, remarks_edited_at, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review, photo_paths').order('start_date', { ascending: true });
       if (error) throw error;
 
       if (data) {
@@ -1273,7 +1156,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           ...t,
           status: t.status || 'PENDING',
           completion_pending_review: t.completion_pending_review === true,
-          require_all_assignees_consent: t.require_all_assignees_consent === true,
           assigned_names: Array.isArray(t.assigned_names) ? t.assigned_names : (t.assigned_names ? t.assigned_names.split(',').map((s: string) => s.trim()) : []),
           day_workers: Array.isArray(t.day_workers) ? t.day_workers : (t.day_workers ? t.day_workers.split(',').map((s: string) => s.trim()) : []),
           night_workers: Array.isArray(t.night_workers) ? t.night_workers : (t.night_workers ? t.night_workers.split(',').map((s: string) => s.trim()) : []),
@@ -1493,7 +1375,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const canModifyTaskStatus = useCallback((task: Task) => {
     if (isAdmin) return true;
 
-    if (task.task_type === 'WEEKLY' && task.require_all_assignees_consent !== true) return false;
+    if (task.task_type === 'WEEKLY') return false;
     if (!currentUser || !currentUser.name) return false;
 
     const name = currentUser.name.trim().toLowerCase();
@@ -1665,24 +1547,30 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const nextStatus = statusChangeModal.targetStatus;
     const remarks = statusChangeModal.remarks;
     const isNightTask = task.task_type === 'DAILY_OTHER';
-    const isCompletedHistory =
-      task.status === 'COMPLETED' &&
-      (task.completion_pending_review !== true || isNightTask);
-    const isAssignedWorker = (task.assigned_names || []).some(name =>
+const isCompletedHistory =
+  task.status === 'COMPLETED' &&
+  (task.completion_pending_review !== true || isNightTask);
+//비고 수정하기
+ const isAssignedWorker = (task.assigned_names || []).some(name => name.trim().toLowerCase() === (currentUser?.name || '').trim().toLowerCase());
+const isAdmin = ['SUPER_ADMIN', 'WORK_ADMIN', 'ADMIN', '최고 관리자', '총 관리자', '업무 관리자', '관리자'].includes(currentUser?.role || '');
+
+const canEditNightRemarks = isNightTask && (isAssignedWorker || isAdmin);
+
+const canEditCompletedNightRemarks =
+  task.task_type === 'DAILY_OTHER' &&
+  task.status === 'COMPLETED' &&
+  (
+    isAdmin ||
+    (task.assigned_names || []).some(name =>
       name.trim().toLowerCase() === (currentUser?.name || '').trim().toLowerCase()
-    );
-    const isAdminUser = ['SUPER_ADMIN', 'WORK_ADMIN', 'ADMIN', '최고 관리자', '총 관리자', '업무 관리자', '관리자']
-      .includes(currentUser?.role || '');
-    const canEditCompletedNightRemarks =
-      task.task_type === 'DAILY_OTHER' &&
-      task.status === 'COMPLETED' &&
-      (isAdminUser || isAssignedWorker);
+    )
+  );
 
-    if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
-      showCustomAlert('권한 없음', '해당 업무의 당사자 또는 관리자만 변경할 수 있습니다.');
-      return;
-    }
-
+if (!canModifyTaskStatus(task) && !canEditCompletedNightRemarks) {
+  showCustomAlert('권한 없음', '해당 업무의 당사자 또는 관리자만 변경할 수 있습니다.');
+  return;
+}
+//비고 수정하기 종
     if (isCompletedHistory) {
       const previousRemarks = task.remarks || '';
       const nextRemarks = remarks || '';
@@ -1713,121 +1601,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return;
     }
 
-    const isChangingStatus = nextStatus !== task.status;
-    if (task.require_all_assignees_consent === true && isChangingStatus) {
-      const participants = getTaskParticipants(task);
-      if (participants.length === 0) {
-        showCustomAlert('전원 동의 제한', '업무 담당자가 지정되어 있지 않아 상태를 변경할 수 없습니다.');
-        return;
-      }
-
-      const currentParticipant = participants.find(item =>
-        item.name.trim().toLowerCase() === String(currentUser?.name || '').trim().toLowerCase()
-      );
-      if (!currentParticipant) {
-        showCustomAlert('동의 권한 없음', '전원 동의 방식의 상태 변경은 해당 업무에 배정된 담당자만 동의할 수 있습니다.');
-        return;
-      }
-
-      const alreadyConsented = taskStatusConsents.some(row =>
-        row.target_status === nextStatus && row.user_id === currentParticipant.userId
-      );
-      if (!alreadyConsented) {
-        try {
-          const { error: consentError } = await supabase.from('task_status_consents').upsert({
-            task_id: task.id,
-            target_status: nextStatus,
-            user_id: currentParticipant.userId,
-            user_name: currentParticipant.name,
-          }, { onConflict: 'task_id,target_status,user_id' });
-          if (consentError) throw consentError;
-        } catch (err: any) {
-          showCustomAlert('동의 저장 오류', `상태 변경 동의를 저장하지 못했습니다: ${err.message}`);
-          return;
-        }
-      }
-
-      const { data: consentRows, error: consentReadError } = await supabase.from('task_status_consents')
-        .select('task_id, target_status, user_id, user_name, created_at')
-        .eq('task_id', task.id)
-        .eq('target_status', nextStatus);
-      if (consentReadError) {
-        showCustomAlert('동의 현황 조회 오류', `동의 현황을 확인하지 못했습니다: ${consentReadError.message}`);
-        return;
-      }
-      const rows = (consentRows || []) as TaskStatusConsent[];
-      setTaskStatusConsents(prev => [
-        ...prev.filter(row => row.target_status !== nextStatus),
-        ...rows,
-      ]);
-      setSelectedTaskStatusConsents(prev => [
-        ...prev.filter(row => row.task_id !== task.id),
-        ...rows,
-      ]);
-      const consentedIds = new Set(rows.map(row => row.user_id));
-      const missingNames = participants.filter(person => !consentedIds.has(person.userId)).map(person => person.name);
-
-      if (missingNames.length > 0) {
-        showCustomAlert(
-          '동의 등록 완료',
-          `${currentParticipant.name}님 동의가 등록되었습니다.\n현재 ${participants.length - missingNames.length}/${participants.length}명 동의\n미동의: ${missingNames.join(', ')}`
-        );
-        return;
-      }
-
-      try {
-        const statusPayload: Record<string, any> = {
-          status: nextStatus,
-          remarks,
-          ...(nextStatus === 'COMPLETED' && (task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER')
-            ? {
-                completion_pending_review: true,
-                completed_by_id: null,
-                completed_by_name: null,
-                completed_at: null,
-              }
-            : {}),
-          ...((task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') && nextStatus !== 'COMPLETED'
-            ? { completion_pending_review: false }
-            : {}),
-        };
-        const { data: updatedTask, error: statusError } = await supabase.from('tasks')
-          .update(statusPayload)
-          .eq('id', task.id)
-          .eq('status', task.status)
-          .select('id')
-          .maybeSingle();
-        if (statusError) throw statusError;
-        if (!updatedTask) {
-          await fetchTasks();
-          showCustomAlert('상태 변경 확인', '다른 사용자가 먼저 상태를 변경했습니다. 최신 업무 상태를 확인해 주세요.');
-          return;
-        }
-
-        const { error: clearConsentError } = await supabase.from('task_status_consents')
-          .delete().eq('task_id', task.id);
-        if (clearConsentError) {
-          console.warn('상태 변경 후 동의 기록 초기화 실패:', task.id, clearConsentError.message);
-        }
-        setTaskStatusConsents([]);
-        setSelectedTaskStatusConsents(prev => prev.filter(row => row.task_id !== task.id));
-        setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
-        setSelectedTaskIds([]);
-        await fetchTasks();
-        showCustomAlert(
-          nextStatus === 'COMPLETED' && (task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER')
-            ? '완료 확인 대기'
-            : '전원 동의 완료',
-          nextStatus === 'COMPLETED' && (task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER')
-            ? '담당자 전원이 완료에 동의했습니다. 관리자 최종 확인을 기다립니다.'
-            : `담당자 전원이 동의하여 업무 상태가 ${nextStatus === 'PENDING' ? '대기' : nextStatus === 'IN_PROGRESS' ? '진행중' : '완료'}(으)로 변경되었습니다.`
-        );
-      } catch (err: any) {
-        showCustomAlert('오류', `상태 변경 실패: ${err.message}`);
-      }
-      return;
-    }
-
     if ((task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') && nextStatus === 'COMPLETED') {
       try {
         const { error } = await supabase.from('tasks').update({
@@ -1849,9 +1622,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return;
     }
 
-    setTasks(prev => prev.map(item => item.id === task.id
-      ? { ...item, status: nextStatus, remarks, completion_pending_review: false }
-      : item));
+    setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: nextStatus, remarks, completion_pending_review: false } : t)));
 
     try {
       const { error } = await supabase.from('tasks').update({
@@ -1861,15 +1632,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       }).eq('id', task.id);
       if (error) throw error;
       setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
-      await fetchTasks();
+      fetchTasks();
       showCustomAlert('성공', '업무 상태 및 비고란이 업데이트 되었습니다.');
     } catch (err: any) {
       showCustomAlert('오류', `상태 변경 실패: ${err.message}`);
     }
-  }, [
-    statusChangeModal, canModifyTaskStatus, getTaskParticipants, taskStatusConsents,
-    currentUser, fetchTasks, showCustomAlert,
-  ]);
+  }, [statusChangeModal, canModifyTaskStatus, fetchTasks, showCustomAlert]);
 
   const renderStatusBadge = useCallback((task: Task) => {
     const statusConfig = {
@@ -1900,7 +1668,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSelectedPhotoPreviews(prev => { prev.forEach(url => URL.revokeObjectURL(url)); return []; });
     setSelectedPhotoFiles([]);
     setKeptExistingPhotoPaths([]);
-    setRequireAllAssigneesConsent(false);
     setEditingTask(null);
     setFormData({
       title: '',
@@ -1928,7 +1695,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSelectedPhotoPreviews(prev => { prev.forEach(url => URL.revokeObjectURL(url)); return []; });
     setSelectedPhotoFiles([]);
     setKeptExistingPhotoPaths(task.task_type === 'DAILY' ? (task.photo_paths || []) : []);
-    setRequireAllAssigneesConsent(task.require_all_assignees_consent === true);
     setEditingTask(task);
     setFormData({
       title: task.title,
@@ -2171,7 +1937,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       description: formData.description.trim(),
       start_date: formData.start_date,
       task_type: formData.task_type,
-      require_all_assignees_consent: requireAllAssigneesConsent,
       status: editingTask ? editingTask.status : 'PENDING',
       category: formData.category || null,
       cargo_hold: formData.cargo_hold || null,
@@ -2212,7 +1977,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         }
 
         let savedTaskId = editingTask?.id || null;
-        let consentResetWarning = '';
         if (editingTask) {
           const { error } = await supabase.from('tasks').update(savePayload).eq('id', editingTask.id);
           if (error) throw error;
@@ -2225,20 +1989,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           if (error) throw error;
         }
 
-        if (
-          editingTask &&
-          savedTaskId &&
-          (editingTask.require_all_assignees_consent === true || requireAllAssigneesConsent)
-        ) {
-          // 전원 동의 방식 업무를 수정하면 기존 동의는 무효화하여 다시 동의받습니다.
-          const { error: resetConsentError } = await supabase.from('task_status_consents')
-            .delete().eq('task_id', savedTaskId);
-          if (resetConsentError) {
-            consentResetWarning = `업무는 저장되었지만 기존 상태 동의 기록을 초기화하지 못했습니다: ${resetConsentError.message}`;
-          }
-        }
-
-        let photoSaveWarning = consentResetWarning;
+        let photoSaveWarning = '';
         if (formData.task_type === 'DAILY' && savedTaskId) {
           const uploadedPaths: string[] = [];
           try {
@@ -2278,7 +2029,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         setIsModalOpen(false);
         setSelectedTaskIds([]);
         await fetchTasks();
-        showCustomAlert(photoSaveWarning ? '저장 확인' : '성공', photoSaveWarning || '업무가 정상적으로 저장되었습니다.');
+        showCustomAlert(photoSaveWarning ? '사진 저장 확인' : '성공', photoSaveWarning || '업무가 정상적으로 저장되었습니다.');
       } catch (err: any) {
         showCustomAlert('오류', `저장 중 오류: ${err.message}`);
       }
@@ -2327,7 +2078,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [
     isAdmin, canManageTask, currentUser, formData, editingTask,
     dayWorkerList, eveningWorkerList, nightWorkerList, cabinShiftType,
-    assignedList, appUsers, tasks, fetchTasks, showCustomAlert, showCustomConfirm, selectedPhotoFiles, keptExistingPhotoPaths, requireAllAssigneesConsent,
+    assignedList, appUsers, tasks, fetchTasks, showCustomAlert, showCustomConfirm, selectedPhotoFiles, keptExistingPhotoPaths,
   ]);
 
   const handleFinalizeDailyTask = useCallback((task: Task) => {
@@ -2774,6 +2525,23 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   }, [tasks, taskTab, dailySubTab, cabinSubTab, cabinStatusSubTab, currentWeekMonday, tableFilterVessel, tableFilterCargoHold, tableFilterDate, tableFilterTimeSlot, tableFilterStatus, searchQuery]);
 
+  // 직원 이름 검색은 현재 탭/날짜 필터와 관계없이 전체 업무에서 배정자를 찾습니다.
+  const employeeSearchResults = useMemo(() => {
+    const query = employeeSearchQuery.trim().toLowerCase();
+    if (!query) return [];
+    return tasks
+      .filter(task => {
+        const assignedPeople = [
+          ...(task.assigned_names || []),
+          ...(task.day_workers || []),
+          ...(task.evening_workers || []),
+          ...(task.night_workers || []),
+        ];
+        return assignedPeople.some(name => String(name || '').trim().toLowerCase().includes(query));
+      })
+      .sort((a, b) => (b.start_date || '').localeCompare(a.start_date || '') || (b.created_at || '').localeCompare(a.created_at || ''));
+  }, [tasks, employeeSearchQuery]);
+
   const toggleTaskSelection = useCallback((id: string, checked: boolean) => {
     setSelectedTaskIds((prev) => checked ? (prev.includes(id) ? prev : [...prev, id]) : prev.filter((item) => item !== id));
   }, []);
@@ -2893,6 +2661,23 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             </div>
           </div>
         </div>
+
+        {taskTab !== 'VEHICLE' && (
+          <div className="flex items-center gap-2 rounded-xl border border-[#E2E5E9] bg-white px-3 py-2">
+            <Search className="h-4 w-4 shrink-0 text-[#64748B]" />
+            <input
+              type="search"
+              value={employeeSearchQuery}
+              onChange={(event) => setEmployeeSearchQuery(event.target.value)}
+              placeholder="직원 이름 검색 · 배정된 업무 찾기"
+              className="min-w-0 flex-1 bg-transparent text-xs text-[#1F2937] outline-none placeholder:text-[#94A3B8]"
+              aria-label="직원 이름으로 배정 업무 검색"
+            />
+            {employeeSearchQuery && (
+              <button type="button" onClick={() => setEmployeeSearchQuery('')} className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-[#64748B] hover:bg-[#F5F6F8]">초기화</button>
+            )}
+          </div>
+        )}
 
         {taskTab === 'VEHICLE' ? (
           <VehicleManagementPanel currentUser={currentUser} isAdmin={isAdmin} showCustomAlert={showCustomAlert} showCustomConfirm={showCustomConfirm} />
@@ -3140,7 +2925,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           </div>
         )}
 
-        {(taskTab === 'WEEKLY' || taskTab === 'DAILY' || taskTab === 'CABIN') && isAdmin && (
+        {!employeeSearchQuery.trim() && (taskTab === 'WEEKLY' || taskTab === 'DAILY' || taskTab === 'CABIN') && isAdmin && (
           <div className="flex items-center justify-between gap-2 rounded-lg border border-dashed border-[#E2E5E9] bg-white/70 px-3 py-2 text-[11px] text-[#64748B]">
             <span>업무를 선택하면 화면 하단에 작업 메뉴가 표시됩니다.</span>
             <label className="flex shrink-0 items-center gap-1.5 font-semibold text-[#243B5A]">
@@ -3152,6 +2937,42 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
         {isLoading ? (
           <div className="text-center py-16 text-xs text-[#64748B]">로딩 중...</div>
+        ) : employeeSearchQuery.trim() ? (
+          <div className="space-y-2 rounded-xl border border-[#E2E5E9] bg-white p-3">
+            <div className="flex items-center justify-between gap-2 border-b border-[#E2E5E9] pb-2">
+              <div className="text-xs font-bold text-[#243B5A]">'{employeeSearchQuery.trim()}' 배정 업무</div>
+              <span className="shrink-0 rounded-full bg-[#EEF2F7] px-2 py-1 text-[10px] font-bold text-[#475569]">{employeeSearchResults.length}건</span>
+            </div>
+            {employeeSearchResults.length === 0 ? (
+              <div className="py-10 text-center text-xs text-[#64748B]">해당 직원에게 배정된 업무가 없습니다.</div>
+            ) : employeeSearchResults.map(task => {
+              const assignedPeople = Array.from(new Set([...(task.assigned_names || []), ...(task.day_workers || []), ...(task.evening_workers || []), ...(task.night_workers || [])].filter(Boolean)));
+              const taskTypeLabel = task.task_type === 'WEEKLY' ? '주간업무' : task.task_type === 'CABIN' ? 'CABIN' : task.task_type === 'DAILY_OTHER' ? '야간진행' : '일일업무';
+              const statusLabel = task.status === 'COMPLETED' ? (task.completion_pending_review ? '완료 확인 대기' : '완료') : task.status === 'IN_PROGRESS' ? '진행중' : '대기';
+              return (
+                <button
+                  key={task.id}
+                  type="button"
+                  onClick={() => setStatusChangeModal({ open: true, task, targetStatus: task.status, remarks: task.remarks || '' })}
+                  className="w-full rounded-lg border border-[#E2E5E9] bg-white p-3 text-left transition-colors hover:border-[#243B5A] hover:bg-[#F8FAFC]"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="mb-1 flex flex-wrap items-center gap-1.5">
+                        <span className="rounded bg-[#EEF2F7] px-1.5 py-0.5 text-[10px] font-bold text-[#243B5A]">{taskTypeLabel}</span>
+                        <span className="text-[10px] text-[#64748B]">{task.start_date || '날짜 미정'}{task.time_slot ? ` · ${formatShortTimeSlot(task.time_slot)}` : ''}</span>
+                      </div>
+                      <div className="break-words text-xs font-bold text-[#1F2937]">{task.title}</div>
+                      <div className="mt-1 text-[11px] text-[#64748B]">{[task.category, task.cargo_hold].filter(Boolean).join(' · ') || '호선 정보 없음'}</div>
+                      <div className="mt-1 break-words text-[11px] text-[#475569]">담당자: {assignedPeople.join(', ')}</div>
+                    </div>
+                    <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-bold ${task.status === 'COMPLETED' ? 'bg-slate-100 text-slate-700' : task.status === 'IN_PROGRESS' ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{statusLabel}</span>
+                  </div>
+                </button>
+              );
+            })}
+            <p className="pt-1 text-[10px] text-[#94A3B8]">업무를 선택하면 기존 상태 변경 창이 열립니다.</p>
+          </div>
         ) : taskTab === 'DAILY' ? (
           <>
           <div className="md:hidden space-y-2">
@@ -3216,7 +3037,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                   {renderStatusBadge(t)}
                   {(t.task_type === 'DAILY' || t.task_type === 'DAILY_OTHER') && t.completion_pending_review === true && <span className="rounded border border-amber-300 bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-800">관리자 확인 대기</span>}
                 </div>
-                {renderTaskConsentSummary(t)}
                 <div className="mt-3 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
                   <div className="mb-1 text-[10px] font-bold text-[#64748B]">인원 ({t.assigned_names?.length || 0}명)</div>
                   {t.assigned_names?.length ? (
@@ -3373,7 +3193,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                           )}
 
                         </div>
-                        {renderTaskConsentSummary(t)}
                       </td>
                       <td className="p-1 text-center border-r border-slate-200 last:border-r-0" onClick={(e) => e.stopPropagation()}>
                         <div className="flex items-center justify-center gap-1">
@@ -3509,7 +3328,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                 {t.category && <span className="text-[9px] font-bold text-[#243B5A] bg-blue-50 px-1.5 py-0.2 rounded">{t.category}{t.cargo_hold ? `/${t.cargo_hold}` : ''}</span>}
                                 {renderStatusBadge(t)}
                               </div>
-                              {renderTaskConsentSummary(t)}
                               <div className="font-bold text-[#1F2937] leading-tight line-clamp-2">{t.title}{renderTaskNewBadge(t)}</div>
                               <div className="text-[8px] sm:text-[10px] text-[#64748B] break-words">{t.assigned_names?.join(', ') || '미지정'}</div>
                             </div>
@@ -3545,7 +3363,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                                   <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
                                   {renderStatusBadge(t)}
                                 </div>
-                                {renderTaskConsentSummary(t)}
                                 <div className="text-[11px] text-[#64748B]">인원: {t.assigned_names?.join(', ') || '미지정'}</div>
                               </div>
                               <Eye className="h-4 w-4 text-[#64748B]" />
@@ -3579,7 +3396,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                     {isAdmin && <input type="checkbox" checked={selectedTaskIds.includes(t.id)} onClick={(e) => e.stopPropagation()} onChange={(e) => toggleTaskSelection(t.id, e.target.checked)} className="mt-1 accent-[#243B5A]" aria-label="CABIN 업무 선택" />}
                   </div>
                   <div className="mt-2" onClick={(e) => e.stopPropagation()}>{renderStatusBadge(t)}</div>
-                  {renderTaskConsentSummary(t)}
                   <div className="mt-3 space-y-2 border-t border-slate-100 pt-2" onClick={(e) => e.stopPropagation()}>
                     <div>
                       <div className="mb-1 text-[10px] font-bold text-[#64748B]">{t.shift_type === '3교대' ? 'Day 인원' : '주간 인원'} ({t.day_workers?.length || 0}명) {t.shift_type === '3교대' ? '· 06:00~14:00' : ''}</div>
@@ -3648,10 +3464,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         <div className="mb-1 text-[10px] font-bold text-[#64748B]">{t.shift_type === '3교대' ? 'Night' : '야간'} ({t.night_workers?.length || 0}명) {t.shift_type === '3교대' ? '22:00~06:00' : ''}</div>
                         {t.night_workers?.length ? <div className="flex flex-wrap gap-1">{t.night_workers.map((name) => <button key={`${t.id}-desktop-night-${name}`} type="button" onClick={() => handleCallWorker(name)} className="rounded-full border border-violet-100 bg-violet-50 px-1.5 py-0.5 text-[10px] font-semibold text-[#243B5A] hover:bg-violet-100 transition-colors" title={`${name} 전화 연결`}>📞 {name}</button>)}</div> : <span className="text-[10px] text-[#94A3B8]">미지정</span>}
                       </td>
-                      <td className="p-1.5 text-center" onClick={(e) => e.stopPropagation()}>
-                        {renderStatusBadge(t)}
-                        {renderTaskConsentSummary(t)}
-                      </td>
+                      <td className="p-1.5 text-center" onClick={(e) => e.stopPropagation()}>{renderStatusBadge(t)}</td>
                       <td className="p-1.5 text-right" onClick={(e) => e.stopPropagation()}>
                         {isAdmin && (
                           <div className="flex items-center justify-end gap-0.5">
@@ -3866,38 +3679,6 @@ const canChangeStatus =
                       <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'}`}>진행중</button>
                       <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white border-slate-800' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'}`}>완료</button>
                     </div>
-                    {statusChangeModal.task.require_all_assignees_consent === true &&
-                      statusChangeModal.targetStatus !== statusChangeModal.task.status && (() => {
-                        const participants = getTaskParticipants(statusChangeModal.task);
-                        const consentedIds = new Set(taskStatusConsents
-                          .filter(row => row.target_status === statusChangeModal.targetStatus)
-                          .map(row => row.user_id));
-                        const agreedCount = participants.filter(person => consentedIds.has(person.userId)).length;
-                        return (
-                          <div className="mt-2 rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3 space-y-2">
-                            <div className="flex items-center justify-between gap-2">
-                              <span className="text-[11px] font-bold text-[#243B5A]">
-                                {statusChangeModal.targetStatus === 'PENDING' ? '대기' : statusChangeModal.targetStatus === 'IN_PROGRESS' ? '진행중' : '완료'} 변경 동의 현황
-                              </span>
-                              <span className="text-[11px] font-bold text-[#243B5A]">{agreedCount}/{participants.length}명 동의</span>
-                            </div>
-                            <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
-                              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${participants.length ? agreedCount / participants.length * 100 : 0}%` }} />
-                            </div>
-                            <div className="flex flex-wrap gap-1.5">
-                              {participants.map(person => {
-                                const agreed = consentedIds.has(person.userId);
-                                return (
-                                  <span key={person.userId} className={`rounded-full border px-2 py-1 text-[10px] font-semibold ${agreed ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
-                                    {agreed ? '✓' : '○'} {person.name} {agreed ? '동의' : '미동의'}
-                                  </span>
-                                );
-                              })}
-                            </div>
-                            {participants.length === 0 && <p className="text-[10px] text-red-600">담당자를 먼저 지정해야 합니다.</p>}
-                          </div>
-                        );
-                      })()}
                   </div>
 
                   <div>
@@ -3915,7 +3696,7 @@ const canChangeStatus =
 
                 <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9] text-xs">
                   <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">닫기</button>
-                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장'}</button>}
+                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">저장</button>}
                 </div>
               </div>
             </div>
@@ -4000,12 +3781,9 @@ const canChangeStatus =
                       </button>
                     )}
                     {singleTask && canModifyTaskStatus(singleTask) && (
-                      <>
-                        <button type="button" onClick={() => setStatusChangeModal({ open: true, task: singleTask, targetStatus: singleTask.status, remarks: singleTask.remarks || '' })} className="inline-flex items-center gap-1 rounded-lg bg-[#243B5A] px-2.5 py-1.5 text-[11px] font-bold text-white shadow-xs transition-colors hover:bg-[#1B2F49] sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs">
-                          <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />상태 변경
-                        </button>
-                        
-                      </>
+                      <button type="button" onClick={() => setStatusChangeModal({ open: true, task: singleTask, targetStatus: singleTask.status, remarks: singleTask.remarks || '' })} className="inline-flex items-center gap-1 rounded-lg bg-[#243B5A] px-2.5 py-1.5 text-[11px] font-bold text-white shadow-xs transition-colors hover:bg-[#1B2F49] sm:gap-1.5 sm:px-3 sm:py-2 sm:text-xs">
+                        <CheckCircle2 className="h-3.5 w-3.5 sm:h-4 sm:w-4" />상태 변경
+                      </button>
                     )}
                     {singleTask && isAdmin && (singleTask.task_type === 'DAILY' || singleTask.task_type === 'DAILY_OTHER') && singleTask.status === 'COMPLETED' && singleTask.completion_pending_review === true && (
                       <button type="button" onClick={() => handleFinalizeDailyTask(singleTask)} className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors">
@@ -4342,21 +4120,6 @@ const canChangeStatus =
                   </>
                 )}
 
-                <div className="rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3 space-y-1.5">
-                  <label className="flex cursor-pointer items-start gap-2 text-xs font-semibold text-[#243B5A]">
-                    <input
-                      type="checkbox"
-                      checked={requireAllAssigneesConsent}
-                      onChange={(event) => setRequireAllAssigneesConsent(event.target.checked)}
-                      className="mt-0.5 h-4 w-4 shrink-0 accent-[#243B5A]"
-                    />
-                    <span>담당자 전원 동의 후 상태 변경</span>
-                  </label>
-                  <p className="pl-6 text-[10px] leading-relaxed text-[#64748B]">
-                    체크하면 배정된 모든 인원이 각각 동의해야 대기·진행중·완료 상태로 변경됩니다. 체크하지 않으면 기존 방식과 동일합니다.
-                  </p>
-                </div>
-
                 <div>
                   <label className="block text-[11px] font-semibold mb-1 text-[#1F2937]">상세 설명 / 업무 내용</label>
                   <textarea rows={2} value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} className="w-full rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none transition-colors focus:border-[#243B5A] focus:bg-white resize-none" />
@@ -4365,7 +4128,7 @@ const canChangeStatus =
                 {formData.task_type === 'DAILY' && (
                   <div className="space-y-2 rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3">
                     <div className="flex items-center justify-between gap-2">
-                      <label className="text-[11px] font-bold text-[#243B5A]">업무 사진 첨부 (최대 3장)</label>
+                      <label className="text-[11px] font-bold text-[#243B5A]">참조 사진 첨부 (최대 3장)</label>
                       <span className="text-[10px] text-[#64748B]">{keptExistingPhotoPaths.length + selectedPhotoFiles.length}/3장</span>
                     </div>
                     <p className="text-[10px] text-[#64748B]">사진은 자동으로 크기와 용량을 줄여 저장합니다. 업무 등록 후에도 추가할 수 있습니다.</p>
@@ -4442,7 +4205,7 @@ const canChangeStatus =
           <div role="dialog" aria-modal="true" aria-label="업무 사진" onClick={event => event.stopPropagation()} className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-[0_16px_40px_rgba(15,23,42,0.3)]">
             <div className="mb-3 flex items-center justify-between gap-2 border-b border-[#E2E5E9] pb-3">
               <div className="min-w-0">
-                <h3 className="truncate text-sm font-bold text-[#243B5A]">업무 사진</h3>
+                <h3 className="truncate text-sm font-bold text-[#243B5A]">참조 사진</h3>
                 <p className="truncate text-[11px] text-[#64748B]">{photoViewerTask.title}</p>
               </div>
               <button type="button" onClick={() => setPhotoViewerTask(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]" aria-label="사진 닫기"><X className="h-4 w-4" /></button>

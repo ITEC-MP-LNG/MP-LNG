@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import ExcelJS from 'exceljs';
+import { ChevronDown, X } from 'lucide-react';
 import type { ShipItem } from './ShipInfo';
 
 type AlertType = 'info' | 'success' | 'warning' | 'error';
@@ -9,6 +10,41 @@ type Props = {
   ships: ShipItem[];
   showAlert: (title: string, message: string, type?: AlertType) => void;
 };
+
+function ComparisonStyledSelect({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  ariaLabel: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find(option => option.value === value);
+  return <>
+    <button type="button" onClick={() => setOpen(true)} aria-label={ariaLabel} aria-haspopup="dialog" aria-expanded={open} className="flex w-full items-center justify-between gap-2 rounded-lg border border-[#CBD5E1] bg-white px-3 py-2 text-left text-sm text-[#1F2937] transition-colors hover:border-[#243B5A]">
+      <span className="min-w-0 flex-1 truncate">{selected?.label || '선택해주세요'}</span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+    </button>
+    {open && <div className="fixed inset-0 z-[1000000] flex items-center justify-center bg-slate-900/25 p-4" onClick={() => setOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={event => event.stopPropagation()} className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3">
+          <span className="text-sm font-bold text-[#243B5A]">{ariaLabel}</span>
+          <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#E2E8F0]" aria-label="선택 메뉴 닫기"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="max-h-[60dvh] overflow-y-auto p-2">
+          {options.map(option => <button key={option.value} type="button" onClick={() => { onChange(option.value); setOpen(false); }} className={`mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}>
+            <span className="min-w-0 break-words">{option.label}</span>
+            {option.value === value && <span aria-hidden="true" className="shrink-0">✓</span>}
+          </button>)}
+        </div>
+      </div>
+    </div>}
+  </>;
+}
 
 const TANK_KEYS = ['TK1', 'TK2', 'TK3', 'TK4'] as const;
 const PROCESS_GROUPS: { key: string; label: string; subLabel?: string }[] = [
@@ -61,16 +97,25 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
     [ships],
   );
 
-  const exportExcel = async () => {
-    // 👈 선주사와 프로젝트명 조건을 동시에 필터링
+  const exportExcel = async (dfOnly = false) => {
+    // 기존 다운로드는 선주사 + 프로젝트 조건을 그대로 적용하고, DF 전체는 DF 프로젝트를 하나로 묶습니다.
     const targetShips = ships
       .filter((ship) => {
+        const shipProject = (ship.ship_name || '').trim();
         const matchOwner = owner === '__ALL__' || (ship.shipowner || '').trim() === owner;
-        const matchProject = project === '__ALL__' || (ship.ship_name || '').trim() === project;
+        const matchProject = dfOnly
+          ? /df/i.test(shipProject)
+          : project === '__ALL__' || shipProject === project;
         return matchOwner && matchProject;
       })
       .slice()
-      .sort((a, b) => parseDate(a.launch_date) - parseDate(b.launch_date) || String(a.ship_no || '').localeCompare(String(b.ship_no || ''), 'ko', { numeric: true }));
+      .sort((a, b) => {
+        if (dfOnly) {
+          const projectCompare = String(a.ship_name || '').localeCompare(String(b.ship_name || ''), 'ko', { numeric: true });
+          if (projectCompare !== 0) return projectCompare;
+        }
+        return parseDate(a.launch_date) - parseDate(b.launch_date) || String(a.ship_no || '').localeCompare(String(b.ship_no || ''), 'ko', { numeric: true });
+      });
 
     if (!targetShips.length) {
       showAlert('다운로드 불가', '선택한 조건에 해당하는 호선이 없습니다.', 'warning');
@@ -221,7 +266,7 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
       
       // 파일명에 선주사와 프로젝트 조건 반영
       const safeOwner = owner === '__ALL__' ? '전체선주사' : owner.replace(/[\\/:*?"<>|]/g, '_');
-      const safeProject = project === '__ALL__' ? '전체프로젝트' : project.replace(/[\\/:*?"<>|]/g, '_');
+      const safeProject = dfOnly ? 'DF전체' : project === '__ALL__' ? '전체프로젝트' : project.replace(/[\\/:*?"<>|]/g, '_');
       const buffer = await workbook.xlsx.writeBuffer();
       const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
@@ -234,7 +279,9 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
       URL.revokeObjectURL(url);
 
       setIsOpen(false);
-      showAlert('다운로드 완료', `${targetShips.length}개 호선을 진수일 기준으로 정렬하여 저장했습니다.`, 'success');
+      showAlert('다운로드 완료', dfOnly
+        ? `DF 프로젝트 ${targetShips.length}개 호선을 프로젝트명 및 진수일 기준으로 정렬하여 저장했습니다.`
+        : `${targetShips.length}개 호선을 진수일 기준으로 정렬하여 저장했습니다.`, 'success');
     } catch (error: any) {
       console.error('전체 공정 비교표 다운로드 실패:', error);
       showAlert('다운로드 실패', `Excel 파일 생성 중 오류가 발생했습니다: ${error?.message || '알 수 없는 오류'}`, 'error');
@@ -258,29 +305,34 @@ export default function StatusComparisonExport({ ships, showAlert }: Props) {
               <h3 className="text-sm font-bold text-[#1F2937]">공정현황 비교표 Excel 저장</h3>
               <button type="button" onClick={() => setIsOpen(false)} className="p-1 rounded hover:bg-slate-100 text-[#64748B]" aria-label="닫기">✕</button>
             </div>
-            <p className="text-xs text-[#64748B] leading-5">한 시트에 호선별 2개 행으로 저장합니다. 선주사와 프로젝트명(174K, DF 8K, DF 15K 등)을 각각 선택하여 필터링할 수 있습니다. 진수일 오름차순으로 정렬됩니다.</p>
+            <p className="text-xs text-[#64748B] leading-5">한 시트에 호선별 2개 행으로 저장합니다. 선택 조건 저장은 선주사와 프로젝트명을 적용하고, DF 전체 저장은 선주사 조건을 적용한 뒤 DF 프로젝트 전체를 하나로 통합합니다. DF 전체는 프로젝트명, 진수일 순으로 정렬됩니다.</p>
             
             {/* 선주사 선택 드롭다운 */}
             <label className="block space-y-1.5">
               <span className="text-xs font-semibold text-[#334155]">선주사 선택</span>
-              <select value={owner} onChange={(event) => setOwner(event.target.value)} className="w-full border border-[#CBD5E1] rounded-lg px-3 py-2 text-sm text-[#1F2937] bg-white focus:outline-none focus:border-[#243B5A]">
-                <option value="__ALL__">전체 선주사</option>
-                {owners.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
+              <ComparisonStyledSelect
+                ariaLabel="선주사 선택"
+                value={owner}
+                onChange={setOwner}
+                options={[{ value: '__ALL__', label: '전체 선주사' }, ...owners.map(item => ({ value: item, label: item }))]}
+              />
             </label>
 
             {/* 프로젝트명(선종) 선택 드롭다운 추가 */}
             <label className="block space-y-1.5">
               <span className="text-xs font-semibold text-[#334155]">프로젝트명 / 선종 선택</span>
-              <select value={project} onChange={(event) => setProject(event.target.value)} className="w-full border border-[#CBD5E1] rounded-lg px-3 py-2 text-sm text-[#1F2937] bg-white focus:outline-none focus:border-[#243B5A]">
-                <option value="__ALL__">전체 프로젝트 (174K, DF 8K, DF 15K 전체)</option>
-                {projects.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
+              <ComparisonStyledSelect
+                ariaLabel="프로젝트명 / 선종 선택"
+                value={project}
+                onChange={setProject}
+                options={[{ value: '__ALL__', label: '전체 프로젝트 (174K, DF 8K, DF 15K 전체)' }, ...projects.map(item => ({ value: item, label: item }))]}
+              />
             </label>
 
             <div className="flex justify-end gap-2 pt-1">
               <button type="button" onClick={() => setIsOpen(false)} className="px-3 py-2 rounded-lg border border-[#CBD5E1] text-xs font-semibold text-[#475569] hover:bg-slate-50">취소</button>
-              <button type="button" onClick={exportExcel} className="px-3 py-2 rounded-lg bg-[#243B5A] hover:bg-[#1B2F49] text-white text-xs font-semibold">Excel 저장</button>
+              <button type="button" onClick={() => exportExcel(false)} className="px-3 py-2 rounded-lg bg-[#243B5A] hover:bg-[#1B2F49] text-white text-xs font-semibold">선택 조건 저장</button>
+              <button type="button" onClick={() => exportExcel(true)} className="px-3 py-2 rounded-lg bg-[#0F766E] hover:bg-[#115E59] text-white text-xs font-semibold">DF 전체 저장</button>
             </div>
           </div>
         </div>

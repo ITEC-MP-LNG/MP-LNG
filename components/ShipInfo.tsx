@@ -38,6 +38,62 @@ import {
 
 // 테이블명: 기본적으로 'ships'를 사용하되 Supabase 환경에 맞춰 연동
 const TABLE_NAME = 'ships';
+/** WorkManagement의 AppStyledSelect와 동일한 모달형 드롭다운 */
+function ShipInfoStyledSelect({
+  value,
+  onChange,
+  options,
+  ariaLabel,
+  disabled = false,
+  className = 'w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden',
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  options: { value: string; label: string }[];
+  ariaLabel: string;
+  disabled?: boolean;
+  className?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find(option => option.value === value);
+  useEffect(() => {
+    if (!open) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', closeOnEscape);
+    return () => document.removeEventListener('keydown', closeOnEscape);
+  }, [open]);
+
+  return <>
+    <button
+      type="button"
+      className={`${className} flex items-center justify-between gap-2 text-left ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-[#243B5A]'}`}
+      onClick={() => { if (!disabled) setOpen(true); }}
+      aria-label={ariaLabel}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      disabled={disabled}
+    >
+      <span className="min-w-0 flex-1 truncate">{selected?.label || '선택해주세요'}</span>
+      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
+    </button>
+    {open && <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-slate-900/25 p-4" onClick={() => setOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={event => event.stopPropagation()} className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
+        <div className="flex items-center justify-between gap-3 border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3">
+          <span className="text-sm font-bold text-[#243B5A]">{ariaLabel}</span>
+          <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#E2E8F0]" aria-label="선택 메뉴 닫기"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="max-h-[60dvh] overflow-y-auto p-2">
+          {options.map(option => <button key={option.value} type="button" onClick={() => { onChange(option.value); setOpen(false); }} className={`mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}>
+            <span className="min-w-0 break-words">{option.label}</span>
+            {option.value === value && <span aria-hidden="true" className="shrink-0">✓</span>}
+          </button>)}
+          {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#64748B]">선택 가능한 항목이 없습니다.</p>}
+        </div>
+      </div>
+    </div>}
+  </>;
+}
+
 /** WorkManagement와 동일한 스타일의 날짜 선택 달력 */
 function ShipCalendarDatePicker({
   value,
@@ -191,24 +247,20 @@ function ShipCalendarDatePicker({
               </button>
 
               <div className="flex items-center gap-1">
-                <select
-                  value={viewYear}
-                  onChange={(event) => setViewYear(Number(event.target.value))}
+                <ShipInfoStyledSelect
+                  ariaLabel="연도 선택"
+                  value={String(viewYear)}
+                  onChange={(value) => setViewYear(Number(value))}
+                  options={Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map(year => ({ value: String(year), label: `${year}년` }))}
                   className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none"
-                >
-                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map(year => (
-                    <option key={year} value={year}>{year}년</option>
-                  ))}
-                </select>
-                <select
-                  value={viewMonth}
-                  onChange={(event) => setViewMonth(Number(event.target.value))}
+                />
+                <ShipInfoStyledSelect
+                  ariaLabel="월 선택"
+                  value={String(viewMonth)}
+                  onChange={(value) => setViewMonth(Number(value))}
+                  options={Array.from({ length: 12 }, (_, month) => ({ value: String(month), label: `${month + 1}월` }))}
                   className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none"
-                >
-                  {Array.from({ length: 12 }, (_, month) => (
-                    <option key={month} value={month}>{month + 1}월</option>
-                  ))}
-                </select>
+                />
               </div>
 
               <button type="button" onClick={() => moveMonth(1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]">
@@ -2741,17 +2793,13 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                     진행 단계 현황
                   </label>
-                  <select
+                  <ShipInfoStyledSelect
+                    ariaLabel="진행 단계 현황 선택"
                     value={formData.status}
-                    onChange={(e) => handleStatusChange(e.target.value as ShipStatus)}
-                    className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-semibold"
-                  >
-                    {STATUS_LIST.map((st) => (
-                      <option key={st} value={st}>
-                        {st}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(value) => handleStatusChange(value as ShipStatus)}
+                    options={STATUS_LIST.map((st) => ({ value: st, label: st }))}
+                    className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs font-semibold text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
+                  />
                 </div>
 
                 <div>
@@ -3224,12 +3272,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
                               {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <select
-                                    aria-label="No Leak 선택"
+                                  <ShipInfoStyledSelect
+                                    ariaLabel="No Leak 선택"
                                     disabled={!isCurrentTankEnabled}
                                     value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? 'No Leak' : ''}
-                                    onChange={(e) => {
-                                      const selectedValue = e.target.value === 'No Leak' ? 'No Leak' : '';
+                                    onChange={(selectedValue) => {
                                       setStatusCreateFormData(prev => ({
                                         ...prev,
                                         tank_status: {
@@ -3241,11 +3288,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                         },
                                       }));
                                     }}
+                                    options={[{ value: '', label: 'Leak 수량 입력' }, { value: 'No Leak', label: 'No Leak' }]}
                                     className="px-2 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
-                                  >
-                                    <option value="">Leak 수량 입력</option>
-                                    <option value="No Leak">No Leak</option>
-                                  </select>
+                                  />
                                   <input
                                     type="number"
                                     min="0"
@@ -3701,12 +3746,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
                               {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <select
-                                    aria-label="No Leak 선택"
+                                  <ShipInfoStyledSelect
+                                    ariaLabel="No Leak 선택"
                                     disabled={!isCurrentTankEnabled}
                                     value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? 'No Leak' : ''}
-                                    onChange={(e) => {
-                                      const selectedValue = e.target.value === 'No Leak' ? 'No Leak' : '';
+                                    onChange={(selectedValue) => {
                                       setStatusEditFormData(prev => ({
                                         ...prev,
                                         tank_status: {
@@ -3718,11 +3762,9 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                         },
                                       }));
                                     }}
+                                    options={[{ value: '', label: 'Leak 수량 입력' }, { value: 'No Leak', label: 'No Leak' }]}
                                     className="px-2 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
-                                  >
-                                    <option value="">Leak 수량 입력</option>
-                                    <option value="No Leak">No Leak</option>
-                                  </select>
+                                  />
                                   <input
                                     type="number"
                                     min="0"
