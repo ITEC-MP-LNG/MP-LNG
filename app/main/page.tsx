@@ -606,10 +606,51 @@ useEffect(() => {
           }
         }
 
-        if (!targetUser) {
-          router.replace('/login');
-          return;
-        }
+        
+if (!targetUser) {
+  router.replace('/login');
+  return;
+}
+
+// 매일 오전 06:00(KST) 이전 로그인은 만료 처리
+const loginTimestamp = Number(localStorage.getItem('login_timestamp'));
+
+if (!Number.isFinite(loginTimestamp) || loginTimestamp <= 0) {
+  localStorage.removeItem('currentUser');
+  localStorage.removeItem('login_timestamp');
+  localStorage.removeItem('last_activity_timestamp');
+  await supabase.auth.signOut();
+  router.replace('/login');
+  return;
+}
+
+const loginDate = new Date(loginTimestamp);
+const koreaLoginDate = new Date(
+  loginDate.toLocaleString('en-US', { timeZone: 'Asia/Seoul' })
+);
+
+const now = new Date();
+const koreaNow = new Date(
+  now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' })
+);
+
+// 로그인 날짜의 오전 06:00 기준 만료 시각
+const expirationTime = new Date(koreaLoginDate);
+expirationTime.setHours(6, 0, 0, 0);
+
+// 오전 06:00 이후 로그인했다면 다음 날 오전 06:00까지 유효
+if (koreaLoginDate.getHours() >= 6) {
+  expirationTime.setDate(expirationTime.getDate() + 1);
+}
+
+if (koreaNow.getTime() >= expirationTime.getTime()) {
+  localStorage.removeItem('currentUser');
+  localStorage.removeItem('login_timestamp');
+  localStorage.removeItem('last_activity_timestamp');
+  await supabase.auth.signOut();
+  router.replace('/login');
+  return;
+}
 
         setCurrentUser(targetUser);
 
@@ -728,88 +769,75 @@ useEffect(() => {
     router.replace('/login');
   };
 
-  // 12시간 동안 사용자 활동이 없으면 자동 로그아웃 (추가 Supabase 호출 없음)
+ 
+  
+  // 매일 오전 06:00(KST) 자동 로그아웃
   useEffect(() => {
     if (!currentUser) return;
 
-    const INACTIVITY_LIMIT = 8 * 60 * 60 * 1000;
-    const ACTIVITY_STORAGE_KEY = 'last_activity_timestamp';
-    const ACTIVITY_WRITE_INTERVAL = 60 * 1000;
-
-    let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastStorageWrite = 0;
+    let logoutTimer: ReturnType<typeof setTimeout> | null = null;
     let logoutStarted = false;
 
-    const getLastActivity = () => {
-      const stored = Number(localStorage.getItem(ACTIVITY_STORAGE_KEY));
-      return Number.isFinite(stored) && stored > 0 ? stored : Date.now();
+    const getNextLogoutTime = () => {
+      const now = new Date();
+
+      // 한국 시간 기준 현재 시각 계산
+      const koreaNow = new Date(
+        now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' })
+      );
+
+      const logoutTime = new Date(koreaNow);
+      logoutTime.setHours(6, 0, 0, 0);
+
+      // 오늘 오전 6시가 이미 지났다면 다음 날 오전 6시
+      if (koreaNow.getTime() >= logoutTime.getTime()) {
+        logoutTime.setDate(logoutTime.getDate() + 1);
+      }
+
+      // 한국 시간과 실제 시스템 시각의 차이를 계산
+      const offset = koreaNow.getTime() - now.getTime();
+
+      return new Date(logoutTime.getTime() - offset);
     };
 
-    const clearInactivityTimer = () => {
-      if (inactivityTimer) {
-        clearTimeout(inactivityTimer);
-        inactivityTimer = null;
+    const clearLogoutTimer = () => {
+      if (logoutTimer) {
+        clearTimeout(logoutTimer);
+        logoutTimer = null;
       }
     };
 
-    const logoutForInactivity = async () => {
+    const logoutAtSix = async () => {
       if (logoutStarted) return;
+
       logoutStarted = true;
-      clearInactivityTimer();
+      clearLogoutTimer();
       setAccountMenuOpen(false);
+
       await supabase.auth.signOut();
+
       localStorage.removeItem('currentUser');
       localStorage.removeItem('login_timestamp');
-      localStorage.removeItem(ACTIVITY_STORAGE_KEY);
+      localStorage.removeItem('last_activity_timestamp');
+
       router.replace('/login');
     };
 
     const checkAndSchedule = () => {
       if (logoutStarted) return;
 
-      const elapsed = Date.now() - getLastActivity();
-      const remaining = INACTIVITY_LIMIT - elapsed;
+      clearLogoutTimer();
 
-      clearInactivityTimer();
+      const remaining = getNextLogoutTime().getTime() - Date.now();
 
       if (remaining <= 0) {
-        void logoutForInactivity();
+        void logoutAtSix();
         return;
       }
 
-      inactivityTimer = setTimeout(() => {
-        if (Date.now() - getLastActivity() >= INACTIVITY_LIMIT) {
-          void logoutForInactivity();
-        } else {
-          checkAndSchedule();
-        }
-      }, remaining);
-    };
-
-    const recordActivity = () => {
-      if (logoutStarted) return;
-
-      const now = Date.now();
-      const lastActivity = getLastActivity();
-
-      // 이미 12시간이 지난 상태라면 새 활동으로 만료 시간을 되살리지 않고 로그아웃
-      if (now - lastActivity >= INACTIVITY_LIMIT) {
-        void logoutForInactivity();
-        return;
-      }
-
-      if (now - lastStorageWrite >= ACTIVITY_WRITE_INTERVAL) {
-        localStorage.setItem(ACTIVITY_STORAGE_KEY, String(now));
-        lastStorageWrite = now;
-      }
-
-      checkAndSchedule();
-    };
-
-    const handleStorageChange = (event: StorageEvent) => {
-      if (event.key === ACTIVITY_STORAGE_KEY) {
+      logoutTimer = setTimeout(() => {
         checkAndSchedule();
-      }
+      }, remaining);
     };
 
     const handleVisibilityOrFocus = () => {
@@ -818,38 +846,18 @@ useEffect(() => {
       }
     };
 
-    if (!localStorage.getItem(ACTIVITY_STORAGE_KEY)) {
-      localStorage.setItem(ACTIVITY_STORAGE_KEY, String(Date.now()));
-    }
-
     checkAndSchedule();
-
-    const activityEvents: (keyof DocumentEventMap)[] = [
-      'mousedown',
-      'keydown',
-      'touchstart',
-      'click',
-      'scroll'
-    ];
-
-    activityEvents.forEach(eventName => {
-      document.addEventListener(eventName, recordActivity, { passive: true });
-    });
 
     document.addEventListener('visibilitychange', handleVisibilityOrFocus);
     window.addEventListener('focus', handleVisibilityOrFocus);
-    window.addEventListener('storage', handleStorageChange);
 
     return () => {
-      clearInactivityTimer();
-      activityEvents.forEach(eventName => {
-        document.removeEventListener(eventName, recordActivity);
-      });
+      clearLogoutTimer();
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);
-      window.removeEventListener('storage', handleStorageChange);
     };
   }, [currentUser?.id]);
+
 
   const confirmExitApp = async () => {
     setShowExitModal(false);
