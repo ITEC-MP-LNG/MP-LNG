@@ -108,7 +108,13 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
-
+// 계정 정지 여부 확인
+if (data.is_suspended === true) {
+  return NextResponse.json(
+    { error: '정지된 계정입니다. 관리자에게 문의해 주세요.' },
+    { status: 403 }
+  );
+}
     // 기존 로그인 비밀번호 판정 방식 유지
     const userPassword =
       data.password || data.birth_date || data.birthdate || '';
