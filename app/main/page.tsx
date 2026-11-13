@@ -612,45 +612,6 @@ if (!targetUser) {
   return;
 }
 
-// 매일 오전 06:00(KST) 이전 로그인은 만료 처리
-const loginTimestamp = Number(localStorage.getItem('login_timestamp'));
-
-if (!Number.isFinite(loginTimestamp) || loginTimestamp <= 0) {
-  localStorage.removeItem('currentUser');
-  localStorage.removeItem('login_timestamp');
-  localStorage.removeItem('last_activity_timestamp');
-  await supabase.auth.signOut();
-  router.replace('/login');
-  return;
-}
-
-const loginDate = new Date(loginTimestamp);
-const koreaLoginDate = new Date(
-  loginDate.toLocaleString('en-US', { timeZone: 'Asia/Seoul' })
-);
-
-const now = new Date();
-const koreaNow = new Date(
-  now.toLocaleString('en-US', { timeZone: 'Asia/Seoul' })
-);
-
-// 로그인 날짜의 오전 06:00 기준 만료 시각
-const expirationTime = new Date(koreaLoginDate);
-expirationTime.setHours(6, 0, 0, 0);
-
-// 오전 06:00 이후 로그인했다면 다음 날 오전 06:00까지 유효
-if (koreaLoginDate.getHours() >= 6) {
-  expirationTime.setDate(expirationTime.getDate() + 1);
-}
-
-if (koreaNow.getTime() >= expirationTime.getTime()) {
-  localStorage.removeItem('currentUser');
-  localStorage.removeItem('login_timestamp');
-  localStorage.removeItem('last_activity_timestamp');
-  await supabase.auth.signOut();
-  router.replace('/login');
-  return;
-}
 
         setCurrentUser(targetUser);
 
