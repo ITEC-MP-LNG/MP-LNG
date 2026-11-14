@@ -22,6 +22,8 @@ import {
   Network,
   GitCommit,
   Shield,
+  Eye,
+  EyeOff,
   CalendarDays,
   ChevronLeft
 } from 'lucide-react';
@@ -57,7 +59,7 @@ export interface HRUser {
   ndt_certificates?: Array<{ issuer: string; subject: string; level: string; issue_date: string; expiry_date: string }>; 
   join_date?: string;          
   career_start_date?: string;  
-  password?: string;           
+  birth_date?: string;
   pos_x?: number;              
   pos_y?: number;              
   photo_url?: string | null;
@@ -725,6 +727,16 @@ export default function HRManagement({
     type: 'success' | 'error' | 'warning' | 'info';
     message: string;
   } | null>(null);
+  const [issuedTempPassword, setIssuedTempPassword] = useState('');
+  const [passwordResetLoading, setPasswordResetLoading] = useState(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState('');
+  const [newPasswordInput, setNewPasswordInput] = useState('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState('');
+  const [showCurrentPassword, setShowCurrentPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const initialFormSnapshotRef = useRef('');
+  const [formSaving, setFormSaving] = useState(false);
   const [confirmUser, setConfirmUser] = useState<HRUser | null>(null);
   const [callConfirmUser, setCallConfirmUser] = useState<HRUser | null>(null);
   const [absenceDatesLoading, setAbsenceDatesLoading] = useState(false);
@@ -741,6 +753,15 @@ export default function HRManagement({
     const timer = window.setTimeout(() => setNotice(null), 3000);
     return () => window.clearTimeout(timer);
   }, [notice]);
+
+  useEffect(() => {
+    if (isModalOpen) initialFormSnapshotRef.current = JSON.stringify(formData);
+  }, [isModalOpen]);
+
+  const hasPendingModalChanges =
+    JSON.stringify(formData) !== initialFormSnapshotRef.current ||
+    Boolean(photoFile) ||
+    Boolean(currentPasswordInput || newPasswordInput || confirmPasswordInput);
 
   const myRole = currentUserRole || currentUser?.role || '';
   const normalizedRole = String(myRole).toUpperCase();
@@ -1249,7 +1270,7 @@ export default function HRManagement({
     try {
       const { data, error } = await supabase
         .from('app_users')
-        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, national_cert_details, yard_cert_details, ndt_certificates, join_date, career_start_date, password, photo_url, pos_x, pos_y, work_status, is_suspended')
+        .select('id, name, email, department, position, job_title, field, role, phone, address, experience, internal_certificates, national_certificates, national_cert_details, yard_cert_details, ndt_certificates, join_date, career_start_date, birth_date, photo_url, pos_x, pos_y, work_status, is_suspended')
         .order('name', { ascending: true });
 
       if (error) throw error;
@@ -1438,6 +1459,13 @@ export default function HRManagement({
       return;
     }
     setSelectedUser(null);
+    setIssuedTempPassword('');
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
     setPhotoFile(null);
     setPhotoPreview(null);
     setFormData({
@@ -1473,6 +1501,13 @@ export default function HRManagement({
       return;
     }
     setSelectedUser(user);
+    setIssuedTempPassword('');
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
+    setShowCurrentPassword(false);
+    setShowNewPassword(false);
+    setShowConfirmPassword(false);
     setPhotoFile(null);
     setPhotoPreview(user.photo_url || null);
     setFormData({ 
@@ -1502,7 +1537,7 @@ export default function HRManagement({
       ndt_certificates: normalizeNdtCertificates(Array.isArray(user.ndt_certificates) ? user.ndt_certificates : []),
       join_date: user.join_date || '',
       career_start_date: user.career_start_date || '',
-      birthDate: user.password || '',
+      birthDate: user.birth_date ? String(user.birth_date).replace(/-/g, '') : '',
       absence_dates: []
     });
     setIsModalOpen(true);
@@ -1512,7 +1547,11 @@ export default function HRManagement({
         if (error) {
           console.warn('휴무 날짜 조회 실패:', error.message);
         } else {
-          setFormData(prev => ({ ...prev, absence_dates: (data || []).map((row: any) => String(row.status_date)).filter(Boolean) }));
+          setFormData(prev => {
+            const next = { ...prev, absence_dates: (data || []).map((row: any) => String(row.status_date)).filter(Boolean) };
+            initialFormSnapshotRef.current = JSON.stringify(next);
+            return next;
+          });
         }
         setAbsenceDatesLoading(false);
       }, (error) => {
@@ -1577,8 +1616,37 @@ export default function HRManagement({
     return;
   };
 
+
+  const handleIssueTemporaryPassword = async (targetUserId: string) => {
+    if (!isAdmin || !targetUserId) {
+      showNotice('관리자만 임시 비밀번호를 발급할 수 있습니다.', 'warning');
+      return;
+    }
+    setPasswordResetLoading(true);
+    setIssuedTempPassword('');
+    try {
+      const response = await fetch('/api/auth/admin-reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ targetUserId }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success || !result.temporaryPassword) {
+        throw new Error(result.error || '임시 비밀번호 발급에 실패했습니다.');
+      }
+      setIssuedTempPassword(String(result.temporaryPassword));
+      showNotice('임시 비밀번호를 발급했습니다. 직원에게 안전하게 전달해주세요.', 'success');
+    } catch (error: any) {
+      showNotice(error?.message || '임시 비밀번호 발급에 실패했습니다.', 'error');
+    } finally {
+      setPasswordResetLoading(false);
+    }
+  };
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (formSaving) return;
 
     if (selectedUser && !canEditUser(selectedUser)) {
       showNotice('본인 정보만 수정할 권한이 있습니다.', 'warning');
@@ -1590,13 +1658,32 @@ export default function HRManagement({
       return;
     }
 
-    if (formData.birthDate && formData.birthDate.length !== 8) {
-      showNotice('생년월일은 8자리(YYYYMMDD)로 정확히 입력해주세요.', 'warning');
-      return;
+    const birthDateDigits = String(formData.birthDate || '').replace(/[^0-9]/g, '');
+    let birthDateForDb: string | null = null;
+    if (birthDateDigits) {
+      if (birthDateDigits.length !== 8) {
+        showNotice('생년월일은 8자리(YYYYMMDD)로 정확히 입력해주세요.', 'warning');
+        return;
+      }
+      const year = Number(birthDateDigits.slice(0, 4));
+      const month = Number(birthDateDigits.slice(4, 6));
+      const day = Number(birthDateDigits.slice(6, 8));
+      const parsedBirthDate = new Date(year, month - 1, day);
+      if (
+        parsedBirthDate.getFullYear() !== year ||
+        parsedBirthDate.getMonth() !== month - 1 ||
+        parsedBirthDate.getDate() !== day
+      ) {
+        showNotice('올바른 생년월일을 입력해주세요. 예: 19950101', 'warning');
+        return;
+      }
+      birthDateForDb = `${birthDateDigits.slice(0, 4)}-${birthDateDigits.slice(4, 6)}-${birthDateDigits.slice(6, 8)}`;
     }
 
+    setFormSaving(true);
     try {
       let savedPhotoUrl: string | null = null;
+      let newlyIssuedPassword = '';
       const payload: any = {
         id: formData.inputId.trim(), 
         name: formData.name,
@@ -1623,8 +1710,10 @@ export default function HRManagement({
         payload.is_suspended = Boolean(formData.is_suspended);
       }
 
-      if (formData.birthDate) {
-        payload.password = formData.birthDate;
+      // 생년월일은 인사정보 전용 birth_date 컬럼에 저장합니다.
+      // 기존 계정의 password 값은 로그인 전환이 끝날 때까지 변경하지 않습니다.
+      if (birthDateForDb) {
+        payload.birth_date = birthDateForDb;
       }
 
       if (photoFile && !validatePhotoFile(photoFile)) {
@@ -1670,18 +1759,42 @@ const { error: photoUpdateError } = await supabase
         showNotice('인사 정보가 성공적으로 수정되었습니다.', 'success');
       } else {
         if (!formData.birthDate) {
-          showNotice('비밀번호로 사용할 생년월일 8자리를 입력해주세요.', 'warning');
+          showNotice('생년월일 8자리를 입력해주세요.', 'warning');
           return;
         }
 
         const { error } = await supabase.from('app_users').insert([
           {
             ...payload,
+            // 현재 로그인 방식과의 호환을 위해 신규 계정의 초기 비밀번호 값은
+            // 로그인 보안 전환 단계에서 해시로 이전할 때까지 기존 방식으로 유지합니다.
+            password: birthDateDigits,
+            birth_date: birthDateForDb,
             role: canAssignRoles ? (formData.role || 'USER') : 'USER',
           },
         ]);
 
         if (error) throw error;
+
+        // 신규 계정은 등록 직후 서버에서 임시 비밀번호를 발급하고 해시로 저장합니다.
+        // 발급에 실패하더라도 기존 계정 등록 및 인사정보 저장은 유지합니다.
+        try {
+          const resetResponse = await fetch('/api/auth/admin-reset-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ targetUserId: formData.inputId.trim() }),
+          });
+          const resetResult = await resetResponse.json();
+          if (resetResponse.ok && resetResult.success && resetResult.temporaryPassword) {
+            newlyIssuedPassword = String(resetResult.temporaryPassword);
+          } else {
+            console.warn('신규 계정 임시 비밀번호 발급 실패:', resetResult.error || '발급 실패');
+          }
+        } catch (resetError) {
+          console.warn('신규 계정 임시 비밀번호 발급 실패:', resetError);
+        }
+        setIssuedTempPassword(newlyIssuedPassword);
 
         if (photoFile) {
           try {
@@ -1713,6 +1826,10 @@ const { error: photoUpdateError } = await supabase
         ndt_certificates: formData.ndt_certificates,
         work_status: formData.absence_dates.includes(getLocalDateKey()) ? '휴무' : '근무중'
       };
+
+      // 신규 등록이 성공하면 수정 모드로 전환합니다.
+      // 임시 비밀번호 확인을 위해 창을 열어둔 뒤 다시 저장해도 INSERT가 반복되지 않습니다.
+      if (!selectedUser) setSelectedUser(savedUser);
       
       if (isSelf(savedUser)) {
         onCurrentUserStatusChange?.(savedUser.work_status === '휴무' ? '휴무' : '근무중');
@@ -1728,16 +1845,53 @@ const { error: photoUpdateError } = await supabase
       if (datesToAdd.length) { const { error } = await supabase.from('user_day_status').upsert(datesToAdd, { onConflict: 'user_id,status_date' }); if (error) throw error; }
       if (datesToRemove.length) { const { error } = await supabase.from('user_day_status').delete().eq('user_id', targetUserId).in('status_date', datesToRemove); if (error) throw error; }
       
+      // 본인 비밀번호 입력이 있으면 하단 저장 버튼에서 인사정보와 함께 처리합니다.
+      const hasPasswordChangeInput = Boolean(currentPasswordInput || newPasswordInput || confirmPasswordInput);
+      if (hasPasswordChangeInput) {
+        if (!selectedUser || !isSelf(selectedUser)) {
+          throw new Error('본인 계정에서만 비밀번호를 변경할 수 있습니다.');
+        }
+        if (!currentPasswordInput || newPasswordInput.length < 8) {
+          throw new Error('현재 비밀번호와 8자 이상의 새 비밀번호를 입력해주세요.');
+        }
+        if (newPasswordInput !== confirmPasswordInput) {
+          throw new Error('새 비밀번호와 확인 비밀번호가 일치하지 않습니다.');
+        }
+        if (newPasswordInput === currentPasswordInput) {
+          throw new Error('현재 비밀번호와 다른 비밀번호를 설정해주세요.');
+        }
+        const passwordResponse = await fetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ currentPassword: currentPasswordInput, newPassword: newPasswordInput }),
+        });
+        const passwordResult = await passwordResponse.json();
+        if (!passwordResponse.ok || !passwordResult.success) {
+          throw new Error(passwordResult.error || '비밀번호 변경에 실패했습니다.');
+        }
+        setCurrentPasswordInput('');
+        setNewPasswordInput('');
+        setConfirmPasswordInput('');
+        setShowCurrentPassword(false);
+        setShowNewPassword(false);
+        setShowConfirmPassword(false);
+        showNotice('인사 정보와 비밀번호가 저장되었습니다.', 'success');
+      }
+
       setUsers(prev => {
         const next = selectedUser
           ? prev.filter(item => item.id !== selectedUser.id).concat(savedUser)
           : prev.concat(savedUser);
         return next.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
       });
-      setIsModalOpen(false);
+      initialFormSnapshotRef.current = JSON.stringify(formData);
+      // 저장 후에는 창을 유지하고, 변경사항이 없는 상태의 '닫기' 버튼을 보여줍니다.
     } catch (err: any) {
       console.error('저장 실패:', err);
       showNotice('저장 중 오류가 발생했습니다: ' + (err.message || '알 수 없는 오류'), 'error');
+    } finally {
+      setFormSaving(false);
     }
   };
 
@@ -2441,7 +2595,7 @@ const { error: photoUpdateError } = await supabase
               const canEdit = canEditUser(u);
               const joinCareer = calculateCareerDetails(u.join_date);
               const totalCareer = calculateCareerDetails(u.career_start_date);
-              const age = calculateAge(u.password);
+              const age = calculateAge(u.birth_date);
 
               const isFirstFormer = isFormerEmployee(u) && (index === 0 || !isFormerEmployee(listViewUsers[index - 1]));
               return (
@@ -2545,7 +2699,7 @@ const { error: photoUpdateError } = await supabase
               <tbody className="divide-y divide-[#E2E5E9]">
                 {listViewUsers.map((u, index) => {
                   const canEdit = canEditUser(u);
-                  const age = calculateAge(u.password);
+                  const age = calculateAge(u.birth_date);
                   const isFirstFormer = isFormerEmployee(u) && (index === 0 || !isFormerEmployee(listViewUsers[index - 1]));
                   return (
                     <Fragment key={u.id}>
@@ -2642,7 +2796,7 @@ const { error: photoUpdateError } = await supabase
                 <div>
                   <div className="flex items-center space-x-2">
                     <h3 className="text-xs font-bold text-[#1F2937]">
-                      {detailUser.name} {calculateAge(detailUser.password) ? `(${calculateAge(detailUser.password)}세)` : ''}
+                      {detailUser.name} {calculateAge(detailUser.birth_date) ? `(${calculateAge(detailUser.birth_date)}세)` : ''}
                     </h3>
                     {detailUser.id && <span className="text-[10px] text-[#64748B] font-mono">({detailUser.id})</span>}
                     {isSelf(detailUser) && (
@@ -2790,8 +2944,14 @@ const { error: photoUpdateError } = await supabase
                   ? (isSelf(selectedUser) ? '내 인사 정보 수정' : '구성원 정보 수정') 
                   : '신규 구성원 등록'}
               </h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-[#64748B] hover:text-[#1F2937] p-1">
-                <X className="h-4 w-4" />
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                aria-label={selectedUser ? '정보수정창 닫기' : '신규 등록 취소'}
+                title={selectedUser ? '닫기' : '취소'}
+                className="flex h-8 w-8 items-center justify-center rounded-md text-2xl leading-none font-normal text-[#64748B] hover:bg-[#F1F5F9] hover:text-[#1F2937]"
+              >
+                ×
               </button>
             </div>
 
@@ -2824,7 +2984,7 @@ const { error: photoUpdateError } = await supabase
 
               <div>
                 <label className="block font-bold text-[#64748B] mb-1 flex items-center gap-1">
-                  생년월일 8자리 (나이 및 비밀번호) *
+                  생년월일 8자리 *
                 </label>
                 <input
                   type="text"
@@ -2835,6 +2995,82 @@ const { error: photoUpdateError } = await supabase
                   className="w-full p-2 bg-[#F5F6F8] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:bg-white focus:border-[#243B5A] outline-none font-mono"
                 />
               </div>
+
+              {selectedUser && isSelf(selectedUser) && (
+                <div className="rounded-lg border border-[#D7DDE5] bg-[#F8FAFC] p-3 space-y-2">
+                  <div className="text-[11px] font-bold text-[#243B5A]">내 비밀번호 변경</div>
+                  <div className="relative">
+                    <input
+                      type={showCurrentPassword ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      value={currentPasswordInput}
+                      onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                      placeholder="현재 비밀번호"
+                      className="w-full rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 pr-16 text-xs text-[#1F2937] outline-none focus:border-[#243B5A]"
+                    />
+                    <button type="button" onClick={() => setShowCurrentPassword(v => !v)} aria-label={showCurrentPassword ? "비밀번호 숨기기" : "비밀번호 보기"} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-[#64748B] hover:bg-slate-100">{showCurrentPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="relative">
+                      <input
+                        type={showNewPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        value={newPasswordInput}
+                        onChange={(e) => setNewPasswordInput(e.target.value)}
+                        placeholder="새 비밀번호 (8자 이상)"
+                        className="w-full rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 pr-16 text-xs text-[#1F2937] outline-none focus:border-[#243B5A]"
+                      />
+                      <button type="button" onClick={() => setShowNewPassword(v => !v)} aria-label={showNewPassword ? "비밀번호 숨기기" : "비밀번호 보기"} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-[#64748B] hover:bg-slate-100">{showNewPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showConfirmPassword ? 'text' : 'password'}
+                        autoComplete="new-password"
+                        value={confirmPasswordInput}
+                        onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                        placeholder="새 비밀번호 확인"
+                        className="w-full rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 pr-16 text-xs text-[#1F2937] outline-none focus:border-[#243B5A]"
+                      />
+                      <button type="button" onClick={() => setShowConfirmPassword(v => !v)} aria-label={showConfirmPassword ? "비밀번호 숨기기" : "비밀번호 보기"} className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1.5 text-[#64748B] hover:bg-slate-100">{showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-[#64748B]">비밀번호를 입력한 뒤 아래 저장 버튼을 눌러주세요.</p>
+                </div>
+              )}
+
+              {isAdmin && selectedUser && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[11px] font-bold text-amber-900">로그인 비밀번호 관리</div>
+                    <button
+                      type="button"
+                      onClick={() => void handleIssueTemporaryPassword(selectedUser.id)}
+                      disabled={passwordResetLoading}
+                      className="rounded-lg bg-[#243B5A] px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-50"
+                    >
+                      {passwordResetLoading ? '발급 중...' : '임시 비밀번호 재발급'}
+                    </button>
+                  </div>
+                  <p className="text-[10px] leading-relaxed text-amber-800">재발급하면 기존 비밀번호는 즉시 사용할 수 없으며, 직원은 다음 로그인 후 새 비밀번호를 설정해야 합니다.</p>
+                  {issuedTempPassword && (
+                    <div className="flex items-center gap-2">
+                      <input readOnly value={issuedTempPassword} className="min-w-0 flex-1 rounded-lg border border-amber-300 bg-white px-2 py-2 font-mono text-xs text-[#1F2937]" aria-label="발급된 임시 비밀번호" />
+                      <button type="button" onClick={() => { void navigator.clipboard.writeText(issuedTempPassword); showNotice('임시 비밀번호를 복사했습니다.', 'success'); }} className="shrink-0 rounded-lg border border-amber-300 bg-white px-3 py-2 text-[11px] font-semibold text-amber-900">복사</button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {issuedTempPassword && !selectedUser && (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 space-y-2">
+                  <div className="text-[11px] font-bold text-emerald-900">신규 계정 임시 비밀번호</div>
+                  <div className="flex items-center gap-2">
+                    <input readOnly value={issuedTempPassword} className="min-w-0 flex-1 rounded-lg border border-emerald-300 bg-white px-2 py-2 font-mono text-xs text-[#1F2937]" aria-label="신규 계정 임시 비밀번호" />
+                    <button type="button" onClick={() => { void navigator.clipboard.writeText(issuedTempPassword); showNotice('임시 비밀번호를 복사했습니다.', 'success'); }} className="shrink-0 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-[11px] font-semibold text-emerald-900">복사</button>
+                  </div>
+                  <p className="text-[10px] text-emerald-800">직원에게 전달해주세요. 최초 로그인 후 본인 비밀번호로 변경해야 합니다.</p>
+                </div>
+              )}
 
               <div className="rounded-xl border border-[#E2E5E9] bg-[#F8FAFC] p-3">
                 <div className="flex items-center gap-3">
@@ -3109,20 +3345,43 @@ const { error: photoUpdateError } = await supabase
               </details>
 
               <div className="flex justify-end space-x-2 pt-2.5 border-t border-[#E2E5E9]">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] rounded-lg text-xs text-[#1F2937]"
-                >
-                  취소
-                </button>
-                <button
-                  type="submit"
-                  className="px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition"
-                >
-                  <Check className="h-3.5 w-3.5" />
-                  <span>저장</span>
-                </button>
+                {!selectedUser ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setIsModalOpen(false)}
+                      disabled={formSaving}
+                      className="px-3.5 py-1.5 bg-white border border-[#E2E5E9] hover:bg-[#F5F6F8] text-[#64748B] rounded-lg text-xs font-semibold disabled:opacity-50"
+                    >
+                      취소
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={formSaving}
+                      className="px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition disabled:opacity-50"
+                    >
+                      <Check className="h-3.5 w-3.5" />
+                      <span>{formSaving ? '저장 중...' : '저장'}</span>
+                    </button>
+                  </>
+                ) : hasPendingModalChanges ? (
+                  <button
+                    type="submit"
+                    disabled={formSaving}
+                    className="px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold flex items-center space-x-1 transition disabled:opacity-50"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    <span>{formSaving ? '저장 중...' : '저장'}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(false)}
+                    className="px-3.5 py-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white rounded-lg text-xs font-semibold"
+                  >
+                    닫기
+                  </button>
+                )}
               </div>
             </form>
           </div>
@@ -3367,7 +3626,7 @@ function renderMemberCard(
 ) {
   const joinCareer = calculateCareerDetails(member.join_date);
   const totalCareer = calculateCareerDetails(member.career_start_date);
-  const age = calculateAge(member.password);
+  const age = calculateAge(member.birth_date);
 
   return (
     <div 
