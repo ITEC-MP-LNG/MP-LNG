@@ -707,7 +707,7 @@ export default function NoticeBoard({
         <div className="px-4 py-3 border-b border-[#E2E5E9] bg-[#F5F6F8] flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Lightbulb className="h-4 w-4 text-[#243B5A]" />
-            <span className="text-xs font-bold text-[#1F2937]">개선 및 건의 목록</span>
+            <span className="text-xs font-bold text-[#1F2937]">개선 및 건의, 구매 요청</span>
             <span className="text-[10px] text-[#64748B]">총 {suggestions.length}건</span>
           </div>
         </div>
