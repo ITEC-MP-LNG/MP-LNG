@@ -31,6 +31,8 @@ import {
   Info,
   CheckCheck,
   RotateCcw,
+  Save,
+  Compass,
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
@@ -38,62 +40,6 @@ import {
 
 // 테이블명: 기본적으로 'ships'를 사용하되 Supabase 환경에 맞춰 연동
 const TABLE_NAME = 'ships';
-/** WorkManagement의 AppStyledSelect와 동일한 모달형 드롭다운 */
-function ShipInfoStyledSelect({
-  value,
-  onChange,
-  options,
-  ariaLabel,
-  disabled = false,
-  className = 'w-full px-2.5 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden',
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  options: { value: string; label: string }[];
-  ariaLabel: string;
-  disabled?: boolean;
-  className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const selected = options.find(option => option.value === value);
-  useEffect(() => {
-    if (!open) return;
-    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === 'Escape') setOpen(false); };
-    document.addEventListener('keydown', closeOnEscape);
-    return () => document.removeEventListener('keydown', closeOnEscape);
-  }, [open]);
-
-  return <>
-    <button
-      type="button"
-      className={`${className} flex items-center justify-between gap-2 text-left ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:border-[#243B5A]'}`}
-      onClick={() => { if (!disabled) setOpen(true); }}
-      aria-label={ariaLabel}
-      aria-haspopup="dialog"
-      aria-expanded={open}
-      disabled={disabled}
-    >
-      <span className="min-w-0 flex-1 truncate">{selected?.label || '선택해주세요'}</span>
-      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#64748B]" />
-    </button>
-    {open && <div className="fixed inset-0 z-[9999999] flex items-center justify-center bg-slate-900/25 p-4" onClick={() => setOpen(false)}>
-      <div role="dialog" aria-modal="true" aria-label={ariaLabel} onClick={event => event.stopPropagation()} className="w-full max-w-sm overflow-hidden rounded-2xl border border-[#E2E5E9] bg-white shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
-        <div className="flex items-center justify-between gap-3 border-b border-[#E2E5E9] bg-[#F8FAFC] px-4 py-3">
-          <span className="text-sm font-bold text-[#243B5A]">{ariaLabel}</span>
-          <button type="button" onClick={() => setOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#E2E8F0]" aria-label="선택 메뉴 닫기"><X className="h-4 w-4" /></button>
-        </div>
-        <div className="max-h-[60dvh] overflow-y-auto p-2">
-          {options.map(option => <button key={option.value} type="button" onClick={() => { onChange(option.value); setOpen(false); }} className={`mb-1 flex w-full items-center justify-between gap-3 rounded-lg px-3 py-3 text-left text-sm transition-colors last:mb-0 ${option.value === value ? 'bg-[#243B5A] font-bold text-white' : 'text-[#1F2937] hover:bg-[#F5F6F8]'}`}>
-            <span className="min-w-0 break-words">{option.label}</span>
-            {option.value === value && <span aria-hidden="true" className="shrink-0">✓</span>}
-          </button>)}
-          {options.length === 0 && <p className="px-3 py-4 text-center text-xs text-[#64748B]">선택 가능한 항목이 없습니다.</p>}
-        </div>
-      </div>
-    </div>}
-  </>;
-}
-
 /** WorkManagement와 동일한 스타일의 날짜 선택 달력 */
 function ShipCalendarDatePicker({
   value,
@@ -247,20 +193,24 @@ function ShipCalendarDatePicker({
               </button>
 
               <div className="flex items-center gap-1">
-                <ShipInfoStyledSelect
-                  ariaLabel="연도 선택"
-                  value={String(viewYear)}
-                  onChange={(value) => setViewYear(Number(value))}
-                  options={Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map(year => ({ value: String(year), label: `${year}년` }))}
+                <select
+                  value={viewYear}
+                  onChange={(event) => setViewYear(Number(event.target.value))}
                   className="max-w-[112px] rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none"
-                />
-                <ShipInfoStyledSelect
-                  ariaLabel="월 선택"
-                  value={String(viewMonth)}
-                  onChange={(value) => setViewMonth(Number(value))}
-                  options={Array.from({ length: 12 }, (_, month) => ({ value: String(month), label: `${month + 1}월` }))}
+                >
+                  {Array.from({ length: Math.max(80, new Date().getFullYear() - 1960 + 21) }, (_, index) => 1960 + index).map(year => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <select
+                  value={viewMonth}
+                  onChange={(event) => setViewMonth(Number(event.target.value))}
                   className="rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] px-2 py-1.5 text-sm font-bold text-[#243B5A] outline-none"
-                />
+                >
+                  {Array.from({ length: 12 }, (_, month) => (
+                    <option key={month} value={month}>{month + 1}월</option>
+                  ))}
+                </select>
               </div>
 
               <button type="button" onClick={() => moveMonth(1)} className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#E2E5E9] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]">
@@ -345,7 +295,7 @@ function ShipCalendarDatePicker({
               </div>
             </div>
           </div>
-        </div>
+         </div>
       )}
     </div>
   );
@@ -542,6 +492,9 @@ export interface ShipItem {
   night_shift: string;        // 야간 근무자
   night_shift_user_ids?: string[];
   tank_status: ShipTankStatus; // TK1, TK2, TK3, TK4 상세 상태 및 날짜
+  map_x?: number | null; // 조선소 배치도 X 상대좌표 (0~1)
+  map_y?: number | null; // 조선소 배치도 Y 상대좌표 (0~1)
+  rotation?: number | null;
 }
 
 interface ShipInfoProps {
@@ -556,8 +509,15 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const [completedOnly, setCompletedOnly] = useState(false);
   const [isShipListCollapsed, setIsShipListCollapsed] = useState(true);//기본접
 
-  // 1. 메인 탭 상태: 'INFO'(호선 제원 정보) vs 'STATUS'(공정 현황)
-  const [activeMainTab, setActiveMainTab] = useState<'INFO' | 'STATUS'>('INFO');
+  // 1. 메인 탭 상태: 'MAP'(조선소 배치도) -> 'INFO'(호선 제원 정보) -> 'STATUS'(공정 현황) 순서
+  const [activeMainTab, setActiveMainTab] = useState<'MAP' | 'INFO' | 'STATUS'>('MAP');
+
+  // 조선소 배치도 위치 이동 모드 상태 및 Ref
+  const [isMapEditing, setIsMapEditing] = useState(false);
+  const [tempShipCoords, setTempShipCoords] = useState<Record<string, { x: number; y: number }>>({});
+  const [activeDropdownShipId, setActiveDropdownShipId] = useState<string | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // 2. Status 탭 내 Ship No. 서브탭 상태 (선택)
   const [selectedHullNo, setSelectedHullNo] = useState<string>('');
@@ -814,11 +774,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
   const fetchShips = useCallback(async () => {
     try {
       const { data, error } = await supabase
-        .from(TABLE_NAME)
-        .select('id, sort_order, ship_no, ship_name, shipowner, dock, launch_date, pt_mount_date, dwt, status, progress, commissioning_status, delivery_date, day_shift, day_shift_user_ids, night_shift, night_shift_user_ids, tank_status')
-        .order('sort_order', { ascending: true, nullsFirst: false })
-        .order('ship_no', { ascending: true });
-
+  .from(TABLE_NAME)
+  .select('id, sort_order, ship_no, ship_name, shipowner, dock, launch_date, pt_mount_date, dwt, status, progress, commissioning_status, delivery_date, day_shift, day_shift_user_ids, night_shift, night_shift_user_ids, tank_status, map_x, map_y, rotation') // 💡 이 부분에 rotation이 있는지 꼭 확인해주세요!
+  .order('sort_order', { ascending: true, nullsFirst: false })
+  .order('ship_no', { ascending: true });
+  
       if (error) {
         console.error('호선 데이터 조회 오류:', error);
       } else if (data) {
@@ -828,6 +788,15 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
           commissioning_status: normalizeCommissioningStatus(item.commissioning_status, item.status),
         }));
         setShips(parsedShips);
+// 배치도 임시 좌표 초기화
+        const initialCoords: Record<string, { x: number; y: number }> = {};
+        parsedShips.forEach((s, idx) => {
+          initialCoords[s.id] = {
+            x: s.map_x ?? (0.1 + (idx % 4) * 0.2),
+            y: s.map_y ?? (0.2 + Math.floor(idx / 4) * 0.15),
+          };
+        });
+        setTempShipCoords(initialCoords);
 
         if (parsedShips.length > 0) {
           setSelectedHullNo((current) => current || parsedShips[0].ship_no);
@@ -837,11 +806,118 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
       console.error('호선 데이터 로딩 실패:', e);
     }
   }, [normalizeTankStatus]);
+  
 
   useEffect(() => {
     fetchShips();
   }, [fetchShips]);
 
+  // 배치도 아이콘 드래그 이동 및 클릭 시 90도 회전 핸들러
+  const handleMapIconMouseDown = (shipId: string, currentRotation: number = 0, e: React.MouseEvent | React.TouchEvent) => {
+    if (!isMapEditing) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const container = mapContainerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const getClientXY = (evt: MouseEvent | TouchEvent) => {
+      if ('touches' in evt && evt.touches.length > 0) {
+        return { clientX: evt.touches[0].clientX, clientY: evt.touches[0].clientY };
+      } else if ('clientX' in evt) {
+        return { clientX: (evt as MouseEvent).clientX, clientY: (evt as MouseEvent).clientY };
+      }
+      return { clientX: 0, clientY: 0 };
+    };
+
+    const startXY = getClientXY(e.nativeEvent);
+    const startCoord = tempShipCoords[shipId] || { x: 0.5, y: 0.5 };
+    let hasMoved = false;
+
+    const onMove = (moveEvent: MouseEvent | TouchEvent) => {
+      moveEvent.preventDefault();
+      const currentXY = getClientXY(moveEvent);
+      
+      const dx = currentXY.clientX - startXY.clientX;
+      const dy = currentXY.clientY - startXY.clientY;
+
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) {
+        hasMoved = true;
+      }
+
+      const newX = Math.max(0.02, Math.min(0.98, startCoord.x + dx / rect.width));
+      const newY = Math.max(0.02, Math.min(0.98, startCoord.y + dy / rect.height));
+
+      setTempShipCoords(prev => ({
+        ...prev,
+        [shipId]: { x: newX, y: newY }
+      }));
+    };
+
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('touchmove', onMove);
+      window.removeEventListener('touchend', onUp);
+
+      // 드래그 움직임이 거의 없었다면 '클릭'으로 간주하여 90도 회전 실행
+      if (!hasMoved) {
+        const nextRotation = (currentRotation + 90) % 360;
+        setShips(prev => prev.map(s => s.id === shipId ? { ...s, rotation: nextRotation } : s));
+        
+        // Supabase에 회전 각도 즉시 반영 저장
+        supabase.from('ships').update({ rotation: nextRotation }).eq('id', shipId).then(({ error }) => {
+          if (error) console.error('회전 각도 저장 실패:', error);
+        });
+      }
+    };
+
+    window.addEventListener('mousemove', onMove, { passive: false });
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchmove', onMove, { passive: false });
+    window.addEventListener('touchend', onUp);
+  };
+
+  // 배치도 위치 변경사항 Supabase 저장
+  const handleSaveMapCoords = async () => {
+    if (!isAdmin) return;
+
+    try {
+      const updates = Object.entries(tempShipCoords).map(async ([id, coord]) => {
+        return supabase
+          .from(TABLE_NAME)
+          .update({ map_x: coord.x, map_y: coord.y })
+          .eq('id', id);
+      });
+
+      await Promise.all(updates);
+
+      setShips(prev => prev.map(s => ({
+        ...s,
+        map_x: tempShipCoords[s.id]?.x ?? s.map_x,
+        map_y: tempShipCoords[s.id]?.y ?? s.map_y,
+      })));
+
+      setIsMapEditing(false);
+      showAlert('저장 완료', 'Yard 내 호선 위치가 성공적으로 저장되었습니다.', 'success');
+    } catch (e: any) {
+      showAlert('저장 실패', '위치 저장 중 오류가 발생했습니다: ' + (e?.message || '알 수 없는 오류'), 'error');
+    }
+  };
+
+  // 배치도 위치 변경 취소
+  const handleCancelMapCoords = () => {
+    const resetCoords: Record<string, { x: number; y: number }> = {};
+    ships.forEach(s => {
+      resetCoords[s.id] = {
+        x: s.map_x ?? 0.5,
+        y: s.map_y ?? 0.5,
+      };
+    });
+    setTempShipCoords(resetCoords);
+    setIsMapEditing(false);
+  };
   const handleStatusChange = (newStatus: ShipStatus) => {
     const calculatedProgress = STATUS_PROGRESS_MAP[newStatus];
     setFormData(prev => ({
@@ -1676,9 +1752,22 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         </div>
       )}
 
-      {/* 0. 대분류 메인 탭 네비게이션 */}
-      <div className="bg-white p-2 rounded-xl border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2">
-        <div className="flex items-center space-x-1.5">
+      {/* 0. 대분류 메인 탭 네비게이션 (순서: 1.조선소 배치도 -> 2.호선 제원 정보 -> 3.Status) */}
+      <div className="bg-white p-2 rounded-xl border border-[#E2E5E9] shadow-2xs flex items-center justify-between gap-2 overflow-x-auto">
+        <div className="flex items-center space-x-1.5 shrink-0">
+          {/* 1번 탭: 조선소 배치도 */}
+          <button
+            onClick={() => setActiveMainTab('MAP')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeMainTab === 'MAP'
+                ? 'bg-[#243B5A] text-white shadow-2xs'
+                : 'text-[#64748B] hover:text-[#1F2937] hover:bg-slate-100'
+              }`}
+          >
+            <Compass className="h-4 w-4" />
+            <span>Yard 호선 배치도</span>
+          </button>
+
+          {/* 2번 탭: 호선 제원 정보 */}
           <button
             onClick={() => setActiveMainTab('INFO')}
             className={`flex items-center space-x-2 px-4 py-2 rounded-lg text-xs font-bold transition cursor-pointer ${activeMainTab === 'INFO'
@@ -1694,6 +1783,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
             </span>
           </button>
 
+          {/* 3번 탭: Status (공정 현황) */}
           <button
             onClick={() => {
               setActiveMainTab('STATUS');
@@ -1726,8 +1816,246 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         )}
       </div>
 
+      
       {/* ============================================================== */}
-      {/* 탭 1: 호선 제원 정보 */}
+      {/* 탭 1: 조선소 배치도 (MAP) */}
+      {/* ============================================================== */}
+      {activeMainTab === 'MAP' && (
+        <div className="space-y-3">
+          {/* 상단 컨트롤 바 */}
+          <div className="bg-white p-3.5 rounded-xl border border-[#E2E5E9] shadow-2xs flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+            <div className="flex items-center space-x-2">
+              <div className="bg-[#243B5A]/10 p-2 rounded-lg text-[#243B5A]">
+                <Compass className="h-5 w-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-[#1F2937]">Yard 호선 배치도</h2>
+                <p className="text-[11px] text-[#64748B]">배경 이미지는 고정되며, 호선 아이콘을 드래그하여 위치를 조정할 수 있습니다. (모바일 가로모드 최적화)</p>
+              </div>
+            </div>
+
+            {isAdmin && (
+              <div className="flex items-center gap-2 shrink-0">
+                {!isMapEditing ? (
+                  <button
+                    type="button"
+                    onClick={() => setIsMapEditing(true)}
+                    className="flex items-center space-x-1.5 bg-[#243B5A] hover:bg-[#1d3049] text-white px-4 py-2 rounded-lg text-xs font-bold shadow-2xs transition cursor-pointer"
+                  >
+                    <Edit3 className="h-4 w-4" />
+                    <span>위치 변경 시작</span>
+                  </button>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleCancelMapCoords}
+                      className="flex items-center space-x-1 bg-white hover:bg-slate-50 text-[#64748B] border border-[#E2E5E9] px-3 py-2 rounded-lg text-xs font-semibold cursor-pointer"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                      <span>취소</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveMapCoords}
+                      className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold shadow-2xs transition cursor-pointer"
+                    >
+                      <Save className="h-4 w-4" />
+                      <span>변경사항 저장</span>
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+
+         {/* 배치도 캔버스 영역 */}
+          <div
+            ref={mapContainerRef}
+            onClick={() => setActiveDropdownShipId(null)} // 빈 배경 클릭 시 정보창 닫기
+            className="@container relative w-full overflow-hidden rounded-2xl border-2 border-[#243B5A]/20 bg-slate-900 shadow-xl select-none"
+            style={{ aspectRatio: '16/9' }}
+          >
+            {/* 고정된 배경 이미지 */}
+            <img
+              src="/HDHS yard.png"
+              alt="조선소 배치도"
+              className="absolute inset-0 w-full h-full object-fill pointer-events-none"
+            />
+
+            {/* 1. 호선 아이콘 레이어 (순수 아이콘만 렌더링) */}
+            {ships
+              .filter((ship) => !isCommissioningComplete(ship))
+              .map((ship) => {
+                const coord = tempShipCoords[ship.id] || { x: ship.map_x ?? 0.5, y: ship.map_y ?? 0.5 };
+                const isSelected = activeDropdownShipId === ship.id;
+                const currentRotation = ship.rotation || 0;
+
+                return (
+                  <div
+                    key={ship.id}
+                    className={`absolute transition-transform cursor-pointer ${
+                      isSelected ? 'z-30' : 'z-10'
+                    }`}
+                    style={{
+                      left: `${coord.x * 100}%`,
+                      top: `${coord.y * 100}%`,
+                      transform: `translate(-50%, -50%) rotate(${currentRotation}deg)`,
+                    }}
+                    onMouseDown={(e) => handleMapIconMouseDown(ship.id, currentRotation, e)}
+                    onTouchStart={(e) => {
+                      longPressTimerRef.current = setTimeout(() => {
+                        setActiveDropdownShipId(ship.id);
+                      }, 3000);
+                      handleMapIconMouseDown(ship.id, currentRotation, e);
+                    }}
+                    onTouchEnd={() => {
+                      if (longPressTimerRef.current) clearTimeout(longPressTimerRef.current);
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setActiveDropdownShipId(ship.id);
+                    }}
+                  >
+                    <div
+                      className={`flex items-center justify-between shadow-md border backdrop-blur-xs transition ${
+                        isMapEditing
+                          ? 'bg-amber-500 text-white border-amber-200 ring-2 ring-amber-300 animate-pulse'
+                          : isSelected
+                            ? 'bg-orange-700 text-white border-white ring-2 ring-white/80'
+                            : 'bg-orange-600 text-white border-orange-400 hover:bg-orange-700'
+                      }`}
+                      style={{
+                        clipPath: 'polygon(0% 50%, 15% 0%, 90% 0%, 100% 15%, 100% 85%, 90% 100%, 15% 100%)',
+                        width: 'clamp(42px, 6.2cqw, 78px)',
+                        height: 'clamp(15px, 2.2cqw, 26px)',
+                        paddingLeft: 'clamp(6px, 0.9cqw, 11px)',
+                        paddingRight: 'clamp(4px, 0.5cqw, 8px)',
+                        borderRadius: '3px',
+                      }}
+                    >
+                      <Anchor
+                        className="shrink-0 text-orange-200"
+                        style={{
+                          width: 'clamp(8px, 1.1cqw, 13px)',
+                          height: 'clamp(8px, 1.1cqw, 13px)',
+                        }}
+                      />
+                      <span
+                        className="font-mono font-bold tracking-tight text-white truncate"
+                        style={{
+                          fontSize: 'clamp(7px, 0.95cqw, 11px)',
+                        }}
+                      >
+                        {ship.ship_no}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+
+            {/* 2. 선택된 호선 상세 정보창 (회전 영향 없는 최상단 독립 레이어) */}
+            {activeDropdownShipId && (() => {
+              const targetShip = ships.find((s) => s.id === activeDropdownShipId);
+              if (!targetShip) return null;
+
+              const coord = tempShipCoords[targetShip.id] || {
+                x: targetShip.map_x ?? 0.5,
+                y: targetShip.map_y ?? 0.5,
+              };
+              const stats = calculateTankStats(targetShip.tank_status);
+
+              // 좌/우 및 상/하 위치에 따라 정보창이 화면 안쪽으로만 펼쳐지도록 보정
+              const isLeftEdge = coord.x < 0.28;
+              const isRightEdge = coord.x > 0.72;
+              const isTopEdge = coord.y < 0.42;
+
+              const translateX = isLeftEdge ? '0%' : isRightEdge ? '-100%' : '-50%';
+              const translateY = isTopEdge ? '16px' : 'calc(-100% - 16px)';
+
+              return (
+                <div
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onTouchStart={(e) => e.stopPropagation()}
+                  className="absolute w-60 sm:w-64 max-w-[calc(100%-24px)] bg-white/95 backdrop-blur-md border border-[#E2E5E9] rounded-xl p-3 shadow-2xl z-[9999] text-[#1F2937] text-xs space-y-2"
+                  style={{
+                    // 좌우 끝에서도 최소 12px 여백을 확보하며 배치도 내부에 고정
+                    left: `clamp(12px, ${coord.x * 100}%, calc(100% - 12px))`,
+                    top: `${coord.y * 100}%`,
+                    transform: `translate(${translateX}, ${translateY})`,
+                  }}
+                >
+                  <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-1.5">
+                    <span className="font-mono font-bold text-[#243B5A]">Ship #{targetShip.ship_no}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveDropdownShipId(null);
+                      }}
+                      className="p-0.5 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="space-y-1 text-[11px]">
+                    <div className="font-bold text-[#1F2937] truncate">{targetShip.ship_name}</div>
+                    <div className="text-[#64748B]">
+                      선주사: <strong className="text-[#1F2937]">{targetShip.shipowner || '-'}</strong>
+                    </div>
+                    <div className="text-[#64748B]">
+                      현재위치: <strong className="text-[#243B5A]">{targetShip.dock || '-'}</strong>
+                    </div>
+                    <div className="text-[#64748B]">
+                      공정 달성률:{' '}
+                      <strong className="text-emerald-700">
+                        {stats.completed}/{stats.total} ({stats.percent}%)
+                      </strong>
+                    </div>
+                  </div>
+
+                  <div className="pt-1 border-t border-[#E2E5E9] flex justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveDropdownShipId(null);
+                        setActiveMainTab('STATUS');
+                        setSelectedHullNo(targetShip.ship_no);
+                      }}
+                      className="px-2.5 py-1 bg-[#243B5A] text-white rounded font-bold text-[10px] cursor-pointer"
+                    >
+                      Status 열람
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveDropdownShipId(null);
+                        setSelectedShip(targetShip);
+                      }}
+                      className="px-2.5 py-1 bg-slate-100 text-[#1F2937] rounded font-semibold text-[10px] cursor-pointer"
+                    >
+                      제원 정보
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2">
+            <Info className="h-4 w-4 shrink-0 text-amber-700" />
+            <span><strong>안내:</strong> PC에서는 마우스 드래그, 모바일에서는 손가락 터치로 호선 아이콘을 이동할 수 있습니다. 호선 정보를 확인하려면 아이콘을 <strong>더블클릭</strong>하거나 <strong>3초 이상 꾹</strong> 눌러주세요.</span>
+          </div>
+        </div>
+      )}
+      
+        {/* ============================================================== */}
+      {/* 탭 2: 호선 제원 정보 */}
       {/* ============================================================== */}
       {activeMainTab === 'INFO' && (
         <>
@@ -2070,10 +2398,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
         </>
       )}
       </>
-    )}
+      )}
+          
 
       {/* ============================================================== */}
-      {/* 탭 2: Status (공정 현황) */}
+      {/* 탭 3: Status (공정 현황) */}
       {/* ============================================================== */}
       {activeMainTab === 'STATUS' && (
         <div className="space-y-4">
@@ -2793,13 +3122,17 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                   <label className="block text-[11px] font-semibold text-[#1F2937] mb-1">
                     진행 단계 현황
                   </label>
-                  <ShipInfoStyledSelect
-                    ariaLabel="진행 단계 현황 선택"
+                  <select
                     value={formData.status}
-                    onChange={(value) => handleStatusChange(value as ShipStatus)}
-                    options={STATUS_LIST.map((st) => ({ value: st, label: st }))}
-                    className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs font-semibold text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
-                  />
+                    onChange={(e) => handleStatusChange(e.target.value as ShipStatus)}
+                    className="w-full px-2.5 py-1.5 bg-[#FFFFFF] border border-[#E2E5E9] rounded-lg text-xs text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden font-semibold"
+                  >
+                    {STATUS_LIST.map((st) => (
+                      <option key={st} value={st}>
+                        {st}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -3272,11 +3605,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
                               {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <ShipInfoStyledSelect
-                                    ariaLabel="No Leak 선택"
+                                  <select
+                                    aria-label="No Leak 선택"
                                     disabled={!isCurrentTankEnabled}
                                     value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? 'No Leak' : ''}
-                                    onChange={(selectedValue) => {
+                                    onChange={(e) => {
+                                      const selectedValue = e.target.value === 'No Leak' ? 'No Leak' : '';
                                       setStatusCreateFormData(prev => ({
                                         ...prev,
                                         tank_status: {
@@ -3288,9 +3622,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                         },
                                       }));
                                     }}
-                                    options={[{ value: '', label: 'Leak 수량 입력' }, { value: 'No Leak', label: 'No Leak' }]}
                                     className="px-2 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
-                                  />
+                                  >
+                                    <option value="">Leak 수량 입력</option>
+                                    <option value="No Leak">No Leak</option>
+                                  </select>
                                   <input
                                     type="number"
                                     min="0"
@@ -3746,11 +4082,12 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
 
                               {(step.key === 'nh3_uf' || step.key === 'nh3_welding') && (
                                 <div className="flex items-center gap-1.5 shrink-0">
-                                  <ShipInfoStyledSelect
-                                    ariaLabel="No Leak 선택"
+                                  <select
+                                    aria-label="No Leak 선택"
                                     disabled={!isCurrentTankEnabled}
                                     value={String(currentStepData.value || '').trim().toLowerCase() === 'no leak' ? 'No Leak' : ''}
-                                    onChange={(selectedValue) => {
+                                    onChange={(e) => {
+                                      const selectedValue = e.target.value === 'No Leak' ? 'No Leak' : '';
                                       setStatusEditFormData(prev => ({
                                         ...prev,
                                         tank_status: {
@@ -3762,9 +4099,11 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                                         },
                                       }));
                                     }}
-                                    options={[{ value: '', label: 'Leak 수량 입력' }, { value: 'No Leak', label: 'No Leak' }]}
                                     className="px-2 py-1.5 bg-white border border-[#E2E5E9] rounded-lg text-[11px] text-[#1F2937] focus:border-[#243B5A] focus:outline-hidden"
-                                  />
+                                  >
+                                    <option value="">Leak 수량 입력</option>
+                                    <option value="No Leak">No Leak</option>
+                                  </select>
                                   <input
                                     type="number"
                                     min="0"
