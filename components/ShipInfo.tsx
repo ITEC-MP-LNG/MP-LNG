@@ -1829,9 +1829,8 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 <Compass className="h-5 w-5" />
               </div>
               <div>
-                <h2 className="text-sm font-bold text-[#1F2937]">Yard 호선 배치도</h2>
-                <p className="text-[11px] text-[#64748B]">배경 이미지는 고정되며, 호선 아이콘을 드래그하여 위치를 조정할 수 있습니다. (모바일 가로모드 최적화)</p>
-              </div>
+                <h2 className="text-sm font-bold text-[#1F2937]">Yard 호선 배치도(모바일 가로모드 최적화)</h2>
+                             </div>
             </div>
 
             {isAdmin && (
