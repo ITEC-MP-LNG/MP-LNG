@@ -1830,7 +1830,7 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
               </div>
               <div>
                 <h2 className="text-sm font-bold text-[#1F2937]">Yard 호선 배치도</h2>
-              <p className="text-[11px] text-[#64748B]">호선 위치를 확인할 수 있습니다. (모바일 가로모드 최적화)</p>  
+                <p className="text-[11px] text-[#64748B]">배경 이미지는 고정되며, 호선 아이콘을 드래그하여 위치를 조정할 수 있습니다. (모바일 가로모드 최적화)</p>
               </div>
             </div>
 
@@ -1955,96 +1955,88 @@ export default function ShipInfo({ isAdmin }: ShipInfoProps) {
                 );
               })}
 
-            {/* 2. 선택된 호선 상세 정보창 (회전 영향 없는 최상단 독립 레이어) */}
-            {activeDropdownShipId && (() => {
-              const targetShip = ships.find((s) => s.id === activeDropdownShipId);
-              if (!targetShip) return null;
+            {/* 2. 선택된 호선 상세 정보창 (화면 정중앙 고정 레이어) */}
+{activeDropdownShipId && (() => {
+  const targetShip = ships.find((s) => s.id === activeDropdownShipId);
+  if (!targetShip) return null;
 
-              const coord = tempShipCoords[targetShip.id] || {
-                x: targetShip.map_x ?? 0.5,
-                y: targetShip.map_y ?? 0.5,
-              };
-              const stats = calculateTankStats(targetShip.tank_status);
+  const stats = calculateTankStats(targetShip.tank_status);
 
-              // 좌/우 및 상/하 위치에 따라 정보창이 화면 안쪽으로만 펼쳐지도록 보정
-              const isLeftEdge = coord.x < 0.28;
-              const isRightEdge = coord.x > 0.72;
-              const isTopEdge = coord.y < 0.42;
+  return (
+    <div
+      onClick={(e) => {
+        e.stopPropagation();
+        setActiveDropdownShipId(null); // 배경 클릭 시 닫기
+      }}
+      onMouseDown={(e) => e.stopPropagation()}
+      onTouchStart={(e) => e.stopPropagation()}
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-slate-900/40 p-4"
+    >
+      <div
+        onClick={(e) => e.stopPropagation()} // 내부 클릭 시 닫힘 방지
+        className="w-65 sm:w-72 max-w-full bg-white/95 backdrop-blur-md border border-[#E2E5E9] rounded-2xl p-4 shadow-2xl z-[10000] text-[#1F2937] text-xs space-y-3 animate-in fade-in zoom-in-95 duration-150"
+      >
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
+          <span className="font-mono font-bold text-sm text-[#243B5A]">Ship #{targetShip.ship_no}</span>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveDropdownShipId(null);
+            }}
+            className="p-1 rounded-lg text-[#64748B] hover:bg-slate-100 cursor-pointer"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
-              const translateX = isLeftEdge ? '0%' : isRightEdge ? '-100%' : '-50%';
-              const translateY = isTopEdge ? '16px' : 'calc(-100% - 16px)';
+        <div className="space-y-1.5 text-xs">
+          <div className="font-bold text-sm text-[#1F2937] truncate">{targetShip.ship_name}</div>
+          <div className="text-[#64748B] flex justify-between">
+            <span>선주사:</span>
+            <strong className="text-[#1F2937]">{targetShip.shipowner || '-'}</strong>
+          </div>
+          <div className="text-[#64748B] flex justify-between">
+            <span>현재위치:</span>
+            <strong className="text-[#243B5A]">{targetShip.dock || '-'}</strong>
+          </div>
+          <div className="text-[#64748B] flex justify-between">
+            <span>공정 달성률:</span>
+            <strong className="text-emerald-700">
+              {stats.completed}/{stats.total} ({stats.percent}%)
+            </strong>
+          </div>
+        </div>
 
-              return (
-                <div
-                  onClick={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onTouchStart={(e) => e.stopPropagation()}
-                  className="absolute w-60 sm:w-64 max-w-[calc(100%-24px)] bg-white/95 backdrop-blur-md border border-[#E2E5E9] rounded-xl p-3 shadow-2xl z-[9999] text-[#1F2937] text-xs space-y-2"
-                  style={{
-                    // 좌우 끝에서도 최소 12px 여백을 확보하며 배치도 내부에 고정
-                    left: `clamp(12px, ${coord.x * 100}%, calc(100% - 12px))`,
-                    top: `${coord.y * 100}%`,
-                    transform: `translate(${translateX}, ${translateY})`,
-                  }}
-                >
-                  <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-1.5">
-                    <span className="font-mono font-bold text-[#243B5A]">Ship #{targetShip.ship_no}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveDropdownShipId(null);
-                      }}
-                      className="p-0.5 text-[#64748B] hover:text-[#1F2937] cursor-pointer"
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="space-y-1 text-[11px]">
-                    <div className="font-bold text-[#1F2937] truncate">{targetShip.ship_name}</div>
-                    <div className="text-[#64748B]">
-                      선주사: <strong className="text-[#1F2937]">{targetShip.shipowner || '-'}</strong>
-                    </div>
-                    <div className="text-[#64748B]">
-                      현재위치: <strong className="text-[#243B5A]">{targetShip.dock || '-'}</strong>
-                    </div>
-                    <div className="text-[#64748B]">
-                      공정 달성률:{' '}
-                      <strong className="text-emerald-700">
-                        {stats.completed}/{stats.total} ({stats.percent}%)
-                      </strong>
-                    </div>
-                  </div>
-
-                  <div className="pt-1 border-t border-[#E2E5E9] flex justify-end gap-1">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveDropdownShipId(null);
-                        setActiveMainTab('STATUS');
-                        setSelectedHullNo(targetShip.ship_no);
-                      }}
-                      className="px-2.5 py-1 bg-[#243B5A] text-white rounded font-bold text-[10px] cursor-pointer"
-                    >
-                      Status 열람
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveDropdownShipId(null);
-                        setSelectedShip(targetShip);
-                      }}
-                      className="px-2.5 py-1 bg-slate-100 text-[#1F2937] rounded font-semibold text-[10px] cursor-pointer"
-                    >
-                      제원 정보
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
+        <div className="pt-2 border-t border-[#E2E5E9] flex justify-end gap-1.5">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveDropdownShipId(null);
+              setActiveMainTab('STATUS');
+              setSelectedHullNo(targetShip.ship_no);
+            }}
+            className="flex-1 py-1.5 bg-[#243B5A] text-white rounded-xl font-bold text-xs cursor-pointer text-center"
+          >
+            Status 열람
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setActiveDropdownShipId(null);
+              setSelectedShip(targetShip);
+            }}
+            className="flex-1 py-1.5 bg-slate-100 text-[#1F2937] rounded-xl font-semibold text-xs cursor-pointer text-center hover:bg-slate-200"
+          >
+            제원 정보
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+})()}
           </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 flex items-center gap-2">
