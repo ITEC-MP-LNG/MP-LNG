@@ -5,7 +5,7 @@ import {
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, AlertCircle, PlayCircle, PlusCircle,
-  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown
+  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown, Check, AlertTriangle
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
@@ -46,6 +46,17 @@ type TaskStatusConsent = {
   user_id: string;
   user_name: string;
   created_at?: string;
+};
+
+type TaskSafetyConfirmation = {
+  id: string;
+  task_id: string;
+  user_id: string;
+  user_name: string;
+  confirmation_type: 'START' | 'FINISH';
+  checked_items: string[];
+  photo_paths: string[];
+  created_at: string;
 };
 
 export interface CabinVessel {
@@ -116,6 +127,97 @@ const compressDailyWorkPhoto = async (file: File): Promise<File> => {
   }
 };
 
+// JPEG 사진을 ZIP(Store 방식)으로 묶어 다운로드합니다. 별도 라이브러리 설치가 필요 없습니다.
+const downloadFilesAsZip = async (files: { url: string; name: string }[], zipFileName: string) => {
+  if (!files.length) throw new Error('압축할 사진이 없습니다.');
+  const encoder = new TextEncoder();
+  const crc32 = (bytes: Uint8Array) => {
+    let crc = 0xffffffff;
+    for (let i = 0; i < bytes.length; i += 1) {
+      crc ^= bytes[i];
+      for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  const write16 = (view: DataView, offset: number, value: number) => view.setUint16(offset, value, true);
+  const write32 = (view: DataView, offset: number, value: number) => view.setUint32(offset, value >>> 0, true);
+  const localParts: Uint8Array[] = [];
+  const centralParts: Uint8Array[] = [];
+  let localOffset = 0;
+
+  for (const file of files) {
+    const response = await fetch(file.url);
+    if (!response.ok) throw new Error(`사진 다운로드 실패: ${file.name}`);
+    const data = new Uint8Array(await response.arrayBuffer());
+    const nameBytes = encoder.encode(file.name);
+    const crc = crc32(data);
+
+    const localHeader = new Uint8Array(30 + nameBytes.length);
+    const localView = new DataView(localHeader.buffer);
+    write32(localView, 0, 0x04034b50);
+    write16(localView, 4, 20);
+    write16(localView, 6, 0x0800);
+    write16(localView, 8, 0);
+    write16(localView, 10, 0);
+    write16(localView, 12, 0);
+    write32(localView, 14, crc);
+    write32(localView, 18, data.length);
+    write32(localView, 22, data.length);
+    write16(localView, 26, nameBytes.length);
+    write16(localView, 28, 0);
+    localHeader.set(nameBytes, 30);
+    localParts.push(localHeader, data);
+
+    const centralHeader = new Uint8Array(46 + nameBytes.length);
+    const centralView = new DataView(centralHeader.buffer);
+    write32(centralView, 0, 0x02014b50);
+    write16(centralView, 4, 20);
+    write16(centralView, 6, 20);
+    write16(centralView, 8, 0x0800);
+    write16(centralView, 10, 0);
+    write16(centralView, 12, 0);
+    write16(centralView, 14, 0);
+    write32(centralView, 16, crc);
+    write32(centralView, 20, data.length);
+    write32(centralView, 24, data.length);
+    write16(centralView, 28, nameBytes.length);
+    write16(centralView, 30, 0);
+    write16(centralView, 32, 0);
+    write16(centralView, 34, 0);
+    write16(centralView, 36, 0);
+    write32(centralView, 38, 0);
+    write32(centralView, 42, localOffset);
+    centralHeader.set(nameBytes, 46);
+    centralParts.push(centralHeader);
+    localOffset += localHeader.length + data.length;
+  }
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = new Uint8Array(22);
+  const endView = new DataView(end.buffer);
+  write32(endView, 0, 0x06054b50);
+  write16(endView, 4, 0);
+  write16(endView, 6, 0);
+  write16(endView, 8, files.length);
+  write16(endView, 10, files.length);
+  write32(endView, 12, centralSize);
+  write32(endView, 16, localOffset);
+  write16(endView, 20, 0);
+
+  const zipParts = [...localParts, ...centralParts, end].map(part =>
+    part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength) as ArrayBuffer
+  );
+  const blob = new Blob(zipParts, { type: 'application/zip' });
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = objectUrl;
+  anchor.download = zipFileName.endsWith('.zip') ? zipFileName : `${zipFileName}.zip`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(objectUrl);
+};
+
 
 const formatDateToYYYYMMDD = (d: Date) => {
   const year = d.getFullYear();
@@ -183,12 +285,16 @@ type VehicleUsageRow = {
   mileage: number | null;
   destination: string;
   purpose: string;
+  is_business_trip?: boolean | null;
+  driver_changed_from?: string | null;
   maintenance_start_date: string | null;
   maintenance_end_date: string | null;
   is_parked: boolean;
   parking_remarks: string | null;
   parking_updated_by_id?: string | null;
   parking_updated_by_name?: string | null;
+  companions?: string[];
+  speed_rule_confirmed_at?: string | null;
   created_at?: string;
 };
 type VehicleDriver = { id: string; name: string; yard_cert_details?: Array<{ name?: string }> };
@@ -592,7 +698,7 @@ function AppStyledSelect({
     </div>}
   </>;
 }
-
+// 차량배차 수정
 function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCustomConfirm }: {
   currentUser?: { id: string; name: string; role: string } | null;
   isAdmin: boolean;
@@ -610,16 +716,49 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
   const [vehicleInput, setVehicleInput] = useState('');
   const [editingVehicleId, setEditingVehicleId] = useState('');
   const [usageModalOpen, setUsageModalOpen] = useState(false);
+  // Yard 구역별 속도기준 사전 확인 모달 State
+  const [isSpeedRuleModalOpen, setIsSpeedRuleModalOpen] = useState(false);
+  const [speedRuleConfirmed, setSpeedRuleConfirmed] = useState(false);
+
   const [parkingRow, setParkingRow] = useState<VehicleUsageRow | null>(null);
+  const [isParkedCheck, setIsParkedCheck] = useState(false);
   const [parkingRemarks, setParkingRemarks] = useState('');
+  const [driverChangeRow, setDriverChangeRow] = useState<VehicleUsageRow | null>(null);
+  const [driverChangeForm, setDriverChangeForm] = useState({ driverId: '', destination: '', purpose: '' });
+
+  // 운행 중 동승자 추가를 위한 동승자 등록 모달 및 Yard 구역별 속도기준 모달 추가
+  const [passengerModalLog, setPassengerModalLog] = useState<VehicleUsageRow | null>(null);
+  const [selectedPassengers, setSelectedPassengers] = useState<string[]>([]);
+  // 일반 직원 본인 동승 등록용
+  const [selfPassengerLog, setSelfPassengerLog] = useState<VehicleUsageRow | null>(null);
   const [notice, setNotice] = useState<{type:'success'|'error'|'warning'; message:string}|null>(null);
+  const [rideRole, setRideRole] = useState<'DRIVER' | 'COMPANION'>('DRIVER');
+  
+  const getDefaultDateTime = () => {
+    const now = new Date();
+    return {
+      date: formatDateToYYYYMMDD(now),
+      hour: String(now.getHours()).padStart(2, '0'),
+      minute: String(now.getMinutes()).padStart(2, '0')
+    };
+  };
+
+  const [initialDefaultTime, setInitialDefaultTime] = useState({ date: formatDateToYYYYMMDD(new Date()), hour: '09', minute: '00' });
   const [usageForm, setUsageForm] = useState({
-    used_at: `${formatDateToYYYYMMDD(new Date())}T${String(new Date().getHours()).padStart(2,'0')}:${String(new Date().getMinutes()).padStart(2,'0')}`,
-    mileage: '', destination: '', purpose: '', maintenance_start_date: '', maintenance_end_date: ''
+    used_at: `${formatDateToYYYYMMDD(new Date())}T09:00`,
+    mileage: '',
+    destination: '',
+    purpose: '',
+    isMaintenance: false,
+    isTrip: false,
+    maintenance_start_date: '',
+    maintenance_end_date: ''
   });
+
   const currentId = String(currentUser?.id || '');
   const currentName = String(currentUser?.name || '').trim();
   const notify = useCallback((message: string, type: 'success'|'error'|'warning' = 'success') => setNotice({message,type}), []);
+  
   useEffect(() => {
     if (!notice) return;
     const timer = window.setTimeout(() => setNotice(null), 3200);
@@ -631,7 +770,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
     try {
       const [vehicleResult, usageResult, driverResult] = await Promise.all([
         supabase.from('work_vehicles').select('id, vehicle_number, created_at').order('vehicle_number', {ascending:true}),
-        supabase.from('work_vehicle_usage').select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, created_at').order('used_at', {ascending:false}),
+        supabase.from('work_vehicle_usage').select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, companions, is_business_trip, driver_changed_from, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, speed_rule_confirmed_at, created_at').order('used_at', {ascending:false}),
         supabase.from('app_users').select('id, name, yard_cert_details')
       ]);
       if (vehicleResult.error) throw vehicleResult.error;
@@ -643,7 +782,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
       setDrivers(((driverResult.data || []) as any[]).map(d => ({...d, id:String(d.id), name:String(d.name || ''), yard_cert_details:Array.isArray(d.yard_cert_details) ? d.yard_cert_details : []})));
       setActiveVehicleId(prev => vehicleList.some(v => v.id === prev) ? prev : (vehicleList[0]?.id || ''));
     } catch (error: any) {
-      showCustomAlert('차량 정보 조회 오류', `차량 정보를 불러오지 못했습니다. Supabase SQL 및 권한을 확인해주세요.\n${error?.message || ''}`);
+      showCustomAlert('차량 정보 조회 오류', `차량 정보를 불러오지 못했습니다.\n${error?.message || ''}`);
     } finally { setLoading(false); }
   }, [showCustomAlert]);
 
@@ -651,9 +790,107 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
 
   const selectedVehicle = vehicles.find(v => v.id === activeVehicleId);
   const visibleUsage = useMemo(() => [...usageRows].sort((a,b)=>String(b.used_at).localeCompare(String(a.used_at))), [usageRows]);
+  
   const eligibleDrivers = useMemo(() => drivers.filter(d => (d.yard_cert_details || []).some(cert => String(cert?.name || '').replace(/\s/g,'').includes('작업용차량운전자교육'))), [drivers]);
-  const currentIsEligible = eligibleDrivers.some(d => (currentId && d.id === currentId) || (currentName && d.name.trim() === currentName));
-  const canEditParking = useCallback((row: VehicleUsageRow) => isAdmin || (!!currentName && row.user_name.trim() === currentName) || (!!currentId && String(row.user_id || '') === currentId), [isAdmin, currentName, currentId]);
+  const isPersonEligibleDriver = useCallback((name: string) => {
+    const cleanName = name.replace(/\(동승\)/g, '').trim();
+    if (!cleanName) return false;
+    return eligibleDrivers.some(d => d.name.trim() === cleanName);
+  }, [eligibleDrivers]);
+
+  const currentIsEligible = useMemo(() => {
+    return eligibleDrivers.some(d => (currentId && d.id === currentId) || (currentName && d.name.trim() === currentName));
+  }, [eligibleDrivers, currentId, currentName]);
+
+  const activeOngoingUsageForSelected = useMemo(() => {
+    if (!activeVehicleId) return null;
+    const ongoing = usageRows
+      .filter(r => r.vehicle_id === activeVehicleId && !r.is_parked)
+      .sort((a, b) => String(b.used_at).localeCompare(String(a.used_at)));
+    return ongoing[0] || null;
+  }, [usageRows, activeVehicleId]);
+
+  // 💡 [요청 1 반영] 출장중과 정비중 상태 배지 판별 순서 및 조건 수정
+  const getVehicleStatus = useCallback((vehicleId: string) => {
+    const now = new Date();
+    const today = formatDateToYYYYMMDD(now);
+    const vehicleUsages = usageRows
+      .filter(row => row.vehicle_id === vehicleId)
+      .sort((a, b) => String(b.used_at).localeCompare(String(a.used_at)));
+
+    const latest = vehicleUsages[0];
+    
+    // 1. 출장중 판별 (is_business_trip 또는 [출장] 포함, 주차 안 된 최신 건)
+    const inTrip = vehicleUsages.find(row => !row.is_parked && (row.is_business_trip || /\[출장\]/.test(row.purpose)));
+    if (inTrip) {
+      const companionsInfo = (inTrip.companions || []).map(name => ({ name, educated: isPersonEligibleDriver(name) }));
+      return {
+        label: '출장중',
+        badgeClass: 'bg-purple-100 text-purple-800 border-purple-200',
+        detail: `출장: ${inTrip.user_name} (${inTrip.destination})`,
+        companionsInfo,
+        latestUsage: inTrip,
+      };
+    }
+
+    // 2. 정비중 판별 (목적에 [정비] 포함 또는 기간 내, 주차 안 된 최신 건)
+    const inMaintenance = vehicleUsages.find(row =>
+      (!row.is_parked && (/\[정비\]/.test(row.purpose) || (row.maintenance_start_date && row.maintenance_end_date && today >= row.maintenance_start_date && today <= row.maintenance_end_date)))
+    );
+    if (inMaintenance) {
+      const companionsInfo = (inMaintenance.companions || []).map(name => ({ name, educated: isPersonEligibleDriver(name) }));
+      return {
+        label: '정비중',
+        badgeClass: 'bg-red-100 text-red-700 border-red-200',
+        detail: `정비: ${inMaintenance.user_name} (${inMaintenance.destination})`,
+        companionsInfo,
+        latestUsage: inMaintenance,
+      };
+    }
+
+    if (!latest) {
+      return {
+        label: '운행가능',
+        badgeClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+        detail: '사용 이력 없음',
+        companionsInfo: [] as { name: string; educated: boolean }[],
+        latestUsage: null,
+      };
+    }
+
+    if (!latest.is_parked) {
+      const companionsInfo = (latest.companions || []).map(name => ({ name, educated: isPersonEligibleDriver(name) }));
+      const usedDateObj = new Date(latest.used_at);
+      const isFutureReservation = /\[예약\]/.test(latest.purpose) && usedDateObj.getTime() > now.getTime();
+
+      if (isFutureReservation) {
+        const timeStr = usedDateObj.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+        return {
+          label: '사용예약',
+          badgeClass: 'bg-blue-100 text-blue-800 border-blue-200',
+          detail: `예약: ${latest.user_name} (${timeStr} · ${latest.destination})`,
+          companionsInfo,
+          latestUsage: latest,
+        };
+      }
+
+      return {
+        label: '운행중',
+        badgeClass: 'bg-amber-100 text-amber-800 border-amber-300',
+        detail: `운전: ${latest.user_name} (${latest.destination})`,
+        companionsInfo,
+        latestUsage: latest,
+      };
+    }
+
+    return {
+      label: '주차완료',
+      badgeClass: 'bg-slate-100 text-slate-700 border-slate-300',
+      detail: latest.parking_remarks || '사무실/지정구역 주차',
+      companionsInfo: [] as { name: string; educated: boolean }[],
+      latestUsage: latest,
+    };
+  }, [usageRows, isPersonEligibleDriver]);
 
   const saveVehicle = async () => {
     if (!isAdmin) { showCustomAlert('권한 제한','관리자만 차량을 등록하거나 수정할 수 있습니다.'); return; }
@@ -679,7 +916,7 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
 
   const deleteVehicle = (vehicle: VehicleRow) => {
     if (!isAdmin) { showCustomAlert('권한 제한','관리자만 차량을 삭제할 수 있습니다.'); return; }
-    if (usageRows.some(row=>row.vehicle_id===vehicle.id)) { showCustomAlert('차량 삭제 제한','이 차량의 사용 이력이 남아 있습니다. 이력 삭제 후 차량을 삭제할 수 있습니다.'); return; }
+    if (usageRows.some(row=>row.vehicle_id===vehicle.id)) { showCustomAlert('차량 삭제 제한','이 차량의 사용 이력이 남아 있습니다.'); return; }
     showCustomConfirm('차량 삭제', `${vehicle.vehicle_number} 차량을 삭제하시겠습니까?`, async () => {
       const {error} = await supabase.from('work_vehicles').delete().eq('id',vehicle.id);
       if (error) { showCustomAlert('삭제 오류',error.message); return; }
@@ -689,40 +926,151 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
     });
   };
 
+  // [차량 사용 등록] 버튼 클릭 시 -> 속도기준 서약창 먼저 오픈
+  const handleOpenVehicleUsage = () => {
+    setSpeedRuleConfirmed(false);
+    setIsSpeedRuleModalOpen(true);
+  };
+
+  // 속도기준 서약 [확인] 클릭 시 -> 실제 차량 사용 등록 모달 오픈
+  const handleConfirmSpeedRule = () => {
+    setSpeedRuleConfirmed(true);
+    setIsSpeedRuleModalOpen(false);
+    openUsage(); // 기존 openUsage 호출
+  };
+  
   const openUsage = () => {
     if (vehicles.length === 0) { showCustomAlert('차량 선택','먼저 관리자에게 차량 등록을 요청해주세요.'); return; }
-    if (!currentIsEligible) { showCustomAlert('차량 사용 제한','CERT의 YARD 자격에 작업용차량운전자교육이 등록된 인원만 차량을 사용할 수 있습니다.'); return; }
     if (!currentName) { showCustomAlert('사용자 확인','로그인 사용자 이름을 확인할 수 없습니다.'); return; }
-    const now = new Date();
-    setUsageForm({used_at:`${formatDateToYYYYMMDD(now)}T${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`,mileage:'',destination:'',purpose:'',maintenance_start_date:'',maintenance_end_date:''});
+    
+    const currentStatus = getVehicleStatus(activeVehicleId);
+    if (['운행중', '정비중', '출장중'].includes(currentStatus.label)) {
+      showCustomAlert('차량 사용 불가', `해당 차량은 현재 [${currentStatus.label}] 상태입니다. 주차 완료 처리 후 사용할 수 있습니다.`);
+      return;
+    }
+
+    const defaultRole: 'DRIVER' | 'COMPANION' = currentIsEligible ? 'DRIVER' : 'COMPANION';
+    setRideRole(defaultRole);
+
+    const def = getDefaultDateTime();
+    setInitialDefaultTime({ date: def.date, hour: def.hour, minute: def.minute });
+
+    const ongoing = usageRows
+      .filter(r => r.vehicle_id === activeVehicleId && !r.is_parked)
+      .sort((a, b) => String(b.used_at).localeCompare(String(a.used_at)))[0];
+
+    setUsageForm({
+      used_at: `${def.date}T${def.hour}:${def.minute}`,
+      mileage: '',
+      destination: defaultRole === 'COMPANION' && ongoing ? ongoing.destination : '',
+      purpose: defaultRole === 'COMPANION' && ongoing ? ongoing.purpose : '',
+      isMaintenance: false,
+      isTrip: false,
+      maintenance_start_date: '',
+      maintenance_end_date: ''
+    });
     setUsageModalOpen(true);
   };
+
+  const handleRoleChange = (nextRole: 'DRIVER' | 'COMPANION') => {
+    if (nextRole === 'DRIVER' && !currentIsEligible) {
+      showCustomAlert('운전자 등록 제한', '작업용차량운전자교육 이수자만 운전자로 등록할 수 있습니다.');
+      return;
+    }
+    setRideRole(nextRole);
+    if (nextRole === 'COMPANION' && activeOngoingUsageForSelected) {
+      setUsageForm(prev => ({
+        ...prev,
+        destination: prev.destination || activeOngoingUsageForSelected.destination,
+        purpose: prev.purpose || activeOngoingUsageForSelected.purpose,
+      }));
+    }
+  };
+
+  const isReservation = useMemo(() => {
+    if (!usageForm.used_at || !usageForm.used_at.includes('T')) return false;
+    const [datePart, timePart] = usageForm.used_at.split('T');
+    const [curH, curM] = timePart.split(':');
+    return datePart !== initialDefaultTime.date || curH !== initialDefaultTime.hour || curM !== initialDefaultTime.minute;
+  }, [usageForm.used_at, initialDefaultTime]);
 
   const saveUsage = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!selectedVehicle || !currentUser) { notify('사용창에서 차량번호를 선택해주세요.','warning'); return; }
-    if (!currentIsEligible) { showCustomAlert('차량 사용 제한','작업용차량운전자교육 자격이 확인되지 않습니다.'); return; }
-    if (!usageForm.used_at || !usageForm.destination.trim() || !usageForm.purpose.trim()) { notify('사용시간, 이동장소, 사용목적을 입력해주세요.','warning'); return; }
-    const maintenance = /정비|수리/.test(usageForm.purpose);
-    const hasAnyPeriod = !!(usageForm.maintenance_start_date || usageForm.maintenance_end_date);
-    if ((maintenance || hasAnyPeriod) && (!usageForm.maintenance_start_date || !usageForm.maintenance_end_date)) { notify('기간을 입력할 경우 시작일과 종료일을 모두 선택해주세요. 정비 또는 수리 목적이면 기간 입력이 필수입니다.','warning'); return; }
-    if (usageForm.maintenance_start_date && usageForm.maintenance_end_date && usageForm.maintenance_end_date < usageForm.maintenance_start_date) { notify('기간 종료일은 시작일보다 빠를 수 없습니다.','warning'); return; }
+    
+    if (rideRole === 'DRIVER' && !currentIsEligible) {
+      showCustomAlert('차량 사용 제한','운전교육 자격이 확인되지 않아 운전자로 등록할 수 없습니다.');
+      return;
+    }
+
     setSaving(true);
     try {
+      if (rideRole === 'COMPANION' && activeOngoingUsageForSelected) {
+        if (activeOngoingUsageForSelected.user_name.trim() === currentName) {
+          notify('본인이 이미 해당 차량의 운전자로 운행 중입니다.', 'warning');
+          setSaving(false);
+          return;
+        }
+        const existingCompanions = Array.isArray(activeOngoingUsageForSelected.companions) ? activeOngoingUsageForSelected.companions : [];
+        if (existingCompanions.includes(currentName)) {
+          notify('이미 해당 운행 건의 동승자로 등록되어 있습니다.', 'warning');
+          setUsageModalOpen(false);
+          setSaving(false);
+          return;
+        }
+        const nextCompanions = [...existingCompanions, currentName];
+        const { data, error } = await supabase
+          .from('work_vehicle_usage')
+          .update({ companions: nextCompanions, ...(speedRuleConfirmed ? { speed_rule_confirmed_at: new Date().toISOString() } : {}), updated_at: new Date().toISOString() })
+          .eq('id', activeOngoingUsageForSelected.id)
+          .select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, companions, is_business_trip, driver_changed_from, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, speed_rule_confirmed_at, created_at')
+          .single();
+
+        if (error) throw error;
+
+        setUsageRows(prev => prev.map(row => row.id === activeOngoingUsageForSelected.id ? data as VehicleUsageRow : row));
+        setSpeedRuleConfirmed(false);
+        setUsageModalOpen(false);
+        notify(`${activeOngoingUsageForSelected.user_name} 운전자의 차량에 동승자로 등록되었습니다.`);
+        return;
+      }
+
+      if (!usageForm.used_at || !usageForm.destination.trim() || !usageForm.purpose.trim()) {
+        notify('사용시간, 이동장소, 사용목적을 입력해주세요.','warning');
+        setSaving(false);
+        return;
+      }
+      
+      if ((usageForm.isMaintenance || usageForm.isTrip) && (!usageForm.maintenance_start_date || !usageForm.maintenance_end_date)) {
+        notify('정비 또는 출장을 체크할 경우 시작일과 종료일을 모두 선택해주세요.','warning');
+        setSaving(false);
+        return;
+      }
+
       const payload = {
-        vehicle_id:selectedVehicle.id, vehicle_number:selectedVehicle.vehicle_number,
-        user_id:currentId || null, user_name:currentName,
-        used_at:new Date(usageForm.used_at).toISOString(),
-        mileage:usageForm.mileage.trim()===''?null:Number(usageForm.mileage),
-        destination:usageForm.destination.trim(), purpose:usageForm.purpose.trim(),
-        maintenance_start_date:usageForm.maintenance_start_date || null,
-        maintenance_end_date:usageForm.maintenance_end_date || null,
-        is_parked:false, parking_remarks:null
+        vehicle_id: selectedVehicle.id,
+        vehicle_number: selectedVehicle.vehicle_number,
+        user_id: currentId || null,
+        user_name: currentName,
+        used_at: new Date(usageForm.used_at).toISOString(),
+        mileage: usageForm.mileage.trim() === '' ? null : Number(usageForm.mileage),
+        destination: usageForm.destination.trim(),
+        purpose: usageForm.purpose.trim() + (usageForm.isMaintenance ? ' [정비]' : usageForm.isTrip ? ' [출장]' : '') + (isReservation ? ' [예약]' : ''),
+        companions: [],
+        is_business_trip: usageForm.isTrip,
+        maintenance_start_date: usageForm.maintenance_start_date || null,
+        maintenance_end_date: usageForm.maintenance_end_date || null,
+        is_parked: false,
+        parking_remarks: null,
+        speed_rule_confirmed_at: speedRuleConfirmed ? new Date().toISOString() : null
       };
-      const {data,error} = await supabase.from('work_vehicle_usage').insert(payload).select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, created_at').single();
+
+      const {data,error} = await supabase.from('work_vehicle_usage').insert(payload).select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, companions, is_business_trip, driver_changed_from, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, speed_rule_confirmed_at, created_at').single();
       if (error) throw error;
       setUsageRows(prev=>[data as VehicleUsageRow,...prev]);
-      setUsageModalOpen(false); notify('차량 사용 내역을 등록했습니다.');
+      setSpeedRuleConfirmed(false);
+      setUsageModalOpen(false);
+      notify(isReservation ? '차량 사용 예약이 완료되었습니다.' : '차량 운행 등록을 완료했습니다.');
     } catch (error:any) { showCustomAlert('차량 사용 등록 오류',`저장에 실패했습니다.\n${error?.message || ''}`); }
     finally { setSaving(false); }
   };
@@ -731,153 +1079,826 @@ function VehicleManagementPanel({ currentUser, isAdmin, showCustomAlert, showCus
     if (!isAdmin) { showCustomAlert('권한 제한','관리자만 사용 이력을 삭제할 수 있습니다.'); return; }
     const ids = visibleUsage.filter(row=>selectedUsageIds.includes(row.id)).map(row=>row.id);
     if (!ids.length) { notify('삭제할 사용 이력을 선택해주세요.','warning'); return; }
-    showCustomConfirm('사용 이력 일괄 삭제',`선택한 ${ids.length}건의 차량 사용 이력을 삭제하시겠습니까?`,async()=>{
+    showCustomConfirm('사용 이력 선택 삭제',`선택한 ${ids.length}건의 사용 이력을 삭제하시겠습니까?`,async()=>{
       const {error} = await supabase.from('work_vehicle_usage').delete().in('id',ids);
       if (error) {showCustomAlert('이력 삭제 오류',error.message);return;}
-      setUsageRows(prev=>prev.filter(row=>!ids.includes(row.id))); setSelectedUsageIds(prev=>prev.filter(id=>!ids.includes(id)));
+      setUsageRows(prev=>prev.filter(row=>!ids.includes(row.id)));
+      setSelectedUsageIds(prev=>prev.filter(id=>!ids.includes(id)));
       notify(`선택한 ${ids.length}건을 삭제했습니다.`);
     });
   };
 
-  const saveParking = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!parkingRow) return;
-    if (!canEditParking(parkingRow)) { showCustomAlert('권한 제한','해당 차량 사용 당사자 또는 관리자만 주차 비고를 등록·수정할 수 있습니다.'); return; }
+  const deleteAllUsage = () => {
+    if (!isAdmin) { showCustomAlert('권한 제한','관리자만 전체 이력을 삭제할 수 있습니다.'); return; }
+    if (visibleUsage.length === 0) { notify('삭제할 이력이 없습니다.','warning'); return; }
+    showCustomConfirm('사용 이력 전체 삭제',`등록된 모든 차량 사용 이력(${visibleUsage.length}건)을 완전히 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`,async()=>{
+      const allIds = visibleUsage.map(r => r.id);
+      const {error} = await supabase.from('work_vehicle_usage').delete().in('id', allIds);
+      if (error) {showCustomAlert('전체 삭제 오류',error.message);return;}
+      setUsageRows([]);
+      setSelectedUsageIds([]);
+      notify('모든 차량 사용 이력을 삭제했습니다.');
+    });
+  };
+
+  // 대기/운행가능 상태 등에서 차량을 등록하려고 할 때 바로 openUsage()를 호출하지 않고,
+  // 속도기준 서약 모달(isSpeedRuleModalOpen)을 먼저 띄우도록 변경합니다.
+  const handleBadgeClick = (vehicleId: string) => {
+    setActiveVehicleId(vehicleId);
+    const status = getVehicleStatus(vehicleId);
+    if (status.latestUsage && !status.latestUsage.is_parked) {
+      openSettingsModal(status.latestUsage);
+    } else {
+      setSpeedRuleConfirmed(false);
+      setIsSpeedRuleModalOpen(true); // 차량 등록 전 속도 서약 모달 오픈
+    }
+  };
+
+const openSettingsModal = (row: VehicleUsageRow) => {
+  const isRowDriver = row.user_name.replace(/\(동승\)/g, '').trim() === currentName;
+  if (!isAdmin && !isRowDriver) {
+    showCustomAlert('권한 제한', '현재 차량의 운전자 또는 관리자만 주차 완료 및 상태를 설정할 수 있습니다.');
+    return;
+  }
+  setParkingRow(row);
+  setIsParkedCheck(!!row.is_parked);
+  setParkingRemarks(row.parking_remarks || '');
+};
+
+const openDriverChangeModal = (row: VehicleUsageRow) => {
+  if (row.is_parked) {
+    showCustomAlert('운전자 변경 제한', '주차 완료된 차량은 운전자를 변경할 수 없습니다.');
+    return;
+  }
+  if (!currentIsEligible) {
+    showCustomAlert('운전자 변경 제한', '작업용차량운전자교육 이수자만 운전자를 변경할 수 있습니다.');
+    return;
+  }
+  if (!currentUser?.id || !currentName) {
+    showCustomAlert('로그인 정보 확인', '현재 로그인한 사용자 정보를 확인할 수 없습니다. 다시 로그인해 주세요.');
+    return;
+  }
+  if (row.user_id === currentUser.id || row.user_name.replace(/\(동승\)/g, '').trim() === currentName) {
+    showCustomAlert('운전자 변경', '현재 운전자와 다른 교육 이수자가 운전자 변경을 진행해야 합니다.');
+    return;
+  }
+  setDriverChangeRow(row);
+  setDriverChangeForm({
+    driverId: currentUser.id,
+    destination: row.destination || '',
+    purpose: row.purpose || '',
+  });
+};
+
+const saveDriverChange = async (event: React.FormEvent) => {
+  event.preventDefault();
+  if (!driverChangeRow) return;
+  const nextDriver = eligibleDrivers.find(driver => driver.id === currentUser?.id || driver.name.trim() === currentName);
+  if (!currentIsEligible || !nextDriver) {
+    showCustomAlert('운전자 변경 제한', '작업용차량운전자교육 이수자만 운전자를 변경할 수 있습니다.');
+    return;
+  }
+  if (nextDriver.name.trim() === driverChangeRow.user_name.replace(/\(동승\)/g, '').trim()) {
+    showCustomAlert('운전자 변경', '현재 운전자와 다른 인원을 선택해 주세요.');
+    return;
+  }
+  if (!driverChangeForm.destination.trim() || !driverChangeForm.purpose.trim()) {
+    showCustomAlert('입력 확인', '이동 장소와 사용 목적을 모두 입력해 주세요.');
+    return;
+  }
+
+  setSaving(true);
+  try {
+    const { data, error } = await supabase
+      .from('work_vehicle_usage')
+      .update({
+        user_id: nextDriver.id || null,
+        user_name: nextDriver.name.trim(),
+        driver_changed_from: `${driverChangeRow.user_name} -> ${nextDriver.name.trim()}`,
+        destination: driverChangeForm.destination.trim(),
+        purpose: driverChangeForm.purpose.trim(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', driverChangeRow.id)
+      .select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, companions, is_business_trip, driver_changed_from, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, speed_rule_confirmed_at, created_at')
+      .single();
+
+    if (error) throw error;
+    setUsageRows(prev => prev.map(row => row.id === driverChangeRow.id ? data as VehicleUsageRow : row));
+    setDriverChangeRow(null);
+    notify(`운전자가 ${nextDriver.name.trim()}님으로 변경되었습니다.`);
+  } catch (error: any) {
+    showCustomAlert('운전자 변경 오류', `운전자 변경에 실패했습니다.\n${error?.message || ''}`);
+  } finally {
+    setSaving(false);
+  }
+};
+
+ 
+// 일반 직원 본인 동승 등록 시작
+const handleOpenSelfPassengerModal = (row: VehicleUsageRow) => {
+  
+  if (row.is_parked) {
+    notify('이미 운행이 종료된 차량에는 동승 등록할 수 없습니다.', 'warning');
+    return;
+  }
+
+  const driverName = row.user_name.replace(/\(동승\)/g, '').trim();
+
+  if (driverName === currentName) {
+    notify('본인이 운전자이므로 동승자로 등록할 수 없습니다.', 'warning');
+    return;
+  }
+
+  const existingCompanions = Array.isArray(row.companions)
+    ? row.companions.map(name => String(name).trim())
+    : [];
+
+  if (existingCompanions.includes(currentName.trim())) {
+  showCustomAlert('동승자 등록', '이미 동승자 등록된 인원입니다.');
+  return;
+}
+
+  setSelfPassengerLog(row);
+  setSpeedRuleConfirmed(false);
+  setIsSpeedRuleModalOpen(true);
+};
+
+// 관리자 동승자 추가 / 수정 창 열기
+const handleOpenPassengerModal = (row: VehicleUsageRow) => {
+  
+  setPassengerModalLog(row);
+  setSelectedPassengers(
+    Array.isArray(row.companions) ? row.companions : []
+  );
+};
+
+// 일반 직원 본인 동승 등록 해제
+const handleCancelSelfPassenger = (row: VehicleUsageRow) => {
+  const existingCompanions = Array.isArray(row.companions)
+    ? row.companions
+    : [];
+
+  const myName = currentName.trim();
+
+  if (!existingCompanions.some(name => String(name).trim() === myName)) {
+    showCustomAlert('동승자 등록', '이미 동승자 등록이 해제되었습니다.');
+    return;
+  }
+
+  showCustomConfirm(
+    '동승자 등록 해제',
+    '해당 차량의 동승자 등록을 해제하시겠습니까?',
+    () => {
+      void (async () => {
+        setSaving(true);
+
+        try {
+          const nextCompanions = existingCompanions.filter(
+            name => String(name).trim() !== myName
+          );
+
+          const { error } = await supabase
+            .from('work_vehicle_usage')
+            .update({
+              companions: nextCompanions,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', row.id);
+
+          if (error) throw error;
+
+          setUsageRows(prev =>
+            prev.map(item =>
+              item.id === row.id
+                ? { ...item, companions: nextCompanions }
+                : item
+            )
+          );
+
+          notify('동승자 등록이 해제되었습니다.');
+        } catch (err: any) {
+          showCustomAlert('동승자 해제 오류', err.message);
+        } finally {
+          setSaving(false);
+        }
+      })();
+    }
+  );
+};
+
+// 최근 사용내역에서 본인 동승 등록 서약 확인
+const handleConfirmSelfPassenger = async () => {
+  if (!selfPassengerLog) return;
+
+  setSpeedRuleConfirmed(true);
+  setIsSpeedRuleModalOpen(false);
+  setSaving(true);
+
+  try {
+    const existingCompanions = Array.isArray(selfPassengerLog.companions)
+  ? selfPassengerLog.companions
+  : [];
+
+if (existingCompanions.includes(currentName.trim())) {
+  showCustomAlert('동승자 등록', '이미 동승자 등록된 인원입니다.');
+  return;
+}
+
+    const nextCompanions = [...existingCompanions, currentName];
+
+    const { data, error } = await supabase
+      .from('work_vehicle_usage')
+      .update({
+  companions: nextCompanions,
+  updated_at: new Date().toISOString()
+})
+      .eq('id', selfPassengerLog.id)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    setUsageRows(prev =>
+      prev.map(row =>
+        row.id === selfPassengerLog.id
+         ? { ...row, companions: nextCompanions }
+          : row
+      )
+    );
+
+    setSelfPassengerLog(null);
+    notify('야드 속도 준수 서약 확인 및 동승 등록이 완료되었습니다.');
+  } catch (err: any) {
+    showCustomAlert('동승 등록 오류', err.message);
+  } finally {
+    setSaving(false);
+    setSpeedRuleConfirmed(false);
+  }
+};
+
+  const togglePassenger = (name: string) => {
+    setSelectedPassengers(prev => 
+      prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
+    );
+  };
+
+  const handleSavePassengers = async () => {
+    if (!passengerModalLog) return;
     setSaving(true);
     try {
-      const patch = {is_parked:true, parking_remarks:parkingRemarks.trim() || null, parking_updated_by_id:currentId || null, parking_updated_by_name:currentName || null, updated_at:new Date().toISOString()};
-      const {data,error} = await supabase.from('work_vehicle_usage').update(patch).eq('id',parkingRow.id).select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, created_at').single();
+      const { error } = await supabase
+        .from('work_vehicle_usage')
+        .update({ companions: selectedPassengers, updated_at: new Date().toISOString() })
+        .eq('id', passengerModalLog.id);
       if (error) throw error;
-      setUsageRows(prev=>prev.map(row=>row.id===parkingRow.id?data as VehicleUsageRow:row));
-      setParkingRow(null); setParkingRemarks(''); notify('주차 상태와 비고를 저장했습니다.');
-    } catch (error:any) {showCustomAlert('주차 비고 저장 오류',`저장에 실패했습니다.\n${error?.message || ''}`);}
-    finally {setSaving(false);}
+      
+      setUsageRows(prev => prev.map(r => r.id === passengerModalLog.id ? { ...r, companions: selectedPassengers } : r));
+      setPassengerModalLog(null);
+      notify('동승자가 등록되었습니다.');
+    } catch (err: any) {
+      showCustomAlert('오류', err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 주차 완료 및 주차 위치/비고 저장
+  const saveParkingOrChangeDriver = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!parkingRow) return;
+    setSaving(true);
+    try {
+      let updatedPurpose = parkingRow.purpose;
+      if (isParkedCheck) {
+        updatedPurpose = updatedPurpose.replace(/\s*\[예약\]/g, '').trim();
+      }
+
+      const patch: Record<string, any> = {
+        is_parked: isParkedCheck,
+        purpose: updatedPurpose,
+        parking_remarks: parkingRemarks.trim() || null,
+        parking_updated_by_id: currentId || null,
+        parking_updated_by_name: currentName || null,
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from('work_vehicle_usage')
+        .update(patch)
+        .eq('id', parkingRow.id)
+        .select('id, vehicle_id, vehicle_number, user_id, user_name, used_at, mileage, destination, purpose, companions, is_business_trip, driver_changed_from, maintenance_start_date, maintenance_end_date, is_parked, parking_remarks, parking_updated_by_id, parking_updated_by_name, speed_rule_confirmed_at, created_at')
+        .single();
+      if (error) throw error;
+
+      setUsageRows(prev => prev.map(row => row.id === parkingRow.id ? data as VehicleUsageRow : row));
+      setParkingRow(null);
+      setParkingRemarks('');
+      notify(isParkedCheck ? '주차 완료 및 위치 비고가 저장되었습니다.' : '차량 상태 설정이 저장되었습니다.');
+    } catch (error: any) {
+      showCustomAlert('저장 오류', `저장에 실패했습니다.\n${error?.message || ''}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return <div className="space-y-3 p-2 sm:p-3">
     {notice && <div role="status" className={`flex items-start justify-between gap-3 rounded-lg border px-3 py-2 text-xs ${notice.type==='error'?'border-red-200 bg-red-50 text-red-700':notice.type==='warning'?'border-amber-200 bg-amber-50 text-amber-800':'border-emerald-200 bg-emerald-50 text-emerald-700'}`}><span className="whitespace-pre-wrap">{notice.message}</span><button type="button" onClick={()=>setNotice(null)} aria-label="알림 닫기"><X className="h-3.5 w-3.5"/></button></div>}
     <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><h3 className="text-sm font-bold text-[#243B5A]">차량 관리</h3><p className="mt-0.5 text-[11px] text-[#64748B]">차량번호별 사용 이력과 주차 비고를 관리합니다.</p></div>
+        <div><h3 className="text-sm font-bold text-[#243B5A]">차량 관리</h3><p className="mt-0.5 text-[11px] text-[#64748B]">배지를 클릭하여 차량 사용 등록 또는 운전자 인계·주차 처리를 진행할 수 있습니다.</p></div>
         {isAdmin && <button type="button" onClick={()=>setManagerOpen(true)} className="flex items-center gap-1 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#EEF2F7] transition-colors"><Settings className="h-3.5 w-3.5"/> 차량 등록·수정·삭제</button>}
       </div>
-      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-2">
-        <span className="shrink-0 text-xs font-bold text-[#64748B]">차량번호</span>
-        {vehicles.map(vehicle=><button key={vehicle.id} type="button" onClick={()=>{setActiveVehicleId(vehicle.id);setSelectedUsageIds([]);}} className={`rounded-lg border px-3 py-2 text-xs font-bold transition-colors ${activeVehicleId===vehicle.id?'border-[#243B5A] bg-[#243B5A] text-white':'border-[#E2E5E9] bg-white text-[#243B5A] hover:bg-[#EEF2F7]'}`}>{vehicle.vehicle_number}</button>)}
-        {vehicles.length===0 && <span className="text-xs text-[#64748B]">등록된 차량이 없습니다. 관리자에게 차량 등록을 요청해주세요.</span>}
+      
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+        {vehicles.map(vehicle => {
+          const status = getVehicleStatus(vehicle.id);
+          const isSelected = activeVehicleId === vehicle.id;
+          return (
+            <div
+              key={vehicle.id}
+              className={`flex flex-col items-start gap-1.5 rounded-xl border p-2.5 text-left transition-all ${
+                isSelected ? 'border-[#243B5A] bg-[#243B5A] text-white shadow-xs' : 'border-[#E2E5E9] bg-white text-[#1F2937] hover:border-[#243B5A]'
+              }`}
+            >
+              <div className="flex w-full items-center justify-between gap-2">
+                <span className="text-xs font-extrabold cursor-pointer" onClick={() => { setActiveVehicleId(vehicle.id); setSelectedUsageIds([]); }}>{vehicle.vehicle_number}</span>
+                
+                <button
+                  type="button"
+                  onClick={() => handleBadgeClick(vehicle.id)}
+                  className={`rounded-full border px-2.5 py-0.5 text-[10px] font-bold transition hover:opacity-80 shadow-xs ${
+                    isSelected ? 'border-white/30 bg-white/20 text-white' : status.badgeClass
+                  }`}
+                  title="클릭하여 차량 사용 등록 또는 상태 설정"
+                >
+                  {status.label} ⚙️
+                </button>
+              </div>
+              <span className={`w-full truncate text-[11px] font-medium ${isSelected ? 'text-blue-100' : 'text-[#64748B]'}`} onClick={() => { setActiveVehicleId(vehicle.id); setSelectedUsageIds([]); }}>
+                {status.detail}
+              </span>
+
+              {status.latestUsage && !status.latestUsage.is_parked && currentIsEligible && (
+                <button
+                  type="button"
+                  onClick={() => openDriverChangeModal(status.latestUsage as VehicleUsageRow)}
+                  className={`mt-0.5 rounded-full border px-2.5 py-1 text-[10px] font-bold transition-colors ${
+                    isSelected
+                      ? 'border-white/30 bg-white/15 text-white hover:bg-white/25'
+                      : 'border-[#CBD5E1] bg-[#F8FAFC] text-[#243B5A] hover:bg-[#EEF2F7]'
+                  }`}
+                >
+                  운전자 변경
+                </button>
+              )}
+
+              {(status.label === '운행중' || status.label === '사용예약' || status.label === '정비중' || status.label === '출장중') && (
+                <div className={`mt-0.5 flex w-full flex-wrap items-center gap-1 border-t pt-1.5 text-[10px] ${
+                  isSelected ? 'border-white/15 text-blue-100' : 'border-[#F1F3F5] text-[#64748B]'
+                }`}>
+                  <span className="font-bold">동승자:</span>
+                  {status.companionsInfo.length > 0 ? (
+                    status.companionsInfo.map((c, i) => (
+                      <span key={`${vehicle.id}-comp-${i}`} className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.2 font-semibold ${isSelected ? 'bg-white/15 text-white' : c.educated ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-600 border border-slate-200'}`}>
+                        {c.name}({c.educated ? '교육이수' : '미이수'})
+                      </span>
+                    ))
+                  ) : (
+                    <span>없음</span>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {vehicles.length === 0 && <span className="text-xs text-[#64748B]">등록된 차량이 없습니다.</span>}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={!selectedVehicle || !currentIsEligible || saving} onClick={openUsage} className="flex items-center gap-1.5 rounded-lg bg-[#243B5A] px-3.5 py-2 text-xs font-bold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-40 hover:bg-[#1B2F49]"><Plus className="h-3.5 w-3.5"/> 차량 사용</button>
-        <span className={`text-[11px] ${currentIsEligible?'text-emerald-700 font-medium':'text-[#64748B]'}`}>{currentIsEligible?'작업용차량운전자교육 확인됨':'CERT YARD 자격에 작업용차량운전자교육이 있어야 사용 가능'}</span>
-        <button type="button" onClick={()=>void loadVehicleData()} disabled={loading} className="ml-auto rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8] transition-colors disabled:opacity-50"><span className="inline-flex items-center gap-1"><CalendarIcon className="h-3.5 w-3.5"/> {loading?'조회 중':'새로고침'}</span></button>
+
+      <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#E2E5E9]">
+        <button type="button" disabled={!selectedVehicle || saving} onClick={handleOpenVehicleUsage} className="flex items-center gap-1.5 rounded-lg bg-[#243B5A] px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-[#1B2F49]"><Plus className="h-3.5 w-3.5"/> 차량 사용 (운전자/동승자)</button>
+        <span className={`text-[11px] ${currentIsEligible?'text-emerald-700 font-medium':'text-[#64748B]'}`}>{currentIsEligible?'운전교육 이수 확인됨':'교육 미이수자 (동승자 등록 가능)'}</span>
+        <button type="button" onClick={()=>void loadVehicleData()} disabled={loading} className="ml-auto rounded-lg border border-[#E2E5E9] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8] transition-colors"><span className="inline-flex items-center gap-1"><CalendarIcon className="h-3.5 w-3.5"/> 새로고침</span></button>
       </div>
     </div>
+    
     <div className="rounded-xl border border-[#E2E5E9] bg-white p-3 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div><h3 className="text-sm font-bold text-[#243B5A]">최근 사용 내역 · 전체 차량</h3><p className="text-[11px] text-[#64748B]">모든 차량의 사용 내역을 날짜순으로 함께 표시합니다. 주차 버튼을 누르면 비고를 등록할 수 있습니다.</p></div>
-        {isAdmin && <div className="flex flex-wrap items-center gap-2"><label className="flex items-center gap-1.5 text-xs font-semibold text-[#243B5A] cursor-pointer"><input type="checkbox" checked={visibleUsage.length>0 && visibleUsage.every(row=>selectedUsageIds.includes(row.id))} onChange={e=>setSelectedUsageIds(prev=>e.target.checked?Array.from(new Set([...prev,...visibleUsage.map(r=>r.id)])):prev.filter(id=>!visibleUsage.some(r=>r.id===id)))} className="accent-[#243B5A]"/> 전체 선택</label><span className="text-xs text-[#64748B]">{selectedUsageIds.filter(id=>visibleUsage.some(r=>r.id===id)).length}건 선택</span><button type="button" onClick={deleteUsageSelected} className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"><Trash2 className="h-3.5 w-3.5"/> 선택 삭제</button></div>}
+        <div><h3 className="text-sm font-bold text-[#243B5A]">최근 사용 내역 · 전체 차량</h3><p className="text-[11px] text-[#64748B]">운전자 변경 이력이 있는 경우 기존 운전자와 현재 운전자가 함께 표시됩니다.</p></div>
+        
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-[#243B5A] cursor-pointer">
+              <input
+                type="checkbox"
+                checked={visibleUsage.length > 0 && visibleUsage.every(row => selectedUsageIds.includes(row.id))}
+                onChange={e => setSelectedUsageIds(e.target.checked ? visibleUsage.map(r => r.id) : [])}
+                className="accent-[#243B5A]"
+              />
+              전체 선택
+            </label>
+            <button
+              type="button"
+              onClick={deleteUsageSelected}
+              className="flex items-center gap-1 rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-100 transition-colors"
+            >
+              <Trash2 className="h-3.5 w-3.5" /> 선택 삭제 ({selectedUsageIds.length})
+            </button>
+            <button
+              type="button"
+              onClick={deleteAllUsage}
+              className="flex items-center gap-1 rounded-lg border border-red-300 bg-red-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+            >
+              전체 삭제
+            </button>
+          </div>
+        )}
       </div>
-      {loading ? <div className="py-10 text-center text-xs text-[#64748B]">차량 정보를 불러오는 중...</div> : visibleUsage.length===0 ? <div className="rounded-lg border border-dashed border-[#E2E5E9] py-10 text-center text-xs text-[#64748B]">최근 사용 내역이 없습니다.</div> :
+
+      {loading ? <div className="py-10 text-center text-xs text-[#64748B]">로딩 중...</div> : visibleUsage.length===0 ? <div className="py-10 text-center text-xs text-[#64748B]">사용 이력이 없습니다.</div> :
         <div className="space-y-2">
-          {visibleUsage.map(row=><div key={row.id} className="rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3">
-            <div className="flex items-start gap-2">
-              {isAdmin && <input type="checkbox" checked={selectedUsageIds.includes(row.id)} onChange={e=>setSelectedUsageIds(prev=>e.target.checked?[...prev,row.id]:prev.filter(id=>id!==row.id))} className="mt-1 accent-[#243B5A]" aria-label={`${row.user_name} 사용 이력 선택`}/>}
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2"><span className="rounded-md bg-[#EEF2F7] px-2 py-0.5 text-[10px] font-bold text-[#243B5A]">{row.vehicle_number}</span><span className="text-xs font-bold text-[#243B5A]">{row.user_name}</span><span className="text-[11px] text-[#64748B]">{new Date(row.used_at).toLocaleString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span><span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${row.is_parked?'bg-emerald-50 text-emerald-700':'bg-amber-50 text-amber-800'}`}>{row.is_parked?'주차 등록':'주차 미등록'}</span></div>
-                <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
-                  <div><span className="text-[#64748B]">이동장소: </span><span className="font-medium">{row.destination}</span></div>
-                  <div><span className="text-[#64748B]">사용목적: </span><span className="font-medium">{row.purpose}</span></div>
-                  <div><span className="text-[#64748B]">운행거리: </span><span>{row.mileage==null?'미입력':`${row.mileage} km`}</span></div>
-                  {(row.maintenance_start_date || row.maintenance_end_date) && <div><span className="text-[#64748B]">정비/수리 기간: </span><span>{row.maintenance_start_date || '-'} ~ {row.maintenance_end_date || '-'}</span></div>}
+          {visibleUsage.map(row => {
+            const isRowReservation = !row.is_parked && /\[예약\]/.test(row.purpose) && new Date(row.used_at).getTime() > Date.now();
+            const isRowMaintenance = /\[정비\]/.test(row.purpose);
+            const isRowTrip = row.is_business_trip || /\[출장\]/.test(row.purpose);
+            
+            const isRowDriver = row.user_name.replace(/\(동승\)/g, '').trim() === currentName;
+            const isRowCompanionEducated = Array.isArray(row.companions) && row.companions.includes(currentName) && currentIsEligible;
+            const canShowSettings = isAdmin || isRowDriver || isRowCompanionEducated;
+
+            return (
+              <div key={row.id} className="rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3">
+                <div className="flex items-start gap-2">
+                  {isAdmin && (
+                    <input
+                      type="checkbox"
+                      checked={selectedUsageIds.includes(row.id)}
+                      onChange={e => setSelectedUsageIds(prev => e.target.checked ? [...prev, row.id] : prev.filter(id => id !== row.id))}
+                      className="mt-1 accent-[#243B5A]"
+                      aria-label={`${row.user_name} 사용 이력 선택`}
+                    />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-md bg-[#EEF2F7] px-2 py-0.5 text-[10px] font-bold text-[#243B5A]">{row.vehicle_number}</span>
+                      <span className="text-xs font-bold text-[#243B5A]">
+                        운전자: {row.driver_changed_from ? <span className="text-blue-600 font-extrabold">{row.driver_changed_from} (변경됨)</span> : row.user_name}
+                      </span>
+                      <span className="text-[11px] text-[#64748B]">{new Date(row.used_at).toLocaleString('ko-KR',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}</span>
+                      <span className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                        row.is_parked
+                          ? 'bg-slate-100 text-slate-700'
+                          : isRowMaintenance
+                            ? 'bg-red-100 text-red-700'
+                            : isRowTrip
+                              ? 'bg-purple-100 text-purple-800'
+                              : isRowReservation
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {row.is_parked ? '주차완료' : isRowMaintenance ? '정비중' : isRowTrip ? '출장중' : isRowReservation ? '사용예약' : '운행중'}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+                      <div><span className="text-[#64748B]">이동장소: </span><span className="font-medium">{row.destination}</span></div>
+                      <div><span className="text-[#64748B]">사용목적: </span><span className="font-medium">{row.purpose}</span></div>
+                      <div className="sm:col-span-2 flex flex-wrap items-center gap-1">
+                        <span className="text-[#64748B]">동승자: </span>
+                        {row.companions && row.companions.length > 0 ? (
+                          row.companions.map((compName, idx) => {
+                            const educated = isPersonEligibleDriver(compName);
+                            return (
+                              <span key={`${row.id}-comp-${idx}`} className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${educated ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-100 text-slate-600'}`}>
+                                {compName} ({educated ? '교육이수' : '미이수'})
+                              </span>
+                            );
+                          })
+                        ) : (
+                          <span className="font-medium text-[#64748B]">없음</span>
+                        )}
+                      </div>
+                      <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
+                        {row.speed_rule_confirmed_at && (
+                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                            <CheckCircle2 className="h-3 w-3" /> 속도 준수 서약 확인완료
+                          </span>
+                        )}
+                       {isAdmin ? (
+  <button
+    type="button"
+    onClick={() => handleOpenPassengerModal(row)}
+    className="rounded-lg border border-[#CBD5E1] bg-white px-2.5 py-1.5 text-[10px] font-bold text-[#243B5A]"
+  >
+    동승자 추가 / 수정
+  </button>
+) : (
+  (() => {
+    const isMyCompanion = Array.isArray(row.companions) &&
+      row.companions.some(name => String(name).trim() === currentName.trim());
+
+    return (
+      <button
+        type="button"
+        onClick={() => isMyCompanion
+          ? handleCancelSelfPassenger(row)
+          : handleOpenSelfPassengerModal(row)
+        }
+        disabled={saving}
+        className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-bold ${
+          isMyCompanion
+            ? 'border-red-200 bg-red-50 text-red-700'
+            : 'border-emerald-200 bg-emerald-50 text-emerald-700'
+        }`}
+      >
+        {isMyCompanion ? '동승자 등록 해제' : '동승자 등록'}
+      </button>
+    );
+  })()
+)}
+                      </div>
+                      {(row.maintenance_start_date || row.maintenance_end_date) && <div><span className="text-[#64748B]">기간: </span><span>{row.maintenance_start_date} ~ {row.maintenance_end_date}</span></div>}
+                    </div>
+                    {row.parking_remarks && <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-xs"><span className="font-bold text-amber-900">주차 위치 / 비고: </span>{row.parking_remarks}</div>}
+                  </div>
+                  
+                  {canShowSettings && (
+                    <button type="button" onClick={() => openSettingsModal(row)} className="shrink-0 rounded-lg border border-[#E2E5E9] bg-white px-2.5 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8]">설정</button>
+                  )}
                 </div>
-                {row.parking_remarks && <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-2 text-xs"><span className="font-bold text-amber-900">주차 비고: </span><span className="whitespace-pre-wrap break-words">{row.parking_remarks}</span>{row.parking_updated_by_name && <div className="mt-1 text-[10px] text-amber-800">작성: {row.parking_updated_by_name}</div>}</div>}
               </div>
-              <button type="button" onClick={()=>{setParkingRow(row);setParkingRemarks(row.parking_remarks||'');}} disabled={!canEditParking(row)} className="shrink-0 rounded-lg border border-[#E2E5E9] bg-white px-2.5 py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8] transition-colors disabled:cursor-not-allowed disabled:opacity-40">주차 / 비고</button>
-            </div>
-          </div>)}
+            );
+          })}
         </div>}
     </div>
 
+    {passengerModalLog && (
+      <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setPassengerModalLog(null)}>
+        <div role="dialog" aria-modal="true" aria-label="동승자 추가 및 수정" onClick={e => e.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl space-y-3">
+          <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
+            <div><h3 className="text-sm font-bold text-[#243B5A]">동승자 추가 / 수정</h3><p className="mt-1 text-[11px] text-[#64748B]">{passengerModalLog.vehicle_number} · {passengerModalLog.user_name}</p></div>
+            <button type="button" onClick={() => setPassengerModalLog(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-slate-100" aria-label="닫기"><X className="h-4 w-4" /></button>
+          </div>
+          <p className="text-xs text-[#64748B]">동승자로 등록할 직원을 선택하세요. 선택을 해제하면 동승자에서 제외됩니다.</p>
+          <div className="max-h-[48dvh] space-y-1 overflow-y-auto rounded-xl border border-[#E2E5E9] p-2">
+            {drivers.filter(person => person.name.trim() && person.name.trim() !== passengerModalLog.user_name.replace(/\(동승\)/g, '').trim()).sort((a,b) => a.name.localeCompare(b.name, 'ko')).map(person => (
+              <label key={person.id} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-slate-50">
+                <input type="checkbox" checked={selectedPassengers.includes(person.name)} onChange={() => togglePassenger(person.name)} className="h-4 w-4 accent-[#243B5A]" />
+                <span className="font-semibold text-[#1F2937]">{person.name}</span>
+                <span className="ml-auto text-[10px] text-[#64748B]">{isPersonEligibleDriver(person.name) ? '운전자 교육이수' : '교육 미이수'}</span>
+              </label>
+            ))}
+            {drivers.length === 0 && <p className="py-5 text-center text-xs text-[#64748B]">직원 목록을 불러오지 못했습니다.</p>}
+          </div>
+          <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3">
+            <button type="button" onClick={() => setPassengerModalLog(null)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold text-[#475569]">취소</button>
+            <button type="button" onClick={() => void handleSavePassengers()} disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving ? '저장 중...' : '동승자 저장'}</button>
+          </div>
+        </div>
+      </div>
+    )}
+
     {managerOpen && isAdmin && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/25 p-4" onClick={()=>setManagerOpen(false)}>
-      <div role="dialog" aria-modal="true" aria-label="차량 관리" onClick={e=>e.stopPropagation()} className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-4">
-        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><h3 className="text-sm font-bold text-[#243B5A]">차량 등록 · 수정 · 삭제</h3><button type="button" onClick={()=>setManagerOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
-        <div className="flex gap-2"><input value={vehicleInput} onChange={e=>setVehicleInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();void saveVehicle();}}} placeholder="차량번호 입력 (예: 12가3456)" className={inputClass}/><button type="button" disabled={saving} onClick={()=>void saveVehicle()} className="rounded-lg bg-[#243B5A] px-3 py-2 text-xs font-bold text-white hover:bg-[#1B2F49] transition-colors disabled:opacity-50">{editingVehicleId?'수정 저장':'차량 추가'}</button>{editingVehicleId && <button type="button" onClick={()=>{setEditingVehicleId('');setVehicleInput('');}} className="rounded-lg border px-3 py-2 text-xs hover:bg-[#F5F6F8]">취소</button>}</div>
-        <div className="space-y-2">{vehicles.map(vehicle=><div key={vehicle.id} className="flex items-center justify-between gap-2 rounded-lg border border-[#E2E5E9] px-3 py-2"><span className="text-xs font-bold text-[#1F2937]">{vehicle.vehicle_number}</span><div className="flex gap-1"><button type="button" onClick={()=>{setEditingVehicleId(vehicle.id);setVehicleInput(vehicle.vehicle_number);}} className="rounded-lg border border-[#E2E5E9] p-2 text-[#243B5A] hover:bg-[#F5F6F8]" aria-label={`${vehicle.vehicle_number} 수정`}><Pencil className="h-3.5 w-3.5"/></button><button type="button" onClick={()=>deleteVehicle(vehicle)} className="rounded-lg border border-red-200 p-2 text-red-600 hover:bg-red-50" aria-label={`${vehicle.vehicle_number} 삭제`}><Trash2 className="h-3.5 w-3.5"/></button></div></div>)}</div>
+      <div role="dialog" aria-modal="true" aria-label="차량 관리" onClick={e=>e.stopPropagation()} className="max-h-[85dvh] w-full max-w-lg overflow-y-auto rounded-2xl border bg-white p-4 shadow-xl space-y-4">
+        <div className="flex items-center justify-between border-b pb-3"><h3 className="text-sm font-bold text-[#243B5A]">차량 등록 · 관리</h3><button onClick={()=>setManagerOpen(false)}><X className="h-4 w-4"/></button></div>
+        <div className="flex gap-2"><input value={vehicleInput} onChange={e=>setVehicleInput(e.target.value)} placeholder="차량번호" className={inputClass}/><button onClick={()=>void saveVehicle()} className="bg-[#243B5A] text-white px-3 py-2 text-xs rounded-lg font-bold">추가</button></div>
+        <div className="space-y-2">{vehicles.map(v=><div key={v.id} className="flex justify-between items-center border p-2 rounded-lg text-xs"><span>{v.vehicle_number}</span><button onClick={()=>deleteVehicle(v)} className="text-red-600"><Trash2 className="h-3.5 w-3.5"/></button></div>)}</div>
       </div>
     </div>}
 
     {usageModalOpen && vehicles.length > 0 && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/25 p-4" onClick={()=>setUsageModalOpen(false)}>
-      <form onSubmit={saveUsage} onClick={e=>e.stopPropagation()} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-[0_12px_32px_rgba(15,23,42,0.18)] text-[#1F2937]">
-        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3><p className="mt-0.5 text-[11px] text-[#64748B]">사용자: {currentName}</p></div><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
-        <div className="space-y-1">
-          <label className="block text-[11px] font-semibold text-[#1F2937]">차량번호 선택</label>
-          <AppStyledSelect
-            ariaLabel="차량번호 선택"
-            value={activeVehicleId}
-            onChange={(val) => setActiveVehicleId(val)}
-            placeholder="차량을 선택해주세요"
-            options={vehicles.map(v => ({ value: v.id, label: v.vehicle_number }))}
-          />
-        </div>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <CalendarDatePicker
-            label="사용 날짜"
-            value={usageForm.used_at ? usageForm.used_at.split('T')[0] : ''}
-            onChange={date => setUsageForm(p => {
-              const time = p.used_at.split('T')[1] || '09:00';
-              return { ...p, used_at: date ? `${date}T${time}` : '' };
-            })}
-          />
-          <div className="space-y-1 min-w-0">
-            <label className="block text-[11px] font-semibold text-[#1F2937]">사용 시간</label>
-            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
-              <CompactTimeSelect
-                ariaLabel="사용 시간 시"
-                value={(usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : '09:00').split(':')[0] || '09'}
-                options={Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0')).map(hour => ({ value: hour, label: `${hour}시` }))}
-                onChange={hour => setUsageForm(p => {
-                  const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
-                  const currentTime = p.used_at.split('T')[1] || '09:00';
-                  const minute = currentTime.split(':')[1] || '00';
-                  return { ...p, used_at: `${date}T${hour}:${minute}` };
-                })}
-              />
-              <span className="text-sm font-bold text-[#64748B]">:</span>
-              <CompactTimeSelect
-                ariaLabel="사용 시간 분"
-                value={(usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : '09:00').split(':')[1] || '00'}
-                options={Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, '0')).map(minute => ({ value: minute, label: `${minute}분` }))}
-                onChange={minute => setUsageForm(p => {
-                  const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
-                  const currentTime = p.used_at.split('T')[1] || '09:00';
-                  const hour = currentTime.split(':')[0] || '09';
-                  return { ...p, used_at: `${date}T${hour}:${minute}` };
-                })}
-              />
-            </div>
-            <p className="text-[10px] text-[#64748B]">시와 분을 선택하세요.</p>
+      <form onSubmit={saveUsage} onClick={e=>e.stopPropagation()} className="max-h-[90dvh] w-full max-w-lg space-y-4 overflow-y-auto rounded-2xl border bg-white p-4 shadow-xl text-[#1F2937]">
+        <div className="flex items-center justify-between border-b pb-3">
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-[#243B5A]">차량 사용 등록</h3>
+            {isReservation && (
+              <span className="rounded-full bg-blue-100 text-blue-800 border border-blue-200 px-2 py-0.5 text-[10px] font-bold">
+                사용 예약
+              </span>
+            )}
           </div>
+          <button type="button" onClick={()=>setUsageModalOpen(false)}><X className="h-4 w-4"/></button>
         </div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">운행거리 (km, 선택 입력)</label><input type="number" min="0" step="0.1" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="입력하지 않아도 됩니다" className={inputClass}/></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동 장소를 입력해주세요" className={inputClass}/></div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="예: 현장 이동, 정비, 수리" className={inputClass}/></div>
-        <div className="grid grid-cols-1 gap-3 rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3 sm:grid-cols-2"><CalendarDatePicker label="기간 시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/><CalendarDatePicker label="기간 종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/><p className="text-[10px] text-[#64748B] sm:col-span-2">기간은 선택 입력입니다. 사용목적에 정비 또는 수리가 포함되면 반드시 입력해야 합니다.</p></div>
-        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setUsageModalOpen(false)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold hover:bg-[#F5F6F8]">취소</button><button type="submit" disabled={saving} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1B2F49] transition-colors disabled:opacity-50">{saving?'저장 중...':'사용 등록'}</button></div>
+
+        
+
+        <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">차량 선택</label>
+          <AppStyledSelect ariaLabel="차량 선택" value={activeVehicleId} onChange={setActiveVehicleId} placeholder="차량 선택" options={vehicles.map(v => ({ value: v.id, label: v.vehicle_number }))} />
+        </div>
+
+        {rideRole === 'COMPANION' && activeOngoingUsageForSelected ? (
+          <div className="rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs space-y-1">
+            <div className="font-bold text-[#243B5A]">현재 운행 중인 차량에 동승자로 합류합니다</div>
+            <div>운전자: <strong>{activeOngoingUsageForSelected.user_name}</strong> · 목적지: <strong>{activeOngoingUsageForSelected.destination}</strong></div>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <CalendarDatePicker
+                label="사용 날짜"
+                value={usageForm.used_at ? usageForm.used_at.split('T')[0] : ''}
+                onChange={date => setUsageForm(p => {
+                  const time = p.used_at.split('T')[1] || '09:00';
+                  return { ...p, used_at: date ? `${date}T${time}` : '' };
+                })}
+              />
+              <div className="space-y-1 min-w-0">
+                <label className="block text-[11px] font-semibold text-[#1F2937]">사용 시간</label>
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+                  <CompactTimeSelect
+                    ariaLabel="사용 시간 시"
+                    value={(usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : '09:00').split(':')[0] || '09'}
+                    options={Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0')).map(hour => ({ value: hour, label: `${hour}시` }))}
+                    onChange={hour => setUsageForm(p => {
+                      const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
+                      const currentTime = p.used_at.split('T')[1] || '09:00';
+                      const minute = currentTime.split(':')[1] || '00';
+                      return { ...p, used_at: `${date}T${hour}:${minute}` };
+                    })}
+                  />
+                  <span className="text-sm font-bold text-[#64748B]">:</span>
+                  <CompactTimeSelect
+                    ariaLabel="사용 시간 분"
+                    value={(usageForm.used_at && usageForm.used_at.includes('T') ? usageForm.used_at.split('T')[1] : '09:00').split(':')[1] || '00'}
+                    options={Array.from({ length: 60 }, (_, minute) => String(minute).padStart(2, '0')).map(minute => ({ value: minute, label: `${minute}분` }))}
+                    onChange={minute => setUsageForm(p => {
+                      const date = p.used_at.split('T')[0] || formatDateToYYYYMMDD(new Date());
+                      const currentTime = p.used_at.split('T')[1] || '09:00';
+                      const hour = currentTime.split(':')[0] || '09';
+                      return { ...p, used_at: `${date}T${hour}:${minute}` };
+                    })}
+                  />
+                </div>
+                <p className="text-[10px] text-[#64748B]">기본은 현재 시각입니다.</p>
+              </div>
+            </div>
+
+            <div className="space-y-1"><label className="block text-[11px] font-semibold">운행거리 (km)</label><input type="number" value={usageForm.mileage} onChange={e=>setUsageForm(p=>({...p,mileage:e.target.value}))} placeholder="정비,출장시 필수 입력" className={inputClass}/></div>
+            
+            <div className="space-y-1"><label className="block text-[11px] font-semibold">이동장소</label><input value={usageForm.destination} onChange={e=>setUsageForm(p=>({...p,destination:e.target.value}))} required placeholder="이동장소" className={inputClass}/></div>
+            <div className="space-y-1"><label className="block text-[11px] font-semibold">사용목적</label><input value={usageForm.purpose} onChange={e=>setUsageForm(p=>({...p,purpose:e.target.value}))} required placeholder="사용목적" className={inputClass}/></div>
+
+            <div className="rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3 space-y-2">
+              <span className="text-[11px] font-bold text-[#243B5A]">정비, 출장 선택 후 기간입력</span>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                  <input type="checkbox" checked={usageForm.isMaintenance} onChange={e => setUsageForm(p => ({ ...p, isMaintenance: e.target.checked, isTrip: false }))} className="accent-[#243B5A]" />
+                  정비
+                </label>
+                <label className="flex items-center gap-1.5 text-xs font-semibold cursor-pointer">
+                  <input type="checkbox" checked={usageForm.isTrip} onChange={e => setUsageForm(p => ({ ...p, isTrip: e.target.checked, isMaintenance: false }))} className="accent-[#243B5A]" />
+                  출장
+                </label>
+              </div>
+
+              {(usageForm.isMaintenance || usageForm.isTrip) && (
+                <div className="grid grid-cols-1 gap-2 pt-2 sm:grid-cols-2 border-t">
+                  <CalendarDatePicker label="시작일" value={usageForm.maintenance_start_date} onChange={v=>setUsageForm(p=>({...p,maintenance_start_date:v}))}/>
+                  <CalendarDatePicker label="종료일" value={usageForm.maintenance_end_date} onChange={v=>setUsageForm(p=>({...p,maintenance_end_date:v}))}/>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        <div className="flex justify-end gap-2 border-t pt-3">
+          <button type="button" onClick={()=>setUsageModalOpen(false)} className="border px-3 py-2 text-xs rounded-lg">취소</button>
+          <button type="submit" disabled={saving} className="bg-[#243B5A] text-white px-4 py-2 text-xs font-bold rounded-lg">{saving ? '저장 중...' : isReservation ? '예약 등록' : '등록'}</button>
+        </div>
       </form>
     </div>}
 
     {parkingRow && <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/25 p-4" onClick={()=>setParkingRow(null)}>
-      <form onSubmit={saveParking} onClick={e=>e.stopPropagation()} className="w-full max-w-md space-y-4 rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-[0_12px_32px_rgba(15,23,42,0.18)]">
-        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3"><div><h3 className="text-sm font-bold text-[#243B5A]">주차 상태 및 비고</h3><p className="mt-0.5 text-[11px] text-[#64748B]">{parkingRow.vehicle_number} · {parkingRow.user_name}</p></div><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4"/></button></div>
-        <div className="rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] p-3 text-xs"><span className="font-bold text-[#243B5A]">사용 일시: </span>{new Date(parkingRow.used_at).toLocaleString('ko-KR')}</div>
-        <div className="space-y-1"><label className="block text-[11px] font-semibold text-[#1F2937]">주차 비고</label><textarea rows={4} value={parkingRemarks} onChange={e=>setParkingRemarks(e.target.value)} placeholder="주차 위치, 차량 상태 등 비고를 입력해주세요." className="w-full resize-y p-3 border border-[#E2E5E9] rounded-lg text-xs bg-[#F5F6F8] outline-none focus:border-[#243B5A] focus:bg-white transition-colors"/></div>
-        <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3"><button type="button" onClick={()=>setParkingRow(null)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold hover:bg-[#F5F6F8]">취소</button><button type="submit" disabled={saving || !canEditParking(parkingRow)} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1B2F49] transition-colors disabled:opacity-50">{saving?'저장 중...':'주차 비고 저장'}</button></div>
+      <form onSubmit={saveParkingOrChangeDriver} onClick={e=>e.stopPropagation()} className="w-full max-w-md space-y-4 rounded-2xl border bg-white p-4 shadow-xl">
+        <div className="flex items-center justify-between border-b pb-3">
+          <div>
+            <h3 className="text-sm font-bold text-[#243B5A]">차량 상태 설정</h3>
+            <p className="text-[11px] text-[#64748B]">{parkingRow.vehicle_number} · 현재 운전자: {parkingRow.user_name}</p>
+          </div>
+          <button type="button" onClick={()=>setParkingRow(null)}><X className="h-4 w-4"/></button>
+        </div>
+
+        <div className="rounded-xl border border-[#E2E5E9] bg-[#F5F6F8] p-3">
+          <label className="flex items-center gap-2 text-xs font-bold text-[#243B5A] cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isParkedCheck}
+              onChange={e => setIsParkedCheck(e.target.checked)}
+              className="h-4 w-4 accent-[#243B5A]"
+            />
+            <span>주차 완료 (체크 시 차량 상태가 '주차완료'로 전환됩니다)</span>
+          </label>
+        </div>
+
+        <div className="space-y-1">
+          <label className="block text-[11px] font-semibold text-[#1F2937]">주차 위치 / 비고</label>
+          <textarea
+            rows={3}
+            value={parkingRemarks}
+            onChange={e=>setParkingRemarks(e.target.value)}
+            placeholder="주차 위치를 작성해주세요 (예: 사무실 앞 주차 / 3도크 안벽 앞)"
+            className="w-full resize-y p-3 border rounded-lg text-xs bg-[#F5F6F8] outline-none focus:border-[#243B5A] focus:bg-white"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2 border-t pt-3">
+          <button type="button" onClick={()=>setParkingRow(null)} className="border px-3 py-2 text-xs rounded-lg">취소</button>
+          <button type="submit" disabled={saving} className="bg-[#243B5A] text-white px-4 py-2 text-xs font-bold rounded-lg">{saving ? '저장 중...' : '설정 저장'}</button>
+        </div>
       </form>
     </div>}
+
+    {driverChangeRow && (
+      <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setDriverChangeRow(null)}>
+        <form onSubmit={saveDriverChange} onClick={event => event.stopPropagation()} className="w-full max-w-md space-y-4 rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
+          <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
+            <div>
+              <h3 className="text-sm font-bold text-[#243B5A]">운전자 변경</h3>
+              <p className="mt-1 text-[11px] text-[#64748B]">{driverChangeRow.vehicle_number} · 현재 운전자: {driverChangeRow.user_name}</p>
+            </div>
+            <button type="button" onClick={() => setDriverChangeRow(null)} aria-label="닫기" className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]"><X className="h-4 w-4" /></button>
+          </div>
+
+          <div className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+            <label className="block text-[11px] font-semibold text-emerald-800">변경 후 운전자</label>
+            <p className="text-sm font-bold text-emerald-900">{currentName}</p>
+            <p className="text-[10px] text-emerald-700">현재 로그인 계정이 새 운전자로 등록됩니다. (운전자교육 이수 확인)</p>
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-[11px] font-semibold text-[#1F2937]">이동 장소</label>
+            <input
+              type="text"
+              value={driverChangeForm.destination}
+              onChange={event => setDriverChangeForm(prev => ({ ...prev, destination: event.target.value }))}
+              placeholder="이동 장소를 입력해 주세요"
+              className={inputClass}
+            />
+          </div>
+
+          <div className="space-y-1">
+            <label className="block text-[11px] font-semibold text-[#1F2937]">사용 목적</label>
+            <textarea
+              rows={3}
+              value={driverChangeForm.purpose}
+              onChange={event => setDriverChangeForm(prev => ({ ...prev, purpose: event.target.value }))}
+              placeholder="사용 목적을 입력해 주세요"
+              className="w-full resize-y rounded-lg border border-[#E2E5E9] bg-[#F5F6F8] px-3 py-2 text-xs text-[#1F2937] outline-none focus:border-[#243B5A] focus:bg-white"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3">
+            <button type="button" onClick={() => setDriverChangeRow(null)} className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold text-[#475569]">취소</button>
+            <button type="submit" disabled={saving || !currentIsEligible} className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{saving ? '저장 중...' : '운전자 변경 저장'}</button>
+          </div>
+        </form>
+      </div>
+    )}
+
+    {isSpeedRuleModalOpen && (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setIsSpeedRuleModalOpen(false)}>
+        <div className="w-full max-w-xl bg-white rounded-2xl border border-[#E2E5E9] shadow-2xl overflow-hidden p-4 space-y-3" onClick={e => e.stopPropagation()}>
+          <div className="flex items-center justify-between border-b pb-2">
+            <h3 className="text-sm font-bold text-[#243B5A] flex items-center gap-1.5">
+              <AlertTriangle className="h-4 w-4 text-amber-500" /> Yard 구역별 속도기준
+            </h3>
+            <button onClick={() => {
+  setIsSpeedRuleModalOpen(false);
+  setSelfPassengerLog(null);
+}}><X className="h-4 w-4" /></button>
+          </div>
+
+          <div className="rounded-xl border bg-slate-100 overflow-hidden max-h-[50vh] flex items-center justify-center">
+            <img src="/yard_road.png" alt="Yard 제한속도" className="w-full h-auto object-contain" />
+          </div>
+
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 text-center">
+            <p className="text-xs font-bold text-red-700">속도 및 일반통행 위반 시 절대수칙이 적용됩니다. 확인하셨습니까?</p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2 border-t">
+            <button onClick={() => {
+  setIsSpeedRuleModalOpen(false);
+  setSelfPassengerLog(null);
+}}className="px-3 py-1.5 border text-xs rounded-lg">취소</button>
+           <button
+  onClick={() => {
+    if (selfPassengerLog) {
+      void handleConfirmSelfPassenger();
+    } else {
+      handleConfirmSpeedRule();
+    }
+  }}
+  className="px-4 py-1.5 bg-[#243B5A] text-white text-xs font-bold rounded-lg"
+>
+  확인
+</button>
+          </div>
+        </div>
+      </div>
+    )}
   </div>;
 }
-
-
 export default function WorkManagement({ currentUser }: { currentUser?: { id: string; name: string; role: string } | null }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [vessels, setVessels] = useState<CabinVessel[]>([]);
@@ -996,6 +2017,18 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     targetStatus: 'PENDING',
     remarks: ''
   });
+  const [statusSafetyModal, setStatusSafetyModal] = useState<'START' | 'FINISH' | null>(null);
+  const [statusSafetyChecks, setStatusSafetyChecks] = useState<boolean[]>([]);
+  const [statusSafetyPhotoFiles, setStatusSafetyPhotoFiles] = useState<File[]>([]);
+  const [statusSafetyPhotoPreviews, setStatusSafetyPhotoPreviews] = useState<string[]>([]);
+  const [taskSafetyConfirmations, setTaskSafetyConfirmations] = useState<TaskSafetyConfirmation[]>([]);
+  const [safetyViewerTask, setSafetyViewerTask] = useState<Task | null>(null);
+  const currentTaskSafetyPhotoCount = statusChangeModal.task
+    ? taskSafetyConfirmations
+        .filter(row => row.task_id === statusChangeModal.task?.id)
+        .reduce((total, row) => total + row.photo_paths.length, 0)
+    : 0;
+  const statusSafetyConfirmedRef = useRef(false);
   const [taskStatusConsents, setTaskStatusConsents] = useState<TaskStatusConsent[]>([]);
   const [selectedTaskStatusConsents, setSelectedTaskStatusConsents] = useState<TaskStatusConsent[]>([]);
 
@@ -1288,6 +2321,27 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         }
 
         setTasks(formatted);
+
+        // 안전 확인 내역은 모든 직원이 조회할 수 있도록 업무 목록과 함께 읽습니다.
+        try {
+          if (formatted.length === 0) {
+            setTaskSafetyConfirmations([]);
+          } else {
+            const { data: safetyRows, error: safetyReadError } = await supabase
+              .from('task_safety_confirmations')
+              .select('id, task_id, user_id, user_name, confirmation_type, checked_items, photo_paths, created_at')
+              .in('task_id', formatted.map(task => task.id));
+            if (safetyReadError) throw safetyReadError;
+            setTaskSafetyConfirmations((safetyRows || []).map((row: any) => ({
+              ...row,
+              checked_items: Array.isArray(row.checked_items) ? row.checked_items : [],
+              photo_paths: Array.isArray(row.photo_paths) ? row.photo_paths : [],
+            })));
+          }
+        } catch (safetyReadError) {
+          console.warn('안전 확인 내역 조회 실패(SQL 또는 조회 권한 확인):', safetyReadError);
+          setTaskSafetyConfirmations([]);
+        }
 
         let targetTasks: Task[] = [];
         if (currentUserNameForFetch) {
@@ -1711,6 +2765,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         showCustomAlert('오류', `비고 수정 실패: ${err.message}`);
       }
       return;
+    }
+
+    const needsDailySafetyConfirmation =
+      task.task_type === 'DAILY' &&
+      ((task.status === 'PENDING' && nextStatus === 'IN_PROGRESS') ||
+       (task.status === 'IN_PROGRESS' && nextStatus === 'COMPLETED'));
+
+    if (needsDailySafetyConfirmation && !statusSafetyConfirmedRef.current) {
+      setStatusSafetyChecks([]);
+      setStatusSafetyModal(
+        task.status === 'PENDING' && nextStatus === 'IN_PROGRESS' ? 'START' : 'FINISH'
+      );
+      return;
+    }
+    if (statusSafetyConfirmedRef.current) {
+      statusSafetyConfirmedRef.current = false;
     }
 
     const isChangingStatus = nextStatus !== task.status;
@@ -2373,13 +3443,41 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             }
           }
 
+          let safetyCleanupFailed = false;
+          const { data: safetyRows, error: safetyReadError } = await supabase
+            .from('task_safety_confirmations')
+            .select('id, photo_paths')
+            .eq('task_id', task.id);
+          if (safetyReadError) {
+            safetyCleanupFailed = true;
+            console.warn('관리자 최종 확인 후 안전 확인 내역 조회 실패:', task.id, safetyReadError.message);
+          } else if (safetyRows && safetyRows.length > 0) {
+            const safetyPhotoPaths = safetyRows.flatMap((row: any) => Array.isArray(row.photo_paths) ? row.photo_paths : []);
+            if (safetyPhotoPaths.length > 0) {
+              const { error: safetyPhotoDeleteError } = await (supabase.storage
+                .from('daily-work-safety-photos') as any).remove(safetyPhotoPaths);
+              if (safetyPhotoDeleteError) {
+                safetyCleanupFailed = true;
+                console.warn('관리자 최종 확인 후 안전 확인 사진 삭제 실패:', task.id, safetyPhotoDeleteError.message);
+              }
+            }
+            const { error: safetyRowsDeleteError } = await supabase
+              .from('task_safety_confirmations')
+              .delete()
+              .eq('task_id', task.id);
+            if (safetyRowsDeleteError) {
+              safetyCleanupFailed = true;
+              console.warn('관리자 최종 확인 후 안전 확인 기록 삭제 실패:', task.id, safetyRowsDeleteError.message);
+            }
+          }
+
           setSelectedTaskIds([]);
           await fetchTasks();
           showCustomAlert(
             '완료',
-            photoDeleteFailed
-              ? '관리자 최종 확인이 완료되었습니다. 사진 파일 정리는 실패하여 저장 경로를 유지했습니다.'
-              : '관리자 최종 확인이 완료되었습니다. 완료이력에서 확인할 수 있습니다.'
+            photoDeleteFailed || safetyCleanupFailed
+              ? '관리자 최종 확인이 완료되었습니다. 일부 사진 또는 안전 확인 기록 정리에 실패했습니다. 관리자에게 확인이 필요합니다.'
+              : '관리자 최종 확인이 완료되었습니다. 안전 확인 항목과 사진이 삭제되었으며 완료이력에서 확인할 수 있습니다.'
           );
         } catch (err: any) {
           showCustomAlert('오류', `관리자 확인 처리 실패: ${err.message}`);
@@ -2814,7 +3912,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <CalendarIcon className="h-4 w-4 sm:h-5 sm:w-5" />
               </div>
               <div>
-                <h2 className="text-sm sm:text-base font-bold">운영 및 근무 관리 시스템</h2>
+                <h2 className="text-sm sm:text-base font-bold">업무 및 차량 관리</h2>
                 <p className="text-[11px] sm:text-xs text-[#64748B]">일일 · 주간 · CABIN 업무 및 차량 관리</p>
               </div>
             </div>
@@ -3749,7 +4847,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         )}
 
         {customAlert.open && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-900/25 p-4">
+          <div className="fixed inset-0 z-[120] flex items-center justify-center bg-slate-900/25 p-4">
             <div className="bg-white rounded-2xl max-w-sm w-full p-4 shadow-[0_12px_32px_rgba(15,23,42,0.18)] space-y-3 border border-[#E2E5E9]">
               <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-2">
                 <h3 className="text-sm font-bold text-[#243B5A]">{customAlert.title}</h3>
@@ -3860,11 +4958,23 @@ const canChangeStatus =
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택</label>
+                    <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택(전인원)</label>
                     <div className="grid grid-cols-3 gap-2">
                       <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}`}>대기</button>
-                      <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'}`}>진행중</button>
-                      <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white border-slate-800' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'}`}>완료</button>
+                      <button type="button" disabled={!canChangeStatus} onClick={() => {
+                        setStatusChangeModal({ ...statusChangeModal, targetStatus: 'IN_PROGRESS' });
+                        if (statusChangeModal.task?.task_type === 'DAILY' && statusChangeModal.task?.status === 'PENDING') {
+                          setStatusSafetyChecks([]);
+                          setStatusSafetyModal('START');
+                        }
+                      }} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'IN_PROGRESS' ? 'bg-emerald-600 text-white border-emerald-700' : 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'}`}>진행중</button>
+                      <button type="button" disabled={!canChangeStatus} onClick={() => {
+                        setStatusChangeModal({ ...statusChangeModal, targetStatus: 'COMPLETED' });
+                        if (statusChangeModal.task?.task_type === 'DAILY' && statusChangeModal.task?.status === 'IN_PROGRESS') {
+                          setStatusSafetyChecks([]);
+                          setStatusSafetyModal('FINISH');
+                        }
+                      }} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'COMPLETED' ? 'bg-slate-700 text-white border-slate-800' : 'bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200'}`}>완료</button>
                     </div>
                     {statusChangeModal.task.require_all_assignees_consent === true &&
                       statusChangeModal.targetStatus !== statusChangeModal.task.status && (() => {
@@ -3921,6 +5031,230 @@ const canChangeStatus =
             </div>
           );
         })()}
+
+        {statusSafetyModal && (
+          <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-900/40 p-4">
+            <div role="dialog" aria-modal="true" aria-label="일일업무 안전 확인" className="w-full max-w-lg max-h-[90dvh] overflow-y-auto space-y-4 rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
+              <div className="border-b border-[#E2E5E9] pb-3">
+                <h3 className="text-sm font-bold text-[#243B5A]">
+                  {statusSafetyModal === 'START' ? '작업 시작 전 안전 확인' : '작업 완료 전 확인'}
+                </h3>
+                <p className="mt-1 text-[11px] text-[#64748B]">
+                  사진은 해당 업무 담당자만 등록할 수 있으며, 업무당 전체 최대 9장까지 첨부할 수 있습니다. 관리자 최종 확인 전까지 모든 직원이 확인할 수 있습니다.
+                </p>
+              </div>
+
+              <div className="space-y-3 text-xs text-[#1F2937]">
+                {(statusSafetyModal === 'START'
+                  ? ['안전 관련 사진(허가서, 레일거치 신고서)을 안전 관리자에게 전송 확인', '안전벨트 후크 상태 점검 확인', '안전줄 상태 점검 확인', '개인 안전보호구(보안경, 마스크 등) 착용 확인']
+                  : ['정리 정돈은 하셨나요?', '사용한 장비 재확인 하셨나요?']
+                ).map((item, index) => (
+                  <label key={`${statusSafetyModal}-${index}`} className="flex cursor-pointer items-start gap-2 rounded-lg border border-[#E2E5E9] p-3">
+                    <input type="checkbox" checked={statusSafetyChecks[index] === true} onChange={event => setStatusSafetyChecks(prev => { const next = [...prev]; next[index] = event.target.checked; return next; })} className="mt-0.5 h-4 w-4 accent-[#243B5A]" />
+                    <span>{item}</span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="space-y-2 rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-[11px] font-bold text-[#243B5A]">확인 사진 첨부 (최대 9장)</label>
+                  <span className="text-[10px] text-[#64748B]">{currentTaskSafetyPhotoCount + statusSafetyPhotoFiles.length}/9장</span>
+                </div>
+                <p className="text-[10px] text-[#64748B]">사진은 자동으로 크기와 용량을 줄여 저장합니다. 사진 첨부는 선택 사항입니다.</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  {statusSafetyPhotoFiles.map((file, index) => (
+                    <div key={`${file.name}-${index}`} className="relative">
+                      <img src={statusSafetyPhotoPreviews[index]} alt={`안전 확인 사진 ${index + 1}`} className="h-16 w-16 rounded-lg border border-[#E2E5E9] object-cover" />
+                      <button type="button" onClick={() => {
+                        URL.revokeObjectURL(statusSafetyPhotoPreviews[index]);
+                        setStatusSafetyPhotoFiles(prev => prev.filter((_, i) => i !== index));
+                        setStatusSafetyPhotoPreviews(prev => prev.filter((_, i) => i !== index));
+                      }} className="absolute -right-1.5 -top-1.5 rounded-full bg-slate-800 p-1 text-white" aria-label="사진 제거"><X className="h-3 w-3" /></button>
+                      <span className="mt-0.5 block max-w-16 truncate text-[9px] text-[#64748B]">{Math.round(file.size / 1024)}KB</span>
+                    </div>
+                  ))}
+                  <label className={`cursor-pointer rounded-lg border border-[#D7DEE8] bg-white px-3 py-2 text-xs font-semibold text-[#243B5A] ${currentTaskSafetyPhotoCount + statusSafetyPhotoFiles.length >= 9 ? 'pointer-events-none opacity-40' : 'hover:bg-[#F5F6F8]'}`}>
+                    사진 선택
+                    <input type="file" accept="image/*" multiple disabled={currentTaskSafetyPhotoCount + statusSafetyPhotoFiles.length >= 9} className="hidden" onChange={async event => {
+                      const input = event.currentTarget;
+                      const picked = Array.from(input.files || []);
+                      input.value = '';
+                      const available = 9 - currentTaskSafetyPhotoCount - statusSafetyPhotoFiles.length;
+                      if (picked.length > available) showCustomAlert('사진 개수 제한', `해당 업무의 안전 확인 사진은 전체 최대 9장입니다. ${available}장만 추가할 수 있습니다.`);
+                      const filesToAdd = picked.slice(0, Math.max(0, available));
+                      if (!filesToAdd.length) return;
+                      try {
+                        const compressed = await Promise.all(filesToAdd.map(compressDailyWorkPhoto));
+                        setStatusSafetyPhotoFiles(prev => [...prev, ...compressed]);
+                        setStatusSafetyPhotoPreviews(prev => [...prev, ...compressed.map(file => URL.createObjectURL(file))]);
+                      } catch (photoError: any) {
+                        showCustomAlert('사진 처리 오류', photoError?.message || '사진을 처리하지 못했습니다.');
+                      }
+                    }} />
+                  </label>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 border-t border-[#E2E5E9] pt-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    statusSafetyPhotoPreviews.forEach(url => URL.revokeObjectURL(url));
+                    setStatusSafetyPhotoFiles([]);
+                    setStatusSafetyPhotoPreviews([]);
+                    setStatusSafetyModal(null);
+                    setStatusSafetyChecks([]);
+                  }}
+                  className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold text-[#475569]"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  disabled={statusSafetyChecks.filter(Boolean).length !== (statusSafetyModal === 'START' ? 4 : 2)}
+                  onClick={async () => {
+                    const task = statusChangeModal.task;
+                    if (!task || !currentUser?.id || !currentUser?.name) {
+                      showCustomAlert('확인 정보 오류', '업무 또는 로그인 사용자 정보를 확인할 수 없습니다.');
+                      return;
+                    }
+                    const isAssigned = getTaskParticipants(task).some(person =>
+                      person.name.trim().toLowerCase() === String(currentUser.name).trim().toLowerCase()
+                    );
+                    if (statusSafetyPhotoFiles.length > 0 && !isAssigned) {
+                      showCustomAlert('사진 첨부 제한', '사진은 해당 업무에 배정된 담당자만 첨부할 수 있습니다. 사진을 제거한 뒤 확인을 진행해 주세요.');
+                      return;
+                    }
+                    const checklist = statusSafetyModal === 'START'
+                      ? ['안전 관련 사진(허가서, 레일거치 신고서)을 안전 관리자에게 전송 확인', '안전벨트 후크 상태 점검 확인', '안전줄 상태 점검 확인', '개인 안전보호구(보안경, 마스크 등) 착용 확인']
+                      : ['정리 정돈은 하셨나요?', '사용한 장비 재확인 하셨나요?'];
+                    const uploadedPaths: string[] = [];
+                    let saveStage = '사진 업로드';
+                    try {
+                      for (const photo of statusSafetyPhotoFiles) {
+                        const storagePath = `${task.id}/${String(currentUser.id)}/${crypto.randomUUID()}.jpg`;
+                        const { error: uploadError } = await supabase.storage
+                          .from('daily-work-safety-photos')
+                          .upload(storagePath, photo, { contentType: 'image/jpeg', upsert: false });
+                        if (uploadError) throw uploadError;
+                        uploadedPaths.push(storagePath);
+                      }
+                      saveStage = '안전 확인 내역 저장';
+                      const { error } = await supabase.from('task_safety_confirmations').insert({
+                        task_id: task.id,
+                        user_id: String(currentUser.id),
+                        user_name: currentUser.name,
+                        confirmation_type: statusSafetyModal,
+                        checked_items: checklist,
+                        photo_paths: uploadedPaths,
+                      });
+                      if (error) throw error;
+
+                      statusSafetyPhotoPreviews.forEach(url => URL.revokeObjectURL(url));
+                      setStatusSafetyPhotoFiles([]);
+                      setStatusSafetyPhotoPreviews([]);
+                      statusSafetyConfirmedRef.current = true;
+                      setStatusSafetyModal(null);
+                      setStatusSafetyChecks([]);
+                      await fetchTasks();
+                      void handleConfirmStatusChange();
+                    } catch (saveError: any) {
+                      if (uploadedPaths.length > 0) {
+                        await (supabase.storage.from('daily-work-safety-photos') as any).remove(uploadedPaths);
+                      }
+                      showCustomAlert(
+                        '안전 확인 저장 실패',
+                        `[실패 단계: ${saveStage}]\n${saveError?.message || '알 수 없는 오류'}`
+                      );
+                    }
+                  }}
+                  className="rounded-lg bg-[#243B5A] px-4 py-2 text-xs font-bold text-white hover:bg-[#1B2F49] disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  확인
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {safetyViewerTask && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/70 p-4" onClick={() => setSafetyViewerTask(null)}>
+            <div role="dialog" aria-modal="true" aria-label="안전 확인 기록" onClick={event => event.stopPropagation()} className="max-h-[90dvh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-[#E2E5E9] bg-white p-4 shadow-2xl">
+              <div className="mb-3 flex items-center justify-between gap-2 border-b border-[#E2E5E9] pb-3">
+                <div className="min-w-0">
+                  <h3 className="truncate text-sm font-bold text-[#243B5A]">안전 확인 기록</h3>
+                  <p className="truncate text-[11px] text-[#64748B]">{safetyViewerTask.title}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {taskSafetyConfirmations.some(row => row.task_id === safetyViewerTask.id && row.photo_paths.length > 0) && (
+                    <button type="button" onClick={async () => {
+                      try {
+                        const allRecords = taskSafetyConfirmations.filter(row => row.task_id === safetyViewerTask.id);
+                        const zipFiles = allRecords.flatMap(record => record.photo_paths.map((path, index) => {
+                          const { data } = supabase.storage.from('daily-work-safety-photos').getPublicUrl(path);
+                          return {
+                            url: data.publicUrl,
+                            name: `${record.confirmation_type === 'START' ? '작업시작' : '작업완료'}_${record.user_name}_${String(index + 1).padStart(2, '0')}.jpg`,
+                          };
+                        }));
+                        await downloadFilesAsZip(zipFiles, `${safetyViewerTask.title}_안전확인_전체사진`);
+                      } catch (zipError: any) {
+                        showCustomAlert('압축 다운로드 실패', zipError?.message || '사진 압축 파일을 만들지 못했습니다.');
+                      }
+                    }} className="rounded-lg bg-[#243B5A] px-2.5 py-1.5 text-[10px] font-bold text-white hover:bg-[#1B2F49]">전체 사진 ZIP</button>
+                  )}
+                  <button type="button" onClick={() => setSafetyViewerTask(null)} className="rounded-lg p-1.5 text-[#64748B] hover:bg-[#F5F6F8]" aria-label="안전 확인 기록 닫기"><X className="h-4 w-4" /></button>
+                </div>
+              </div>
+              <div className="space-y-4">
+                {taskSafetyConfirmations.filter(row => row.task_id === safetyViewerTask.id).map(record => (
+                  <div key={record.id} className="space-y-3 rounded-xl border border-[#E2E5E9] p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-bold text-[#243B5A]">{record.confirmation_type === 'START' ? '작업 시작 전 안전 확인' : '작업 완료 전 확인'}</p>
+                        <p className="mt-1 text-[10px] text-[#64748B]">{record.user_name} · {record.created_at ? new Date(record.created_at).toLocaleString('ko-KR') : ''}</p>
+                      </div>
+                      {record.photo_paths.length > 0 && (
+                        <button type="button" onClick={async () => {
+                          try {
+                            const zipFiles = record.photo_paths.map((path, index) => {
+                              const { data } = supabase.storage.from('daily-work-safety-photos').getPublicUrl(path);
+                              return { url: data.publicUrl, name: `safety_${record.confirmation_type.toLowerCase()}_${String(index + 1).padStart(2, '0')}.jpg` };
+                            });
+                            await downloadFilesAsZip(zipFiles, `${safetyViewerTask.title}_${record.confirmation_type}_사진`);
+                          } catch (zipError: any) {
+                            showCustomAlert('압축 다운로드 실패', zipError?.message || '사진 압축 파일을 만들지 못했습니다.');
+                          }
+                        }} className="inline-flex items-center gap-1 rounded-lg border border-[#D7DEE8] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A] hover:bg-[#F5F6F8]">
+                          <FileText className="h-3.5 w-3.5" />사진 ZIP 다운로드
+                        </button>
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      {record.checked_items.map((item, index) => (
+                        <p key={`${record.id}-item-${index}`} className="text-[11px] text-[#334155]">✓ {item}</p>
+                      ))}
+                    </div>
+                    {record.photo_paths.length > 0 && (
+                      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                        {record.photo_paths.map((path, index) => {
+                          const { data } = supabase.storage.from('daily-work-safety-photos').getPublicUrl(path);
+                          return <a key={path} href={data.publicUrl} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-[#E2E5E9] bg-[#F5F6F8]">
+                            <img src={data.publicUrl} alt={`안전 확인 사진 ${index + 1}`} loading="lazy" className="h-36 w-full object-cover" />
+                          </a>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {taskSafetyConfirmations.filter(row => row.task_id === safetyViewerTask.id).length === 0 && (
+                  <p className="py-8 text-center text-xs text-[#64748B]">등록된 안전 확인 기록이 없습니다.</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
       {/* 플로팅 액션바: 모달창이 아닐 때만 표시되며, 선택된 업무의 상세내용(비고)을 함께 노출 */}
         {(['WEEKLY', 'DAILY', 'CABIN'].includes(taskTab)) && 
@@ -3994,6 +5328,11 @@ const canChangeStatus =
                     {singleTask ? '' : '다중 선택 상태입니다.'}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {singleTask && singleTask.task_type === 'DAILY' && taskSafetyConfirmations.some(row => row.task_id === singleTask.id) && (
+                      <button type="button" onClick={() => setSafetyViewerTask(singleTask)} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 sm:px-3 sm:py-2 sm:text-xs">
+                        <Eye className="h-3.5 w-3.5" />안전 확인 보기 ({taskSafetyConfirmations.filter(row => row.task_id === singleTask.id).length})
+                      </button>
+                    )}
                     {singleTask && singleTask.task_type === 'DAILY' && (singleTask.photo_paths || []).length > 0 && (
                       <button type="button" onClick={() => setPhotoViewerTask(singleTask)} className="inline-flex items-center gap-1 rounded-lg border border-[#D7DEE8] bg-white px-2.5 py-1.5 text-[11px] font-bold text-[#243B5A] hover:bg-[#F5F6F8] sm:px-3 sm:py-2 sm:text-xs">
                         <Eye className="h-3.5 w-3.5" />사진 보기 ({singleTask.photo_paths?.length})
