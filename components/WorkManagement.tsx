@@ -4968,7 +4968,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                         <div className="font-bold text-[#1F2937]">{t.title}{renderTaskNewBadge(t)}</div>
                         <div className="text-[11px] text-[#64748B] font-mono">{t.start_date}{t.end_date && t.end_date !== t.start_date ? ` ~ ${t.end_date}` : ''}{t.time_slot ? ` (${formatShortTimeSlot(t.time_slot)})` : ''}</div>
                       </div>
-                      {renderStatusBadge(t)}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {t.task_type === 'DAILY' && t.qr_scan_enabled === true && t.status !== 'COMPLETED' && canModifyTaskStatus(t) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQrTargetTask(t);
+                              setIsQrModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg bg-blue-600 px-2 py-1.5 text-[10px] font-bold text-white hover:bg-blue-700 whitespace-nowrap"
+                          >
+                            <Camera className="h-3 w-3" />
+                            QR 스캔
+                          </button>
+                        )}
+                        {renderStatusBadge(t)}
+                      </div>
                     </div>
                   ))
                 )}
@@ -4982,6 +4997,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
         {statusChangeModal.open && statusChangeModal.task && (() => {
           const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
+const isQrFinishRemarksStage = !!pendingGpsData && statusChangeModal.task.task_type === 'DAILY' && statusChangeModal.task.status === 'IN_PROGRESS' && statusChangeModal.targetStatus === 'COMPLETED';
 
 const isCompletedNightTask =
   statusChangeModal.task.task_type === 'DAILY_OTHER' &&
@@ -5020,7 +5036,7 @@ const canChangeStatus =
                     <div className="text-[#64748B]">담당자: {(statusChangeModal.task.assigned_names || []).join(', ') || '미배정'}</div>
                   </div>
 
-                  <div>
+                  {!isQrFinishRemarksStage && <div>
                     <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택(전인원)</label>
                     <div className="grid grid-cols-3 gap-2">
                       <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}`}>대기</button>
@@ -5071,10 +5087,10 @@ const canChangeStatus =
                           </div>
                         );
                       })()}
-                  </div>
+                  </div>}
 
                   <div>
-                    <label className="block text-xs font-bold text-[#1F2937] mb-1">비고란 (최대 10줄 이상 스크롤)</label>
+                    <label className="block text-xs font-bold text-[#1F2937] mb-1">{isQrFinishRemarksStage ? '업무 종료 비고 (선택)' : '비고란 (최대 10줄 이상 스크롤)'}</label>
                     <textarea
                       rows={10}
                       disabled={!canEditRemarks}
@@ -5088,7 +5104,7 @@ const canChangeStatus =
 
                 <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9] text-xs">
                   <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">닫기</button>
-                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장'}</button>}
+                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{isQrFinishRemarksStage ? '종료 및 저장' : (statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장')}</button>}
                 </div>
               </div>
             </div>
@@ -5224,7 +5240,13 @@ const canChangeStatus =
                       setStatusSafetyModal(null);
                       setStatusSafetyChecks([]);
                       await fetchTasks();
-                      void handleConfirmStatusChange();
+                      // QR 종료 2차 스캔: 안전 확인 후 즉시 완료하지 않고 공용 비고 입력 단계로 이동
+                      if (statusSafetyModal === 'FINISH' && pendingGpsData && task.task_type === 'DAILY' && task.status === 'IN_PROGRESS') {
+                        setStatusChangeModal({ open: true, task, targetStatus: 'COMPLETED', remarks: task.remarks || '' });
+                        statusChangeRemarksRef.current = task.remarks || '';
+                      } else {
+                        void handleConfirmStatusChange();
+                      }
                     } catch (saveError: any) {
                       if (uploadedPaths.length > 0) {
                         await (supabase.storage.from('daily-work-safety-photos') as any).remove(uploadedPaths);
