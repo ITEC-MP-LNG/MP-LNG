@@ -2156,12 +2156,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [locationViewModal, setLocationViewModal] = useState<{ open: boolean; task: Task | null }>({ open: false, task: null });
   const [selectedWorkerForMap, setSelectedWorkerForMap] = useState<string>('');
   const [qrScanRecords, setQrScanRecords] = useState<any[]>([]);
+  const [qrScanRecordsError, setQrScanRecordsError] = useState('');
   useEffect(() => {
-    if (!locationViewModal.open || !locationViewModal.task?.id) { setQrScanRecords([]); return; }
+    if (!locationViewModal.open || !locationViewModal.task?.id) { setQrScanRecords([]); setQrScanRecordsError(''); return; }
     let cancelled = false;
     (async () => {
       const { data, error } = await supabase.from('task_qr_scan_records').select('user_name, scan_phase, latitude, longitude, scanned_at').eq('task_id', locationViewModal.task!.id).order('scanned_at', { ascending: true });
-      if (!cancelled) setQrScanRecords(error ? [] : (data || []));
+      if (!cancelled) { setQrScanRecords(error ? [] : (data || [])); setQrScanRecordsError(error?.message || ''); }
     })();
     return () => { cancelled = true; };
   }, [locationViewModal.open, locationViewModal.task?.id]);
@@ -6006,7 +6007,7 @@ const canChangeStatus =
         className="w-full max-w-sm rounded-2xl border border-[#E2E5E9] bg-white p-5 shadow-xl space-y-4"
       >
         <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
-          <h3 className="text-sm font-bold text-[#243B5A]">현장 진입 위치 및 시간</h3>
+          <h3 className="text-sm font-bold text-[#243B5A]">직원별 현장 QR 기록</h3>
           <button
             type="button"
             onClick={() => setLocationViewModal({ open: false, task: null })}
@@ -6039,7 +6040,11 @@ const canChangeStatus =
           </div>
         </div>
 
-        {qrScanRecords.length > 0 && (
+        <div className="space-y-2">
+          <h4 className="text-xs font-bold text-[#243B5A]">직원별 QR 스캔 기록</h4>
+          {qrScanRecordsError && <div className="rounded-lg bg-rose-50 p-2 text-xs text-rose-700">기록 조회 실패: {qrScanRecordsError} — Supabase SQL 및 테이블 권한을 확인하세요.</div>}
+          {!qrScanRecordsError && qrScanRecords.length === 0 && <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">직원별 기록이 없습니다. 스캔 기록 저장 또는 SQL 실행 여부를 확인하세요.</div>}
+          {qrScanRecords.length > 0 && (
           <div className="space-y-2">
             <h4 className="text-xs font-bold text-[#243B5A]">직원별 QR 스캔 기록</h4>
             <div className="max-h-56 overflow-y-auto rounded-xl border border-[#E2E5E9]">
@@ -6054,7 +6059,8 @@ const canChangeStatus =
               })}
             </div>
           </div>
-        )}
+          )}
+        </div>
         <div className="flex gap-2">
           <button
             type="button"
