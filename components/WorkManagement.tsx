@@ -6049,11 +6049,28 @@ const canChangeStatus =
     const isStartScan = qrTargetTask.status === 'PENDING';
     const nextStatus = isStartScan ? 'IN_PROGRESS' : 'COMPLETED';
     // 스캔 시점에 직원별 기록을 먼저 저장해 전원 동의/상태저장 분기와 무관하게 누락되지 않도록 합니다.
+    const scanPhase = isStartScan ? 'START' : 'FINISH';
+    const scanUserName = String(currentUser?.name || '').trim() || '이름 미확인';
     try {
+      // 동일 업무/단계/직원 QR 기록이 이미 존재하면 재등록을 차단합니다.
+      const { data: existingScan, error: existingScanError } = await supabase.from('task_qr_scan_records')
+        .select('id')
+        .eq('task_id', qrTargetTask.id)
+        .eq('scan_phase', scanPhase)
+        .eq('user_name', scanUserName)
+        .maybeSingle();
+      if (existingScanError) throw existingScanError;
+      if (existingScan) {
+        setPendingGpsData(null);
+        setIsQrModalOpen(false);
+        showCustomAlert('QR 스캔 확인', '이미 등록하였습니다.');
+        return;
+      }
+
       const { error: recordError } = await supabase.from('task_qr_scan_records').upsert({
         task_id: qrTargetTask.id,
-        scan_phase: isStartScan ? 'START' : 'FINISH',
-        user_name: String(currentUser?.name || '').trim() || '이름 미확인',
+        scan_phase: scanPhase,
+        user_name: scanUserName,
         latitude: data.latitude,
         longitude: data.longitude,
         scanned_at: new Date().toISOString(),
@@ -6088,12 +6105,13 @@ const canChangeStatus =
     statusChangeRemarksRef.current = qrTargetTask.remarks || '';
     // 시작 스캔은 기존 안전확인 유지. 종료 스캔은 스캔 자체를 동의로 간주하고
     // 비고 작성용 기존 상태변경창을 바로 엽니다.
-    if (isStartScan) {
-      setStatusSafetyChecks([]);
-      setStatusSafetyModal('START');
-    } else {
-      setStatusSafetyModal(null);
-      setStatusChangeModal({ open: true, task: qrTargetTask, targetStatus: 'COMPLETED', remarks: qrTargetTask.remarks || '' });
+    setStatusSafetyChecks([]);
+    // QR 종료 흐름은 안전서약 확인을 먼저 한 번 수행한 뒤 비고 상태변경창으로 이동합니다.
+    // 안전 확인 완료 콜백에서 상태변경창을 열므로 여기서 직접 열지 않아 반복 호출되지 않습니다.
+    setStatusSafetyModal(isStartScan ? 'START' : 'FINISH');
+    if (!isStartScan) {
+      setStatusChangeModal({ open: false, task: qrTargetTask, targetStatus: 'COMPLETED', remarks: qrTargetTask.remarks || '' });
+      statusChangeRemarksRef.current = qrTargetTask.remarks || '';
     }
   }}
 />
