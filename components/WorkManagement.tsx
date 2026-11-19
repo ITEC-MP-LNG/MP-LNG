@@ -2972,7 +2972,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             user_name: currentUser?.name || '이름 미확인', latitude: pendingGpsData.lat, longitude: pendingGpsData.lon,
             scanned_at: new Date().toISOString(),
           }, { onConflict: 'task_id,scan_phase,user_name' });
-          if (scanRecordError) console.warn('QR 위치 이력 저장 실패:', scanRecordError.message);
+          if (scanRecordError) showCustomAlert('QR 위치 기록 저장 실패', `업무 상태는 저장되었으나 직원별 QR 기록을 저장하지 못했습니다.\n${scanRecordError.message}`);
         }
         setPendingGpsData(null);
         setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
@@ -3008,7 +3008,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           user_name: currentUser?.name || '이름 미확인', latitude: pendingGpsData.lat, longitude: pendingGpsData.lon,
           scanned_at: new Date().toISOString(),
         }, { onConflict: 'task_id,scan_phase,user_name' });
-        if (scanRecordError) console.warn('QR 위치 이력 저장 실패:', scanRecordError.message);
+        if (scanRecordError) showCustomAlert('QR 위치 기록 저장 실패', `업무 상태는 저장되었으나 직원별 QR 기록을 저장하지 못했습니다.\n${scanRecordError.message}`);
       }
       setPendingGpsData(null);
       setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
@@ -5024,8 +5024,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
 
         {statusChangeModal.open && statusChangeModal.task && (() => {
           const isAllowedUser = canModifyTaskStatus(statusChangeModal.task);
-const isQrFinishRemarksStage = !!pendingGpsData && statusChangeModal.task.task_type === 'DAILY' && statusChangeModal.task.status === 'IN_PROGRESS' && statusChangeModal.targetStatus === 'COMPLETED';
-
 const isCompletedNightTask =
   statusChangeModal.task.task_type === 'DAILY_OTHER' &&
   statusChangeModal.task.status === 'COMPLETED';
@@ -5063,7 +5061,7 @@ const canChangeStatus =
                     <div className="text-[#64748B]">담당자: {(statusChangeModal.task.assigned_names || []).join(', ') || '미배정'}</div>
                   </div>
 
-                  {!isQrFinishRemarksStage && <div>
+                  {<div>
                     <label className="block text-xs font-bold text-[#1F2937] mb-1.5">상태 선택(전인원)</label>
                     <div className="grid grid-cols-3 gap-2">
                       <button type="button" disabled={!canChangeStatus} onClick={() => setStatusChangeModal({ ...statusChangeModal, targetStatus: 'PENDING' })} className={`py-2 rounded-lg text-xs font-bold border flex items-center justify-center gap-1 transition-colors ${statusChangeModal.targetStatus === 'PENDING' ? 'bg-amber-500 text-white border-amber-600' : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'}`}>대기</button>
@@ -5117,7 +5115,7 @@ const canChangeStatus =
                   </div>}
 
                   <div>
-                    <label className="block text-xs font-bold text-[#1F2937] mb-1">{isQrFinishRemarksStage ? '업무 종료 비고 (선택)' : '비고란 (최대 10줄 이상 스크롤)'}</label>
+                    <label className="block text-xs font-bold text-[#1F2937] mb-1">비고란 (최대 10줄 이상 스크롤)</label>
                     <textarea
                       rows={10}
                       disabled={!canEditRemarks}
@@ -5131,7 +5129,7 @@ const canChangeStatus =
 
                 <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9] text-xs">
                   <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">닫기</button>
-                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{isQrFinishRemarksStage ? '종료 및 저장' : (statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장')}</button>}
+                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장 후 닫기'}</button>}
                 </div>
               </div>
             </div>
@@ -6017,36 +6015,12 @@ const canChangeStatus =
           </button>
         </div>
 
-        <div className="space-y-2 rounded-xl bg-[#F5F6F8] p-3 text-xs">
-          <div className="flex justify-between gap-2">
-            <span className="text-[#64748B]">업무명</span>
-            <span className="font-bold text-[#1F2937] text-right">{target.title}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span className="text-[#64748B]">진입 인원</span>
-            <span className="font-semibold text-[#1F2937]">{target.qr_scanned_by || '기록 없음'}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span className="text-[#64748B]">좌표 생성 시간 (KST)</span>
-            <span className="font-semibold text-emerald-700">{kstTimeText}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span className="text-[#64748B]">좌표 (위도, 경도)</span>
-            <span className="font-mono font-semibold text-[#1F2937]">
-              {hasCoords
-                ? `${Number(target.latitude).toFixed(6)}, ${Number(target.longitude).toFixed(6)}`
-                : '좌표 미저장'}
-            </span>
-          </div>
-        </div>
-
         <div className="space-y-2">
           <h4 className="text-xs font-bold text-[#243B5A]">직원별 QR 스캔 기록</h4>
           {qrScanRecordsError && <div className="rounded-lg bg-rose-50 p-2 text-xs text-rose-700">기록 조회 실패: {qrScanRecordsError} — Supabase SQL 및 테이블 권한을 확인하세요.</div>}
           {!qrScanRecordsError && qrScanRecords.length === 0 && <div className="rounded-lg bg-slate-50 p-3 text-xs text-slate-500">직원별 기록이 없습니다. 스캔 기록 저장 또는 SQL 실행 여부를 확인하세요.</div>}
           {qrScanRecords.length > 0 && (
           <div className="space-y-2">
-            <h4 className="text-xs font-bold text-[#243B5A]">직원별 QR 스캔 기록</h4>
             <div className="max-h-56 overflow-y-auto rounded-xl border border-[#E2E5E9]">
               {qrScanRecords.map((record, index) => {
                 const recordTime = record.scanned_at ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(record.scanned_at)) : '시간 없음';
