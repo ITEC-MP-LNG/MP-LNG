@@ -5980,37 +5980,41 @@ const canChangeStatus =
      <QrScanModal
   isOpen={isQrModalOpen}
   onClose={() => setIsQrModalOpen(false)}
-  onScanSuccess={(data) => {
-    if (data.latitude != null && data.longitude != null) {
-      setPendingGpsData({
-        lat: data.latitude,
-        lon: data.longitude,
-      });
+  onScanSuccess={async (data) => {
+    if (!qrTargetTask) return;
+    const gps = { lat: data.latitude, lon: data.longitude };
+    setPendingGpsData(gps);
+    const isStartScan = qrTargetTask.status === 'PENDING';
+    const nextStatus = isStartScan ? 'IN_PROGRESS' : 'COMPLETED';
+    // 스캔 시점에 직원별 기록을 먼저 저장해 전원 동의/상태저장 분기와 무관하게 누락되지 않도록 합니다.
+    try {
+      const { error: recordError } = await supabase.from('task_qr_scan_records').upsert({
+        task_id: qrTargetTask.id,
+        scan_phase: isStartScan ? 'START' : 'FINISH',
+        user_name: String(currentUser?.name || '').trim() || '이름 미확인',
+        latitude: data.latitude,
+        longitude: data.longitude,
+        scanned_at: new Date().toISOString(),
+      }, { onConflict: 'task_id,scan_phase,user_name' });
+      if (recordError) throw recordError;
+    } catch (recordError: any) {
+      showCustomAlert('QR 직원별 기록 저장 실패', `스캔은 인식했지만 직원별 기록 저장에 실패했습니다.\n${recordError?.message || '알 수 없는 오류'}`);
     }
-    if (qrTargetTask) {
-      const isStartScan = qrTargetTask.status === 'PENDING';
-      const nextStatus = isStartScan ? 'IN_PROGRESS' : 'COMPLETED';
-      setStatusChangeModal({
-        open: false,
-        task: qrTargetTask,
-        targetStatus: nextStatus,
-        remarks: qrTargetTask.remarks || '',
-      });
-      statusChangeRemarksRef.current = qrTargetTask.remarks || '';
-      // 시작 스캔은 기존 안전확인 유지. 종료 스캔 자체를 동의로 간주하여
-      // 안전확인창 없이 기존 비고/상태변경창으로 바로 이동.
-      if (isStartScan) {
-        setStatusSafetyChecks([]);
-        setStatusSafetyModal('START');
-      } else {
-        setStatusSafetyModal(null);
-        setStatusChangeModal({
-          open: true,
-          task: qrTargetTask,
-          targetStatus: 'COMPLETED',
-          remarks: qrTargetTask.remarks || '',
-        });
-      }
+    setStatusChangeModal({
+      open: isStartScan,
+      task: qrTargetTask,
+      targetStatus: nextStatus,
+      remarks: qrTargetTask.remarks || '',
+    });
+    statusChangeRemarksRef.current = qrTargetTask.remarks || '';
+    // 시작 스캔은 기존 안전확인 유지. 종료 스캔은 스캔 자체를 동의로 간주하고
+    // 비고 작성용 기존 상태변경창을 바로 엽니다.
+    if (isStartScan) {
+      setStatusSafetyChecks([]);
+      setStatusSafetyModal('START');
+    } else {
+      setStatusSafetyModal(null);
+      setStatusChangeModal({ open: true, task: qrTargetTask, targetStatus: 'COMPLETED', remarks: qrTargetTask.remarks || '' });
     }
   }}
 />
