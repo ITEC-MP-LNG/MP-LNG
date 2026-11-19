@@ -5,10 +5,12 @@ import {
   Clock, User, CheckCircle2, Pencil, Trash2, Calendar as CalendarIcon, 
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, AlertCircle, PlayCircle, PlusCircle,
-  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown, Check, AlertTriangle
+  Users, History, FileSpreadsheet, Layers, FileText, ChevronDown, Check, AlertTriangle,
+  Camera, MapPin
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
+import QrScanModal from '@/components/QrScanModal';
 
 export interface Task {
   id: string;
@@ -38,6 +40,10 @@ export interface Task {
   completion_pending_review?: boolean;
   photo_paths?: string[];
   require_all_assignees_consent?: boolean;
+  latitude?: number | null;
+  longitude?: number | null;
+  qr_scanned_at?: string | null;
+  qr_scanned_by?: string | null;
 }
 
 type TaskStatusConsent = {
@@ -2140,7 +2146,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [requireAllAssigneesConsent, setRequireAllAssigneesConsent] = useState(false);
   const [photoViewerTask, setPhotoViewerTask] = useState<Task | null>(null);
 
-  
+  // 👇 [여기부터 추가] QR 및 위치 관련 상태 변수들
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [qrTargetTask, setQrTargetTask] = useState<Task | null>(null);
+  const [pendingGpsData, setPendingGpsData] = useState<{ lat: number | null; lon: number | null } | null>(null);
+  const [locationViewModal, setLocationViewModal] = useState<{ open: boolean; task: Task | null }>({ open: false, task: null });
+  const [selectedWorkerForMap, setSelectedWorkerForMap] = useState<string>('');
+
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -2713,6 +2725,25 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     });
   }, []);
 
+// 👇 [여기부터 추가] QR 스캔 완료 시 GPS 임시 저장 후 기존 안전서약 모달 호출
+  const handleQrScanComplete = useCallback((scannedData: { qrText: string; latitude: number | null; longitude: number | null }) => {
+    if (!qrTargetTask) return;
+
+    const nextStatus: Task['status'] = qrTargetTask.status === 'PENDING' ? 'IN_PROGRESS' : 'COMPLETED';
+
+    setPendingGpsData({ lat: scannedData.latitude, lon: scannedData.longitude });
+
+    setStatusChangeModal({
+      open: false,
+      task: qrTargetTask,
+      targetStatus: nextStatus,
+      remarks: qrTargetTask.remarks || ''
+    });
+
+    setStatusSafetyChecks([]);
+    setStatusSafetyModal(nextStatus === 'IN_PROGRESS' ? 'START' : 'FINISH');
+  }, [qrTargetTask]);
+
   const handleConfirmStatusChange = useCallback(async () => {
     if (!statusChangeModal.task) return;
     const task = statusChangeModal.task;
@@ -2849,6 +2880,12 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         const statusPayload: Record<string, any> = {
           status: nextStatus,
           remarks,
+          ...(pendingGpsData ? {
+            latitude: pendingGpsData.lat,
+            longitude: pendingGpsData.lon,
+            qr_scanned_at: new Date().toISOString(),
+            qr_scanned_by: currentUser?.name || null,
+          } : {}),
           ...(nextStatus === 'COMPLETED' && (task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER')
             ? {
                 completion_pending_review: true,
@@ -2856,9 +2893,6 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 completed_by_name: null,
                 completed_at: null,
               }
-            : {}),
-          ...((task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') && nextStatus !== 'COMPLETED'
-            ? { completion_pending_review: false }
             : {}),
         };
         const { data: updatedTask, error: statusError } = await supabase.from('tasks')
@@ -2898,17 +2932,24 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return;
     }
 
-    if ((task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') && nextStatus === 'COMPLETED') {
+   if ((task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') && nextStatus === 'COMPLETED') {
       try {
         const { error } = await supabase.from('tasks').update({
           status: 'COMPLETED',
           remarks,
+          ...(pendingGpsData ? {
+            latitude: pendingGpsData.lat,
+            longitude: pendingGpsData.lon,
+            qr_scanned_at: new Date().toISOString(),
+            qr_scanned_by: currentUser?.name || null,
+          } : {}),
           completion_pending_review: true,
           completed_by_id: null,
           completed_by_name: null,
           completed_at: null,
         }).eq('id', task.id);
         if (error) throw error;
+        setPendingGpsData(null);
         setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
         setSelectedTaskIds([]);
         await fetchTasks();
@@ -2927,9 +2968,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       const { error } = await supabase.from('tasks').update({
         status: nextStatus,
         remarks,
+        ...(pendingGpsData ? {
+          latitude: pendingGpsData.lat,
+          longitude: pendingGpsData.lon,
+          qr_scanned_at: new Date().toISOString(),
+          qr_scanned_by: currentUser?.name || null,
+        } : {}),
         ...((task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') ? { completion_pending_review: false } : {}),
       }).eq('id', task.id);
       if (error) throw error;
+      setPendingGpsData(null);
       setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
       await fetchTasks();
       showCustomAlert('성공', '업무 상태 및 비고란이 업데이트 되었습니다.');
@@ -2938,7 +2986,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     }
   }, [
     statusChangeModal, canModifyTaskStatus, getTaskParticipants, taskStatusConsents,
-    currentUser, fetchTasks, showCustomAlert,
+    currentUser, fetchTasks, showCustomAlert, pendingGpsData,
   ]);
 
   const renderStatusBadge = useCallback((task: Task) => {
@@ -3422,6 +3470,11 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             completed_by_id: currentUser?.id || null,
             completed_by_name: currentUser?.name || null,
             completed_at: new Date().toISOString(),
+            // 👇 [여기 추가] 관리자 최종 확인 시 보안을 위해 GPS 좌표 기록 삭제
+            latitude: null,
+            longitude: null,
+            qr_scanned_at: null,
+            qr_scanned_by: null,
           }).eq('id', task.id).eq('completion_pending_review', true);
           if (error) throw error;
 
@@ -5327,6 +5380,35 @@ const canChangeStatus =
                   <div className="text-xs text-[#64748B]">
                     {singleTask ? '' : '다중 선택 상태입니다.'}
                   </div>
+                  {/* 1. 작업자용: QR 스캔 버튼 (일일업무이며 대기/진행중 상태이고, 배정된 당사자이거나 관리자일 때) */}
+{singleTask && singleTask.task_type === 'DAILY' && singleTask.status !== 'COMPLETED' && canModifyTaskStatus(singleTask) && (
+  <button
+    type="button"
+    onClick={() => {
+      setQrTargetTask(singleTask);
+      setIsQrModalOpen(true);
+    }}
+    className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 px-3 py-2 text-xs font-bold text-white shadow-xs hover:bg-blue-700 transition-colors"
+  >
+    <Camera className="h-4 w-4" />
+    <span>QR 스캔 ({singleTask.status === 'PENDING' ? '작업시작' : '작업종료'})</span>
+  </button>
+)}
+
+{/* 2. 관리자 전용: 위치 보기 버튼 */}
+{singleTask && isAdmin && (
+  <button
+    type="button"
+    onClick={() => {
+      setLocationViewModal({ open: true, task: singleTask });
+    }}
+    className="inline-flex items-center gap-1.5 rounded-xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs font-bold text-indigo-800 hover:bg-indigo-100 transition-colors"
+  >
+    <MapPin className="h-4 w-4" />
+    <span>위치 보기</span>
+  </button>
+)}
+
                   <div className="flex flex-wrap items-center gap-2">
                     {singleTask && singleTask.task_type === 'DAILY' && taskSafetyConfirmations.some(row => row.task_id === singleTask.id) && (
                       <button type="button" onClick={() => setSafetyViewerTask(singleTask)} className="inline-flex items-center gap-1 rounded-lg border border-emerald-200 bg-emerald-50 px-2.5 py-1.5 text-[11px] font-bold text-emerald-800 hover:bg-emerald-100 sm:px-3 sm:py-2 sm:text-xs">
@@ -5797,6 +5879,126 @@ const canChangeStatus =
           </div>
         </div>
       )}
+
+     <QrScanModal
+  isOpen={isQrModalOpen}
+  onClose={() => setIsQrModalOpen(false)}
+  onScanSuccess={(data) => {
+    if (data.latitude != null && data.longitude != null) {
+      setPendingGpsData({
+        lat: data.latitude,
+        lon: data.longitude,
+      });
+    }
+    if (qrTargetTask) {
+      const nextStatus =
+        qrTargetTask.status === 'PENDING' ? 'IN_PROGRESS' : 'COMPLETED';
+      // 1. 상태 변경 모달을 띄우지 않고 목표 상태만 내부에 세팅
+      setStatusChangeModal({
+        open: false,
+        task: qrTargetTask,
+        targetStatus: nextStatus,
+        remarks: qrTargetTask.remarks || '',
+      });
+      // 2. 안전확인서 모달을 즉시 오픈
+      setStatusSafetyChecks([]);
+      setStatusSafetyModal(
+        qrTargetTask.status === 'PENDING' ? 'START' : 'FINISH'
+      );
+    }
+  }}
+/>
+
+      {locationViewModal.open && locationViewModal.task && (() => {
+  const target = locationViewModal.task;
+  const hasCoords = target.latitude != null && target.longitude != null;
+  const kstTimeText = target.qr_scanned_at
+    ? new Intl.DateTimeFormat('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).format(new Date(target.qr_scanned_at))
+    : '기록 없음';
+
+  return (
+    <div
+      className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-900/40 p-4"
+      onClick={() => setLocationViewModal({ open: false, task: null })}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-sm rounded-2xl border border-[#E2E5E9] bg-white p-5 shadow-xl space-y-4"
+      >
+        <div className="flex items-center justify-between border-b border-[#E2E5E9] pb-3">
+          <h3 className="text-sm font-bold text-[#243B5A]">현장 진입 위치 및 시간</h3>
+          <button
+            type="button"
+            onClick={() => setLocationViewModal({ open: false, task: null })}
+            className="rounded-lg p-1 text-[#64748B] hover:bg-[#F5F6F8]"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="space-y-2 rounded-xl bg-[#F5F6F8] p-3 text-xs">
+          <div className="flex justify-between gap-2">
+            <span className="text-[#64748B]">업무명</span>
+            <span className="font-bold text-[#1F2937] text-right">{target.title}</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span className="text-[#64748B]">진입 인원</span>
+            <span className="font-semibold text-[#1F2937]">{target.qr_scanned_by || '기록 없음'}</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span className="text-[#64748B]">좌표 생성 시간 (KST)</span>
+            <span className="font-semibold text-emerald-700">{kstTimeText}</span>
+          </div>
+          <div className="flex justify-between gap-2">
+            <span className="text-[#64748B]">좌표 (위도, 경도)</span>
+            <span className="font-mono font-semibold text-[#1F2937]">
+              {hasCoords
+                ? `${Number(target.latitude).toFixed(6)}, ${Number(target.longitude).toFixed(6)}`
+                : '좌표 미저장'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setLocationViewModal({ open: false, task: null })}
+            className="flex-1 rounded-xl border border-[#D7DEE8] py-2 text-xs font-bold text-[#243B5A] hover:bg-[#F5F6F8]"
+          >
+            닫기
+          </button>
+          {hasCoords ? (
+            <a
+              href={`https://www.google.com/maps?q=${target.latitude},${target.longitude}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 rounded-xl bg-blue-600 py-2 text-center text-xs font-bold text-white hover:bg-blue-700"
+            >
+              구글 맵 열기
+            </a>
+          ) : (
+            <button
+              type="button"
+              disabled
+              className="flex-1 rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-500 cursor-not-allowed"
+            >
+              좌표 없음
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
-}//
+})()}
+    </div>
+  );
+}
