@@ -2310,7 +2310,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     lastTasksFetchStartedAtRef.current = Date.now();
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, evening_workers, shift_type, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, remarks_edited_at, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review, photo_paths, require_all_assignees_consent').order('start_date', { ascending: true });
+      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, evening_workers, shift_type, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, remarks_edited_at, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review, photo_paths, require_all_assignees_consent, latitude, longitude, qr_scanned_at, qr_scanned_by').order('start_date', { ascending: true });
       if (error) throw error;
 
       if (data) {
@@ -5158,6 +5158,9 @@ const canChangeStatus =
                     setStatusSafetyPhotoPreviews([]);
                     setStatusSafetyModal(null);
                     setStatusSafetyChecks([]);
+                    // QR 스캔 후 안전확인을 취소하면 임시 GPS도 함께 폐기
+                    setPendingGpsData(null);
+                    setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
                   }}
                   className="rounded-lg border border-[#E2E5E9] px-3 py-2 text-xs font-semibold text-[#475569]"
                 >
