@@ -2856,7 +2856,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         if (remarksError) throw remarksError;
         setTasks(prev => prev.map(item => item.id === task.id ? {
           ...item, status: 'COMPLETED', remarks, completion_pending_review: true,
-          completed_by_id: null, completed_by_name: null, completed_at: null,
+          completed_by_id: undefined, completed_by_name: undefined, completed_at: undefined,
           latitude: pendingGpsData.lat, longitude: pendingGpsData.lon,
           qr_scanned_at: new Date().toISOString(), qr_scanned_by: currentUser?.name || null,
         } : item));
