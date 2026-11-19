@@ -2761,6 +2761,22 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setStatusSafetyModal(nextStatus === 'IN_PROGRESS' ? 'START' : 'FINISH');
   }, [qrTargetTask]);
 
+  // 종료 QR 상태변경 창을 닫을 때 임시 GPS/선택 상태를 정리하고 일일업무 목록을 다시 조회합니다.
+  const handleCloseStatusChangeModal = useCallback(() => {
+    const isQrFinishModal =
+      !!pendingGpsData &&
+      statusChangeModal.task?.task_type === 'DAILY' &&
+      statusChangeModal.targetStatus === 'COMPLETED';
+
+    setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
+
+    if (isQrFinishModal) {
+      setPendingGpsData(null);
+      setSelectedTaskIds([]);
+      void fetchTasks();
+    }
+  }, [pendingGpsData, statusChangeModal.task, statusChangeModal.targetStatus, fetchTasks]);
+
   const handleConfirmStatusChange = useCallback(async () => {
     if (!statusChangeModal.task) return;
     const task = statusChangeModal.task;
@@ -2862,6 +2878,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         } : item));
         setPendingGpsData(null);
         setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
+        setSelectedTaskIds([]);
+        await fetchTasks();
         showCustomAlert('저장 완료', '종료 QR 동의와 비고가 저장되었습니다.');
       } catch (err: any) {
         showCustomAlert('저장 오류', `종료 QR 동의는 등록되었으나 비고 저장에 실패했습니다: ${err.message}`);
@@ -2950,6 +2968,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             setTasks(prev => prev.map(item => item.id === task.id ? { ...item, remarks } : item));
             setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
             setPendingGpsData(null);
+            setSelectedTaskIds([]);
+            await fetchTasks();
             showCustomAlert(
               'QR 동의 및 비고 저장 완료',
               `${currentParticipant.name}님 종료 QR 동의와 비고가 저장되었습니다.\n현재 ${participants.length - missingNames.length}/${participants.length}명 동의\n미동의: ${missingNames.join(', ')}`
@@ -5136,7 +5156,7 @@ const canChangeStatus =
                     <FileText className="h-5 w-5 text-[#243B5A]" />
                     <h3 className="text-sm font-bold text-[#1F2937]">상세보기 및 상태 변경</h3>
                   </div>
-                  <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
+                  <button onClick={handleCloseStatusChangeModal} className="p-1 text-[#64748B] hover:bg-[#F5F6F8] rounded-lg"><X className="h-4 w-4" /></button>
                 </div>
 
                 <div className="space-y-3 text-xs">
@@ -5217,7 +5237,7 @@ const canChangeStatus =
                 </div>
 
                 <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9] text-xs">
-                  <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">닫기</button>
+                  <button onClick={handleCloseStatusChangeModal} className="px-3.5 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">닫기</button>
                   {canEditRemarks && !(pendingGpsData && statusChangeModal.targetStatus === 'COMPLETED' && !statusChangeModal.remarks.trim()) && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{pendingGpsData && statusChangeModal.targetStatus === 'COMPLETED' ? '저장 및 닫기' : (statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장 후 닫기')}</button>}
                 </div>
               </div>
