@@ -2906,6 +2906,24 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       const missingNames = participants.filter(person => !consentedIds.has(person.userId)).map(person => person.name);
 
       if (missingNames.length > 0) {
+        // 종료 QR 스캔으로 이미 본인 동의가 등록된 경우, 비고도 함께 저장하고 창을 닫습니다.
+        if (isQrFinishScan) {
+          try {
+            const { error: remarksError } = await supabase.from('tasks').update({ remarks }).eq('id', task.id);
+            if (remarksError) throw remarksError;
+            setTasks(prev => prev.map(item => item.id === task.id ? { ...item, remarks } : item));
+            setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
+            setPendingGpsData(null);
+            showCustomAlert(
+              'QR 동의 및 비고 저장 완료',
+              `${currentParticipant.name}님 종료 QR 동의와 비고가 저장되었습니다.\n현재 ${participants.length - missingNames.length}/${participants.length}명 동의\n미동의: ${missingNames.join(', ')}`
+            );
+            return;
+          } catch (err: any) {
+            showCustomAlert('저장 오류', `QR 동의는 등록되었으나 비고 저장에 실패했습니다: ${err.message}`);
+            return;
+          }
+        }
         showCustomAlert(
           '동의 등록 완료',
           `${currentParticipant.name}님 동의가 등록되었습니다.\n현재 ${participants.length - missingNames.length}/${participants.length}명 동의\n미동의: ${missingNames.join(', ')}`
@@ -5156,7 +5174,7 @@ const canChangeStatus =
 
                 <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9] text-xs">
                   <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">닫기</button>
-                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장 후 닫기'}</button>}
+                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{pendingGpsData && statusChangeModal.targetStatus === 'COMPLETED' ? '저장 후 닫기' : (statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장 후 닫기')}</button>}
                 </div>
               </div>
             </div>
@@ -5997,8 +6015,23 @@ const canChangeStatus =
         scanned_at: new Date().toISOString(),
       }, { onConflict: 'task_id,scan_phase,user_name' });
       if (recordError) throw recordError;
+
+      // 전원 동의 대상 업무에서는 종료 QR 스캔 자체를 해당 직원의 완료 동의로 등록합니다.
+      if (!isStartScan && qrTargetTask.require_all_assignees_consent === true) {
+        const participant = getTaskParticipants(qrTargetTask).find(person =>
+          person.name.trim().toLowerCase() === String(currentUser?.name || '').trim().toLowerCase()
+        );
+        if (!participant) throw new Error('이 업무의 담당자로 확인되지 않아 동의를 등록할 수 없습니다.');
+        const { error: consentError } = await supabase.from('task_status_consents').upsert({
+          task_id: qrTargetTask.id,
+          target_status: 'COMPLETED',
+          user_id: participant.userId,
+          user_name: participant.name,
+        }, { onConflict: 'task_id,target_status,user_id' });
+        if (consentError) throw consentError;
+      }
     } catch (recordError: any) {
-      showCustomAlert('QR 직원별 기록 저장 실패', `스캔은 인식했지만 직원별 기록 저장에 실패했습니다.\n${recordError?.message || '알 수 없는 오류'}`);
+      showCustomAlert('QR 기록/동의 저장 실패', `스캔은 인식했지만 기록 또는 동의 저장에 실패했습니다.\n${recordError?.message || '알 수 없는 오류'}`);
     }
     setStatusChangeModal({
       open: isStartScan,
