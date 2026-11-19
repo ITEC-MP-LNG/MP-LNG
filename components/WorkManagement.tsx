@@ -6,7 +6,7 @@ import {
   Plus, X, ChevronLeft, ChevronRight, Bell, Home, Tag, Sun, Moon, 
   LayoutGrid, List, Settings, Eye, AlertCircle, PlayCircle, PlusCircle,
   Users, History, FileSpreadsheet, Layers, FileText, ChevronDown, Check, AlertTriangle,
-  Camera, MapPin
+  Camera, MapPin, RefreshCw
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import * as ExcelJS from 'exceljs';
@@ -2815,8 +2815,10 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       return;
     }
 
+    const isQrFinishScan = !!pendingGpsData && task.task_type === 'DAILY' &&
+      task.qr_scan_enabled === true && task.status === 'IN_PROGRESS' && nextStatus === 'COMPLETED';
     const needsDailySafetyConfirmation =
-      task.task_type === 'DAILY' &&
+      task.task_type === 'DAILY' && !isQrFinishScan &&
       ((task.status === 'PENDING' && nextStatus === 'IN_PROGRESS') ||
        (task.status === 'IN_PROGRESS' && nextStatus === 'COMPLETED'));
 
@@ -4079,6 +4081,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
                 <span>차량</span>
               </button>
             </div>
+            {taskTab === 'DAILY' && (
+              <button type="button" onClick={() => void fetchTasks()} disabled={isLoading}
+                className="col-span-2 sm:col-span-auto inline-flex h-8 items-center justify-center gap-1.5 rounded-lg border border-[#E2E5E9] bg-white px-3 text-xs font-semibold text-[#243B5A] hover:bg-[#F5F6F8] disabled:opacity-50">
+                <RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                {isLoading ? '불러오는 중...' : '일일업무 새로고침'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -5961,20 +5970,29 @@ const canChangeStatus =
       });
     }
     if (qrTargetTask) {
-      const nextStatus =
-        qrTargetTask.status === 'PENDING' ? 'IN_PROGRESS' : 'COMPLETED';
-      // 1. 상태 변경 모달을 띄우지 않고 목표 상태만 내부에 세팅
+      const isStartScan = qrTargetTask.status === 'PENDING';
+      const nextStatus = isStartScan ? 'IN_PROGRESS' : 'COMPLETED';
       setStatusChangeModal({
         open: false,
         task: qrTargetTask,
         targetStatus: nextStatus,
         remarks: qrTargetTask.remarks || '',
       });
-      // 2. 안전확인서 모달을 즉시 오픈
-      setStatusSafetyChecks([]);
-      setStatusSafetyModal(
-        qrTargetTask.status === 'PENDING' ? 'START' : 'FINISH'
-      );
+      statusChangeRemarksRef.current = qrTargetTask.remarks || '';
+      // 시작 스캔은 기존 안전확인 유지. 종료 스캔 자체를 동의로 간주하여
+      // 안전확인창 없이 기존 비고/상태변경창으로 바로 이동.
+      if (isStartScan) {
+        setStatusSafetyChecks([]);
+        setStatusSafetyModal('START');
+      } else {
+        setStatusSafetyModal(null);
+        setStatusChangeModal({
+          open: true,
+          task: qrTargetTask,
+          targetStatus: 'COMPLETED',
+          remarks: qrTargetTask.remarks || '',
+        });
+      }
     }
   }}
 />
