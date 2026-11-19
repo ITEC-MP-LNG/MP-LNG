@@ -3668,8 +3668,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           showCustomAlert(
             '완료',
             photoDeleteFailed || safetyCleanupFailed || qrRecordDeleteFailed
-              ? `관리자 최종 확인은 완료되었습니다. ${qrRecordDeleteFailed ? '직원별 QR 좌표 기록 삭제에 실패했습니다. ' : ''}${photoDeleteFailed ? '일부 업무 사진 정리에 실패했습니다. ' : ''}${safetyCleanupFailed ? '일부 안전 확인 기록 정리에 실패했습니다. ' : ''}Supabase 삭제 권한 또는 저장 상태를 확인해 주세요.`
-              : '관리자 최종 확인이 완료되었습니다. 업무 및 직원별 QR 좌표 기록, 안전 확인 항목과 사진이 정리되었습니다.'
+              ? `관리자 최종 확인은 완료되었습니다. ${qrRecordDeleteFailed ? '직원별 QR 기록 삭제에 실패했습니다. ' : ''}${photoDeleteFailed ? '일부 업무 사진 정리에 실패했습니다. ' : ''}${safetyCleanupFailed ? '일부 안전 확인 기록 정리에 실패했습니다. ' : ''}Supabase 삭제 권한 또는 저장 상태를 확인해 주세요.`
+              : '관리자 최종 확인이 완료되었습니다. 업무 및 직원별 QR 기록, 안전 확인 항목과 사진이 정리되었습니다.'
           );
         } catch (err: any) {
           showCustomAlert('오류', `관리자 확인 처리 실패: ${err.message}`);
