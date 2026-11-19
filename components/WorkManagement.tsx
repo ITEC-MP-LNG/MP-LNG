@@ -6032,6 +6032,8 @@ const canChangeStatus =
       }
     } catch (recordError: any) {
       showCustomAlert('QR 기록/동의 저장 실패', `스캔은 인식했지만 기록 또는 동의 저장에 실패했습니다.\n${recordError?.message || '알 수 없는 오류'}`);
+      setPendingGpsData(null);
+      return; // 저장 실패를 동의/스캔 성공으로 취급하지 않고 상태변경창도 진행하지 않습니다.
     }
     setStatusChangeModal({
       open: isStartScan,
