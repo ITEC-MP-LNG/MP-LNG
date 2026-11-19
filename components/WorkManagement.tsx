@@ -2818,7 +2818,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     const isQrFinishScan = !!pendingGpsData && task.task_type === 'DAILY' &&
       task.qr_scan_enabled === true && task.status === 'IN_PROGRESS' && nextStatus === 'COMPLETED';
     const needsDailySafetyConfirmation =
-      task.task_type === 'DAILY' && !isQrFinishScan &&
+      task.task_type === 'DAILY' &&
       ((task.status === 'PENDING' && nextStatus === 'IN_PROGRESS') ||
        (task.status === 'IN_PROGRESS' && nextStatus === 'COMPLETED'));
 
@@ -3592,8 +3592,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           // 관리자 최종 확인 시 직원별 QR 좌표 기록도 DB에서 삭제합니다.
           const { error: qrRecordDeleteError } = await supabase.from('task_qr_scan_records')
             .delete().eq('task_id', task.id);
+          const qrRecordDeleteFailed = !!qrRecordDeleteError;
           if (qrRecordDeleteError) {
-            console.warn('관리자 최종 확인 후 직원별 QR 좌표 기록 삭제 실패:', task.id, qrRecordDeleteError.message);
+            console.error('관리자 최종 확인 후 직원별 QR 좌표 기록 삭제 실패:', task.id, qrRecordDeleteError.message);
           }
 
           let photoDeleteFailed = false;
@@ -3646,9 +3647,9 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           await fetchTasks();
           showCustomAlert(
             '완료',
-            photoDeleteFailed || safetyCleanupFailed
-              ? '관리자 최종 확인이 완료되었습니다. 일부 사진 또는 안전 확인 기록 정리에 실패했습니다. 관리자에게 확인이 필요합니다.'
-              : '관리자 최종 확인이 완료되었습니다. 안전 확인 항목과 사진이 삭제되었으며 완료이력에서 확인할 수 있습니다.'
+            photoDeleteFailed || safetyCleanupFailed || qrRecordDeleteFailed
+              ? `관리자 최종 확인은 완료되었습니다. ${qrRecordDeleteFailed ? '직원별 QR 좌표 기록 삭제에 실패했습니다. ' : ''}${photoDeleteFailed ? '일부 업무 사진 정리에 실패했습니다. ' : ''}${safetyCleanupFailed ? '일부 안전 확인 기록 정리에 실패했습니다. ' : ''}Supabase 삭제 권한 또는 저장 상태를 확인해 주세요.`
+              : '관리자 최종 확인이 완료되었습니다. 업무 및 직원별 QR 좌표 기록, 안전 확인 항목과 사진이 정리되었습니다.'
           );
         } catch (err: any) {
           showCustomAlert('오류', `관리자 확인 처리 실패: ${err.message}`);
