@@ -44,6 +44,7 @@ export interface Task {
   longitude?: number | null;
   qr_scanned_at?: string | null;
   qr_scanned_by?: string | null;
+  qr_scan_enabled?: boolean;
 }
 
 type TaskStatusConsent = {
@@ -2144,6 +2145,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [selectedPhotoPreviews, setSelectedPhotoPreviews] = useState<string[]>([]);
   const [keptExistingPhotoPaths, setKeptExistingPhotoPaths] = useState<string[]>([]);
   const [requireAllAssigneesConsent, setRequireAllAssigneesConsent] = useState(false);
+  const [qrScanEnabled, setQrScanEnabled] = useState(false);
+  const statusChangeRemarksRef = useRef('');
   const [photoViewerTask, setPhotoViewerTask] = useState<Task | null>(null);
 
   // 👇 [여기부터 추가] QR 및 위치 관련 상태 변수들
@@ -2310,7 +2313,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     lastTasksFetchStartedAtRef.current = Date.now();
     setIsLoading(true);
     try {
-      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, evening_workers, shift_type, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, remarks_edited_at, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review, photo_paths, require_all_assignees_consent, latitude, longitude, qr_scanned_at, qr_scanned_by').order('start_date', { ascending: true });
+      const { data, error } = await supabase.from('tasks').select('id, title, description, start_date, end_date, time_slot, assigned_names, day_workers, night_workers, evening_workers, shift_type, status, task_type, created_by_id, created_by_name, category, cargo_hold, remarks, remarks_edited_at, created_at, updated_at, completed_by_id, completed_by_name, completed_at, completion_pending_review, photo_paths, require_all_assignees_consent, qr_scan_enabled, latitude, longitude, qr_scanned_at, qr_scanned_by').order('start_date', { ascending: true });
       if (error) throw error;
 
       if (data) {
@@ -2319,6 +2322,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           status: t.status || 'PENDING',
           completion_pending_review: t.completion_pending_review === true,
           require_all_assignees_consent: t.require_all_assignees_consent === true,
+          qr_scan_enabled: t.qr_scan_enabled === true,
           assigned_names: Array.isArray(t.assigned_names) ? t.assigned_names : (t.assigned_names ? t.assigned_names.split(',').map((s: string) => s.trim()) : []),
           day_workers: Array.isArray(t.day_workers) ? t.day_workers : (t.day_workers ? t.day_workers.split(',').map((s: string) => s.trim()) : []),
           night_workers: Array.isArray(t.night_workers) ? t.night_workers : (t.night_workers ? t.night_workers.split(',').map((s: string) => s.trim()) : []),
@@ -2723,6 +2727,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       targetStatus: task.status,
       remarks: task.remarks || ''
     });
+    statusChangeRemarksRef.current = task.remarks || '';
   }, []);
 
 // 👇 [여기부터 추가] QR 스캔 완료 시 GPS 임시 저장 후 기존 안전서약 모달 호출
@@ -2739,6 +2744,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       targetStatus: nextStatus,
       remarks: qrTargetTask.remarks || ''
     });
+    statusChangeRemarksRef.current = qrTargetTask.remarks || ''; 
 
     setStatusSafetyChecks([]);
     setStatusSafetyModal(nextStatus === 'IN_PROGRESS' ? 'START' : 'FINISH');
@@ -2748,7 +2754,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     if (!statusChangeModal.task) return;
     const task = statusChangeModal.task;
     const nextStatus = statusChangeModal.targetStatus;
-    const remarks = statusChangeModal.remarks;
+    const remarks = statusChangeRemarksRef.current;
     const isNightTask = task.task_type === 'DAILY_OTHER';
     const isCompletedHistory =
       task.status === 'COMPLETED' &&
@@ -3019,6 +3025,8 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSelectedPhotoFiles([]);
     setKeptExistingPhotoPaths([]);
     setRequireAllAssigneesConsent(false);
+    setQrScanEnabled(false);
+    statusChangeRemarksRef.current = '';
     setEditingTask(null);
     setFormData({
       title: '',
@@ -3047,6 +3055,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
     setSelectedPhotoFiles([]);
     setKeptExistingPhotoPaths(task.task_type === 'DAILY' ? (task.photo_paths || []) : []);
     setRequireAllAssigneesConsent(task.require_all_assignees_consent === true);
+    setQrScanEnabled(task.qr_scan_enabled === true);
     setEditingTask(task);
     setFormData({
       title: task.title,
@@ -3290,6 +3299,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       start_date: formData.start_date,
       task_type: formData.task_type,
       require_all_assignees_consent: requireAllAssigneesConsent,
+      qr_scan_enabled: formData.task_type === 'DAILY' && qrScanEnabled,
       status: editingTask ? editingTask.status : 'PENDING',
       category: formData.category || null,
       cargo_hold: formData.cargo_hold || null,
@@ -3445,7 +3455,7 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   }, [
     isAdmin, canManageTask, currentUser, formData, editingTask,
     dayWorkerList, eveningWorkerList, nightWorkerList, cabinShiftType,
-    assignedList, appUsers, tasks, fetchTasks, showCustomAlert, showCustomConfirm, selectedPhotoFiles, keptExistingPhotoPaths, requireAllAssigneesConsent,
+    assignedList, appUsers, tasks, fetchTasks, showCustomAlert, showCustomConfirm, selectedPhotoFiles, keptExistingPhotoPaths, requireAllAssigneesConsent, qrScanEnabled,
   ]);
 
   const handleFinalizeDailyTask = useCallback((task: Task) => {
@@ -5070,7 +5080,7 @@ const canChangeStatus =
                       disabled={!canEditRemarks}
                       placeholder="비고 사항을 입력해주세요..."
                       value={statusChangeModal.remarks}
-                      onChange={(e) => setStatusChangeModal({ ...statusChangeModal, remarks: e.target.value })}
+                      onChange={(e) => { statusChangeRemarksRef.current = e.target.value; setStatusChangeModal(prev => ({ ...prev, remarks: e.target.value })); }}
                       className={`w-full px-3 py-2 border border-[#E2E5E9] bg-[#F5F6F8] rounded-lg text-xs resize-y max-h-64 outline-none transition-colors ${!isAllowedUser ? 'bg-slate-100 text-slate-500 cursor-not-allowed' : 'focus:border-[#243B5A] focus:bg-white'}`}
                     />
                   </div>
@@ -5384,7 +5394,7 @@ const canChangeStatus =
                     {singleTask ? '' : '다중 선택 상태입니다.'}
                   </div>
                   {/* 1. 작업자용: QR 스캔 버튼 (일일업무이며 대기/진행중 상태이고, 배정된 당사자이거나 관리자일 때) */}
-{singleTask && singleTask.task_type === 'DAILY' && singleTask.status !== 'COMPLETED' && canModifyTaskStatus(singleTask) && (
+{singleTask && singleTask.task_type === 'DAILY' && singleTask.qr_scan_enabled === true && singleTask.status !== 'COMPLETED' && canModifyTaskStatus(singleTask) && (
   <button
     type="button"
     onClick={() => {
@@ -5764,6 +5774,16 @@ const canChangeStatus =
                       </div>
                     )}
                   </>
+                )}
+
+                {formData.task_type === 'DAILY' && (
+                  <div className="rounded-xl border border-blue-200 bg-blue-50/60 p-3 space-y-1.5">
+                    <label className="flex cursor-pointer items-start gap-2 text-xs font-semibold text-blue-900">
+                      <input type="checkbox" checked={qrScanEnabled} onChange={(event) => setQrScanEnabled(event.target.checked)} className="mt-0.5 h-4 w-4 shrink-0 accent-blue-600" />
+                      <span>QR SCAN 사용</span>
+                    </label>
+                    <p className="pl-6 text-[10px] leading-relaxed text-blue-800">체크한 일일업무에만 QR 스캔 상태변경 버튼이 표시됩니다. 테스트할 업무에 체크해 주세요.</p>
+                  </div>
                 )}
 
                 <div className="rounded-xl border border-[#E2E5E9] bg-[#FCFCFD] p-3 space-y-1.5">
