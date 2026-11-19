@@ -2866,6 +2866,24 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           return;
         }
       }
+      // QR 스캔으로 동의한 직원의 좌표 기록은 전원 동의 완료 여부와 무관하게
+      // 해당 직원의 스캔 시점에 직원별 테이블에 저장한다.
+      if (pendingGpsData && task.qr_scan_enabled === true) {
+        try {
+          const { error: scanRecordError } = await supabase.from('task_qr_scan_records').upsert({
+            task_id: task.id,
+            scan_phase: task.status === 'PENDING' ? 'START' : 'FINISH',
+            user_name: currentParticipant.name || currentUser?.name || '이름 미확인',
+            latitude: pendingGpsData.lat,
+            longitude: pendingGpsData.lon,
+            scanned_at: new Date().toISOString(),
+          }, { onConflict: 'task_id,scan_phase,user_name' });
+          if (scanRecordError) throw scanRecordError;
+        } catch (scanRecordError: any) {
+          showCustomAlert('QR 위치 기록 저장 실패', `상태 동의는 처리되었으나 직원별 QR 기록 저장에 실패했습니다.\n${scanRecordError.message}`);
+          return;
+        }
+      }
 
       const { data: consentRows, error: consentReadError } = await supabase.from('task_status_consents')
         .select('task_id, target_status, user_id, user_name, created_at')
