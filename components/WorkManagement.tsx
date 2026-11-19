@@ -2833,6 +2833,42 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
       statusSafetyConfirmedRef.current = false;
     }
 
+    // 종료 QR은 본인 동의로 처리합니다. 다른 담당자의 동의와 무관하게
+    // 비고가 작성된 경우에만 비고 저장 버튼이 노출되며 저장 후 창을 닫습니다.
+    if (isQrFinishScan) {
+      if (!remarks.trim()) {
+        showCustomAlert('비고 입력', '비고를 작성한 후 저장 및 닫기를 눌러주세요.');
+        return;
+      }
+      try {
+        const { error: remarksError } = await supabase.from('tasks').update({
+          status: 'COMPLETED',
+          remarks,
+          completion_pending_review: true,
+          completed_by_id: null,
+          completed_by_name: null,
+          completed_at: null,
+          latitude: pendingGpsData.lat,
+          longitude: pendingGpsData.lon,
+          qr_scanned_at: new Date().toISOString(),
+          qr_scanned_by: currentUser?.name || null,
+        }).eq('id', task.id).eq('status', 'IN_PROGRESS');
+        if (remarksError) throw remarksError;
+        setTasks(prev => prev.map(item => item.id === task.id ? {
+          ...item, status: 'COMPLETED', remarks, completion_pending_review: true,
+          completed_by_id: null, completed_by_name: null, completed_at: null,
+          latitude: pendingGpsData.lat, longitude: pendingGpsData.lon,
+          qr_scanned_at: new Date().toISOString(), qr_scanned_by: currentUser?.name || null,
+        } : item));
+        setPendingGpsData(null);
+        setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
+        showCustomAlert('저장 완료', '종료 QR 동의와 비고가 저장되었습니다.');
+      } catch (err: any) {
+        showCustomAlert('저장 오류', `종료 QR 동의는 등록되었으나 비고 저장에 실패했습니다: ${err.message}`);
+      }
+      return;
+    }
+
     const isChangingStatus = nextStatus !== task.status;
     if (task.require_all_assignees_consent === true && isChangingStatus) {
       const participants = getTaskParticipants(task);
@@ -3552,6 +3588,13 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
             qr_scanned_by: null,
           }).eq('id', task.id).eq('completion_pending_review', true);
           if (error) throw error;
+
+          // 관리자 최종 확인 시 직원별 QR 좌표 기록도 DB에서 삭제합니다.
+          const { error: qrRecordDeleteError } = await supabase.from('task_qr_scan_records')
+            .delete().eq('task_id', task.id);
+          if (qrRecordDeleteError) {
+            console.warn('관리자 최종 확인 후 직원별 QR 좌표 기록 삭제 실패:', task.id, qrRecordDeleteError.message);
+          }
 
           let photoDeleteFailed = false;
           if (task.task_type === 'DAILY' && (task.photo_paths || []).length > 0) {
@@ -5174,7 +5217,7 @@ const canChangeStatus =
 
                 <div className="flex justify-end space-x-2 pt-3 border-t border-[#E2E5E9] text-xs">
                   <button onClick={() => setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' })} className="px-3.5 py-1.5 border border-[#E2E5E9] rounded-lg font-semibold hover:bg-[#F5F6F8]">닫기</button>
-                  {canEditRemarks && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{pendingGpsData && statusChangeModal.targetStatus === 'COMPLETED' ? '저장 후 닫기' : (statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장 후 닫기')}</button>}
+                  {canEditRemarks && !(pendingGpsData && statusChangeModal.targetStatus === 'COMPLETED' && !statusChangeModal.remarks.trim()) && <button onClick={handleConfirmStatusChange} className="px-4 py-1.5 bg-[#243B5A] text-white rounded-lg font-semibold hover:bg-[#1B2F49] transition-colors">{pendingGpsData && statusChangeModal.targetStatus === 'COMPLETED' ? '저장 및 닫기' : (statusChangeModal.task.require_all_assignees_consent === true && statusChangeModal.targetStatus !== statusChangeModal.task.status ? '동의하기' : '저장 후 닫기')}</button>}
                 </div>
               </div>
             </div>
@@ -6036,7 +6079,7 @@ const canChangeStatus =
       return; // 저장 실패를 동의/스캔 성공으로 취급하지 않고 상태변경창도 진행하지 않습니다.
     }
     setStatusChangeModal({
-      open: isStartScan,
+      open: false,
       task: qrTargetTask,
       targetStatus: nextStatus,
       remarks: qrTargetTask.remarks || '',
