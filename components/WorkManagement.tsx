@@ -2155,6 +2155,16 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
   const [pendingGpsData, setPendingGpsData] = useState<{ lat: number | null; lon: number | null } | null>(null);
   const [locationViewModal, setLocationViewModal] = useState<{ open: boolean; task: Task | null }>({ open: false, task: null });
   const [selectedWorkerForMap, setSelectedWorkerForMap] = useState<string>('');
+  const [qrScanRecords, setQrScanRecords] = useState<any[]>([]);
+  useEffect(() => {
+    if (!locationViewModal.open || !locationViewModal.task?.id) { setQrScanRecords([]); return; }
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.from('task_qr_scan_records').select('user_name, scan_phase, latitude, longitude, scanned_at').eq('task_id', locationViewModal.task!.id).order('scanned_at', { ascending: true });
+      if (!cancelled) setQrScanRecords(error ? [] : (data || []));
+    })();
+    return () => { cancelled = true; };
+  }, [locationViewModal.open, locationViewModal.task?.id]);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -2955,6 +2965,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
           completed_at: null,
         }).eq('id', task.id);
         if (error) throw error;
+        if (pendingGpsData && task.qr_scan_enabled === true) {
+          const { error: scanRecordError } = await supabase.from('task_qr_scan_records').upsert({
+            task_id: task.id, scan_phase: task.status === 'PENDING' ? 'START' : 'FINISH',
+            user_name: currentUser?.name || '이름 미확인', latitude: pendingGpsData.lat, longitude: pendingGpsData.lon,
+            scanned_at: new Date().toISOString(),
+          }, { onConflict: 'task_id,scan_phase,user_name' });
+          if (scanRecordError) console.warn('QR 위치 이력 저장 실패:', scanRecordError.message);
+        }
         setPendingGpsData(null);
         setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
         setSelectedTaskIds([]);
@@ -2983,6 +3001,14 @@ export default function WorkManagement({ currentUser }: { currentUser?: { id: st
         ...((task.task_type === 'DAILY' || task.task_type === 'DAILY_OTHER') ? { completion_pending_review: false } : {}),
       }).eq('id', task.id);
       if (error) throw error;
+      if (pendingGpsData && task.qr_scan_enabled === true) {
+        const { error: scanRecordError } = await supabase.from('task_qr_scan_records').upsert({
+          task_id: task.id, scan_phase: task.status === 'PENDING' ? 'START' : 'FINISH',
+          user_name: currentUser?.name || '이름 미확인', latitude: pendingGpsData.lat, longitude: pendingGpsData.lon,
+          scanned_at: new Date().toISOString(),
+        }, { onConflict: 'task_id,scan_phase,user_name' });
+        if (scanRecordError) console.warn('QR 위치 이력 저장 실패:', scanRecordError.message);
+      }
       setPendingGpsData(null);
       setStatusChangeModal({ open: false, task: null, targetStatus: 'PENDING', remarks: '' });
       await fetchTasks();
@@ -6013,6 +6039,22 @@ const canChangeStatus =
           </div>
         </div>
 
+        {qrScanRecords.length > 0 && (
+          <div className="space-y-2">
+            <h4 className="text-xs font-bold text-[#243B5A]">직원별 QR 스캔 기록</h4>
+            <div className="max-h-56 overflow-y-auto rounded-xl border border-[#E2E5E9]">
+              {qrScanRecords.map((record, index) => {
+                const recordTime = record.scanned_at ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(new Date(record.scanned_at)) : '시간 없음';
+                const recordHasCoords = record.latitude != null && record.longitude != null;
+                return <div key={`${record.user_name}-${record.scan_phase}-${index}`} className="border-b last:border-b-0 border-[#E2E5E9] p-2.5 text-xs space-y-1">
+                  <div className="flex justify-between gap-2"><span className="font-bold text-[#1F2937]">{record.user_name}</span><span className={`font-bold ${record.scan_phase === 'START' ? 'text-emerald-700' : 'text-blue-700'}`}>{record.scan_phase === 'START' ? '시작 스캔' : '종료 스캔'}</span></div>
+                  <div className="text-[#64748B]">{recordTime} (KST)</div>
+                  <div className="flex justify-between items-center gap-2"><span className="font-mono text-[11px]">{recordHasCoords ? `${Number(record.latitude).toFixed(6)}, ${Number(record.longitude).toFixed(6)}` : '좌표 없음'}</span>{recordHasCoords && <a className="font-bold text-blue-600 underline whitespace-nowrap" href={`https://www.google.com/maps?q=${record.latitude},${record.longitude}`} target="_blank" rel="noopener noreferrer">위치보기</a>}</div>
+                </div>;
+              })}
+            </div>
+          </div>
+        )}
         <div className="flex gap-2">
           <button
             type="button"
