@@ -1,4 +1,3 @@
-
 import { handleCallback } from '@vercel/queue';
 import webpush from 'web-push';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
@@ -9,6 +8,12 @@ type DailyTask = {
   title: string;
   status: string | null;
   assigned_names: string[] | null;
+};
+
+type DailyEducation = {
+  title: string;
+  edu_date: string | null;
+  assigned_workers: string[] | null;
 };
 
 type AppUser = {
@@ -50,7 +55,53 @@ function getErrorStatus(error: unknown) {
   return 0;
 }
 
-export const POST = handleCallback(async (_message, metadata) => {
+function buildScheduleMessage(params: {
+  taskTitles: string[];
+  eduTitles: string[];
+  fallbackIntro?: string;
+}) {
+  const { taskTitles, eduTitles, fallbackIntro } = params;
+  const hasTask = taskTitles.length > 0;
+  const hasEducation = eduTitles.length > 0;
+
+  let guideSentence = '';
+
+  if (hasTask && hasEducation) {
+    guideSentence =
+      '오늘 배정된 업무와 교육이 있습니다. 앱에서 업무 및 교육일정 확인하세요.';
+  } else if (hasTask) {
+    guideSentence = '오늘 배정된 업무가 있습니다. 앱에서 업무 확인하세요.';
+  } else if (hasEducation) {
+    guideSentence = '오늘 배정된 교육이 있습니다. 앱에서 교육 확인하세요.';
+  } else {
+    return null;
+  }
+
+  const lines: string[] = [guideSentence];
+
+  // push_notification_settings에 커스텀 안내 문구가 있으면 함께 표기하려면 아래 주석을 해제해 쓰세요.
+  // if (fallbackIntro) lines.push(fallbackIntro);
+
+  if (hasTask) {
+    lines.push('');
+    lines.push('[업무]');
+    for (const item of taskTitles) {
+      lines.push(`• ${item}`);
+    }
+  }
+
+  if (hasEducation) {
+    lines.push('');
+    lines.push('[교육]');
+    for (const item of eduTitles) {
+      lines.push(`• ${item}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export const POST = handleCallback(async (_message, _metadata) => {
   const { data: settings, error: settingsError } = await supabaseAdmin
     .from('push_notification_settings')
     .select('enabled, notification_title, notification_body')
@@ -72,7 +123,7 @@ export const POST = handleCallback(async (_message, metadata) => {
 
   const today = getKoreaDate();
 
-  // 당일 DAILY 업무만 조회하고 완료된 업무는 제외
+  // 1. 당일 DAILY 업무 조회 (완료 제외)
   const { data: tasks, error: tasksError } = await supabaseAdmin
     .from('tasks')
     .select('title, status, assigned_names')
@@ -88,9 +139,6 @@ export const POST = handleCallback(async (_message, metadata) => {
       task.assigned_names.length > 0
   );
 
-  if (activeTasks.length === 0) return;
-
-  // 업무에 배정된 직원 이름별로 묶기
   const tasksByName = new Map<string, string[]>();
 
   for (const task of activeTasks) {
@@ -104,9 +152,40 @@ export const POST = handleCallback(async (_message, metadata) => {
     }
   }
 
-  if (tasksByName.size === 0) return;
+  // 2. 당일 교육 조회 (educations 테이블의 edu_date + assigned_workers 기준)
+  const { data: educations, error: eduError } = await supabaseAdmin
+    .from('educations')
+    .select('title, edu_date, assigned_workers')
+    .eq('edu_date', today);
 
-  // 직원 계정 조회
+  if (eduError) throw eduError;
+
+  const educationsByName = new Map<string, string[]>();
+
+  for (const edu of (educations || []) as DailyEducation[]) {
+    if (!Array.isArray(edu.assigned_workers) || edu.assigned_workers.length === 0) {
+      continue;
+    }
+
+    for (const rawWorker of edu.assigned_workers) {
+      const name = String(rawWorker).trim();
+      if (!name) continue;
+
+      const titles = educationsByName.get(name) || [];
+      if (!titles.includes(edu.title)) titles.push(edu.title);
+      educationsByName.set(name, titles);
+    }
+  }
+
+  // 업무와 교육 모두 배정된 인원이 없으면 종료
+  const targetNames = new Set<string>([
+    ...tasksByName.keys(),
+    ...educationsByName.keys(),
+  ]);
+
+  if (targetNames.size === 0) return;
+
+  // 3. 직원 계정 조회
   const { data: users, error: usersError } = await supabaseAdmin
     .from('app_users')
     .select('id, name, is_approved, is_retired, is_suspended, department');
@@ -117,9 +196,9 @@ export const POST = handleCallback(async (_message, metadata) => {
 
   for (const user of (users || []) as AppUser[]) {
     if (
-     user.is_retired === true ||
-  user.is_suspended === true ||
-  user.department === '퇴사자'
+      user.is_retired === true ||
+      user.is_suspended === true ||
+      user.department === '퇴사자'
     ) {
       continue;
     }
@@ -127,7 +206,7 @@ export const POST = handleCallback(async (_message, metadata) => {
     userByName.set(String(user.name).trim(), user);
   }
 
-  // 푸시 구독 정보 조회
+  // 4. 푸시 구독 정보 조회
   const { data: subscriptions, error: subscriptionsError } =
     await supabaseAdmin
       .from('push_subscriptions')
@@ -144,21 +223,26 @@ export const POST = handleCallback(async (_message, metadata) => {
     }
   }
 
-  // 직원별 발송
-  for (const [name, titles] of tasksByName) {
+  // 5. 인원별 발송
+  for (const name of targetNames) {
     const user = userByName.get(name);
     if (!user) continue;
+
+    const taskTitles = tasksByName.get(name) || [];
+    const eduTitles = educationsByName.get(name) || [];
+
+    const body = buildScheduleMessage({
+      taskTitles,
+      eduTitles,
+      fallbackIntro: settings.notification_body?.trim(),
+    });
+
+    if (!body) continue;
 
     const userId = user.id;
     const subscription = subscriptionByUser.get(userId);
 
-    const title =
-      settings.notification_title?.trim() || '당일 업무 알림';
-
-    const taskList = titles.map((item) => `• ${item}`).join('\n');
-    const intro = settings.notification_body?.trim();
-
-    const body = `${intro ? `${intro}\n` : ''}${taskList}`;
+    const title = settings.notification_title?.trim() || '당일 일정 알림';
 
     // 푸시 미구독 직원은 내부 알림으로 저장
     if (!subscription) {
